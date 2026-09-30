@@ -354,3 +354,108 @@ export function drawStar(c: CanvasRenderingContext2D, L: Layout, sc: Scene, st: 
   }
   c.restore();
 }
+
+/* ---------- win confetti: gold flecks and soft snow over the solved tree (spec §4.8) ---------- */
+
+export const CONFETTI_MS = 6500;
+export const CONFETTI_COUNT = 120;
+
+interface Fleck {
+  gold: boolean;
+  x: number;
+  y0: number;
+  v: number;
+  sway: number;
+  swayF: number;
+  ph: number;
+  spin: number;
+  tumble: number;
+  size: number;
+  delay: number;
+  tone: number;
+}
+
+/**
+ * Seeded per win and positioned from elapsed time, so frame drops don't matter. The caller skips it under reduced
+ * motion and passes the governor's particle density (half on tier 2+, like snow).
+ */
+export class Confetti {
+  private flecks: Fleck[] = [];
+  private seed: number | null = null;
+
+  /** How many flecks draw at `density`; 0 outside the confetti window. */
+  count(now: number, winAt: number | null, density: number): number {
+    if (winAt === null || now < winAt || now - winAt > CONFETTI_MS) return 0;
+    return Math.floor(CONFETTI_COUNT * density);
+  }
+
+  /** Screen space; leaves a CSS px (`dpr`) transform set. */
+  draw(c: CanvasRenderingContext2D, L: Layout, now: number, winAt: number | null, density: number, sc: Scene): void {
+    const n = this.count(now, winAt, density);
+    if (!n || winAt === null) return;
+    if (this.seed !== winAt) this.spawn(winAt);
+    const t = now - winAt;
+    const fade = Math.min(1, (CONFETTI_MS - t) / 1400);
+    const snow = sc.light === 'day' ? '150,172,188' : '255,250,240';
+    const dpr = L.dpr;
+    const zoom = Math.min(1.7, Math.max(1, L.w / 820));
+    for (let k = 0; k < n; k++) {
+      const f = this.flecks[k];
+      const size = f.size * zoom;
+      const tt = (t - f.delay) / 1000;
+      if (tt <= 0) continue;
+      const y = f.y0 * L.h + f.v * L.h * tt;
+      if (y > L.h + 12 || y < -12) continue;
+      const x = f.x * L.w + f.sway * Math.sin(f.swayF * tt + f.ph);
+      const a = fade * Math.min(1, tt * 4);
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (!f.gold) {
+        radial(c, x, y, size * 1.6, [[0, `rgba(${snow},${0.75 * a})`], [0.45, `rgba(${snow},${0.32 * a})`], [1, `rgba(${snow},0)`]]);
+        continue;
+      }
+      // A tumbling foil fleck: foreshortened by its flip, brightest when it faces the viewer.
+      const face = Math.abs(Math.cos(f.tumble * tt + f.ph));
+      const lum = 0.3 + 0.7 * face;
+      const r = Math.round(140 + 115 * lum);
+      const g = Math.round((88 + 140 * lum) * (0.92 + 0.08 * f.tone));
+      const b = Math.round(28 + 132 * lum * lum);
+      c.translate(x, y);
+      c.rotate(f.spin * tt + f.ph);
+      c.scale(1, Math.max(0.12, face));
+      c.globalAlpha = a;
+      c.fillStyle = `rgb(${r},${g},${b})`;
+      c.fillRect(-size, -size * 0.42, size * 2, size * 0.84);
+      c.globalAlpha = 1;
+      if (face > 0.94) {
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        c.globalCompositeOperation = 'lighter';
+        radial(c, x, y, size * 2.2, [[0, `rgba(255,214,140,${a * (face - 0.94) * 12})`], [1, 'rgba(255,180,90,0)']]);
+        c.globalCompositeOperation = 'source-over';
+      }
+    }
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.globalAlpha = 1;
+  }
+
+  private spawn(winAt: number): void {
+    const r = mulberry32(Math.floor(winAt) + 7);
+    this.seed = winAt;
+    this.flecks = Array.from({ length: CONFETTI_COUNT }, () => {
+      const gold = r() < 0.6;
+      return {
+        gold,
+        x: r(),
+        y0: -0.03 - r() * 0.45,
+        v: gold ? 0.14 + r() * 0.14 : 0.08 + r() * 0.1,
+        sway: 6 + r() * 16,
+        swayF: 1.2 + r() * 2,
+        ph: r() * TAU,
+        spin: (r() - 0.5) * 5,
+        tumble: 4 + r() * 7,
+        size: gold ? 2.2 + r() * 2 : 1.4 + r() * 2.2,
+        delay: r() * 1400,
+        tone: r(),
+      };
+    });
+  }
+}

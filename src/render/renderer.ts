@@ -5,7 +5,7 @@ import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo } from './bulbs';
 import type { Camera } from './camera';
 import {
-  Current, Embers, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
+  Confetti, Current, Embers, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
   drawHover, drawSourceCore, drawSourceGlow, drawStar, drawStarGlow, easeSnap, starState,
 } from './effects';
 import { Garland } from './garland';
@@ -58,6 +58,7 @@ export class Renderer {
   private readonly snow = new Snowfall();
   private readonly embers = new Embers();
   private readonly current = new Current();
+  private readonly confetti = new Confetti();
   readonly garland = new Garland();
   private readonly presents = new Presents();
   /** Fraction of tiles whose light has visibly arrived (last frame). */
@@ -262,10 +263,11 @@ export class Renderer {
     this.current.draw(ctx, board, L, s * 0.048);
     drawStar(ctx, L, sc, st, won);
 
-    // 6. Lit garland glass, then foreground snow (screen space)
+    // 6. Lit garland glass, foreground snow, then win confetti (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.garland.drawLit(ctx, sc, now, f.winAt, f.reducedMotion);
     this.snow.draw(ctx, L, sc, true, motionDt, now, density);
+    if (!f.reducedMotion) this.confetti.draw(ctx, L, now, f.winAt, density, sc);
   }
 
   /** Pop intensity + light-show boost + the bottom-to-top win wave (spec §4.5 item 10). */
