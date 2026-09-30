@@ -95,7 +95,16 @@ test('solving shows the results card and sharing copies to the clipboard', async
   await expect(page.locator('#results')).toBeVisible({ timeout: 8000 });
   await expect(page.locator('#r-time')).toHaveText(/^Lit in \d+:\d\d$/);
   await page.click('#r-share');
-  await expect(page.locator('#toast')).toHaveText(/copied/i);
+  await expect(page.locator('#toast')).toHaveText(/image copied/i);
+  // One clipboard item carries both the image and the share line (desktop paste targets pick what they accept).
+  const clip = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    const text = await (await item.getType('text/plain')).text();
+    return { types: [...item.types].sort(), text, png: (await item.getType('image/png')).size };
+  });
+  expect(clip.types).toEqual(['image/png', 'text/plain']);
+  expect(clip.text).toMatch(/^Lit the tree in \d+:\d\d · aglow\.lukeghanna\.com$/);
+  expect(clip.png).toBeGreaterThan(10_000);
   await page.click('#r-keep');
   await expect(page.locator('#corner-new')).toBeVisible();
 });
