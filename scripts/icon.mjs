@@ -3,7 +3,11 @@
 import { chromium } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-const svg = readFileSync('public/favicon.svg', 'utf8').replace('rx="14" fill="url(#bgc)"', 'fill="url(#bgc)"');
+const source = readFileSync('public/favicon.svg', 'utf8');
+// Drop the rounding on the background tile (the first <rect> with an rx).
+const tile = /(<rect\b[^>]*?)\s+rx="[^"]*"/;
+if (!tile.test(source)) throw new Error('icon: no rounded background <rect rx="…"> found in public/favicon.svg');
+const svg = source.replace(tile, '$1');
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 180, height: 180 }, deviceScaleFactor: 1 });

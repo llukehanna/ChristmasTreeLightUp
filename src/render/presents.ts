@@ -92,10 +92,16 @@ function bowCentre(g: Gift): [number, number] {
 /** Everything that is the gift itself (faces, lid, bow, contact shadow), for placement checks. */
 export function giftBounds(g: Gift): Rect {
   const [bx, by] = bowCentre(g);
-  const x0 = Math.min(g.cx - g.w / 2 - g.over, g.cx - g.w / 2 - g.over + g.sx, bx - 1.2 * g.bow);
-  const x1 = Math.max(g.cx + g.w / 2 + g.over, g.cx + g.w / 2 + g.over + g.sx, bx + 1.2 * g.bow);
+  const sh = shadowEllipse(g);
+  const x0 = Math.min(g.cx - g.w / 2 - g.over, g.cx - g.w / 2 - g.over + g.sx, bx - 1.2 * g.bow, sh.x - sh.rx);
+  const x1 = Math.max(g.cx + g.w / 2 + g.over, g.cx + g.w / 2 + g.over + g.sx, bx + 1.2 * g.bow, sh.x + sh.rx);
   const y0 = Math.min(g.base - g.h - g.rise - 0.02 * g.h, by - 0.95 * g.bow);
-  return { x0, y0, x1, y1: g.base + 0.14 * g.w + 3 };
+  return { x0, y0, x1, y1: Math.max(g.base + 3, sh.y + sh.ry) };
+}
+
+/** The soft contact shadow on the floor: an ellipse under the box footprint. */
+function shadowEllipse(g: Gift): { x: number; y: number; rx: number; ry: number } {
+  return { x: g.cx + g.sx / 2, y: g.base - g.rise / 2 + 1, rx: g.w / 2 + Math.abs(g.sx) / 2 + g.w * 0.12, ry: g.rise / 2 + g.w * 0.1 };
 }
 
 const overlaps = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
@@ -402,10 +408,7 @@ function paintBow(c: CanvasRenderingContext2D, g: Gift, t: Tone): void {
 function contactShadow(c: CanvasRenderingContext2D, g: Gift, sc: Scene): void {
   const col = sc.light === 'day' ? '70,90,110' : '0,0,0';
   const a = sc.light === 'day' ? 0.34 : 0.62;
-  const x = g.cx + g.sx / 2;
-  const y = g.base - g.rise / 2 + 1;
-  const rx = g.w / 2 + Math.abs(g.sx) / 2 + g.w * 0.12;
-  const ry = g.rise / 2 + g.w * 0.1;
+  const { x, y, rx, ry } = shadowEllipse(g);
   c.save();
   c.translate(x, y);
   c.scale(1, ry / rx);
