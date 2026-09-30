@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest';
 import { Board } from '../../../src/core/board';
-import { rotCW } from '../../../src/core/dirs';
+import { degree, rotCW } from '../../../src/core/dirs';
 import { GRID } from '../../../src/core/mask';
 import { mulberry32 } from '../../../src/core/rng';
 import { clearGame, loadGame, saveGame } from '../../../src/store/progress';
@@ -83,10 +83,19 @@ it('validates all mutations: wrong array length, invalid color, wrong version, n
   localStorage.setItem('aglow.game', JSON.stringify(raw));
   expect(loadGame(GRID)).toBeNull();
 
-  // Mutation: solution doesn't light every tile (set solution to 0, breaking connectivity)
+  // Positive control: same data loads before connectivity mutation
   saveGame(b, 1000);
   raw = JSON.parse(localStorage.getItem('aglow.game')!);
-  raw.solution[GRID.root] = 0;
-  localStorage.setItem('aglow.game', JSON.stringify(raw));
-  expect(loadGame(GRID)).toBeNull();
+  expect(loadGame(GRID)).not.toBeNull();
+
+  // Mutation: solution doesn't light every tile (rotate end tile to break connectivity)
+  saveGame(b, 1000);
+  raw = JSON.parse(localStorage.getItem('aglow.game')!);
+  const endTile = GRID.ids.find((i) => i !== GRID.root && degree(raw.solution[i]) === 1);
+  if (endTile !== undefined) {
+    raw.solution[endTile] = rotCW(raw.solution[endTile]);
+    raw.bits[endTile] = raw.solution[endTile];
+    localStorage.setItem('aglow.game', JSON.stringify(raw));
+    expect(loadGame(GRID)).toBeNull();
+  }
 });
