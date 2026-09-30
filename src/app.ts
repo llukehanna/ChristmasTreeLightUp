@@ -16,7 +16,7 @@ import { readJSON, writeJSON } from './store/storage';
 import { el } from './ui/dom';
 import { Menu } from './ui/menu';
 import { Results } from './ui/results';
-import { makeShareImage, shareResult } from './ui/share';
+import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
 import { Toast } from './ui/toast';
 
 export const REVEAL_MS = 900;
@@ -43,6 +43,8 @@ export class App {
   /** The paused frame has been drawn; the renderer idles until resume. */
   private pausedDrawn = false;
   private resizeQueued = false;
+  /** The results card's share image, rendered when the card appears so the Share tap needs no await. */
+  private shareImage: ShareImage | null = null;
   private lastFrame = 0;
   private lastTime = '';
   private lastLit = '';
@@ -99,6 +101,7 @@ export class App {
     this.revealAt = now;
     this.interactiveAt = now + REVEAL_MS;
     this.winAt = null;
+    this.shareImage = null;
     this.moved = false;
     this.camera = IDENTITY;
     this.results.hide();
@@ -157,7 +160,11 @@ export class App {
     const game = this.board;
     const delay = Math.max(0, this.winAt - now);
     setTimeout(() => this.board === game && this.sfx.win(), delay);
-    setTimeout(() => this.board === game && this.results.show({ seconds, score, newBest, stats }), delay + 1500);
+    setTimeout(() => {
+      if (this.board !== game) return;
+      this.prepareShare();
+      this.results.show({ seconds, score, newBest, stats });
+    }, delay + 1500);
   }
 
   private keepWatching(): void {
@@ -165,16 +172,30 @@ export class App {
     el('corner-new').hidden = false;
   }
 
+  /** Renders the share image from the stage as it is now (the lit tree, identity camera). */
+  private prepareShare(): ShareImage {
+    const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, INK[this.sceneId]));
+    this.shareImage = image;
+    return image;
+  }
+
+  /** Straight from the tap: no await before the share sheet or clipboard write (WebKit user activation). */
   private async share(): Promise<void> {
     try {
-      const blob = await makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, INK[this.sceneId]);
-      const outcome = await shareResult(blob, this.lastSeconds);
+      const outcome = await shareResult(this.shareImage ?? this.prepareShare(), this.lastSeconds);
       if (outcome === 'copied-image') this.toast.show('Image copied');
       else if (outcome === 'copied-text') this.toast.show('Copied to clipboard');
       else if (outcome === 'failed') this.toast.show("Couldn't share, try a screenshot");
     } catch {
       this.toast.show("Couldn't share, try a screenshot");
     }
+  }
+
+  /** After a win, a scene or size change re-renders the share image once the stage has redrawn. */
+  private refreshShare(): void {
+    if (!this.shareImage) return;
+    const game = this.board;
+    requestAnimationFrame(() => requestAnimationFrame(() => this.board === game && this.shareImage && this.prepareShare()));
   }
 
   /* ---------- frame loop ---------- */
@@ -264,18 +285,23 @@ export class App {
     this.pausedDrawn = false;
     if (persist) saveSettings(s);
     this.sfx.setVolume(s.effectsVolume);
-    if (s.pathStyle !== this.renderer.style) this.renderer.setStyle(s.pathStyle);
-    this.setScene(s.scene === 'auto' ? sceneForHour(new Date().getHours()) : s.scene);
+    const restyle = s.pathStyle !== this.renderer.style;
+    if (restyle) this.renderer.setStyle(s.pathStyle);
+    const rescene = this.setScene(s.scene === 'auto' ? sceneForHour(new Date().getHours()) : s.scene);
+    if (restyle || rescene) this.refreshShare();
   }
 
-  private setScene(id: SceneId): void {
+  /** Returns whether the scene changed. */
+  private setScene(id: SceneId): boolean {
+    if (id === this.sceneId && this.renderer.scene === SCENES[id]) return false;
     this.sceneId = id;
     document.body.dataset.scene = id;
     this.renderer.setScene(SCENES[id]);
+    return true;
   }
 
   private refreshAutoScene(): void {
-    if (this.settings.scene === 'auto') this.setScene(sceneForHour(new Date().getHours()));
+    if (this.settings.scene === 'auto' && this.setScene(sceneForHour(new Date().getHours()))) this.refreshShare();
   }
 
   /**
@@ -305,6 +331,7 @@ export class App {
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
     this.pausedDrawn = false; // resizing clears the stage
+    this.refreshShare();
   }
 
   private bindLifecycle(): void {
