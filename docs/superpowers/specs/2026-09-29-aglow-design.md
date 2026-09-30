@@ -167,7 +167,8 @@ Each scene is a palette plus background and lighting. All share the procedural f
 - **Frost:**
   - Snowy daylight: pale sky, a band of mist on the horizon, a snow ground with a soft tree shadow.
   - A dense, dark fir with sparse snow dusting on the branches.
-  - Grey-blue falling snow and lower glow intensity (`bloom: 0.55`).
+  - Grey-blue falling snow and lower glow intensity (`bloom: 0.7`).
+  - Unlit wires, LED runs and tubes are paler and heavier than at night (filament ~0.07s, with a thin dark casing on wires and LEDs) and unlit bulbs are muted frosted glass with a pale rim, so the whole puzzle stays readable on the dark fir in daylight without looking lit.
 - **Scene selection:** Auto by local time (default) — Frost 07:00–16:00, Fireside 16:00–20:00, Midnight 20:00–07:00 — or a manual choice that is persisted.
 
 ### 4.4 Light paths (all three offered in settings; default Filament)
@@ -178,14 +179,14 @@ Each scene is a palette plus background and lighting. All share the procedural f
 - **End tiles** are a single spoke ending in the bulb.
 
 **Styles:**
-- **Filament:** unlit is a ~0.06s hairline. Lit is a 0.3s glow, a 0.078s warm core and a 0.03s white-hot centre. Spark particles run from the source outward along the tree's branches.
-- **Fairy lights:** a copper wire with micro-LEDs every 0.2 tile. Lit LEDs twinkle with per-LED phase.
-- **Neon:** a glass tube (outer glass, inner shadow, specular line). Lit tubes fill with glowing gas and **flicker on** (a 7-step stutter over about 260ms) when they light.
+- **Filament:** unlit is a ~0.06s hairline (Frost: 0.07s, cased). Lit is a 0.2s glow, a 0.078s warm core and a 0.03s white-hot centre. Spark particles run from the source outward along the tree's branches.
+- **Fairy lights:** a copper wire with micro-LEDs every 0.2 tile. Lit LEDs (0.11s glow each) twinkle with per-LED phase.
+- **Neon:** a glass tube (outer glass, inner shadow, specular line). Lit tubes fill with glowing gas (a 0.34s glow) and **flicker on** (a 7-step stutter over about 260ms) when they light.
 
 **Bulbs:**
 - Glass spheres with a metal socket facing the wire.
-- Unlit: dark coloured glass with a specular highlight.
-- Lit: a near-white core tinted with the colour, plus a coloured halo.
+- Unlit: dark coloured glass with a specular highlight (Frost: muted frosted glass with a pale rim).
+- Lit: a near-white core tinted with the colour, plus a coloured halo (radius 0.8s before bloom).
 - Six colours per scene palette.
 
 ### 4.5 Solving feedback ("visually satisfying" requirements)
@@ -199,7 +200,7 @@ Each scene is a palette plus background and lighting. All share the procedural f
 5. **Bulb pop:** brightness overshoots (to about 1.8×, then back to 1) with a horizontal and vertical glint that fades over 520ms.
 6. **Frontier sparks:** every lit wire end that isn't connected pulses gently, showing where light is trying to go next.
 7. **Fade out:** tiles that lose power fade over 170ms.
-8. **Auto-exposure:** glow intensity is scaled by `1 − 0.42 × litFraction^1.4` (the widest blur pass is scaled by this squared), so a fully lit tree stays legible.
+8. **Auto-exposure:** exposure is `1 − 0.5 × litFraction^1.3`. Each bloom pass takes it to its own power (tight √, soft ×1, wide ²), so a well-lit tree loses its fog first while the lit lines keep their warm halo, and a fully lit tree stays legible.
 9. **Ground pool:** the snow or floor under the tree brightens with the lit fraction. The star warms slightly as the tree nears completion.
 10. **Win:**
     - The star ignites with a scale-in and an anamorphic flare.
@@ -214,7 +215,7 @@ Each scene is a palette plus background and lighting. All share the procedural f
 2. Tree (pre-rendered).
 3. Hover.
 4. Pass 1: unlit wires and bulbs, drawn rotated or scaled per tile. Glow layer (half resolution): lit glow, halos, frontier, flashes, source, ground pool, star glow, particles.
-5. Bloom: three blurred copies of the glow layer composited additively (radii 0.18s, 0.55s and 1.5s), scaled by auto-exposure.
+5. Bloom: three blurred copies of the glow layer composited additively: a tight halo (radius 0.14s, weight 0.95), a soft glow (0.45s, 0.55) and a faint atmosphere (1.3s, 0.22), each scaled by auto-exposure (§4.5 item 8) and the scene's `bloom`. The glow stays a halo around the line, not a fog: unlit tiles next to lit ones must stay legible.
 6. Fireside only: the glow layer mirrored and blurred below the horizon as the floor reflection.
 7. Pass 2: lit cores, lit bulbs, glints, frontier cores, flash rings, source, particle cores.
 8. Star, then front snow. Grain and vignette are CSS overlays.

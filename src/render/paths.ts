@@ -92,7 +92,7 @@ export function drawLitGlow(c: CanvasRenderingContext2D, prims: readonly Prim[],
   c.globalAlpha = a.alpha;
   if (style === 'filament') {
     c.strokeStyle = sc.glow;
-    c.lineWidth = s * 0.3;
+    c.lineWidth = s * 0.2;
     strokePrims(c, prims, a.q, s);
   } else if (style === 'fairy') {
     c.strokeStyle = sc.glow;
@@ -102,12 +102,12 @@ export function drawLitGlow(c: CanvasRenderingContext2D, prims: readonly Prim[],
     c.fillStyle = sc.glow;
     for (const p of pointsAlong(prims, a.q, 0.2)) {
       c.globalAlpha = a.alpha * (0.7 + 0.3 * Math.sin(a.now * 0.0035 + p.seed * 2.3 + a.seed));
-      dot(c, p.x * s, p.y * s, s * 0.17);
+      dot(c, p.x * s, p.y * s, s * 0.11);
     }
   } else {
     c.globalAlpha = a.alpha * a.flicker;
     c.strokeStyle = sc.neon;
-    c.lineWidth = s * 0.46;
+    c.lineWidth = s * 0.34;
     strokePrims(c, prims, a.q, s);
   }
   c.globalAlpha = a.alpha;

@@ -63,10 +63,10 @@ function tone(hex: string, value: number, to: readonly [number, number, number],
 
 export function drawBulbHalo(c: CanvasRenderingContext2D, color: string, amt: number, s: number): void {
   if (amt <= 0) return;
-  const rad = s * 1.1 * amt;
+  const rad = s * 0.8 * amt;
   const gr = c.createRadialGradient(0, 0, 0, 0, 0, rad);
   gr.addColorStop(0, rgba(color, 0.95));
-  gr.addColorStop(0.28, rgba(color, 0.38));
+  gr.addColorStop(0.25, rgba(color, 0.42));
   gr.addColorStop(1, rgba(color, 0));
   c.fillStyle = gr;
   c.fillRect(-rad, -rad, 2 * rad, 2 * rad);
