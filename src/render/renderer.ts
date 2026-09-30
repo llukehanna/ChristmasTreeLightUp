@@ -130,8 +130,8 @@ export class Renderer {
   frame(f: FrameInput): void {
     const workStart = performance.now();
     this.draw(f);
-    // The governor judges the frame's own work, not the rAF interval: a 30 Hz cap (iOS Low Power Mode) is not a slow device.
-    this.quality.sample(performance.now() - workStart, f.dt);
+    // The rAF interval catches GPU-bound devices; the work time lets a steady 30 Hz cap (iOS Low Power Mode) pass.
+    this.quality.sample(f.dt, performance.now() - workStart);
   }
 
   private draw(f: FrameInput): void {
