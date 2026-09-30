@@ -224,7 +224,7 @@ Each scene is a palette plus background and lighting. All share the procedural f
 - Tier 2: half the particles and snow.
 - Tier 3: no reflection or embers.
 
-**Blur fallback:** where `ctx.filter` blur isn't supported (older Safari), use pre-blurred radial sprites stamped per glow primitive. The look must match within reason.
+**Blur fallback:** where `ctx.filter` blur isn't supported (older Safari), downsample the layer to about 1.6/radius of its size and scale it back up with smoothing (an approximate Gaussian). The same helper blurs the static background and tree layers. The look must match within reason.
 
 Rendering pauses while the tab is hidden.
 
@@ -312,7 +312,7 @@ Rendering pauses while the tab is hidden.
 
 - **Pointer:** `pointerdown` rotates the tile under the pointer.
 - **Hit testing:** hit areas are complete grid cells, with no dead zones between tiles.
-- **Phones:** in portrait the tree fits the screen width (tiles about 20px). Pinch-zoom and pan are supported, and double-tap resets the zoom. Page scroll and zoom are disabled on the canvas.
+- **Phones:** in portrait the tree fits the screen width (tiles about 20px). Pinch-zoom and pan are supported; a "Reset view" pill appears while zoomed (double-tap is not used, because double-tapping a tile means two turns). Page scroll and zoom are disabled on the canvas.
 - A tap on a turning tile is buffered (§2.7).
 
 ## 7. Admin
@@ -340,7 +340,7 @@ Rendering pauses while the tab is hidden.
 | `stations.json` fetch fails | Bundled Piano Carols fallback plus Fireplace, and a quiet "Some stations unavailable" line in the panel |
 | Track fails to load or decode | Skip to the next track. After 3 consecutive failures, mark the station unavailable for the session. |
 | Invalid Spotify/Apple link | Inline "That link isn't a playlist we can play" message |
-| Canvas blur filter unsupported | Sprite-based glow (§4.6) |
+| Canvas blur filter unsupported | Downsample-then-upsample blur (§4.6) |
 | Low frame rate | Adaptive quality tiers |
 | localStorage unavailable or corrupt | Treat as a fresh player. Wrap every read and write in try/catch. Validate a saved game against the mask before restoring it; discard it if invalid. |
 | Admin API errors | Toast with the message. An upload is retried once. A version conflict prompts a reload. |
@@ -388,5 +388,6 @@ Rendering pauses while the tab is hidden.
 ## 11. Open items for implementation planning
 
 - Source and verify the licences for about 20–30 Piano Carols recordings, and bundle 3–4 as the offline fallback.
+- Track lists for Luke's uploads (audio he supplies himself; Spotify is only the list, never the source): Christmas Jazz = https://open.spotify.com/playlist/3rKFTakI4TxtuNLJ1Ruog4, Christmas Classics = https://open.spotify.com/playlist/0N1jXhN0GD3mUEs6prVPVQ.
 - Choose the Spotify and Apple preset playlists.
 - Design the Open Graph image and share-image composition. The layout is in §6, step 7; the visual will be polished during build.
