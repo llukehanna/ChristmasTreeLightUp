@@ -13,3 +13,10 @@ it('never goes past tier 3', () => {
   for (let k = 0; k < 1000; k++) q.sample(40);
   expect(q.tier).toBe(3);
 });
+it('recovers at a normal 60 Hz frame rate', () => {
+  const q = new QualityGovernor();
+  for (let k = 0; k < 40; k++) q.sample(30);
+  expect(q.tier).toBe(1);
+  for (let k = 0; k < 320; k++) q.sample(16.7);
+  expect(q.tier).toBe(0);
+});

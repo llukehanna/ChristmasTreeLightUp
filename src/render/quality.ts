@@ -1,5 +1,5 @@
 /**
- * Adaptive quality (spec §4.6): drop a tier after ~1s of frames over 22ms, recover after ~5s under 14ms.
+ * Adaptive quality (spec §4.6): drop a tier after ~1s of frames over 22ms, recover after ~5s under 18ms.
  * Tier 1: two bloom passes. Tier 2: + half particles/snow. Tier 3: + no reflection/embers.
  */
 export class QualityGovernor {
@@ -15,7 +15,7 @@ export class QualityGovernor {
         this.tier++;
         this.slow = 0;
       }
-    } else if (frameMs < 14) {
+    } else if (frameMs < 18) {
       this.fast += frameMs;
       this.slow = 0;
       if (this.fast > 5000 && this.tier > 0) {

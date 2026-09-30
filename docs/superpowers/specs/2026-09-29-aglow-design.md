@@ -219,7 +219,7 @@ Each scene is a palette plus background and lighting. All share the procedural f
 7. Pass 2: lit cores, lit bulbs, glints, frontier cores, flash rings, source, particle cores.
 8. Star, then front snow. Grain and vignette are CSS overlays.
 
-**Adaptive quality** (drop one tier after about 1s of frames over 22ms, recover after about 5s under 14ms):
+**Adaptive quality** (drop one tier after about 1s of frames over 22ms, recover after about 5s under 18ms):
 - Tier 1: two bloom passes.
 - Tier 2: half the particles and snow.
 - Tier 3: no reflection or embers.
