@@ -38,6 +38,12 @@ export class Menu {
     this.haptics.addEventListener('change', () => this.update({ haptics: this.haptics.checked }));
     if (!('vibrate' in navigator)) el('haptics-row').hidden = true;
     this.newTree.addEventListener('click', () => this.onNewTree());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.root.hidden) {
+        e.preventDefault();
+        this.close();
+      }
+    });
     this.render();
   }
 
@@ -48,13 +54,20 @@ export class Menu {
   open(): void {
     this.root.hidden = false;
     this.button.setAttribute('aria-expanded', 'true');
+    // Focus the current choice of the first setting (else the first control) so keyboard users start inside the dialog.
+    const first = this.root.querySelector<HTMLElement>('.seg button[aria-pressed="true"]') ?? this.root.querySelector<HTMLElement>('button, input');
+    first?.focus({ preventScroll: true });
   }
 
   close(): void {
+    const wasOpen = !this.root.hidden;
+    const active = document.activeElement;
     this.root.hidden = true;
     this.button.setAttribute('aria-expanded', 'false');
     this.armedUntil = 0;
     this.render();
+    // Hand focus back to the button unless the user has moved it somewhere else on purpose.
+    if (wasOpen && (!active || active === document.body || this.root.contains(active))) this.button.focus({ preventScroll: true });
   }
 
   private onNewTree(): void {
