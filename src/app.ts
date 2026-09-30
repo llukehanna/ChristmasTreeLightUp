@@ -86,7 +86,7 @@ export class App {
     } else {
       this.beginGame(now, Board.random(GRID, Math.random), 0);
     }
-    this.showIntro();
+    if (!this.board.won) this.showIntro();
     void document.fonts?.ready.then(() => this.placeIntro());
     this.bindControls();
     this.bindLifecycle();
