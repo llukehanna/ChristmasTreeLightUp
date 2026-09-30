@@ -56,16 +56,19 @@ describe('placePresents', () => {
   });
 
   it('never overlaps a tile across a sweep of window sizes', () => {
+    const bad: string[] = [];
     for (let w = 320; w <= 2560; w += 97) {
       for (let h = 480; h <= 1600; h += 113) {
         const L = computeLayout(w, h, 1);
         const tiles = tileRects(L, GRID);
         for (const g of placePresents(L, GRID)) {
           const b = giftBounds(g);
-          expect(b.x0 >= 0 && b.x1 <= w && b.y1 <= h).toBe(true);
-          for (const t of tiles) expect(b.x0 < t.x1 && t.x0 < b.x1 && b.y0 < t.y1 && t.y0 < b.y1).toBe(false);
+          const off = !(b.x0 >= 0 && b.x1 <= w && b.y0 >= 0 && b.y1 <= h);
+          const hit = tiles.some((t) => b.x0 < t.x1 && t.x0 < b.x1 && b.y0 < t.y1 && t.y0 < b.y1);
+          if (off || hit) bad.push(`${w}×${h}`);
         }
       }
     }
+    expect(bad).toEqual([]);
   });
 });
