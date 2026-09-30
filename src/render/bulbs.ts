@@ -1,5 +1,5 @@
 import { D, L, U } from '../core/dirs';
-import { mix, rgba, shade } from './color';
+import { hexRgb, mix, rgba, shade } from './color';
 import type { PathStyle } from './paths';
 import type { Scene } from './scenes';
 
@@ -27,6 +27,12 @@ export function drawBulb(c: CanvasRenderingContext2D, b: number, color: string, 
     gr.addColorStop(0.45, mix(color, '#ffffff', 0.55));
     gr.addColorStop(1, mix(color, '#ffffff', 0.1));
     c.globalAlpha = Math.min(1, 0.35 + amt);
+  } else if (sc.bulbFrost > 0) {
+    // Daylight: frosted glass, paler and matte with a bright rim, so it reads on the dark fir without glowing.
+    const f = sc.bulbFrost;
+    gr.addColorStop(0, `rgba(255,255,255,${0.55 + 0.25 * f})`);
+    gr.addColorStop(0.25, tone(color, 0.7 + 0.05 * f, FROST, 0.45 * f));
+    gr.addColorStop(1, tone(color, 0.36 + 0.06 * f, FROST_SHADOW, 0.3 * f));
   } else {
     gr.addColorStop(0, 'rgba(255,255,255,.55)');
     gr.addColorStop(0.25, shade(color, 0.7));
@@ -37,6 +43,22 @@ export function drawBulb(c: CanvasRenderingContext2D, b: number, color: string, 
   c.arc(gx, gy, r, 0, TAU);
   c.fill();
   c.globalAlpha = 1;
+  if (amt <= 0 && sc.bulbFrost > 0) {
+    c.strokeStyle = `rgba(255,255,255,${0.5 * sc.bulbFrost})`;
+    c.lineWidth = Math.max(0.8, r * 0.12);
+    c.beginPath();
+    c.arc(gx, gy, r - c.lineWidth / 2, 0, TAU);
+    c.stroke();
+  }
+}
+
+/** Frosted glass in daylight: a muted blue-grey body (never as bright or saturated as a lit bulb) and its shaded edge. */
+const FROST: readonly [number, number, number] = [168, 180, 188];
+const FROST_SHADOW: readonly [number, number, number] = [44, 54, 60];
+
+/** `hex` scaled by `value`, then mixed toward `to` by `k`. */
+function tone(hex: string, value: number, to: readonly [number, number, number], k: number): string {
+  return `rgb(${hexRgb(hex).map((v, i) => Math.round(v * value + (to[i] - v * value) * k)).join(',')})`;
 }
 
 export function drawBulbHalo(c: CanvasRenderingContext2D, color: string, amt: number, s: number): void {
