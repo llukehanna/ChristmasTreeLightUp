@@ -102,7 +102,8 @@ export class Board {
     if (this.won || !this.grid.cells[i]) return [];
     const r = this.rotating.get(i);
     if (r) {
-      if (r.queued < MAX_QUEUE) r.queued++;
+      if (r.queued >= MAX_QUEUE) return []; // dropped: no click or buzz for a tap that does nothing
+      r.queued++;
       return [{ type: 'tapBuffered', tile: i }];
     }
     const from = this.bits[i];
@@ -147,6 +148,14 @@ export class Board {
       for (let k = 0; k < r.queued; k++) x = rotCW(x);
       return x;
     });
+  }
+
+  /**
+   * Claims the win for a board that is already fully lit, e.g. one restored from a save made during the final turn
+   * (the constructor never checks for a win). Returns the same events as a winning turn would.
+   */
+  settleWin(): BoardEvent[] {
+    return this.checkWin();
   }
 
   /** Test/debug only: snap to the solution. */
