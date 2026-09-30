@@ -20,6 +20,11 @@ import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from 
 import { Toast } from './ui/toast';
 
 export const REVEAL_MS = 900;
+
+/** Typing into a field never drives the game's keyboard shortcuts. */
+function isEditable(t: EventTarget | null): boolean {
+  return t instanceof HTMLElement && (t.isContentEditable || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement);
+}
 const INTRO_KEY = 'aglow.seenIntro';
 const INK: Record<SceneId, string> = { midnight: '#f3ead8', fireside: '#f4e6cf', frost: '#15261f' };
 
@@ -107,6 +112,7 @@ export class App {
     this.shareImage = null;
     this.moved = false;
     this.camera = IDENTITY;
+    this.setPaused(false);
     this.results.hide();
     el('corner-new').hidden = true;
     el('zoom-reset').hidden = true;
@@ -126,6 +132,7 @@ export class App {
         case 'rotateStarted':
         case 'tapBuffered':
           if (e.type === 'rotateStarted') this.moved = true;
+          if (this.paused) break; // a turn finishing under the pause overlay stays silent
           this.sfx.tick();
           if (this.settings.haptics) navigator.vibrate?.(8);
           break;
@@ -135,7 +142,7 @@ export class App {
           break;
         case 'lightingChanged': {
           const bulbs = this.vis.onLightingChanged(this.board, e.newlyLit, e.lost, now, !this.reduced.matches);
-          if (e.newlyLit.length) this.sfx.wave(e.newlyLit.length, bulbs.map((t) => t - now));
+          if (e.newlyLit.length && !this.paused) this.sfx.wave(e.newlyLit.length, bulbs.map((t) => t - now));
           break;
         }
         case 'won':
@@ -147,7 +154,8 @@ export class App {
   }
 
   private onWin(now: number): void {
-    if (this.paused) this.resume();
+    // A buffered turn can win under the pause overlay: lift it, and let the results card take over focus.
+    if (this.paused) this.setPaused(false);
     this.clock.pause(now);
     clearGame();
     this.menu.close();
@@ -229,7 +237,7 @@ export class App {
       this.lastTime = t;
     }
     // Pausing makes no sense during the reveal (the clock hasn't started) or after the win (it has stopped).
-    const canPause = now >= this.interactiveAt && this.winAt === null;
+    const canPause = this.canPause(now);
     if (canPause !== this.lastCanPause) {
       el('pause-btn').hidden = !canPause;
       this.lastCanPause = canPause;
@@ -346,7 +354,10 @@ export class App {
 
   private bindLifecycle(): void {
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.pause(false);
+      if (!document.hidden) return;
+      if (this.canPause(performance.now())) this.pause(false);
+      // During the reveal the clock hasn't started: nothing to pause, but a restored game is still saved.
+      else if (this.winAt === null && this.moved) saveGame(this.board, this.clock.elapsedMs(performance.now()));
     });
     addEventListener('pagehide', () => {
       if (this.winAt === null && this.moved) saveGame(this.board, this.clock.elapsedMs(performance.now()));
@@ -354,24 +365,35 @@ export class App {
     const overlay = el('pause');
     // The overlay sits above the stage, so the tap that resumes never reaches a tile underneath.
     overlay.addEventListener('click', () => this.resume());
+    // Enter/Space resume on keyup: resuming on keydown would move focus to the pause pill in time for the key's
+    // own keyup (Space) to click it again; held keys repeat keydown only.
+    const activates = (e: KeyboardEvent) => e.key === 'Enter' || e.key === ' ';
     overlay.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (activates(e)) e.preventDefault();
+    });
+    overlay.addEventListener('keyup', (e) => {
+      if (!activates(e)) return;
       e.preventDefault();
       this.resume();
     });
     el('pause-btn').addEventListener('click', () => this.pause(true));
     document.addEventListener('keydown', (e) => {
       // The settings dialog handles its own Escape (and marks it handled); keys never reach the game while it is open.
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen) return;
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || isEditable(e.target)) return;
       if (e.key === 'Escape' && this.paused) {
         e.preventDefault();
         this.resume();
       } else if ((e.key === 'p' || e.key === 'P') && !e.repeat) {
         e.preventDefault();
         if (this.paused) this.resume();
-        else if (!el('pause-btn').hidden) this.pause(true);
+        else this.pause(true);
       }
     });
+  }
+
+  /** Pausing makes sense only while the clock can run: after the reveal and before the win. */
+  private canPause(now: number): boolean {
+    return now >= this.interactiveAt && this.winAt === null;
   }
 
   /**
@@ -379,26 +401,32 @@ export class App {
    * and save. `focus` moves keyboard focus onto the overlay (a user-initiated pause), so Enter or Space resumes.
    */
   private pause(focus: boolean): void {
-    if (this.paused || this.winAt !== null) return;
     const now = performance.now();
+    if (this.paused || !this.canPause(now)) return;
     this.clock.pause(now);
-    this.paused = true;
-    document.body.classList.add('paused');
-    const overlay = el('pause');
-    overlay.hidden = false;
-    if (focus) overlay.focus({ preventScroll: true });
+    this.setPaused(true);
+    if (focus) el('pause').focus({ preventScroll: true });
     if (this.moved) saveGame(this.board, this.clock.elapsedMs(now));
   }
 
   private resume(): void {
     if (!this.paused) return;
-    this.paused = false;
-    document.body.classList.remove('paused');
-    const overlay = el('pause');
-    const hadFocus = document.activeElement === overlay;
-    overlay.hidden = true;
+    const hadFocus = document.activeElement === el('pause');
+    this.setPaused(false);
     const btn = el('pause-btn');
     if (hadFocus && !btn.hidden) btn.focus({ preventScroll: true });
+  }
+
+  /** Pause state and its DOM: blurred stage, overlay, and the controls beneath it taken out of reach (inert). */
+  private setPaused(on: boolean): void {
+    this.paused = on;
+    this.pausedDrawn = false;
+    document.body.classList.toggle('paused', on);
+    el('pause').hidden = !on;
+    for (const sel of ['.hud', '#menu']) {
+      const node = document.querySelector<HTMLElement>(sel);
+      if (node) node.inert = on;
+    }
   }
 
   private showIntro(): void {

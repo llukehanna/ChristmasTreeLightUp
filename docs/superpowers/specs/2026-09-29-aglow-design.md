@@ -88,7 +88,7 @@ Each tile also gets `colour = floor(random * 6)` (original `Block.xi`). It is on
 |---|---|---|
 | Turn takes 200ms, linear | **120ms** with a snappy ease-out and slight overshoot | Snappier feel (Luke's request) |
 | Clicks during a turn are ignored | **Buffered, max 3 queued**: rapid taps chain into one fluid spin | Responsiveness |
-| Timer starts when the board is created | Timer starts when the reveal animation ends and tiles become interactive; it pauses while the tab is hidden | Fairness |
+| Timer starts when the board is created | Timer starts when the reveal animation ends and tiles become interactive; it stops while the game is paused (pause pill, `P`, or a hidden tab) | Fairness |
 
 Consequence: times aren't directly comparable with the original. The puzzle rules themselves are unchanged.
 
@@ -227,7 +227,7 @@ Each scene is a palette plus background and lighting. All share the procedural f
 
 **Blur fallback:** where `ctx.filter` blur isn't supported (older Safari), downsample the layer to about 1.6/radius of its size and scale it back up with smoothing (an approximate Gaussian). The same helper blurs the static background and tree layers. The look must match within reason.
 
-Rendering pauses while the tab is hidden.
+While the game is paused, rendering draws one blurred frame and then idles; the browser stops it entirely while the tab is hidden.
 
 ### 4.7 Motion and accessibility
 
@@ -317,7 +317,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 
 1. **Arrive:** the scene and dark tree render, and `AGLOW` plus "Turn the wires. Light the tree." fade in (about 1.5s). The tile reveal plays, then the timer starts. On the first visit, the hint stays until the first tap.
 2. **Resume:** an in-progress game (solution, current bits, colours, elapsed ms, scene) is saved to localStorage on every turn and on page hide. On return: a "Welcome back · 1:42" toast and the timer resumes.
-3. **Pause:** the HUD pause pill, the `P` key, or hiding the tab all pause the game the same way: the timer stops, the game is saved (if a tile has been turned), and the board is blurred behind "Paused — tap to resume". Tapping anywhere, `P` again, or `Escape` resumes (the settings dialog keeps its own `Escape`); the resuming tap never turns the tile underneath. There is no pause during the reveal or after the win.
+3. **Pause:** the HUD pause pill, the `P` key, or hiding the tab all pause the game the same way: the timer stops, the game is saved (if a tile has been turned), and the board is blurred behind "Paused — tap to resume". Tapping anywhere, `P` again, or `Escape` resumes (the settings dialog keeps its own `Escape`); the resuming tap never turns the tile underneath. There is no pause during the reveal or after the win: hiding the tab then shows no overlay (the clock isn't running during the reveal, and a moved game is still saved). While paused, the HUD and settings are inert and game sounds are silent.
 4. **New tree mid-game:** tapping it turns the button into "Tap again to start over" for 3 seconds.
 5. **Settings (`···`):** Scene (Auto / Midnight / Fireside / Frost), Light path (Filament / Fairy lights / Neon), Effects volume, Haptics (Android only; `navigator.vibrate(8)` on each turn).
 6. **Win:** the sequence in §4.5, then the **results card**:
