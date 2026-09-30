@@ -48,6 +48,7 @@ export class App {
   private lastFrame = 0;
   private lastTime = '';
   private lastLit = '';
+  private lastCanPause = false;
   private sceneId: SceneId = 'fireside';
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)');
   private readonly toast = new Toast(el('toast'));
@@ -227,6 +228,12 @@ export class App {
       el('time').textContent = t;
       this.lastTime = t;
     }
+    // Pausing makes no sense during the reveal (the clock hasn't started) or after the win (it has stopped).
+    const canPause = now >= this.interactiveAt && this.winAt === null;
+    if (canPause !== this.lastCanPause) {
+      el('pause-btn').hidden = !canPause;
+      this.lastCanPause = canPause;
+    }
     const lit = (this.winAt !== null ? 1 : this.board.lighting.count / GRID.ids.length).toFixed(2);
     if (lit !== this.lastLit) {
       document.body.style.setProperty('--lit', lit);
@@ -339,24 +346,59 @@ export class App {
 
   private bindLifecycle(): void {
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden || this.winAt !== null) return;
-      const now = performance.now();
-      this.clock.pause(now);
-      this.paused = true;
-      document.body.classList.add('paused');
-      el('pause').hidden = false;
-      if (this.moved) saveGame(this.board, this.clock.elapsedMs(now));
+      if (document.hidden) this.pause(false);
     });
     addEventListener('pagehide', () => {
       if (this.winAt === null && this.moved) saveGame(this.board, this.clock.elapsedMs(performance.now()));
     });
-    el('pause').addEventListener('click', () => this.resume());
+    const overlay = el('pause');
+    // The overlay sits above the stage, so the tap that resumes never reaches a tile underneath.
+    overlay.addEventListener('click', () => this.resume());
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      this.resume();
+    });
+    el('pause-btn').addEventListener('click', () => this.pause(true));
+    document.addEventListener('keydown', (e) => {
+      // The settings dialog handles its own Escape (and marks it handled); keys never reach the game while it is open.
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen) return;
+      if (e.key === 'Escape' && this.paused) {
+        e.preventDefault();
+        this.resume();
+      } else if ((e.key === 'p' || e.key === 'P') && !e.repeat) {
+        e.preventDefault();
+        if (this.paused) this.resume();
+        else if (!el('pause-btn').hidden) this.pause(true);
+      }
+    });
+  }
+
+  /**
+   * The pause button, the P key and a hidden tab all land here: stop the clock, blur the stage behind the overlay
+   * and save. `focus` moves keyboard focus onto the overlay (a user-initiated pause), so Enter or Space resumes.
+   */
+  private pause(focus: boolean): void {
+    if (this.paused || this.winAt !== null) return;
+    const now = performance.now();
+    this.clock.pause(now);
+    this.paused = true;
+    document.body.classList.add('paused');
+    const overlay = el('pause');
+    overlay.hidden = false;
+    if (focus) overlay.focus({ preventScroll: true });
+    if (this.moved) saveGame(this.board, this.clock.elapsedMs(now));
   }
 
   private resume(): void {
+    if (!this.paused) return;
     this.paused = false;
     document.body.classList.remove('paused');
-    el('pause').hidden = true;
+    const overlay = el('pause');
+    const hadFocus = document.activeElement === overlay;
+    overlay.hidden = true;
+    const btn = el('pause-btn');
+    if (hadFocus && !btn.hidden) btn.focus({ preventScroll: true });
   }
 
   private showIntro(): void {

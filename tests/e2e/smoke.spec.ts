@@ -159,3 +159,40 @@ test('the settings dialog takes focus, closes on Escape and hands focus back', a
   await expect(page.locator('#menu-btn')).toBeFocused();
   await expect(page.locator('#menu-btn')).toHaveAttribute('aria-expanded', 'false');
 });
+
+test('the pause button stops the clock, and resuming continues it without turning a tile', async ({ page }) => {
+  await ready(page);
+  const time = page.locator('#time');
+  const btn = page.locator('#pause-btn');
+  await expect(btn).toBeVisible();
+  await expect(btn).toHaveAttribute('aria-label', 'Pause');
+  await expect(time).not.toHaveText('0:00', { timeout: 3000 });
+  await btn.click();
+  await expect(page.locator('#pause')).toBeVisible();
+  const frozen = (await time.textContent()) ?? '';
+  await page.waitForTimeout(1600);
+  await expect(time).toHaveText(frozen);
+
+  // Tapping the overlay over a tile resumes without turning that tile.
+  const tile = await middleTile(page);
+  const before = await state(page);
+  await tapTile(page, tile);
+  await expect(page.locator('#pause')).toBeHidden();
+  await page.waitForTimeout(300);
+  expect((await state(page)).bits[tile]).toBe(before.bits[tile]);
+  await expect(time).not.toHaveText(frozen, { timeout: 3000 });
+
+  // Keyboard: P pauses, Escape resumes.
+  await page.keyboard.press('p');
+  await expect(page.locator('#pause')).toBeVisible();
+  const frozen2 = (await time.textContent()) ?? '';
+  await page.waitForTimeout(1300);
+  await expect(time).toHaveText(frozen2);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#pause')).toBeHidden();
+  await expect(time).not.toHaveText(frozen2, { timeout: 3000 });
+
+  // Nothing to pause after the win.
+  await page.evaluate(() => (window as unknown as W).__aglow.solve());
+  await expect(btn).toBeHidden({ timeout: 4000 });
+});
