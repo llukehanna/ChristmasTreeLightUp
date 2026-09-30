@@ -5,11 +5,12 @@ import { EMPTY_STATS, loadStats, saveStats } from '../../../src/store/stats';
 beforeEach(() => localStorage.clear());
 
 it('rejects corrupt or invalid stats and returns defaults', () => {
+  // Sanity check: JSON.stringify converts Infinity to null, but JSON.parse('1e999') gives Infinity
+  expect(JSON.parse('{"x":1e999}').x).toBe(Infinity);
+
   const corruptCases = [
-    { totalSeconds: 1e999 },
     { totalSeconds: -5 },
     { bestSeconds: -1 },
-    { bestSeconds: Infinity },
     { solved: 1.5 },
     { streak: -1 },
     { longestStreak: -1 },
@@ -24,6 +25,13 @@ it('rejects corrupt or invalid stats and returns defaults', () => {
     localStorage.setItem('aglow.stats', JSON.stringify(invalid));
     expect(loadStats()).toEqual(EMPTY_STATS);
   }
+
+  // Test Infinity values via raw JSON (JSON.stringify converts Infinity to null)
+  const base = '"v":1,"solved":1,"bestScore":44000,"streak":1,"longestStreak":1,"lastSolvedDay":"2026-12-01"';
+  localStorage.setItem('aglow.stats', `{${base},"totalSeconds":1e999,"bestSeconds":60}`);
+  expect(loadStats()).toEqual(EMPTY_STATS);
+  localStorage.setItem('aglow.stats', `{${base},"totalSeconds":60,"bestSeconds":-1e999}`);
+  expect(loadStats()).toEqual(EMPTY_STATS);
 });
 
 it('round-trips valid stats through localStorage', () => {
