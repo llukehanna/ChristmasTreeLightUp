@@ -96,6 +96,9 @@ body[data-scene='frost'] .results .actions .primary { color: #f7f9fa; }
 
 .corner { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); right: calc(24px + env(safe-area-inset-right)); }
 
+/* Declared after the `all: unset` component rules so the focus ring wins. */
+button:focus-visible, .seg button:focus-visible, .menu button:focus-visible, .results button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 @media (max-width: 600px) {
   .wordmark { top: calc(22px + env(safe-area-inset-top)); left: 18px; font-size: 10.5px; }
   .hud { top: calc(14px + env(safe-area-inset-top)); right: 14px; }

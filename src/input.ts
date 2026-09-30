@@ -79,6 +79,16 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
     if (pts.size === 0) pinched = false;
   };
 
+  const cancel = (e: PointerEvent) => {
+    if (e.pointerType === 'mouse') return;
+    pts.delete(e.pointerId);
+    if (pts.size < 2) {
+      lastDist = 0;
+      lastMid = null;
+    }
+    if (pts.size === 0) pinched = false;
+  };
+
   const wheel = (e: WheelEvent) => {
     if (!e.ctrlKey) return;
     e.preventDefault();
@@ -92,14 +102,14 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointermove', move);
   el.addEventListener('pointerup', up);
-  el.addEventListener('pointercancel', up);
+  el.addEventListener('pointercancel', cancel);
   el.addEventListener('pointerleave', leave);
   el.addEventListener('wheel', wheel, { passive: false });
   return () => {
     el.removeEventListener('pointerdown', down);
     el.removeEventListener('pointermove', move);
     el.removeEventListener('pointerup', up);
-    el.removeEventListener('pointercancel', up);
+    el.removeEventListener('pointercancel', cancel);
     el.removeEventListener('pointerleave', leave);
     el.removeEventListener('wheel', wheel);
   };
