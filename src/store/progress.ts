@@ -26,7 +26,7 @@ export function saveGame(board: Board, elapsedMs: number): void {
 
 export const clearGame = (): void => removeKey(KEY);
 
-/** Validates a save against the mask: right sizes, legal orientations, and a solution that is a full spanning tree. */
+/** Validates a save against the mask: right sizes, legal orientations, and a solution that lights every tile (connected). */
 function validator(g: Grid) {
   return (v: unknown): v is SavedGame => {
     if (typeof v !== 'object' || v === null) return false;
