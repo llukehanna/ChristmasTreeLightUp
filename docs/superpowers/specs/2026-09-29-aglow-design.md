@@ -143,8 +143,8 @@ tests/         vitest (core) + Playwright (smoke)
 
 - The board fills the viewport. The tree is centred with the star above row 0 and the source in the trunk below the root.
 - Tile size: `s = min(availableHeight / 12.7, width × 0.9 / 20)`. Throughout this spec, sizes written as `0.06s` are multiples of `s`.
-- **Wordmark:** "Tracked" style, top-left. `AGLOW` in Inter 500, ~11.5px, letter-spacing 0.52em, preceded by a 5px accent dot whose glow tracks the lit fraction.
-- **HUD:** top-right. Radio pill, timer pill (tabular numerals), and a `···` settings button. The pills are glass: translucent with a 1px hairline border and backdrop blur.
+- **Wordmark:** "Tracked" style, top-left. `AGLOW` in Inter, ~11.5px, letter-spacing 0.52em, set in gold foil and preceded by a small holly sprig whose berries glow with the lit fraction (§4.8).
+- **HUD:** top-right. Radio pill, timer pill (tabular numerals), and a `···` settings button. The pills are cranberry glass with a gold hairline and backdrop blur (§4.8).
 
 ### 4.3 Scenes
 
@@ -232,6 +232,28 @@ Rendering pauses while the tab is hidden.
 
 - `prefers-reduced-motion` keeps the light flow but removes flashes, the settle bounce, snow drift and the light-show pulsing (the lights stay lit and steady).
 - Bulb states never rely on colour alone: unlit bulbs are dim glass and lit ones glow.
+
+### 4.8 Festive layer (approved 2026-09-29)
+
+Luke asked for the UI to be more festive. The approved mockups are `docs/prototype/festive-mockup.html` and `docs/prototype/icons-mockup.html`. The festive mockup iframes the live game at `/?test`, so view it by copying it into `dist/` and serving with `vite preview`. §4.1 still applies: every festive element has depth and receives light, with no flat cartoon fills.
+
+- **Icon:** option 15 in `icons-mockup.html` ("Tree on cranberry"): the lit tree with glowing wires, bulbs and a gold star on a cranberry tile.
+- **Garland progress:** a swag of C9 bulbs on a dark wire across the top of the frame, below the HUD, in focus and in front of the Fireside out-of-focus garland.
+  - Bulb *k* of *n* lights once `litFraction ≥ (k + 1) / n`, using the palette colours in order.
+  - On the win, every bulb blazes, then the garland chases during the light show.
+  - It is drawn in the canvas, so it takes bloom, and it appears in every scene.
+- **Chrome:**
+  - Gold-foil wordmark with a holly sprig in place of the dot.
+  - Cranberry-glass pills with a gold hairline and a warm top highlight. The timer pill has a small glowing bulb.
+  - The intro line is set in gold Instrument Serif italic.
+- **Presents:** wrapped gifts on the floor or snow, drawn in the canvas.
+  - They are shaded, catch the tree's light (dark when unlit, warming with the lit fraction), and are reflected on the Fireside floor.
+  - On phones they sit in front of the tree below the ground line. On desktop they flank the tree base.
+  - They never overlap a tile's hit area.
+- **Gift-wrap menu:** the settings sheet has a gold ribbon band and bow on a deep cranberry panel. Selected segments are gold, and New tree is red.
+- **Gift-tag results:** a cream tag with notched top corners, a gold-ringed eyelet, a red serif time, a "Merry & bright" line and red primary buttons.
+- **Win confetti:** gold flecks and snow fall over the solved tree. This is dropped under `prefers-reduced-motion`.
+- The Frost scene keeps the same festive elements, with contrast tuned for its light background.
 
 ## 5. Sound and music
 
