@@ -40,7 +40,9 @@ export class AudioEngine {
       this.sfx = sfx;
       this.music = music;
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    // iOS also leaves the context 'interrupted' (calls, Siri, other audio); resume anything that isn't running.
+    // Outside a gesture (sfx from rAF or a timer) resume() can reject: that is expected, not an error.
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
     return this.ctx;
   }
 }
