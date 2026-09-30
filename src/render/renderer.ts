@@ -63,6 +63,8 @@ export class Renderer {
   private readonly presents = new Presents();
   /** Fraction of tiles whose light has visibly arrived (last frame). */
   private visFrac = 0;
+  /** Set by the first resize: until then a scene change has nothing to repaint. */
+  private sized = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -80,13 +82,14 @@ export class Renderer {
     this.glow.height = Math.round(h * dpr * GLOW_SCALE);
     this.layout = computeLayout(w, h, dpr);
     this.garland.layout(w, this.layout.s, chromeBottom);
+    this.sized = true;
     this.repaint();
   }
 
   setScene(scene: Scene): void {
     if (scene === this.scene) return;
     this.scene = scene;
-    this.repaint();
+    if (this.sized) this.repaint();
   }
 
   setStyle(style: PathStyle): void {
@@ -125,6 +128,13 @@ export class Renderer {
   }
 
   frame(f: FrameInput): void {
+    const workStart = performance.now();
+    this.draw(f);
+    // The governor judges the frame's own work, not the rAF interval: a 30 Hz cap (iOS Low Power Mode) is not a slow device.
+    this.quality.sample(performance.now() - workStart, f.dt);
+  }
+
+  private draw(f: FrameInput): void {
     const { board, vis, now, camera: cam } = f;
     const L = this.layout;
     const s = L.s;
@@ -133,7 +143,7 @@ export class Renderer {
     const ctx = this.ctx;
     const g = this.g;
     const dpr = L.dpr;
-    const tier = this.quality.sample(f.dt);
+    const tier = this.quality.tier;
     const won = f.winAt !== null;
     const litFrac = won ? 1 : board.lighting.count / GRID.ids.length;
     const motionDt = f.reducedMotion ? 0 : f.dt;
@@ -195,7 +205,7 @@ export class Renderer {
       if (alpha <= 0) continue;
       if (q >= 1 && board.lighting.lit[i]) visLit++;
       const prims = tileGeometry(board.bits[i], board.lighting.entry[i]);
-      const flicker = style === 'neon' ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
+      const flicker = style === 'neon' && !f.reducedMotion ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
       g.save();
       g.translate(cx, cy);
       g.scale(k, k);
@@ -207,7 +217,7 @@ export class Renderer {
     if (!f.reducedMotion) drawFlashGlows(g, vis, L, now, sc);
     drawSourceGlow(g, L, sc);
     drawGroundPool(g, L, sc, litFrac + (f.ambient ?? 0) * 0.5);
-    const st = starState(now, f.winAt, litFrac);
+    const st = starState(now, f.winAt, litFrac, f.reducedMotion);
     st.glow *= 1 + (f.ambient ?? 0) * 0.3;
     drawStarGlow(g, L, sc, st, won);
     this.current.draw(g, board, L, s * 0.17);
@@ -253,7 +263,7 @@ export class Renderer {
       const [cx, cy] = tileCenter(L, GRID, i);
       const k = f.reducedMotion ? 1 : vis.settleScale(i, now);
       const prims = tileGeometry(board.bits[i], board.lighting.entry[i]);
-      const flicker = style === 'neon' ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
+      const flicker = style === 'neon' && !f.reducedMotion ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(k, k);

@@ -295,10 +295,11 @@ export interface StarState {
   on: number;
 }
 
-export function starState(now: number, winAt: number | null, litFrac: number): StarState {
+export function starState(now: number, winAt: number | null, litFrac: number, reducedMotion = false): StarState {
   if (winAt !== null) {
     const t = Math.min(1, Math.max(0, (now - winAt) / 900));
-    return { glow: easeOutBack(t) * (1 + 0.06 * Math.sin(now * 0.003)), on: t };
+    const pulse = reducedMotion ? 1 : 1 + 0.06 * Math.sin(now * 0.003);
+    return { glow: easeOutBack(t) * pulse, on: t };
   }
   return { glow: litFrac ** 5 * 0.35, on: 0 };
 }

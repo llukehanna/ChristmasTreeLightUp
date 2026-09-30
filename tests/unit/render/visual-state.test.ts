@@ -47,9 +47,21 @@ describe('VisualState flow timing', () => {
     const child = b.lighting.order[0] ?? lost[1];
     expect(v.fill(b, child, 100 + FADE_MS / 2).alpha).toBeCloseTo(0.5);
   });
+  it('drops the leftover fade of a tile that finishes its turn unpowered (no ghost glow)', () => {
+    const b = solved();
+    const v = new VisualState(GRID.w * GRID.h);
+    v.onLightingChanged(b, b.lighting.order, [], 0, false);
+    const t = GRID.ids.find((i) => i !== GRID.root && degree(solution[i]) === 1)!;
+    const lost = b.tap(t, 1000).flatMap((e) => (e.type === 'lightingChanged' ? e.lost : []));
+    v.onLightingChanged(b, [], lost, 1000, false);
+    b.tick(1000 + b.rotateMs); // one turn off the solution: the tile stays dark
+    expect(b.lighting.lit[t]).toBe(false);
+    v.onRotateFinished(b, t, 1000 + b.rotateMs);
+    expect(v.fill(b, t, 1000 + b.rotateMs + 10)).toEqual({ q: 0, alpha: 0 });
+  });
   it('bounces a settled tile and returns to 1', () => {
     const v = new VisualState(GRID.w * GRID.h);
-    v.onRotateFinished(5, 1000);
+    v.onRotateFinished(solved(), 5, 1000);
     expect(v.settleScale(5, 1000 + 60)).toBeGreaterThan(1);
     expect(v.settleScale(5, 2000)).toBe(1);
   });
