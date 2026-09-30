@@ -199,7 +199,7 @@ Each scene is a palette plus background and lighting. All share the procedural f
    - Newly lit tiles light in BFS order. Each tile fills over 30ms, starting when its parent finishes.
    - Within a tile, light travels from the entry edge to the centre, then out along each exit, or along the arc for bends.
 2. **Hot head:** a white-hot point with a glow leads the flow front.
-3. **Connection flash:** at each point where a newly lit subtree joins, a white-to-glow burst plus an expanding ring, 480ms.
+3. **Connection flash** (not for filament, where the flow alone carries the connection): at each point where a newly lit subtree joins, a white-to-glow burst plus an expanding ring, 480ms.
 4. **Settle bounce:** on turn completion the tile scales 1 → 1.1 → 1 over 240ms.
 5. **Bulb pop:** brightness overshoots (to about 1.8×, then back to 1) with a horizontal and vertical glint that fades over 520ms.
 6. **Frontier sparks:** every lit wire end that isn't connected pulses gently, showing where light is trying to go next.

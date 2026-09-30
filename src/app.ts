@@ -141,7 +141,9 @@ export class App {
           settled = true;
           break;
         case 'lightingChanged': {
-          const bulbs = this.vis.onLightingChanged(this.board, e.newlyLit, e.lost, now, !this.reduced.matches);
+          // Connection flashes (burst + ring): not under reduced motion, and not for filament, whose flow is the whole show.
+          const flashes = !this.reduced.matches && this.renderer.style !== 'filament';
+          const bulbs = this.vis.onLightingChanged(this.board, e.newlyLit, e.lost, now, flashes);
           if (e.newlyLit.length && !this.paused) this.sfx.wave(e.newlyLit.length, bulbs.map((t) => t - now));
           break;
         }
