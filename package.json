@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "og": "node scripts/og.mjs"
+    "og": "node scripts/og.mjs",
+    "icon": "node scripts/icon.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
