@@ -1,4 +1,4 @@
-/** Pausable game timer. The timer starts after the reveal and pauses while the tab is hidden (spec §2.7). */
+/** Pausable game timer. The timer starts after the reveal and stops while the game is paused: the pause pill, P, or a hidden tab (spec §2.7, §6). */
 export class GameClock {
   private accumulated: number;
   private since = 0;

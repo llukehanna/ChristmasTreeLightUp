@@ -13,8 +13,8 @@ export interface Scene {
   /** Unlit filament width, in tiles. */
   wireOffW: number;
   /**
-   * A dark casing drawn just outside every unlit wire, LED run and tube, so the pale line reads as a wire and not
-   * as snow or needle highlights ('' = none).
+   * A dark casing drawn just outside every unlit filament, fairy wire and LED, so the pale line reads as a wire
+   * and not as snow or needle highlights ('' = none).
    */
   unlitEdge: string;
   /** 0 = dark coloured glass for unlit bulbs; above 0, lifts it toward pale frosted glass with a rim (daylight). */

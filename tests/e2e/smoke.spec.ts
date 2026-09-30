@@ -16,6 +16,8 @@ const middleTile = (page: Page) => page.evaluate(() => {
   const a = (window as unknown as W).__aglow;
   return a.ids[Math.floor(a.ids.length / 2)];
 });
+/** Two animation frames: lets the HUD catch up with a state change before it is read. */
+const settle = (page: Page) => page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 async function tapTile(page: Page, i: number): Promise<void> {
   const [x, y] = await page.evaluate((t) => (window as unknown as W).__aglow.tileCenter(t), i);
   await page.mouse.click(x, y);
@@ -169,6 +171,8 @@ test('the pause button stops the clock, and resuming continues it without turnin
   await expect(time).not.toHaveText('0:00', { timeout: 3000 });
   await btn.click();
   await expect(page.locator('#pause')).toBeVisible();
+  await settle(page);
+  await expect(page.locator('.hud')).toHaveJSProperty('inert', true); // controls under the overlay are out of reach
   const frozen = (await time.textContent()) ?? '';
   await page.waitForTimeout(1600);
   await expect(time).toHaveText(frozen);
@@ -178,6 +182,7 @@ test('the pause button stops the clock, and resuming continues it without turnin
   const before = await state(page);
   await tapTile(page, tile);
   await expect(page.locator('#pause')).toBeHidden();
+  await expect(page.locator('.hud')).toHaveJSProperty('inert', false);
   await page.waitForTimeout(300);
   expect((await state(page)).bits[tile]).toBe(before.bits[tile]);
   await expect(time).not.toHaveText(frozen, { timeout: 3000 });
@@ -185,6 +190,7 @@ test('the pause button stops the clock, and resuming continues it without turnin
   // Keyboard: P pauses, Escape resumes.
   await page.keyboard.press('p');
   await expect(page.locator('#pause')).toBeVisible();
+  await settle(page);
   const frozen2 = (await time.textContent()) ?? '';
   await page.waitForTimeout(1300);
   await expect(time).toHaveText(frozen2);
