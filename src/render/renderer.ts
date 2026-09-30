@@ -5,7 +5,7 @@ import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo } from './bulbs';
 import type { Camera } from './camera';
 import {
-  Confetti, Current, Embers, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
+  Confetti, Current, Embers, SPARKS, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
   drawHover, drawSourceCore, drawSourceGlow, drawStar, drawStarGlow, easeSnap, starState,
 } from './effects';
 import { Garland } from './garland';
@@ -233,7 +233,7 @@ export class Renderer {
     const st = starState(now, f.winAt, litFrac, f.reducedMotion);
     st.glow *= 1 + (f.ambient ?? 0) * 0.3;
     drawStarGlow(g, L, sc, st, won);
-    this.current.draw(g, board, L, s * 0.17);
+    this.current.draw(g, board, L, s * SPARKS.glowR, SPARKS.glowA, now);
     // Garland progress follows the light as it visibly arrives, not the logical count (spec §4.8).
     this.visFrac = visLit / GRID.ids.length;
     this.garland.update(this.visFrac, now);
@@ -287,7 +287,7 @@ export class Renderer {
     }
     if (!f.reducedMotion) drawFlashRings(ctx, vis, L, now);
     drawSourceCore(ctx, L, sc);
-    this.current.draw(ctx, board, L, s * 0.048);
+    this.current.draw(ctx, board, L, s * SPARKS.coreR, SPARKS.coreA, now);
     drawStar(ctx, L, sc, st, won);
 
     // 6. Lit garland glass, foreground snow, then win confetti (screen space)

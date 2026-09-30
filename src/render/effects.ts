@@ -30,6 +30,23 @@ function radial(c: CanvasRenderingContext2D, x: number, y: number, r: number, st
 
 /* ---------- current: sparks running from the source outward along the lit tree (filament) ---------- */
 
+/**
+ * A gentle, occasional shimmer drifting out along the lit wires (spec §4.4): ambient life, not traffic.
+ * Speeds in tiles/s; radii in tiles; the glow dot is bloomed, the core dot is crisp.
+ */
+export const SPARKS = {
+  everyMs: 700,
+  speedMin: 1.5,
+  speedMax: 2.2,
+  max: 4,
+  glowR: 0.13,
+  glowA: 0.5,
+  coreR: 0.04,
+  coreA: 0.55,
+  /** Tiles travelled while fading in. */
+  fadeIn: 0.8,
+} as const;
+
 interface Spark {
   tile: number;
   entry: Dir;
@@ -37,6 +54,9 @@ interface Spark {
   next: number;
   u: number;
   speed: number;
+  /** Tiles travelled so far (fade-in). */
+  run: number;
+  phase: number;
 }
 
 export class Current {
@@ -50,13 +70,19 @@ export class Current {
   step(board: Board, vis: VisualState, now: number, dt: number): void {
     const root = board.grid.root;
     const { lit, parent } = board.lighting;
-    if (lit[root] && vis.litStart[root] >= 0 && now > vis.litStart[root] + TILE_FILL_MS && now - this.lastSpawn > 110) {
-      this.lastSpawn = now;
-      this.sparks.push(this.enter(board, root, D, 4.5 + Math.random() * 2));
+    const ready = lit[root] && vis.litStart[root] >= 0 && now > vis.litStart[root] + TILE_FILL_MS;
+    if (ready && this.sparks.length < SPARKS.max && now - this.lastSpawn > SPARKS.everyMs) {
+      // Jittered spawn times so the shimmer never reads as a metronome.
+      this.lastSpawn = now + (Math.random() - 0.5) * SPARKS.everyMs * 0.6;
+      const spark = this.enter(board, root, D, SPARKS.speedMin + Math.random() * (SPARKS.speedMax - SPARKS.speedMin));
+      spark.phase = Math.random() * TAU;
+      this.sparks.push(spark);
     }
     for (let k = this.sparks.length - 1; k >= 0; k--) {
       const p = this.sparks[k];
-      p.u += (dt / 1000) * p.speed;
+      const du = (dt / 1000) * p.speed;
+      p.u += du;
+      p.run += du;
       if (!lit[p.tile] || board.rotating.has(p.tile) || (p.exit === null && p.u >= 0.5)) {
         this.sparks.splice(k, 1);
         continue;
@@ -68,23 +94,28 @@ export class Current {
       }
       const n = this.enter(board, p.next, OPPOSITE[p.exit], p.speed);
       n.u = p.u - 1;
+      n.run = p.run;
+      n.phase = p.phase;
       this.sparks[k] = n;
     }
   }
 
-  draw(c: CanvasRenderingContext2D, board: Board, L: Layout, radius: number): void {
+  /** `alpha` is the peak opacity; each spark fades in as it leaves the source and shimmers softly. */
+  draw(c: CanvasRenderingContext2D, board: Board, L: Layout, radius: number, alpha: number, now: number): void {
     c.fillStyle = '#fff';
     for (const p of this.sparks) {
       const [x, y] = this.point(board, L, p);
+      c.globalAlpha = alpha * Math.min(1, p.run / SPARKS.fadeIn) * (0.75 + 0.25 * Math.sin(now * 0.006 + p.phase));
       dot(c, x, y, radius);
     }
+    c.globalAlpha = 1;
   }
 
   private enter(board: Board, tile: number, entry: Dir, speed: number): Spark {
     const ch = board.lighting.children[tile];
-    if (ch.length === 0) return { tile, entry, exit: null, next: -1, u: 0, speed };
+    if (ch.length === 0) return { tile, entry, exit: null, next: -1, u: 0, speed, run: 0, phase: 0 };
     const next = ch[Math.floor(Math.random() * ch.length)];
-    return { tile, entry, exit: dirBetween(board.grid, tile, next), next, u: 0, speed };
+    return { tile, entry, exit: dirBetween(board.grid, tile, next), next, u: 0, speed, run: 0, phase: 0 };
   }
 
   private point(board: Board, L: Layout, p: Spark): [number, number] {
