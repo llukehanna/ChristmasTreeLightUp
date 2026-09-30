@@ -168,7 +168,11 @@ Each scene is a palette plus background and lighting. All share the procedural f
   - Snowy daylight: pale sky, a band of mist on the horizon, a snow ground with a soft tree shadow.
   - A dense, dark fir with sparse snow dusting on the branches.
   - Grey-blue falling snow and lower glow intensity (`bloom: 0.7`).
-  - Unlit wires, LED runs and tubes are bright and pale (filament ~0.07s) and rest on a soft shadow offset down and to the right (two layers, no hard edge), as if lying on the snowy needles; unlit bulbs are muted frosted glass with a pale rim and the same soft shadow. The whole puzzle stays readable on the dark fir in daylight without looking lit. The treatment is `FROST_UNLIT` in `scenes.ts`: `shadow` (B, active), with `glint` (A, a snow-glint halo), `twotone` (C, a light core in a translucent body) and `outline` (a dark casing) kept for comparison until one is chosen.
+  - Unlit wires, LED runs and tubes are lifted off the dark fir by a treatment chosen per path style (`unlit` in `scenes.ts`), with no dark outline:
+    - **Filament: two-tone.** A light core (~0.04s) inside a wider translucent silver body (~0.11s).
+    - **Fairy lights and neon: snow glint.** Pale silver copper, LEDs and glass with a soft two-layer glint halo (+0.1s at 11%, +0.2s at 6%); unlit bulbs on these styles get the same halo.
+    - Unlit bulbs are muted frosted glass with a pale rim.
+    - The whole puzzle stays readable in daylight, and lit light stays clearly the brightest and warmest thing.
 - **Scene selection:** Auto by local time (default) — Frost 07:00–16:00, Fireside 16:00–20:00, Midnight 20:00–07:00 — or a manual choice that is persisted.
 
 ### 4.4 Light paths (all three offered in settings; default Filament)
@@ -179,13 +183,13 @@ Each scene is a palette plus background and lighting. All share the procedural f
 - **End tiles** are a single spoke ending in the bulb.
 
 **Styles:**
-- **Filament:** unlit is a ~0.06s hairline (Frost: 0.07s, on a soft shadow). Lit is a 0.2s glow, a 0.078s warm core and a 0.03s white-hot centre. A gentle, occasional shimmer drifts from the source outward along the lit branches: a spark about every 0.7s (±30%), at most 4 at once, travelling 1.5–2.2 tiles/s, drawn as a 0.13s bloomed glow at 50% and a 0.04s core at 55%, fading in as it leaves the source and twinkling softly. It is ambient life, not traffic; the connection flow (§4.5) stays fast.
-- **Fairy lights:** a copper wire with micro-LEDs every 0.2 tile. Lit LEDs (0.11s glow each) twinkle with per-LED phase.
-- **Neon:** a glass tube (outer glass, inner shadow, specular line). Lit tubes fill with glowing gas (a 0.34s glow) and **flicker on** (a 7-step stutter over about 260ms) when they light.
+- **Filament:** unlit is a ~0.06s hairline (Frost: a two-tone wire, §4.3). Lit is a 0.2s glow, a 0.078s warm core and a 0.03s white-hot centre. A gentle, occasional shimmer drifts from the source outward along the lit branches: a spark about every 0.7s (±30%), at most 4 at once, travelling 1.5–2.2 tiles/s, drawn as a 0.13s bloomed glow at 50% and a 0.04s core at 55%, fading in as it leaves the source and twinkling softly. It is ambient life, not traffic; the connection flow (§4.5) stays fast.
+- **Fairy lights:** a copper wire with micro-LEDs every 0.2 tile (Frost: pale, with a snow glint, §4.3). Lit LEDs (0.11s glow each) twinkle with per-LED phase.
+- **Neon:** a glass tube (outer glass, inner shadow, specular line; Frost: paler glass with a snow glint, §4.3). Lit tubes fill with glowing gas (a 0.34s glow) and **flicker on** (a 7-step stutter over about 260ms) when they light.
 
 **Bulbs:**
 - Glass spheres with a metal socket facing the wire.
-- Unlit: dark coloured glass with a specular highlight (Frost: muted frosted glass with a pale rim and a soft shadow).
+- Unlit: dark coloured glass with a specular highlight (Frost: muted frosted glass with a pale rim, plus the snow glint on fairy lights and neon).
 - Lit: a near-white core tinted with the colour, plus a coloured halo (radius 0.8s before bloom).
 - Six colours per scene palette.
 

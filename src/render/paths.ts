@@ -1,5 +1,5 @@
 import { heads, pointsAlong, primProgress, tracePrim, type Prim } from './geometry';
-import type { Scene } from './scenes';
+import type { Scene, UnlitLook } from './scenes';
 
 export type PathStyle = 'filament' | 'fairy' | 'neon';
 export const PATH_STYLES: readonly PathStyle[] = ['filament', 'fairy', 'neon'];
@@ -34,23 +34,11 @@ export function neonFlicker(sinceLitMs: number): number {
   return [1, 0.15, 0.9, 0.3, 1, 0.6, 1][Math.floor(sinceLitMs / 38)] ?? 1;
 }
 
-/** Colours of the daylight treatments (see UnlitLook in scenes.ts). */
-const CASING = 'rgba(4,16,12,.6)';
-const GLINT_WIDE = 'rgba(236,246,252,.08)';
-const GLINT_NEAR = 'rgba(236,246,252,.14)';
-const SHADE_WIDE = 'rgba(0,14,10,.16)';
-const SHADE_NEAR = 'rgba(0,14,10,.26)';
+/** Daylight treatments (see UnlitLook in scenes.ts): the snow-glint halo and the two-tone body. */
+export const GLINT_WIDE = 'rgba(236,246,252,.06)';
+export const GLINT_NEAR = 'rgba(236,246,252,.11)';
 const BODY = 'rgba(176,196,202,.4)';
 const NODE = 0.07;
-
-/** Offset of the daylight shadow (down and right on screen), turned back into the tile's frame by its `angle`. */
-export function shadowOffset(s: number, angle: number): [number, number] {
-  const ox = s * 0.03;
-  const oy = s * 0.05;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [ox * cos + oy * sin, -ox * sin + oy * cos];
-}
 
 /** One under-layer: the wire path at `width`, plus the junction node grown to match. */
 function underLayer(c: CanvasRenderingContext2D, prims: readonly Prim[], s: number, style: string, width: number, grow: number, node: boolean): void {
@@ -62,30 +50,12 @@ function underLayer(c: CanvasRenderingContext2D, prims: readonly Prim[], s: numb
   dot(c, 0, 0, s * NODE + grow / 2);
 }
 
-/**
- * What lifts an unlit wire or tube of width `w` off a dark fir in daylight, drawn under it (scene.unlitLook).
- * `leds`: a fairy run's LEDs, which only the outline rings.
- */
-function drawUnder(c: CanvasRenderingContext2D, prims: readonly Prim[], s: number, w: number, sc: Scene, angle: number, node: boolean, leds?: readonly { x: number; y: number }[]): void {
-  const look = sc.unlitLook;
-  if (look === 'outline') {
-    const rim = Math.max(1.2, s * 0.045);
-    underLayer(c, prims, s, CASING, w + rim, rim, node);
-    if (leds) {
-      c.fillStyle = CASING;
-      for (const p of leds) dot(c, p.x * s, p.y * s, s * 0.042 + rim / 2);
-    }
-  } else if (look === 'glint') {
+/** What lifts an unlit wire or tube of width `w` off a dark fir in daylight, drawn under it. */
+function drawUnder(c: CanvasRenderingContext2D, prims: readonly Prim[], s: number, w: number, look: UnlitLook, node: boolean): void {
+  if (look === 'glint') {
     // A soft snow-glint halo in two falling-off layers; no dark edge.
     underLayer(c, prims, s, GLINT_WIDE, w + s * 0.2, s * 0.2, node);
     underLayer(c, prims, s, GLINT_NEAR, w + s * 0.1, s * 0.1, node);
-  } else if (look === 'shadow') {
-    // Resting on the needles: a soft shadow offset down-right, in two layers.
-    const [dx, dy] = shadowOffset(s, angle);
-    c.translate(dx, dy);
-    underLayer(c, prims, s, SHADE_WIDE, w + s * 0.13, s * 0.13, node);
-    underLayer(c, prims, s, SHADE_NEAR, w + s * 0.05, s * 0.05, node);
-    c.translate(-dx, -dy);
   } else if (look === 'twotone') {
     // A wider translucent silver body that the light core sits in.
     const body = Math.max(w * 2.6, s * 0.11);
@@ -93,40 +63,40 @@ function drawUnder(c: CanvasRenderingContext2D, prims: readonly Prim[], s: numbe
   }
 }
 
-/** `angle`: the tile's current turn, so the daylight shadow keeps falling the same way while it turns. */
-export function drawUnlit(c: CanvasRenderingContext2D, prims: readonly Prim[], s: number, sc: Scene, style: PathStyle, angle = 0): void {
+/** Unlit wires in the scene's treatment for this path style (spec §4.4). */
+export function drawUnlit(c: CanvasRenderingContext2D, prims: readonly Prim[], s: number, sc: Scene, style: PathStyle): void {
+  const u = sc.unlit[style];
   c.lineCap = 'round';
   c.lineJoin = 'round';
   if (style === 'filament') {
-    const w = Math.max(1.6, s * sc.wireOffW);
+    const w = Math.max(1.6, s * u.wireW);
     const node = prims.length > 2;
-    drawUnder(c, prims, s, w, sc, angle, node);
-    c.strokeStyle = sc.wireOff;
+    drawUnder(c, prims, s, w, u.look, node);
+    c.strokeStyle = u.wire;
     c.lineWidth = w;
     strokePrims(c, prims, 1, s);
     if (node) {
-      c.fillStyle = sc.wireOff;
+      c.fillStyle = u.wire;
       dot(c, 0, 0, s * NODE);
     }
   } else if (style === 'fairy') {
     const w = Math.max(1.2, s * 0.038);
-    const leds = pointsAlong(prims, 1, 0.2);
-    drawUnder(c, prims, s, w, sc, angle, false, leds);
-    c.strokeStyle = sc.copperOff;
+    drawUnder(c, prims, s, w, u.look, false);
+    c.strokeStyle = u.copper;
     c.lineWidth = w;
     strokePrims(c, prims, 1, s);
-    c.fillStyle = sc.ledOff;
-    for (const p of leds) dot(c, p.x * s, p.y * s, s * 0.042);
+    c.fillStyle = u.led;
+    for (const p of pointsAlong(prims, 1, 0.2)) dot(c, p.x * s, p.y * s, s * 0.042);
   } else {
-    // A tube is its own two-tone body with an inner shadow: only the glint halo and the resting shadow go under it.
-    if (sc.unlitLook === 'glint' || sc.unlitLook === 'shadow') drawUnder(c, prims, s, s * 0.27, sc, angle, false);
-    c.strokeStyle = sc.glass;
+    // A tube is already a two-tone body with an inner shadow; only the glint halo goes under it.
+    if (u.look === 'glint') drawUnder(c, prims, s, s * 0.27, u.look, false);
+    c.strokeStyle = u.glass;
     c.lineWidth = s * 0.27;
     strokePrims(c, prims, 1, s);
     c.strokeStyle = 'rgba(0,0,0,.22)';
     c.lineWidth = s * 0.15;
     strokePrims(c, prims, 1, s);
-    c.strokeStyle = sc.glassHi;
+    c.strokeStyle = u.glassHi;
     c.lineWidth = Math.max(1, s * 0.03);
     strokePrims(c, prims, 1, s);
   }
