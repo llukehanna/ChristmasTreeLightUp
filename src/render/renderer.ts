@@ -94,6 +94,11 @@ export class Renderer {
     this.current.clear();
   }
 
+  /** Top of the star (CSS px, identity camera). */
+  starTop(): number {
+    return Y(this.layout, -1.3) - 0.8 * this.layout.s;
+  }
+
   /** Device-pixel rectangle around the tree and its presents (share image). Valid for the identity camera. */
   treeRect(): { x: number; y: number; w: number; h: number } {
     const L = this.layout;
@@ -116,6 +121,7 @@ export class Renderer {
     paintBackground(ctx2d(this.bg), this.layout, this.scene);
     paintTree(ctx2d(this.tree), this.layout, this.scene);
     this.presents.layout(this.layout, GRID, this.scene);
+    this.garland.paint(this.scene, this.layout.dpr);
   }
 
   frame(f: FrameInput): void {
@@ -156,9 +162,10 @@ export class Renderer {
     this.presents.draw(ctx, warm);
     if (f.hover >= 0 && !won) drawHover(ctx, L, f.hover, sc);
 
-    // Garland wire, sockets and dark glass (screen space; lit halos bloom over them)
+    // Garland wire, sockets and dark glass (screen space; lit halos bloom over them), then back to world space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.garland.drawBack(ctx, sc);
+    this.garland.drawBack(ctx);
+    world(ctx, dpr);
 
     // 3. Pass 1: unlit wires + glass on main; lit glow on the half-res glow layer
     g.setTransform(1, 0, 0, 1, 0, 0);

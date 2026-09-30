@@ -120,11 +120,17 @@ export class Garland {
   private offAt: number[] = [];
   private wire: Path2D | null = null;
   private twist: Path2D | null = null;
+  /** Pre-rendered wire, sockets and dark glass (device px), with its CSS px placement. */
+  private back: HTMLCanvasElement | null = null;
+  private backTop = 0;
+  private backH = 0;
+  private width = 1;
   private lastCount = -1;
 
   layout(w: number, s: number, chromeBottom: number): void {
     const prev = this.onAt;
     this.geo = garlandGeometry(w, s, chromeBottom);
+    this.width = w;
     this.onAt = new Array<number>(this.geo.n).fill(-1);
     this.offAt = new Array<number>(this.geo.n).fill(-Infinity);
     for (let k = 0; k < Math.min(prev.length, this.geo.n); k++) this.onAt[k] = prev[k] >= 0 ? 0 : -1;
@@ -194,8 +200,28 @@ export class Garland {
     return [body, twist];
   }
 
+  /** Pre-renders the static back layer. Call after `layout` and on scene change. */
+  paint(sc: Scene, dpr: number): void {
+    const top = Math.floor(this.geo.y0 - 8);
+    const h = Math.ceil(this.geo.bottom + 6) - top;
+    const cv = this.back ?? document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(this.width * dpr));
+    cv.height = Math.max(1, Math.round(h * dpr));
+    const c = cv.getContext('2d');
+    if (!c) return;
+    c.setTransform(dpr, 0, 0, dpr, 0, -top * dpr);
+    this.paintBack(c, sc);
+    this.back = cv;
+    this.backTop = top;
+    this.backH = h;
+  }
+
   /** Wire, sockets and dark glass. Screen space (CSS px transform), before bloom so lit halos fall on it. */
-  drawBack(c: CanvasRenderingContext2D, sc: Scene): void {
+  drawBack(c: CanvasRenderingContext2D): void {
+    if (this.back) c.drawImage(this.back, 0, this.backTop, this.width, this.backH);
+  }
+
+  private paintBack(c: CanvasRenderingContext2D, sc: Scene): void {
     const g = this.geo;
     const day = sc.light === 'day';
     c.save();
