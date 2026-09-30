@@ -3,25 +3,28 @@ export const CANVAS_FILTER: boolean = (() => {
   if (typeof document === 'undefined') return false;
   const c = document.createElement('canvas').getContext('2d');
   if (!c) return false;
+  if (!('filter' in c)) return false;
   c.filter = 'blur(2px)';
   return c.filter === 'blur(2px)';
 })();
 
 const scratch = new Map<string, HTMLCanvasElement>();
 function scratchCanvas(w: number, h: number, slot: string): HTMLCanvasElement {
-  const key = `${slot}:${w}x${h}`;
-  let c = scratch.get(key);
+  let c = scratch.get(slot);
   if (!c) {
     c = document.createElement('canvas');
+    scratch.set(slot, c);
+  }
+  if (c.width !== w || c.height !== h) {
     c.width = w;
     c.height = h;
-    scratch.set(key, c);
   }
   return c;
 }
 
 /**
- * Draws `src` stretched over the whole of `dst` (in dst's current transform), blurred by `px` device pixels.
+ * Draws `src` stretched over the full `dst.canvas` in device pixels, blurred by `px` device pixels.
+ * Precondition: caller must set the transform they want (identity for straight composite; renderer also uses vertical flip for reflections).
  * Fallback (spec §4.6): downsample to ~1.6/px of the size and scale back up with smoothing.
  */
 export function drawBlurred(dst: CanvasRenderingContext2D, src: HTMLCanvasElement, px: number, slot = 'main'): void {
@@ -65,4 +68,6 @@ export function blurredLayer(dst: CanvasRenderingContext2D, dpr: number, cssPx: 
   dst.setTransform(1, 0, 0, 1, 0, 0);
   drawBlurred(dst, layer, cssPx * dpr, 'layer');
   dst.restore();
+  layer.width = 0;
+  layer.height = 0;
 }
