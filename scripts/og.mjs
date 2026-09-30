@@ -24,8 +24,8 @@ try {
     for (const id of ['results', 'toast', 'intro']) document.getElementById(id)?.remove();
     document.querySelector('.hud')?.remove();
   });
-  await page.screenshot({ path: 'public/og.png' });
-  console.log('wrote public/og.png');
+  await page.screenshot({ path: 'public/og.jpg', type: 'jpeg', quality: 85 });
+  console.log('wrote public/og.jpg');
 } finally {
   await browser.close();
   server.kill();
