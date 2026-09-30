@@ -148,3 +148,14 @@ test('a save made during the final turn resumes as a win', async ({ page }) => {
   await expect(page.locator('#time')).toHaveText('0:42'); // the clock stays stopped
   expect(await page.evaluate(() => localStorage.getItem('aglow.game'))).toBeNull();
 });
+
+test('the settings dialog takes focus, closes on Escape and hands focus back', async ({ page }) => {
+  await ready(page);
+  await page.click('#menu-btn');
+  await expect(page.locator('#menu')).toBeVisible();
+  expect(await page.evaluate(() => !!document.activeElement?.closest('#menu'))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#menu')).toBeHidden();
+  await expect(page.locator('#menu-btn')).toBeFocused();
+  await expect(page.locator('#menu-btn')).toHaveAttribute('aria-expanded', 'false');
+});

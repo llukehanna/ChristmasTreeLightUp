@@ -26,6 +26,8 @@ html, body {
   margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--ink);
   font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
 }
+/* No double-tap or pinch zoom of the whole page over the HUD, cards and intro (the stage opts out entirely below). */
+body { touch-action: manipulation; }
 button { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 
