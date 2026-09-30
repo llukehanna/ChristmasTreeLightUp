@@ -1,0 +1,22 @@
+{
+  "name": "aglow",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "og": "node scripts/og.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "jsdom": "^30.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}
