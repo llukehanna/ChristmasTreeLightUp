@@ -37,21 +37,43 @@ export function neonFlicker(sinceLitMs: number): number {
 export function drawUnlit(c: CanvasRenderingContext2D, prims: readonly Prim[], s: number, sc: Scene, style: PathStyle): void {
   c.lineCap = 'round';
   c.lineJoin = 'round';
+  // Casing (Frost): a dark edge either side of the pale wire and LEDs.
+  const edge = sc.unlitEdge;
+  const rim = Math.max(1.2, s * 0.045);
   if (style === 'filament') {
+    const w = Math.max(1.6, s * sc.wireOffW);
+    const node = prims.length > 2;
+    if (edge) {
+      c.strokeStyle = edge;
+      c.lineWidth = w + rim;
+      strokePrims(c, prims, 1, s);
+      c.fillStyle = edge;
+      if (node) dot(c, 0, 0, s * 0.07 + rim / 2);
+    }
     c.strokeStyle = sc.wireOff;
-    c.lineWidth = Math.max(1.6, s * 0.06);
+    c.lineWidth = w;
     strokePrims(c, prims, 1, s);
-    if (prims.length > 2) {
+    if (node) {
       c.fillStyle = sc.wireOff;
       dot(c, 0, 0, s * 0.07);
     }
   } else if (style === 'fairy') {
+    const w = Math.max(1.2, s * 0.038);
+    const leds = pointsAlong(prims, 1, 0.2);
+    if (edge) {
+      c.strokeStyle = edge;
+      c.lineWidth = w + rim;
+      strokePrims(c, prims, 1, s);
+      c.fillStyle = edge;
+      for (const p of leds) dot(c, p.x * s, p.y * s, s * 0.042 + rim / 2);
+    }
     c.strokeStyle = sc.copperOff;
-    c.lineWidth = Math.max(1.2, s * 0.038);
+    c.lineWidth = w;
     strokePrims(c, prims, 1, s);
     c.fillStyle = sc.ledOff;
-    for (const p of pointsAlong(prims, 1, 0.2)) dot(c, p.x * s, p.y * s, s * 0.042);
+    for (const p of leds) dot(c, p.x * s, p.y * s, s * 0.042);
   } else {
+    // The tube's own inner shadow and specular line do the casing's job; only the glass is lifted per scene.
     c.strokeStyle = sc.glass;
     c.lineWidth = s * 0.27;
     strokePrims(c, prims, 1, s);
