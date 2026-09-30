@@ -14,6 +14,7 @@ import { Y, computeLayout, tileCenter, type Layout } from './layout';
 import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
 import { drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
+import { Presents } from './presents';
 import { QualityGovernor } from './quality';
 import { SCENES, type Scene } from './scenes';
 import { TILE_FILL_MS, type VisualState } from './visual-state';
@@ -58,6 +59,9 @@ export class Renderer {
   private readonly embers = new Embers();
   private readonly current = new Current();
   readonly garland = new Garland();
+  private readonly presents = new Presents();
+  /** Fraction of tiles whose light has visibly arrived (last frame). */
+  private visFrac = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -89,17 +93,28 @@ export class Renderer {
     this.current.clear();
   }
 
-  /** Device-pixel rectangle around the tree (share image). Valid for the identity camera. */
+  /** Device-pixel rectangle around the tree and its presents (share image). Valid for the identity camera. */
   treeRect(): { x: number; y: number; w: number; h: number } {
     const L = this.layout;
-    const x = Math.max(0, (L.ox - 10.5 * L.s) * L.dpr);
-    const y = Math.max(0, Y(L, -2.8) * L.dpr);
-    return { x, y, w: Math.min(this.canvas.width - x, 21 * L.s * L.dpr), h: Math.min(this.canvas.height - y, 13.6 * L.s * L.dpr) };
+    let x0 = L.ox - 10.5 * L.s;
+    let x1 = L.ox + 10.5 * L.s;
+    const y0 = Y(L, -2.8);
+    let y1 = Y(L, 10.8);
+    const gifts = this.presents.bounds();
+    if (gifts) {
+      x0 = Math.min(x0, gifts.x0 - 0.3 * L.s);
+      x1 = Math.max(x1, gifts.x1 + 0.3 * L.s);
+      y1 = Math.max(y1, gifts.y1 + 0.3 * L.s);
+    }
+    const x = Math.max(0, x0 * L.dpr);
+    const y = Math.max(0, y0 * L.dpr);
+    return { x, y, w: Math.min(this.canvas.width, x1 * L.dpr) - x, h: Math.min(this.canvas.height, y1 * L.dpr) - y };
   }
 
   private repaint(): void {
     paintBackground(ctx2d(this.bg), this.layout, this.scene);
     paintTree(ctx2d(this.tree), this.layout, this.scene);
+    this.presents.layout(this.layout, GRID, this.scene);
   }
 
   frame(f: FrameInput): void {
@@ -135,6 +150,9 @@ export class Renderer {
     // 2. Tree + hover (world space)
     world(ctx, dpr);
     ctx.drawImage(this.tree, 0, 0, L.w, L.h);
+    // Presents catch the tree's light: dark when unlit, warming as it lights (spec §4.8).
+    const warm = (sc.light === 'day' ? 0.45 : 1) * (0.05 + 0.95 * Math.pow(this.visFrac, 0.85)) * (1 + (f.ambient ?? 0) * 0.3);
+    this.presents.draw(ctx, warm);
     if (f.hover >= 0 && !won) drawHover(ctx, L, f.hover, sc);
 
     // Garland wire, sockets and dark glass (screen space; lit halos bloom over them)
@@ -186,7 +204,8 @@ export class Renderer {
     drawStarGlow(g, L, sc, st, won);
     this.current.draw(g, board, L, s * 0.17);
     // Garland progress follows the light as it visibly arrives, not the logical count (spec §4.8).
-    this.garland.update(visLit / GRID.ids.length, now);
+    this.visFrac = visLit / GRID.ids.length;
+    this.garland.update(this.visFrac, now);
     g.setTransform(dpr * GLOW_SCALE, 0, 0, dpr * GLOW_SCALE, 0, 0);
     this.garland.drawGlow(g, sc, now, f.winAt, f.reducedMotion);
 
