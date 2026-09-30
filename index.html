@@ -4,9 +4,73 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <title>Aglow</title>
+    <meta name="description" content="Turn the wires. Light the tree. A holiday light puzzle." />
+    <meta name="theme-color" content="#0b0604" />
+    <meta property="og:title" content="Aglow" />
+    <meta property="og:description" content="Turn the wires. Light the tree." />
+    <meta property="og:image" content="https://aglow.lukeghanna.com/og.png" />
+    <meta property="og:url" content="https://aglow.lukeghanna.com" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   </head>
-  <body>
-    <canvas id="stage"></canvas>
+  <body data-scene="fireside">
+    <canvas id="stage" aria-label="Christmas tree puzzle board"></canvas>
+    <div class="grain" id="grain"></div>
+    <div class="vignette"></div>
+
+    <header class="wordmark"><span class="dot"></span>Aglow</header>
+
+    <div class="hud">
+      <div id="radio-slot"></div>
+      <div class="pill time" id="time" aria-label="Time">0:00</div>
+      <button class="pill icon" id="menu-btn" aria-label="Settings" aria-expanded="false">···</button>
+    </div>
+
+    <div class="intro" id="intro">Turn the wires. Light the tree.</div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="menu" id="menu" role="dialog" aria-label="Settings" hidden>
+      <button class="newtree" id="new-tree">New tree</button>
+      <div>
+        <p class="lbl">Scene</p>
+        <div class="seg" data-setting="scene">
+          <button data-value="auto">Auto</button><button data-value="midnight">Midnight</button><button data-value="fireside">Fireside</button><button data-value="frost">Frost</button>
+        </div>
+      </div>
+      <div>
+        <p class="lbl">Light path</p>
+        <div class="seg" data-setting="pathStyle">
+          <button data-value="filament">Filament</button><button data-value="fairy">Fairy lights</button><button data-value="neon">Neon</button>
+        </div>
+      </div>
+      <div>
+        <p class="lbl">Effects volume</p>
+        <input type="range" id="effects-volume" min="0" max="1" step="0.05" aria-label="Effects volume" />
+      </div>
+      <label class="row" id="haptics-row"><span>Haptics</span><input type="checkbox" id="haptics" /></label>
+    </div>
+
+    <div class="pause" id="pause" hidden><div><div class="big">Paused</div><small>Tap to resume</small></div></div>
+
+    <section class="results" id="results" hidden aria-live="polite">
+      <h2 id="r-time">Lit in 0:00</h2>
+      <div class="score" id="r-score">Score 0</div>
+      <div class="badge" id="r-badge">New best</div>
+      <div class="stats">
+        <div><b id="r-solved">1</b><span>Solved</span></div>
+        <div><b id="r-avg">0:00</b><span>Average</span></div>
+        <div><b id="r-streak">1</b><span>Day streak</span></div>
+      </div>
+      <div class="actions"><button class="primary" id="r-new">New tree</button><button id="r-share">Share</button></div>
+      <button class="keep" id="r-keep">Keep watching</button>
+    </section>
+
+    <button class="pill corner" id="corner-new" hidden>New tree</button>
+    <button class="pill corner" id="zoom-reset" hidden>Reset view</button>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
