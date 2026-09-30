@@ -65,7 +65,7 @@ export class VisualState {
     return { q: 0, alpha: 0 };
   }
 
-  /** Bulb pop: overshoots to ~1.8× then settles to 1. */
+  /** Bulb pop: overshoots to ~1.6× then settles to 1. */
   bulbIntensity(i: number, now: number): number {
     const t = now - (this.litStart[i] + TILE_FILL_MS);
     return clamp01(t / 60) + 0.8 * Math.exp(-Math.max(0, t) / 200) * clamp01(t / 25);
