@@ -49,11 +49,19 @@ export const averageSeconds = (s: Stats): number => (s.solved ? Math.round(s.tot
 function isStats(v: unknown): v is Stats {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
-  const numOrNull = (x: unknown) => x === null || typeof x === 'number';
+  const isNonNegInt = (x: unknown) => Number.isInteger(x) && (x as number) >= 0;
+  const isFiniteNonNeg = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && (x as number) >= 0;
+  const isDateString = (x: unknown) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x);
   return (
-    o.v === 1 && typeof o.solved === 'number' && typeof o.totalSeconds === 'number' &&
-    numOrNull(o.bestSeconds) && numOrNull(o.bestScore) && typeof o.streak === 'number' &&
-    typeof o.longestStreak === 'number' && (o.lastSolvedDay === null || typeof o.lastSolvedDay === 'string')
+    o.v === 1 &&
+    isNonNegInt(o.solved) &&
+    isFiniteNonNeg(o.totalSeconds) &&
+    (o.bestSeconds === null || (isFiniteNonNeg(o.bestSeconds) && typeof o.bestSeconds === 'number')) &&
+    (o.bestScore === null || (typeof o.bestScore === 'number' && Number.isFinite(o.bestScore))) &&
+    isNonNegInt(o.streak) &&
+    isNonNegInt(o.longestStreak) &&
+    (o.streak as number) <= (o.longestStreak as number) &&
+    (o.lastSolvedDay === null || isDateString(o.lastSolvedDay))
   );
 }
 
