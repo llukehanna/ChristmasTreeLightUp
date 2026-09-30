@@ -179,7 +179,7 @@ Each scene is a palette plus background and lighting. All share the procedural f
 - **End tiles** are a single spoke ending in the bulb.
 
 **Styles:**
-- **Filament:** unlit is a ~0.06s hairline (Frost: 0.07s, cased). Lit is a 0.2s glow, a 0.078s warm core and a 0.03s white-hot centre. Spark particles run from the source outward along the tree's branches.
+- **Filament:** unlit is a ~0.06s hairline (Frost: 0.07s, cased). Lit is a 0.2s glow, a 0.078s warm core and a 0.03s white-hot centre. A gentle, occasional shimmer drifts from the source outward along the lit branches: a spark about every 0.7s (±30%), at most 4 at once, travelling 1.5–2.2 tiles/s, drawn as a 0.13s bloomed glow at 50% and a 0.04s core at 55%, fading in as it leaves the source and twinkling softly. It is ambient life, not traffic; the connection flow (§4.5) stays fast.
 - **Fairy lights:** a copper wire with micro-LEDs every 0.2 tile. Lit LEDs (0.11s glow each) twinkle with per-LED phase.
 - **Neon:** a glass tube (outer glass, inner shadow, specular line). Lit tubes fill with glowing gas (a 0.34s glow) and **flicker on** (a 7-step stutter over about 260ms) when they light.
 
