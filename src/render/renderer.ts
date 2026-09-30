@@ -20,6 +20,19 @@ import { SCENES, type Scene } from './scenes';
 import { TILE_FILL_MS, type VisualState } from './visual-state';
 
 const GLOW_SCALE = 0.5;
+/**
+ * Bloom passes (spec §4.6): [blur radius in tiles, additive weight, exposure power]. A tight halo that keeps the lit
+ * line warm, a soft glow, and a faint atmosphere. Auto-exposure bites hardest on the wide passes, which are what fog
+ * a well-lit tree, and least on the tight halo.
+ */
+const BLOOM: readonly (readonly [number, number, number])[] = [
+  [0.14, 0.95, 0.5],
+  [0.45, 0.55, 1],
+  [1.3, 0.22, 2],
+];
+/** Auto-exposure (spec §4.5 item 8): exposure = 1 − DROP · litFraction^POW, raised to each pass's power. */
+const EXPOSURE_DROP = 0.5;
+const EXPOSURE_POW = 1.3;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 export interface FrameInput {
@@ -228,19 +241,16 @@ export class Renderer {
     this.garland.drawGlow(g, sc, now, f.winAt, f.reducedMotion);
 
     // 4. Bloom: blurred copies of the glow layer, additive, with auto-exposure (spec §4.5 item 8)
-    const expo = 1 - 0.42 * Math.pow(litFrac, 1.4);
+    const expo = 1 - EXPOSURE_DROP * Math.pow(litFrac, EXPOSURE_POW);
     const unit = s * cam.scale * dpr;
-    const passes: [number, number][] = [
-      [0.18, 0.95 * expo],
-      [0.55, 0.75 * expo],
-      [1.5, 0.55 * expo * expo],
-    ];
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'lighter';
-    passes.slice(0, tier >= 1 ? 2 : 3).forEach(([radius, alpha], idx) => {
-      ctx.globalAlpha = alpha * sc.bloom;
+    const passes = tier >= 1 ? 2 : 3;
+    for (let idx = 0; idx < passes; idx++) {
+      const [radius, weight, power] = BLOOM[idx];
+      ctx.globalAlpha = weight * Math.pow(expo, power) * sc.bloom;
       drawBlurred(ctx, this.glow, radius * unit, `bloom${idx}`);
-    });
+    }
     if (sc.reflect && tier < 3) {
       const hz = (Y(L, 10.05) * cam.scale + cam.ty) * dpr;
       ctx.save();

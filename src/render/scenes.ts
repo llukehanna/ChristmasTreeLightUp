@@ -70,12 +70,12 @@ export const SCENES: Readonly<Record<SceneId, Scene>> = {
     id: 'frost', light: 'day',
     sky: ['#dfe7ed', '#eef2f5', '#f7f9fa'], ground: ['#ffffff', '#e9eff3'],
     needleA: [14, 46, 36], needleB: [42, 100, 76], trunk: '#2a2019',
-    wireOff: 'rgba(200,216,224,.8)', wireOffW: 0.07, unlitEdge: 'rgba(4,16,12,.6)', bulbFrost: 1, core: '#fffaf0', glow: '#ffb65e',
+    wireOff: 'rgba(200,216,224,.8)', wireOffW: 0.07, unlitEdge: 'rgba(4,16,12,.6)', bulbFrost: 1, core: '#fff3da', glow: '#ffb65e',
     copperOff: 'rgba(222,184,140,.85)', copperOn: 'rgba(245,200,140,.95)', ledOff: 'rgba(238,236,228,.68)',
     glass: 'rgba(225,238,246,.26)', glassHi: 'rgba(255,255,255,.62)', neon: '#ffa24a', neonMid: '#ffcf8a',
     socket: '#1b2a24', bulbs: ['#ff6b6b', '#ffcb5c', '#6fc2ff', '#7fe0a0', '#ffa6d4', '#fff3dc'],
     starOff: 'rgba(255,255,255,.35)', starEdge: 'rgba(21,38,31,.35)', hover: '255,225,170',
-    snow: '150,172,188', snowAlpha: 0.7, bloom: 0.55, snowDust: true, reflect: false, embers: false,
+    snow: '150,172,188', snowAlpha: 0.7, bloom: 0.7, snowDust: true, reflect: false, embers: false,
   },
 };
 
