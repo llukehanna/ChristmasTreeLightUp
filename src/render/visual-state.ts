@@ -50,8 +50,10 @@ export class VisualState {
       .sort((a, b) => a - b);
   }
 
-  onRotateFinished(tile: number, now: number): void {
+  /** Call with the board already relit. An unpowered tile drops its leftover fade (it would glow in its new orientation). */
+  onRotateFinished(board: Board, tile: number, now: number): void {
     this.settleAt[tile] = now;
+    if (!board.lighting.lit[tile]) this.fadeStart[tile] = -1;
   }
 
   /** q = fill progress 0..1 (light travelling through the tile), alpha = opacity of the lit layer. */

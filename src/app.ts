@@ -40,6 +40,9 @@ export class App {
   private introHidden = false;
   private moved = false;
   private paused = false;
+  /** The paused frame has been drawn; the renderer idles until resume. */
+  private pausedDrawn = false;
+  private resizeQueued = false;
   private lastFrame = 0;
   private lastTime = '';
   private lastLit = '';
@@ -60,9 +63,16 @@ export class App {
   }
 
   start(): void {
-    this.resize();
     this.applySettings(this.settings, false);
-    addEventListener('resize', () => this.resize());
+    this.resize();
+    addEventListener('resize', () => {
+      if (this.resizeQueued) return;
+      this.resizeQueued = true;
+      requestAnimationFrame(() => {
+        this.resizeQueued = false;
+        this.resize();
+      });
+    });
     const now = performance.now();
     const saved = loadGame(GRID);
     if (saved) {
@@ -114,7 +124,7 @@ export class App {
           if (this.settings.haptics) navigator.vibrate?.(8);
           break;
         case 'rotateFinished':
-          this.vis.onRotateFinished(e.tile, now);
+          this.vis.onRotateFinished(this.board, e.tile, now);
           settled = true;
           break;
         case 'lightingChanged': {
@@ -176,6 +186,11 @@ export class App {
     if (!this.paused && this.winAt === null && !this.clock.running && now >= this.interactiveAt) this.clock.resume(now);
     this.handle(this.board.tick(now), now);
     this.updateHud(now);
+    // While paused the stage is blurred behind the overlay: draw one frame, then idle until resume.
+    if (this.paused) {
+      if (this.pausedDrawn) return;
+      this.pausedDrawn = true;
+    } else this.pausedDrawn = false;
     this.renderer.frame({
       board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover,
       revealAt: this.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
@@ -246,9 +261,10 @@ export class App {
 
   private applySettings(s: Settings, persist = true): void {
     this.settings = s;
+    this.pausedDrawn = false;
     if (persist) saveSettings(s);
     this.sfx.setVolume(s.effectsVolume);
-    this.renderer.setStyle(s.pathStyle);
+    if (s.pathStyle !== this.renderer.style) this.renderer.setStyle(s.pathStyle);
     this.setScene(s.scene === 'auto' ? sceneForHour(new Date().getHours()) : s.scene);
   }
 
@@ -288,6 +304,7 @@ export class App {
     this.placeIntro();
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
+    this.pausedDrawn = false; // resizing clears the stage
   }
 
   private bindLifecycle(): void {
