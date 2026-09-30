@@ -37,6 +37,8 @@ export class App {
   private winAt: number | null = null;
   private lastSeconds = 0;
   private hover = -1;
+  private introHidden = false;
+  private moved = false;
   private paused = false;
   private lastFrame = 0;
   private lastTime = '';
@@ -65,6 +67,7 @@ export class App {
     const saved = loadGame(GRID);
     if (saved) {
       this.beginGame(now, new Board(GRID, saved.state), saved.elapsedMs);
+      this.moved = true;
       this.toast.show(`Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`, 2600);
     } else {
       this.beginGame(now, Board.random(GRID, Math.random), 0);
@@ -85,6 +88,7 @@ export class App {
     this.revealAt = now;
     this.interactiveAt = now + REVEAL_MS;
     this.winAt = null;
+    this.moved = false;
     this.camera = IDENTITY;
     this.results.hide();
     el('corner-new').hidden = true;
@@ -104,6 +108,7 @@ export class App {
       switch (e.type) {
         case 'rotateStarted':
         case 'tapBuffered':
+          if (e.type === 'rotateStarted') this.moved = true;
           this.sfx.tick();
           if (this.settings.haptics) navigator.vibrate?.(8);
           break;
@@ -127,6 +132,7 @@ export class App {
   private onWin(now: number): void {
     this.clock.pause(now);
     clearGame();
+    this.menu.close();
     this.hideIntro();
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
@@ -200,8 +206,12 @@ export class App {
         stage.style.cursor = this.hover >= 0 && this.winAt === null ? 'pointer' : 'default';
       },
       leave: () => (this.hover = -1),
-      zoom: (f, fx, fy) => this.setCamera(zoomAt(this.camera, f, fx, fy)),
-      pan: (dx, dy) => this.setCamera(panBy(this.camera, dx, dy)),
+      zoom: (f, fx, fy) => {
+        if (this.winAt === null) this.setCamera(zoomAt(this.camera, f, fx, fy));
+      },
+      pan: (dx, dy) => {
+        if (this.winAt === null) this.setCamera(panBy(this.camera, dx, dy));
+      },
     });
     el('zoom-reset').addEventListener('click', () => this.setCamera(IDENTITY));
     el('corner-new').addEventListener('click', () => this.newGame());
@@ -265,10 +275,10 @@ export class App {
       this.paused = true;
       document.body.classList.add('paused');
       el('pause').hidden = false;
-      saveGame(this.board, this.clock.elapsedMs(now));
+      if (this.moved) saveGame(this.board, this.clock.elapsedMs(now));
     });
     addEventListener('pagehide', () => {
-      if (this.winAt === null) saveGame(this.board, this.clock.elapsedMs(performance.now()));
+      if (this.winAt === null && this.moved) saveGame(this.board, this.clock.elapsedMs(performance.now()));
     });
     el('pause').addEventListener('click', () => this.resume());
   }
@@ -286,6 +296,8 @@ export class App {
   }
 
   private hideIntro(): void {
+    if (this.introHidden) return;
+    this.introHidden = true;
     el('intro').classList.remove('show');
     writeJSON(INTRO_KEY, true);
   }
