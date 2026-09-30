@@ -54,7 +54,7 @@ describe('Board rotation', () => {
     const t = endTile();
     b.tap(t, 0);
     for (const now of [10, 20, 30]) expect(b.tap(t, now)).toEqual([{ type: 'tapBuffered', tile: t }]);
-    b.tap(t, 40); // beyond the cap
+    expect(b.tap(t, 40)).toEqual([]); // beyond the cap: dropped, so no tick or buzz
     expect(b.rotating.get(t)?.queued).toBe(MAX_QUEUE);
     for (const now of [120, 240, 360]) {
       b.tick(now);
@@ -90,6 +90,21 @@ describe('Board win', () => {
     expect(ev.map((e) => e.type)).toContain('won');
     expect(b.won).toBe(true);
     expect(b.tap(t, 400)).toEqual([]);
+  });
+  it('settleWin claims the win for a board restored already solved, once', () => {
+    const b = solved();
+    expect(b.won).toBe(false); // the constructor never checks for a win
+    expect(b.settleWin()).toEqual([{ type: 'won' }]);
+    expect(b.won).toBe(true);
+    expect(b.settleWin()).toEqual([]);
+  });
+  it('settleWin does nothing for an unsolved board', () => {
+    const t = endTile();
+    const bits = [...solution];
+    bits[t] = rotCW(solution[t]);
+    const b = new Board(GRID, { solution: [...solution], bits, colors });
+    expect(b.settleWin()).toEqual([]);
+    expect(b.won).toBe(false);
   });
   it('debugSolve lights everything and wins', () => {
     const b = Board.random(GRID, mulberry32(9));

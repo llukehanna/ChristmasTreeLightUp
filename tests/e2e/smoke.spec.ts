@@ -131,3 +131,20 @@ test('an unfinished tree resumes after reload', async ({ page }) => {
   expect(after.bits).toEqual(before.bits);
   await expect(page.locator('#toast')).toHaveText(/welcome back/i);
 });
+
+test('a save made during the final turn resumes as a win', async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => {
+    const { solution } = (window as unknown as W).__aglow.state();
+    const colors = solution.map(() => 0);
+    localStorage.setItem('aglow.game', JSON.stringify({ v: 1, solution, bits: solution, colors, elapsedMs: 42_400 }));
+  });
+  await page.reload(); // not ready(): navigating again would start a fresh tree once the win has cleared the save
+  await page.waitForFunction(() => !!(window as Window & { __aglow?: AglowProbe }).__aglow);
+  expect((await state(page)).won).toBe(true);
+  await expect(page.locator('#results')).toBeVisible({ timeout: 8000 });
+  await expect(page.locator('#r-time')).toHaveText('Lit in 0:42');
+  await expect(page.locator('#r-solved')).toHaveText('1');
+  await expect(page.locator('#time')).toHaveText('0:42'); // the clock stays stopped
+  expect(await page.evaluate(() => localStorage.getItem('aglow.game'))).toBeNull();
+});

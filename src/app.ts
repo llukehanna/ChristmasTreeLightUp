@@ -81,6 +81,8 @@ export class App {
       this.beginGame(now, new Board(GRID, saved.state), saved.elapsedMs);
       this.moved = true;
       this.toast.show(`Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`, 2600);
+      // Saved during the final turn: the restored board is already solved, so finish the win properly.
+      if (this.board.lighting.count === GRID.ids.length) this.handle(this.board.settleWin(), now);
     } else {
       this.beginGame(now, Board.random(GRID, Math.random), 0);
     }
@@ -144,6 +146,7 @@ export class App {
   }
 
   private onWin(now: number): void {
+    if (this.paused) this.resume();
     this.clock.pause(now);
     clearGame();
     this.menu.close();
