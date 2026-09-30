@@ -73,6 +73,7 @@ export class App {
       this.beginGame(now, Board.random(GRID, Math.random), 0);
     }
     this.showIntro();
+    void document.fonts?.ready.then(() => this.placeIntro());
     this.bindControls();
     this.bindLifecycle();
     setInterval(() => this.refreshAutoScene(), 60_000);
@@ -261,12 +262,30 @@ export class App {
     if (this.settings.scene === 'auto') this.setScene(sceneForHour(new Date().getHours()));
   }
 
+  /**
+   * Where the tagline goes: centred in the HUD row when it has real breathing room beside the wordmark and HUD,
+   * otherwise hanging below the garland (always on phones), unless that would put it on the star.
+   */
+  private placeIntro(): void {
+    const body = document.body;
+    body.classList.remove('intro-low');
+    const intro = el('intro');
+    const half = intro.offsetWidth / 2;
+    const mark = document.querySelector('.wordmark')?.getBoundingClientRect().right ?? 0;
+    const hud = document.querySelector('.hud')?.getBoundingClientRect().left ?? innerWidth;
+    const rowGap = Math.min(innerWidth / 2 - half - mark, hud - (innerWidth / 2 + half));
+    const lowClear = this.renderer.garland.geo.bottom + 8 + intro.offsetHeight + 8 < this.renderer.starTop();
+    const low = innerWidth < 600 || !(rowGap >= 64 || (!lowClear && rowGap >= 16));
+    body.classList.toggle('intro-low', low);
+  }
+
   private resize(): void {
     // The garland hangs below the wordmark and HUD wherever safe-area insets put them.
     let chromeBottom = 0;
     for (const sel of ['.hud', '.wordmark']) chromeBottom = Math.max(chromeBottom, document.querySelector(sel)?.getBoundingClientRect().bottom ?? 0);
     this.renderer.resize(innerWidth, innerHeight, Math.min(2, devicePixelRatio || 1), chromeBottom || undefined);
     document.body.style.setProperty('--garland-bottom', `${Math.round(this.renderer.garland.geo.bottom)}px`);
+    this.placeIntro();
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
   }
