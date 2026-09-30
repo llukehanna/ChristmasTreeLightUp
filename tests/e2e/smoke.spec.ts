@@ -43,6 +43,50 @@ test('tapping a tile turns it clockwise', async ({ page }) => {
   expect(after.bits[tile]).toBe(rotCW(before.bits[tile]));
 });
 
+test('zoomed in, the board draws under the camera and taps still hit the right tile', async ({ page }) => {
+  await ready(page);
+  // Record the scale of every bulb socket drawn on the stage (roundRect is only used for tile bulb sockets there;
+  // the garland's sockets are pre-rendered off-screen).
+  await page.evaluate(() => {
+    const w = window as Window & { __rr?: number[] };
+    const proto = CanvasRenderingContext2D.prototype;
+    const orig = proto.roundRect;
+    proto.roundRect = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof orig>) {
+      if (this.canvas.id === 'stage' && w.__rr) {
+        const m = this.getTransform();
+        w.__rr.push(Math.hypot(m.a, m.b));
+      }
+      return orig.apply(this, args);
+    };
+  });
+  const box = await page.locator('#stage').boundingBox();
+  if (!box) throw new Error('no stage');
+  await page.mouse.move(box.width / 2, box.height * 0.6);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -80);
+  await page.keyboard.up('Control');
+  await expect(page.locator('#zoom-reset')).toBeVisible();
+  await page.evaluate(() => ((window as Window & { __rr?: number[] }).__rr = []));
+  await page.waitForTimeout(300);
+  const scales = await page.evaluate(() => (window as Window & { __rr?: number[] }).__rr ?? []);
+  expect(scales.length).toBeGreaterThan(0);
+  // exp(0.8) ≈ 2.2× zoom at dpr 1: nothing on the board may be drawn at the unzoomed scale
+  expect(Math.min(...scales)).toBeGreaterThan(1.8);
+
+  const tile = await page.evaluate(() => {
+    const a = (window as unknown as W).__aglow;
+    const inView = a.ids.filter((i) => {
+      const [x, y] = a.tileCenter(i);
+      return x > 20 && y > 120 && x < innerWidth - 20 && y < innerHeight - 20;
+    });
+    return inView[Math.floor(inView.length / 2)];
+  });
+  const before = await state(page);
+  await tapTile(page, tile);
+  await page.waitForTimeout(300);
+  expect((await state(page)).bits[tile]).toBe(rotCW(before.bits[tile]));
+});
+
 test('solving shows the results card and sharing copies to the clipboard', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.addInitScript(() => Object.defineProperty(navigator, 'canShare', { value: undefined }));
