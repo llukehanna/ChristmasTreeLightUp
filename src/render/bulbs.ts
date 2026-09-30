@@ -1,6 +1,6 @@
 import { D, L, U } from '../core/dirs';
 import { hexRgb, mix, rgba, shade } from './color';
-import type { PathStyle } from './paths';
+import { shadowOffset, type PathStyle } from './paths';
 import type { Scene } from './scenes';
 
 const TAU = Math.PI * 2;
@@ -9,9 +9,10 @@ const TAU = Math.PI * 2;
 export const bulbAngle = (b: number): number => (b & U ? -Math.PI / 2 : b & D ? Math.PI / 2 : b & L ? Math.PI : 0);
 
 /** Glass bulb with a socket facing the wire. `amt` 0 = unlit; ≥1 lit (values >1 swell during the pop). */
-export function drawBulb(c: CanvasRenderingContext2D, b: number, color: string, amt: number, s: number, sc: Scene, style: PathStyle): void {
+export function drawBulb(c: CanvasRenderingContext2D, b: number, color: string, amt: number, s: number, sc: Scene, style: PathStyle, angle = 0): void {
   const r = s * (style === 'fairy' ? 0.18 : 0.2) * (amt > 1 ? 1 + (amt - 1) * 0.35 : 1);
   const a = bulbAngle(b);
+  if (amt <= 0) drawBulbUnder(c, r, a, sc, s, angle);
   c.save();
   c.rotate(a);
   c.fillStyle = sc.socket;
@@ -50,6 +51,34 @@ export function drawBulb(c: CanvasRenderingContext2D, b: number, color: string, 
     c.arc(gx, gy, r - c.lineWidth / 2, 0, TAU);
     c.stroke();
   }
+}
+
+/** The daylight treatment under an unlit bulb (scene.unlitLook): a soft glint halo or a resting shadow. */
+function drawBulbUnder(c: CanvasRenderingContext2D, r: number, a: number, sc: Scene, s: number, angle: number): void {
+  const look = sc.unlitLook;
+  if (look !== 'glint' && look !== 'shadow') return;
+  const gx = -Math.cos(a) * r * 0.12;
+  const gy = -Math.sin(a) * r * 0.12;
+  if (look === 'glint') {
+    c.fillStyle = 'rgba(236,246,252,.08)';
+    c.beginPath();
+    c.arc(gx, gy, r + s * 0.1, 0, TAU);
+    c.fill();
+    c.fillStyle = 'rgba(236,246,252,.14)';
+    c.beginPath();
+    c.arc(gx, gy, r + s * 0.05, 0, TAU);
+    c.fill();
+    return;
+  }
+  const [dx, dy] = shadowOffset(s, angle);
+  c.fillStyle = 'rgba(0,14,10,.16)';
+  c.beginPath();
+  c.arc(gx + dx, gy + dy, r + s * 0.065, 0, TAU);
+  c.fill();
+  c.fillStyle = 'rgba(0,14,10,.26)';
+  c.beginPath();
+  c.arc(gx + dx, gy + dy, r + s * 0.025, 0, TAU);
+  c.fill();
 }
 
 /** Frosted glass in daylight: a muted blue-grey body (never as bright or saturated as a lit bulb) and its shaded edge. */

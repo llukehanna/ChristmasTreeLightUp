@@ -210,8 +210,8 @@ export class Renderer {
       ctx.translate(cx, cy);
       ctx.rotate(angle);
       ctx.scale(k, k);
-      drawUnlit(ctx, tileGeometry(shown, 0), s, sc, style);
-      if (isBulb) drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style);
+      drawUnlit(ctx, tileGeometry(shown, 0), s, sc, style, angle);
+      if (isBulb) drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style, angle);
       ctx.restore();
 
       const { q, alpha } = vis.fill(board, i, now);
