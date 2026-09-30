@@ -8,6 +8,7 @@ import {
   Current, Embers, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
   drawHover, drawSourceCore, drawSourceGlow, drawStar, drawStarGlow, easeSnap, starState,
 } from './effects';
+import { Garland } from './garland';
 import { tileGeometry } from './geometry';
 import { Y, computeLayout, tileCenter, type Layout } from './layout';
 import { paintBackground } from './paint-background';
@@ -56,6 +57,7 @@ export class Renderer {
   private readonly snow = new Snowfall();
   private readonly embers = new Embers();
   private readonly current = new Current();
+  readonly garland = new Garland();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -63,7 +65,8 @@ export class Renderer {
     this.g = ctx2d(this.glow);
   }
 
-  resize(w: number, h: number, dpr: number): void {
+  /** `chromeBottom`: lowest edge of the wordmark and HUD in CSS px (the garland hangs below it). */
+  resize(w: number, h: number, dpr: number, chromeBottom = w < 600 ? 46 : 58): void {
     for (const c of [this.canvas, this.bg, this.tree]) {
       c.width = Math.round(w * dpr);
       c.height = Math.round(h * dpr);
@@ -71,6 +74,7 @@ export class Renderer {
     this.glow.width = Math.round(w * dpr * GLOW_SCALE);
     this.glow.height = Math.round(h * dpr * GLOW_SCALE);
     this.layout = computeLayout(w, h, dpr);
+    this.garland.layout(w, this.layout.s, chromeBottom);
     this.repaint();
   }
 
@@ -133,10 +137,15 @@ export class Renderer {
     ctx.drawImage(this.tree, 0, 0, L.w, L.h);
     if (f.hover >= 0 && !won) drawHover(ctx, L, f.hover, sc);
 
+    // Garland wire, sockets and dark glass (screen space; lit halos bloom over them)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.garland.drawBack(ctx, sc);
+
     // 3. Pass 1: unlit wires + glass on main; lit glow on the half-res glow layer
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, this.glow.width, this.glow.height);
     world(g, dpr * GLOW_SCALE);
+    let visLit = 0;
     for (const i of GRID.ids) {
       const row = Math.floor(i / GRID.w);
       const reveal = clamp01((now - f.revealAt - (GRID.h - 1 - row) * 55) / 380);
@@ -158,6 +167,7 @@ export class Renderer {
 
       const { q, alpha } = vis.fill(board, i, now);
       if (alpha <= 0) continue;
+      if (q >= 1 && board.lighting.lit[i]) visLit++;
       const prims = tileGeometry(board.bits[i], board.lighting.entry[i]);
       const flicker = style === 'neon' ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
       g.save();
@@ -175,6 +185,10 @@ export class Renderer {
     st.glow *= 1 + (f.ambient ?? 0) * 0.3;
     drawStarGlow(g, L, sc, st, won);
     this.current.draw(g, board, L, s * 0.17);
+    // Garland progress follows the light as it visibly arrives, not the logical count (spec §4.8).
+    this.garland.update(visLit / GRID.ids.length, now);
+    g.setTransform(dpr * GLOW_SCALE, 0, 0, dpr * GLOW_SCALE, 0, 0);
+    this.garland.drawGlow(g, sc, now, f.winAt, f.reducedMotion);
 
     // 4. Bloom: blurred copies of the glow layer, additive, with auto-exposure (spec §4.5 item 8)
     const expo = 1 - 0.42 * Math.pow(litFrac, 1.4);
@@ -229,8 +243,9 @@ export class Renderer {
     this.current.draw(ctx, board, L, s * 0.048);
     drawStar(ctx, L, sc, st, won);
 
-    // 6. Foreground snow (screen space)
+    // 6. Lit garland glass, then foreground snow (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.garland.drawLit(ctx, sc, now, f.winAt, f.reducedMotion);
     this.snow.draw(ctx, L, sc, true, motionDt, now, density);
   }
 

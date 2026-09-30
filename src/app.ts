@@ -262,7 +262,11 @@ export class App {
   }
 
   private resize(): void {
-    this.renderer.resize(innerWidth, innerHeight, Math.min(2, devicePixelRatio || 1));
+    // The garland hangs below the wordmark and HUD wherever safe-area insets put them.
+    let chromeBottom = 0;
+    for (const sel of ['.hud', '.wordmark']) chromeBottom = Math.max(chromeBottom, document.querySelector(sel)?.getBoundingClientRect().bottom ?? 0);
+    this.renderer.resize(innerWidth, innerHeight, Math.min(2, devicePixelRatio || 1), chromeBottom || undefined);
+    document.body.style.setProperty('--garland-bottom', `${Math.round(this.renderer.garland.geo.bottom)}px`);
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
   }
