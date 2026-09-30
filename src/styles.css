@@ -1,11 +1,25 @@
 :root {
   --ink: #f4e6cf; --accent: #ffb070; --lit: 0;
   --hud-bg: rgba(255, 255, 255, 0.04); --hud-line: rgba(255, 255, 255, 0.1); --panel: rgba(22, 16, 12, 0.72);
+  /* Festive layer (spec §4.8): gold foil and cranberry glass */
+  --gold1: #f8e6ae; --gold2: #d6a24a; --gold3: #fff3cf; --gold4: #b9822f;
+  --gold-ink: #f3d492; --gold-glow: rgba(255, 180, 90, 0.35);
+  --goldline: rgba(236, 196, 116, 0.5);
+  --cran-top: rgba(150, 24, 34, 0.4); --cran: rgba(96, 12, 20, 0.42); --pill-ink: #f7e4b6;
+  --focus: #ffcf7a;
+  /* Bottom of the garland (px), set by the app from the renderer's geometry. */
+  --garland-bottom: 104px;
 }
 body[data-scene='midnight'] { --ink: #f3ead8; --accent: #ffcf80; --panel: rgba(10, 14, 30, 0.72); }
 body[data-scene='frost'] {
   --ink: #15261f; --accent: #e0a040;
   --hud-bg: rgba(255, 255, 255, 0.55); --hud-line: rgba(21, 38, 31, 0.1); --panel: rgba(250, 252, 253, 0.84);
+  /* Deeper, burnished gold and denser cranberry so both hold up on the pale daylight sky. */
+  --gold1: #b98526; --gold2: #7a4c10; --gold3: #d9a84a; --gold4: #5e380a;
+  --gold-ink: #7d4f12; --gold-glow: rgba(255, 255, 255, 0.7);
+  --goldline: rgba(196, 146, 60, 0.85);
+  --cran-top: rgba(158, 26, 38, 0.9); --cran: rgba(108, 14, 24, 0.92);
+  --focus: #8e1622;
 }
 * { box-sizing: border-box; }
 html, body {
@@ -22,88 +36,164 @@ body[data-scene='frost'] .grain { opacity: 0.05; mix-blend-mode: multiply; }
 .vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.55) 100%); }
 body[data-scene='frost'] .vignette { background: radial-gradient(120% 90% at 50% 45%, transparent 60%, rgba(70, 95, 110, 0.16) 100%); }
 
+/* ---------- wordmark: gold foil, holly sprig in place of the dot ---------- */
 .wordmark {
   position: fixed; top: calc(34px + env(safe-area-inset-top)); left: calc(32px + env(safe-area-inset-left));
-  display: flex; align-items: center; gap: 12px; margin: 0; user-select: none;
-  font-size: 11.5px; font-weight: 500; letter-spacing: 0.52em; text-transform: uppercase;
+  display: flex; align-items: center; gap: 8px; margin: 0; user-select: none;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.52em; text-transform: uppercase;
+  color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(100deg, var(--gold1), var(--gold2) 38%, var(--gold3) 54%, var(--gold4) 80%);
+  filter: drop-shadow(0 0 6px rgba(255, 190, 100, 0.25));
 }
-.wordmark .dot {
-  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
-  box-shadow: 0 0 calc(4px + var(--lit) * 12px) var(--accent); opacity: calc(0.45 + var(--lit) * 0.55);
-}
+body[data-scene='frost'] .wordmark { filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.75)); }
+.wordmark .holly { display: block; width: 26px; height: 20px; flex: none; margin: -2px -3px -2px -4px; }
+.wordmark .holly svg { display: block; overflow: visible; }
+/* The berries glow with the lit fraction, as the dot did. */
+.holly .holly-glow { opacity: calc(0.12 + var(--lit) * 0.88); }
+.holly .holly-hot { opacity: calc(var(--lit) * 0.9); }
 
+/* ---------- HUD: cranberry glass pills with a gold hairline ---------- */
 .hud { position: fixed; top: calc(26px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); display: flex; gap: 8px; align-items: center; }
 .pill {
-  height: 32px; padding: 0 14px; display: inline-flex; align-items: center; gap: 9px; border-radius: 999px;
-  background: var(--hud-bg); border: 1px solid var(--hud-line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  font-size: 12.5px; font-weight: 500; cursor: pointer;
+  height: 32px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; border-radius: 999px;
+  background: linear-gradient(180deg, var(--cran-top), var(--cran)); border: 1px solid var(--goldline); color: var(--pill-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 225, 160, 0.22), inset 0 -1px 0 rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  font-size: 12.5px; font-weight: 500; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
 }
-.pill.time { font-variant-numeric: tabular-nums; min-width: 48px; justify-content: center; cursor: default; }
+body[data-scene='frost'] .pill { box-shadow: inset 0 1px 0 rgba(255, 225, 160, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.2), 0 4px 12px rgba(60, 20, 20, 0.18); }
+button.pill:hover { border-color: rgba(246, 214, 146, 0.85); }
+.pill.time { font-variant-numeric: tabular-nums; min-width: 48px; justify-content: center; cursor: default; padding-left: 11px; }
+/* A small glowing C9-style bulb on the timer. */
+.pill.time::before {
+  content: ''; flex: none; width: 7px; height: 9px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: radial-gradient(circle at 40% 35%, #fff4d0, #ffb84a 60%, #d9772a);
+  box-shadow: 0 0 calc(5px + var(--lit) * 5px) rgba(255, 184, 74, calc(0.7 + var(--lit) * 0.3));
+}
 .pill.icon { padding: 0 12px; letter-spacing: 0.1em; }
 
+/* ---------- intro: gold serif tagline ---------- */
 .intro {
-  position: fixed; left: 50%; top: calc(80px + env(safe-area-inset-top)); transform: translateX(-50%);
-  font-size: 12.5px; letter-spacing: 0.06em; opacity: 0; transition: opacity 1s; pointer-events: none; white-space: nowrap;
+  position: fixed; left: 50%; top: calc(29px + env(safe-area-inset-top)); transform: translateX(-50%);
+  font: italic 400 21px/26px 'Instrument Serif', serif; letter-spacing: 0.01em; color: var(--gold-ink);
+  text-shadow: 0 0 18px var(--gold-glow);
+  opacity: 0; transition: opacity 1s; pointer-events: none; white-space: nowrap;
 }
-.intro.show { opacity: 0.6; }
+.intro.show { opacity: 0.92; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(34px + env(safe-area-inset-bottom)); transform: translate(-50%, 10px);
-  padding: 10px 16px; border-radius: 999px; background: var(--panel); border: 1px solid var(--hud-line);
+  padding: 10px 16px; border-radius: 999px; color: var(--pill-ink);
+  background: linear-gradient(180deg, var(--cran-top), var(--cran)); border: 1px solid var(--goldline);
+  box-shadow: inset 0 1px 0 rgba(255, 225, 160, 0.22), 0 10px 26px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); font-size: 12.5px; opacity: 0; pointer-events: none;
   transition: opacity 0.45s, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1); white-space: nowrap;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---------- settings: gift-wrap menu ---------- */
 .menu {
   position: fixed; top: calc(68px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); width: 300px;
-  padding: 14px; border-radius: 18px; background: var(--panel); border: 1px solid var(--hud-line);
+  padding: 36px 14px 14px; border-radius: 18px; color: #f6e7c8; overflow: visible;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 220, 160, 0.022) 0 6px, transparent 6px 14px),
+    radial-gradient(120% 70% at 30% 0%, rgba(190, 40, 52, 0.35), transparent 70%),
+    linear-gradient(180deg, rgba(70, 10, 18, 0.9), rgba(28, 8, 10, 0.92));
+  border: 1px solid var(--goldline);
   backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 24px 60px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 14px;
 }
-.menu .lbl { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; opacity: 0.5; margin: 0 0 7px 2px; }
-.seg { display: flex; background: rgba(127, 127, 127, 0.12); border-radius: 10px; padding: 3px; }
-.seg button { all: unset; flex: 1; text-align: center; cursor: pointer; font-size: 12px; font-weight: 500; padding: 7px 4px; border-radius: 7px; opacity: 0.7; }
-.seg button[aria-pressed='true'] { background: rgba(127, 127, 127, 0.22); opacity: 1; }
+/* Satin ribbon band across the top of the wrap. */
+.menu::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 10px; pointer-events: none;
+  background: linear-gradient(180deg, #f6dc98 0%, #e2b560 35%, #b98636 75%, #8f5f22 100%);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.menu .bow { position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); }
+.menu .lbl { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; margin: 0 0 7px 2px; }
+.seg { display: flex; background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(236, 196, 116, 0.18); border-radius: 10px; padding: 3px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35); }
+.seg button { all: unset; flex: 1; text-align: center; cursor: pointer; font-size: 12px; font-weight: 500; padding: 7px 4px; border-radius: 7px; opacity: 0.78; }
+.seg button:hover { opacity: 1; }
+.seg button[aria-pressed='true'] {
+  background: linear-gradient(180deg, #f6dc98, #d6a24a 60%, #b9822f); color: #2a1206; opacity: 1; font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.7), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
 .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
 input[type='range'] { width: 100%; accent-color: var(--accent); }
-.menu .newtree { all: unset; cursor: pointer; text-align: center; padding: 10px; border-radius: 10px; background: rgba(127, 127, 127, 0.14); font-size: 12.5px; font-weight: 600; }
-.menu .newtree.armed { background: var(--accent); color: #1a0f08; }
+.menu input[type='range'], .menu input[type='checkbox'] { accent-color: #e2b25a; }
+.menu .newtree {
+  all: unset; cursor: pointer; text-align: center; padding: 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  background: linear-gradient(180deg, #d23a3f, #8e1622); color: #fff1dc;
+  box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.menu .newtree:hover { background: linear-gradient(180deg, #de4449, #9a1a27); }
+/* Confirmation state: gold, clearly distinct from the red New tree. */
+.menu .newtree.armed {
+  background: linear-gradient(180deg, #fbe4a6, #d6a24a 60%, #b9822f); color: #2a1206;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.75), 0 0 0 1px rgba(255, 230, 160, 0.55), 0 0 20px rgba(255, 190, 90, 0.4);
+}
 
 .pause { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; cursor: pointer; }
 .pause .big { font-family: 'Instrument Serif', serif; font-style: italic; font-size: 38px; }
 .pause small { display: block; margin-top: 8px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.6; }
 
+/* ---------- results: gift tag ---------- */
 .results {
   position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom)); transform: translate(-50%, 24px);
-  width: min(420px, calc(100vw - 32px)); padding: 26px 24px 18px; border-radius: 24px; text-align: center;
-  background: var(--panel); border: 1px solid var(--hud-line); backdrop-filter: blur(28px) saturate(1.2); -webkit-backdrop-filter: blur(28px) saturate(1.2);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45); opacity: 0; transition: opacity 0.7s, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+  width: min(420px, calc(100vw - 32px)); padding: 46px 24px 18px; border-radius: 10px 10px 18px 18px; text-align: center;
+  color: #3a1a0e; border: 0;
+  background:
+    radial-gradient(120% 55% at 50% 0%, rgba(255, 255, 255, 0.6), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(120, 80, 30, 0.018) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #f9efdc, #efdcbc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -24px 40px -26px rgba(120, 70, 20, 0.28);
+  clip-path: polygon(14% 0, 86% 0, 100% 9%, 100% 100%, 0 100%, 0 9%);
+  filter: drop-shadow(0 26px 50px rgba(0, 0, 0, 0.55));
+  opacity: 0; transition: opacity 0.7s, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+body[data-scene='frost'] .results { filter: drop-shadow(0 22px 40px rgba(40, 60, 70, 0.3)); }
+/* Eyelet: a punched hole with a gold grommet. */
+.results::before {
+  content: ''; position: absolute; left: 50%; top: 15px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #120804, #3a1a0c);
+  box-shadow: 0 0 0 2px #e2b560, 0 0 0 3.2px #8f5f22, 0 1px 2px 3px rgba(90, 50, 10, 0.35), inset 0 2px 2px rgba(0, 0, 0, 0.8);
 }
 .results.show { opacity: 1; transform: translate(-50%, 0); }
-.results h2 { margin: 0; font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400; font-size: 40px; line-height: 1.05; }
+.results h2 { margin: 0; font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400; font-size: 40px; line-height: 1.05; color: #7d1420; }
+.results .merry { margin-top: 2px; font: italic 400 17px 'Instrument Serif', serif; color: #9a6a2a; }
 .results .score { margin-top: 8px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.6; }
-.results .badge { display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; background: var(--accent); color: #1a0f08; font-weight: 600; }
-.results .badge.quiet { background: rgba(127, 127, 127, 0.16); color: inherit; font-weight: 500; }
-.results .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin: 20px 0 18px; padding: 14px 0; border-top: 1px solid var(--hud-line); border-bottom: 1px solid var(--hud-line); }
+.results .badge {
+  display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;
+  background: linear-gradient(180deg, #c8323b, #9a1a26); color: #fff3de; box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35);
+}
+.results .badge.quiet { background: rgba(122, 70, 30, 0.12); color: #6b3a1c; font-weight: 500; box-shadow: none; }
+.results .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin: 20px 0 18px; padding: 14px 0; border-top: 1px solid rgba(122, 70, 30, 0.22); border-bottom: 1px solid rgba(122, 70, 30, 0.22); }
 .results .stats b { display: block; font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.results .stats span { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.5; }
+.results .stats span { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
 .results .actions { display: flex; gap: 8px; }
-.results .actions button { all: unset; flex: 1; cursor: pointer; padding: 12px; border-radius: 12px; font-size: 13px; font-weight: 600; background: rgba(127, 127, 127, 0.14); }
-.results .actions .primary { background: var(--ink); color: #120b07; }
-body[data-scene='frost'] .results .actions .primary { color: #f7f9fa; }
-.results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.55; }
+.results .actions button { all: unset; flex: 1; cursor: pointer; padding: 12px; border-radius: 12px; font-size: 13px; font-weight: 600; background: rgba(122, 70, 30, 0.12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+.results .actions button:hover { background: rgba(122, 70, 30, 0.18); }
+.results .actions .primary {
+  background: linear-gradient(180deg, #c8323b, #8e1622); color: #fff3de;
+  box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35), 0 3px 10px rgba(120, 20, 30, 0.3);
+}
+.results .actions .primary:hover { background: linear-gradient(180deg, #d63c45, #9a1a27); }
+.results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.6; }
 
 .corner { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); right: calc(24px + env(safe-area-inset-right)); }
 
 /* Declared after the `all: unset` component rules so the focus ring wins. */
 button:focus-visible, .seg button:focus-visible, .menu button:focus-visible, .results button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pill:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.menu button:focus-visible, .menu .seg button:focus-visible, .menu input:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
+.results button:focus-visible, .results .actions button:focus-visible { outline: 2px solid #8e1622; outline-offset: 3px; }
 
 @media (max-width: 600px) {
   .wordmark { top: calc(22px + env(safe-area-inset-top)); left: 18px; font-size: 10.5px; }
   .hud { top: calc(14px + env(safe-area-inset-top)); right: 14px; }
   .menu { right: 12px; left: 12px; width: auto; }
-  .intro { top: calc(58px + env(safe-area-inset-top)); }
+  /* Phones have no room beside the HUD: the tagline hangs just below the garland. */
+  .intro { top: calc(var(--garland-bottom) + 8px); font-size: 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
