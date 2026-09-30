@@ -144,7 +144,7 @@ tests/         vitest (core) + Playwright (smoke)
 - The board fills the viewport. The tree is centred with the star above row 0 and the source in the trunk below the root.
 - Tile size: `s = min(availableHeight / 12.7, width × 0.9 / 20)`. Throughout this spec, sizes written as `0.06s` are multiples of `s`.
 - **Wordmark:** "Tracked" style, top-left. `AGLOW` in Inter, ~11.5px, letter-spacing 0.52em, set in gold foil and preceded by a small holly sprig whose berries glow with the lit fraction (§4.8).
-- **HUD:** top-right. Radio pill, timer pill (tabular numerals), and a `···` settings button. The pills are cranberry glass with a gold hairline and backdrop blur (§4.8).
+- **HUD:** top-right. Radio pill, timer pill (tabular numerals), a pause pill (a two-bar glyph, `aria-label="Pause"`; hidden during the reveal and after the win), and a `···` settings button. The pills are cranberry glass with a gold hairline and backdrop blur (§4.8).
 
 ### 4.3 Scenes
 
@@ -316,7 +316,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 
 1. **Arrive:** the scene and dark tree render, and `AGLOW` plus "Turn the wires. Light the tree." fade in (about 1.5s). The tile reveal plays, then the timer starts. On the first visit, the hint stays until the first tap.
 2. **Resume:** an in-progress game (solution, current bits, colours, elapsed ms, scene) is saved to localStorage on every turn and on page hide. On return: a "Welcome back · 1:42" toast and the timer resumes.
-3. **Pause:** when the tab is hidden, the timer stops. On return, the board is blurred with "Paused — tap to resume".
+3. **Pause:** the HUD pause pill, the `P` key, or hiding the tab all pause the game the same way: the timer stops, the game is saved (if a tile has been turned), and the board is blurred behind "Paused — tap to resume". Tapping anywhere, `P` again, or `Escape` resumes (the settings dialog keeps its own `Escape`); the resuming tap never turns the tile underneath. There is no pause during the reveal or after the win.
 4. **New tree mid-game:** tapping it turns the button into "Tap again to start over" for 3 seconds.
 5. **Settings (`···`):** Scene (Auto / Midnight / Fireside / Frost), Light path (Filament / Fairy lights / Neon), Effects volume, Haptics (Android only; `navigator.vibrate(8)` on each turn).
 6. **Win:** the sequence in §4.5, then the **results card**:

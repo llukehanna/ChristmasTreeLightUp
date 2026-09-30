@@ -73,6 +73,10 @@ button.pill:hover { border-color: rgba(246, 214, 146, 0.85); }
   box-shadow: 0 0 calc(5px + var(--lit) * 5px) rgba(255, 184, 74, calc(0.7 + var(--lit) * 0.3));
 }
 .pill.icon { padding: 0 12px; letter-spacing: 0.1em; }
+/* Two-bar pause glyph, same ink as the other pills. */
+.pill.pause-btn { width: 38px; padding: 0; justify-content: center; }
+.pill.pause-btn svg { display: block; fill: currentColor; filter: drop-shadow(0 0 3px rgba(255, 200, 120, 0.25)); }
+body[data-scene='frost'] .pill.pause-btn svg { filter: none; }
 
 /* ---------- intro: gold serif tagline ---------- */
 .intro {
@@ -137,7 +141,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
   box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.75), 0 0 0 1px rgba(255, 230, 160, 0.55), 0 0 20px rgba(255, 190, 90, 0.4);
 }
 
-.pause { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; cursor: pointer; }
+.pause { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; cursor: pointer; outline: none; }
 .pause .big { font-family: 'Instrument Serif', serif; font-style: italic; font-size: 38px; }
 .pause small { display: block; margin-top: 8px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.6; }
 

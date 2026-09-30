@@ -50,6 +50,7 @@
     <div class="hud">
       <div id="radio-slot"></div>
       <div class="pill time" id="time" role="timer" aria-label="Time">0:00</div>
+      <button class="pill icon pause-btn" id="pause-btn" aria-label="Pause" hidden><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><rect x="2.1" y="1.6" width="2.7" height="8.8" rx="1.1" /><rect x="7.2" y="1.6" width="2.7" height="8.8" rx="1.1" /></svg></button>
       <button class="pill icon" id="menu-btn" aria-label="Settings" aria-expanded="false">···</button>
     </div>
 
@@ -90,7 +91,7 @@
       <label class="row" id="haptics-row"><span>Haptics</span><input type="checkbox" id="haptics" /></label>
     </div>
 
-    <div class="pause" id="pause" hidden><div><div class="big">Paused</div><small>Tap to resume</small></div></div>
+    <div class="pause" id="pause" role="button" tabindex="-1" aria-label="Resume" hidden><div><div class="big">Paused</div><small>Tap to resume</small></div></div>
 
     <section class="results" id="results" hidden aria-live="polite">
       <h2 id="r-time">Lit in 0:00</h2>
