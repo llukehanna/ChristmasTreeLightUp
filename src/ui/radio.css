@@ -1,0 +1,242 @@
+/* ---------- Radio (spec §5.3) in the festive chrome of §4.8 ---------- */
+
+/* Pill: a .pill (cranberry glass, gold hairline) with gold equalizer bars. */
+.radio-pill { padding: 0 14px 0 13px; max-width: 360px; }
+.radio-pill .rp-name, .radio-pill .rp-short { white-space: nowrap; }
+.radio-pill .rp-track { opacity: 0.62; font-weight: 400; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: -2px; }
+.radio-pill .rp-track:empty { display: none; }
+.radio-pill .rp-track::before { content: '· '; }
+/* The app picks the widest label that leaves the wordmark clear (App.fitHud). */
+.radio-pill .rp-short { display: none; }
+.radio-pill[data-fit='name'] .rp-track { display: none; }
+.radio-pill[data-fit='short'] .rp-name, .radio-pill[data-fit='short'] .rp-track { display: none; }
+.radio-pill[data-fit='short'] .rp-short { display: inline; }
+.radio-pill[data-fit='icon'] { width: 38px; padding: 0; justify-content: center; }
+.radio-pill[data-fit='icon'] .rp-name, .radio-pill[data-fit='icon'] .rp-track, .radio-pill[data-fit='icon'] .rp-short { display: none; }
+
+.eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; flex: none; }
+.eq i {
+  display: block; width: 2.5px; height: 3px; border-radius: 1.5px;
+  background: linear-gradient(180deg, #fff1c4, #e7b95e 45%, #b9822f);
+  box-shadow: 0 0 4px rgba(255, 196, 100, 0.45);
+}
+.radio-pill .eq i, .radio .st.live .eq i { animation: eq 1.1s ease-in-out infinite; }
+.eq i:nth-child(2) { animation-delay: -0.4s !important; }
+.eq i:nth-child(3) { animation-delay: -0.75s !important; }
+.radio-pill.muted .eq i { animation: none; height: 3px; opacity: 0.55; box-shadow: none; }
+body[data-scene='frost'] .eq i { box-shadow: none; }
+@keyframes eq { 0%, 100% { height: 3px; } 50% { height: 12px; } }
+
+/* ---------- Panel: the gift-wrap of the settings menu, as a 380px popover ---------- */
+.radio {
+  position: fixed; top: calc(68px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); width: 380px;
+  max-height: calc(100vh - 92px - env(safe-area-inset-top)); display: flex; flex-direction: column;
+  padding-top: 32px; border-radius: 20px; color: #f6e7c8; overflow: visible;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 220, 160, 0.022) 0 6px, transparent 6px 14px),
+    radial-gradient(110% 45% at 25% 0%, rgba(190, 40, 52, 0.38), transparent 70%),
+    radial-gradient(90% 40% at 100% 100%, rgba(150, 24, 34, 0.22), transparent 70%),
+    linear-gradient(180deg, rgba(72, 10, 18, 0.92), rgba(28, 8, 10, 0.94));
+  border: 1px solid var(--goldline);
+  backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 30px 80px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+  animation: radio-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+body[data-scene='frost'] .radio { box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.16), 0 26px 60px rgba(60, 24, 30, 0.34), 0 2px 8px rgba(60, 24, 30, 0.2); }
+@keyframes radio-in { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }
+/* Satin ribbon band and bow, as on the settings menu. */
+.radio::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 10px; pointer-events: none;
+  background: linear-gradient(180deg, #f6dc98 0%, #e2b560 35%, #b98636 75%, #8f5f22 100%);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.radio .bow { position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); }
+.radio .grab { display: none; }
+.radio .body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; border-radius: 0 0 19px 19px;
+  scrollbar-width: thin; scrollbar-color: rgba(236, 196, 116, 0.35) transparent;
+}
+
+/* Now playing: a glowing glass bulb as generated cover art, in the scene's light. */
+.radio .now { padding: 16px 20px 14px; display: flex; gap: 16px; align-items: center; }
+.radio .art {
+  --bulb: #ffb24a; --bulb-hi: #fff2cc; --bulb-lo: #c4561c; --halo: rgba(255, 170, 70, 0.55);
+  position: relative; width: 66px; height: 66px; border-radius: 15px; flex: none; overflow: hidden;
+  background: radial-gradient(70% 70% at 50% 62%, rgba(255, 170, 80, 0.32), transparent 70%), linear-gradient(160deg, #3a120c, #160604);
+  background-size: cover; background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.45), inset 0 1px 0 rgba(255, 236, 190, 0.3), 0 8px 22px rgba(0, 0, 0, 0.45), 0 0 26px rgba(255, 140, 60, 0.18);
+}
+body[data-scene='midnight'] .radio .art { background: radial-gradient(70% 70% at 50% 62%, rgba(255, 200, 120, 0.26), transparent 70%), linear-gradient(160deg, #18213f, #070a18); }
+body[data-scene='frost'] .radio .art { background: radial-gradient(70% 70% at 50% 62%, rgba(255, 210, 150, 0.35), transparent 70%), linear-gradient(160deg, #5d1520, #2a070c); }
+.radio[data-source='christmas-classics'] .art { --bulb: #ff5a52; --bulb-hi: #ffe1d6; --bulb-lo: #9a1420; --halo: rgba(255, 80, 70, 0.5); }
+.radio[data-kind='musicbox'] .art { --bulb: #f4cf72; --bulb-hi: #fffbe6; --bulb-lo: #a8742a; --halo: rgba(255, 214, 120, 0.5); }
+.radio[data-kind='fireplace'] .art { --bulb: #ff8a3a; --bulb-hi: #fff0c8; --bulb-lo: #b5340e; --halo: rgba(255, 120, 40, 0.6); }
+.radio[data-kind='embed'] .art { --bulb: #6fd28c; --bulb-hi: #eaffe6; --bulb-lo: #1f7a3c; --halo: rgba(110, 220, 140, 0.45); }
+/* A C9 bulb with a gold screw cap, hanging from the top edge. */
+.radio .art .bulb {
+  position: absolute; left: 50%; top: 23px; width: 24px; height: 31px; margin-left: -12px;
+  border-radius: 50% 50% 50% 50% / 58% 58% 42% 42%;
+  background: radial-gradient(circle at 40% 34%, var(--bulb-hi), var(--bulb) 46%, var(--bulb-lo) 100%);
+  box-shadow: 0 0 14px 2px var(--halo), 0 0 34px 6px var(--halo);
+  opacity: 0.55; filter: saturate(0.7); transition: opacity 0.6s, filter 0.6s;
+}
+.radio .art .bulb::before {
+  content: ''; position: absolute; left: 50%; top: -8px; width: 11px; height: 10px; margin-left: -5.5px; border-radius: 2px 2px 3px 3px;
+  background: repeating-linear-gradient(180deg, #f6dc98 0 2px, #9a6a26 2px 3px), linear-gradient(90deg, #8f5f22, #f6dc98, #8f5f22);
+  background-blend-mode: multiply; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+}
+.radio .art .bulb::after {
+  content: ''; position: absolute; left: 50%; top: -24px; width: 1.5px; height: 16px; margin-left: -0.75px; background: rgba(30, 40, 20, 0.9);
+}
+.radio.playing .art .bulb { opacity: 1; filter: none; animation: bulb-glow 2.6s ease-in-out infinite; }
+@keyframes bulb-glow { 50% { box-shadow: 0 0 18px 3px var(--halo), 0 0 44px 10px var(--halo); } }
+.radio .art.cover .bulb { display: none; }
+
+.radio .meta { min-width: 0; flex: 1; }
+.radio .station { font-size: 10px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #f0c977; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.radio .title {
+  font-family: 'Instrument Serif', serif; font-size: 24px; line-height: 1.12; color: #fff3dc;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 12px rgba(255, 180, 90, 0.2);
+}
+.radio .artist { font-size: 12.5px; color: rgba(246, 231, 200, 0.62); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Custom ranges: a gold-filled satin groove with a gold bead. --p is the filled fraction, set by the panel. */
+.radio input[type='range'] {
+  --p: 0%; -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 18px; margin: 0; background: transparent; cursor: pointer;
+}
+.radio input[type='range']::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, #b9822f, #f0cd80) 0 0 / var(--p) 100% no-repeat, rgba(0, 0, 0, 0.38);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 220, 160, 0.08);
+}
+.radio input[type='range']::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(0, 0, 0, 0.38); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55); }
+.radio input[type='range']::-moz-range-progress { height: 4px; border-radius: 2px; background: linear-gradient(90deg, #b9822f, #f0cd80); }
+.radio input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; border: 0;
+  background: radial-gradient(circle at 36% 30%, #fffaf0, #f0cd80 40%, #a8742a 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(90, 50, 10, 0.35), 0 0 10px rgba(255, 196, 100, 0.35);
+}
+.radio input[type='range']::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%; border: 0;
+  background: radial-gradient(circle at 36% 30%, #fffaf0, #f0cd80 40%, #a8742a 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(90, 50, 10, 0.35);
+}
+.radio input[type='range']:disabled { cursor: default; }
+.radio input[type='range']:disabled::-webkit-slider-thumb { opacity: 0; }
+.radio input[type='range']:disabled::-moz-range-thumb { opacity: 0; }
+
+.radio .prog { padding: 0 20px; }
+.radio .times { display: flex; justify-content: space-between; margin-top: 2px; font-size: 10.5px; color: rgba(246, 231, 200, 0.5); font-variant-numeric: tabular-nums; }
+
+/* Transport: cream glyphs, gold when a toggle is on, a gold play button with a cranberry glyph. */
+.radio .ctl { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 8px 0 18px; }
+.radio .ctl button {
+  all: unset; box-sizing: border-box; cursor: pointer; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; color: #f6e7c8; opacity: 0.88; transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.radio .ctl button:hover:not(:disabled) { opacity: 1; background: rgba(255, 220, 160, 0.07); }
+.radio .ctl svg { width: 21px; height: 21px; display: block; }
+.radio .ctl .shuffle svg, .radio .ctl .show svg { width: 19px; height: 19px; }
+.radio .ctl button[aria-pressed='false'] { opacity: 0.42; }
+.radio .ctl button[aria-pressed='true'] { color: #f3d492; opacity: 1; filter: drop-shadow(0 0 5px rgba(255, 196, 100, 0.55)); }
+.radio .ctl button:disabled { opacity: 0.2; cursor: default; filter: none; color: #f6e7c8; }
+.radio .ctl .play {
+  width: 56px; height: 56px; margin: 0 4px; color: #6e0f1b; opacity: 1;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 240, 0.65), transparent 55%), linear-gradient(180deg, #fbe4a6, #e2b25a 55%, #b9822f);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 252, 235, 0.85), inset 0 -2px 3px rgba(120, 70, 20, 0.35),
+    0 0 0 1px rgba(255, 230, 160, 0.6), 0 0 0 5px rgba(60, 6, 14, 0.55), 0 0 0 6px rgba(236, 196, 116, 0.28),
+    0 6px 16px rgba(0, 0, 0, 0.45), 0 0 26px rgba(255, 190, 90, 0.3);
+}
+.radio .ctl .play:hover { opacity: 1; background: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 240, 0.75), transparent 55%), linear-gradient(180deg, #fde9b4, #e8ba64 55%, #c08a35); }
+.radio .ctl .play svg { width: 24px; height: 24px; filter: drop-shadow(0 1px 0 rgba(255, 240, 200, 0.5)); }
+
+/* Sections and station rows */
+.radio .sec { border-top: 1px solid rgba(236, 196, 116, 0.16); padding: 12px 10px; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.18); }
+.radio h4 { margin: 2px 12px 8px; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; font-weight: 500; }
+.radio .st {
+  all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 10px;
+  border-radius: 12px; cursor: pointer; transition: background 0.15s;
+}
+.radio .st + .st { margin-top: 2px; }
+.radio .st:hover:not(:disabled) { background: rgba(255, 220, 160, 0.06); }
+.radio .st[aria-current='true'] {
+  background: linear-gradient(90deg, rgba(236, 196, 116, 0.2), rgba(236, 196, 116, 0.07));
+  box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.38), inset 0 1px 0 rgba(255, 240, 200, 0.12);
+}
+.radio .st:disabled { opacity: 0.4; cursor: default; }
+.radio .st .txt { min-width: 0; display: flex; flex-direction: column; }
+.radio .st .n { font-size: 13.5px; font-weight: 500; color: #fbefd8; }
+.radio .st .d { font-size: 11.5px; color: rgba(246, 231, 200, 0.55); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.radio .st .r { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 11px; color: rgba(246, 231, 200, 0.45); flex: none; }
+.radio .st .r .eq { display: none; }
+.radio .st .chev svg { width: 14px; height: 14px; display: block; }
+.radio .st[aria-current='true'] .r { color: #f3d492; font-weight: 500; }
+.radio .st[aria-current='true'] .chev { display: none; }
+.radio .st.live .r .eq { display: inline-flex; }
+.radio .embed-row[aria-expanded='true'] .chev { transform: rotate(90deg); }
+/* Each source as a small glass ornament; the playing one turns to gold foil. */
+.radio .dot {
+  width: 32px; height: 32px; border-radius: 10px; flex: none; display: grid; place-items: center; color: #f3d492;
+  background: radial-gradient(90% 80% at 35% 20%, rgba(255, 230, 190, 0.18), transparent 60%), linear-gradient(180deg, rgba(120, 22, 32, 0.9), rgba(52, 8, 14, 0.9));
+  box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.3), inset 0 1px 0 rgba(255, 220, 180, 0.2), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.radio .dot svg { width: 17px; height: 17px; display: block; filter: drop-shadow(0 0 4px rgba(255, 196, 100, 0.35)); }
+.radio .st[aria-current='true'] .dot {
+  color: #6e0f1b;
+  background: radial-gradient(90% 80% at 35% 15%, rgba(255, 255, 240, 0.7), transparent 55%), linear-gradient(180deg, #fbe4a6, #d6a24a 60%, #b9822f);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.75), 0 0 0 1px rgba(255, 230, 160, 0.4), 0 0 14px rgba(255, 190, 90, 0.35), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.radio .st[aria-current='true'] .dot svg { filter: none; }
+
+/* Spotify / Apple embed */
+.radio .embed-form { padding: 8px 12px 4px; display: flex; flex-direction: column; gap: 9px; }
+.radio .embed-form input {
+  font: inherit; font-size: 12.5px; padding: 10px 12px; border-radius: 10px; color: #fbefd8;
+  background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(236, 196, 116, 0.25); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.radio .embed-form input::placeholder { color: rgba(246, 231, 200, 0.4); }
+.radio .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.radio .presets button {
+  all: unset; cursor: pointer; font-size: 11.5px; padding: 6px 11px; border-radius: 999px; color: #f3d492;
+  background: rgba(236, 196, 116, 0.08); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.32);
+}
+.radio .presets button:hover { background: rgba(236, 196, 116, 0.16); }
+.radio .err, .radio .warn { font-size: 11.5px; color: #ffc98a; margin: 4px 12px 2px; }
+.radio .err { margin: 0; }
+.radio .embed-frame:empty { display: none; }
+.radio .embed-frame { padding: 6px 2px 0; }
+.radio .embed-frame iframe { display: block; width: 100%; border: 0; border-radius: 12px; box-shadow: 0 0 0 1px rgba(236, 196, 116, 0.25), 0 6px 18px rgba(0, 0, 0, 0.35); }
+
+.radio .mix { padding-top: 10px; padding-bottom: 8px; }
+.radio .sl { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 12px; padding: 5px 12px; font-size: 12px; color: rgba(246, 231, 200, 0.75); cursor: pointer; }
+.radio .credit { margin: 0; padding: 10px 22px 16px; font-size: 10.5px; color: rgba(246, 231, 200, 0.45); line-height: 1.5; border-top: 1px solid rgba(236, 196, 116, 0.1); }
+.radio .credit:empty { display: none; }
+
+.radio button:focus-visible, .radio .ctl button:focus-visible, .radio .st:focus-visible, .radio input:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
+.radio .ctl .play:focus-visible { outline-offset: 7px; }
+
+/* ---------- Phone: a bottom sheet with a grab handle and larger controls ---------- */
+@media (max-width: 600px) {
+  .radio {
+    top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: min(84vh, calc(100dvh - 72px));
+    padding-top: 30px; border-radius: 22px 22px 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 -18px 50px rgba(0, 0, 0, 0.5);
+    animation: sheet-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  body[data-scene='frost'] .radio { box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.16), 0 -14px 40px rgba(60, 24, 30, 0.3); }
+  .radio::before { top: 16px; height: 9px; }
+  /* The bow sits toward the corner so the grab handle keeps the centre. */
+  .radio .bow { left: auto; right: 22px; transform: none; top: -6px; width: 54px; height: 34px; }
+  .radio .grab { display: block; position: absolute; left: 50%; top: 5px; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: rgba(246, 231, 200, 0.3); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3); }
+  .radio .bow + .body { border-radius: 0; }
+  .radio .now { padding-top: 14px; }
+  .radio .art { width: 58px; height: 58px; }
+  .radio .art .bulb { top: 20px; transform: scale(0.9); }
+  .radio .title { font-size: 22px; }
+  .radio .ctl { gap: 22px; padding-bottom: 16px; }
+  .radio .ctl button { width: 44px; height: 44px; }
+  .radio .ctl .play { width: 60px; height: 60px; }
+  .radio .st { padding-top: 9px; padding-bottom: 9px; }
+}
+@keyframes sheet-in { from { transform: translateY(40px); opacity: 0.4; } }
