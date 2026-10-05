@@ -1,3 +1,5 @@
+import { FIREPLACE_ID, MUSIC_BOX_ID } from './builtin';
+
 export interface Track {
   id: string;
   url: string;
@@ -23,6 +25,8 @@ export interface StationsFile {
 }
 
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/** Source ids the radio itself uses: a station with one of these would be unreachable or shadow a built-in source. */
+const RESERVED_IDS: ReadonlySet<string> = new Set([MUSIC_BOX_ID, FIREPLACE_ID, 'embed']);
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 /** https URLs or site-relative paths only. */
 const isUrl = (v: unknown): v is string => {
@@ -67,7 +71,7 @@ export function parseStation(v: unknown): Station | null {
   const o = obj(v);
   if (!o) return null;
   const { id, name, description, cover, tracks } = o;
-  if (!isStr(id, 64) || !ID.test(id) || !isStr(name, 60) || name.trim() === '' || !isStr(description, 200)) return null;
+  if (!isStr(id, 64) || !ID.test(id) || RESERVED_IDS.has(id) || !isStr(name, 60) || name.trim() === '' || !isStr(description, 200)) return null;
   if (cover !== undefined && !isUrl(cover)) return null;
   if (!Array.isArray(tracks) || tracks.length > 500) return null;
   const parsed: Track[] = [];

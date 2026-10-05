@@ -33,8 +33,12 @@ const ROLE_GAIN: Readonly<Record<Role, number>> = { melody: 0.3, bass: 0.17, inn
 const LEVEL = 0.98;
 
 const TICK_MS = 200;
-/** Notes are laid down this far ahead on the audio clock; a late timer tick never leaves a gap. */
-const LOOKAHEAD_S = 1.0;
+/**
+ * Notes are laid down this far ahead on the audio clock, so a late timer tick never leaves a gap. It must exceed
+ * the 1 s timer clamp of a hidden tab, or the tempo stutters there. Skips and stop still silence everything already
+ * scheduled, through the piece and master gains.
+ */
+const LOOKAHEAD_S = 2.0;
 /** Silence after the last notated beat of a carol, before the next one starts. */
 const GAP_S = 1.6;
 const FADE_IN_S = 1.0;

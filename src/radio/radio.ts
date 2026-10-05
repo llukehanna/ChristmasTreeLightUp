@@ -52,6 +52,7 @@ export class Radio {
   constructor() {
     this.player.onChange = () => this.onChange?.();
     this.player.onRemote = (action) => this.onRemote(action);
+    this.player.onUnavailable = (wasPlaying) => this.onStationUnavailable(wasPlaying);
     this.musicbox.onChange = () => {
       if (this.kind === 'musicbox') this.syncMusicBoxSession();
       this.onChange?.();
@@ -279,6 +280,21 @@ export class Radio {
       return true;
     }
     return false; // next / previous / seek: the player handles them
+  }
+
+  /**
+   * The station failed 3 times in a row (spec §8). A playing one falls back to Music Box (spec §5.2), which is not a
+   * choice, so nothing is remembered; a paused one is let go, so the play button starts the preferred source instead
+   * of a station that can't play.
+   */
+  private onStationUnavailable(wasPlaying: boolean): void {
+    if (this.kind !== 'station') return; // another source has already taken over
+    if (wasPlaying) {
+      this.play(MUSIC_BOX_ID, false);
+    } else {
+      this.stopAll();
+      this.onChange?.();
+    }
   }
 
   private play(source: string, remember: boolean): void {
