@@ -271,9 +271,9 @@ function toneWav(seconds: number): Buffer {
   return buf;
 }
 
-test('a remote station streams from the Blob host through /api/stations: next works and a 404 track is skipped', async ({ page }) => {
-  const BLOB = 'https://test.public.blob.vercel-storage.com/tracks/christmas-classics';
-  const track = (id: string, title: string) => ({ id, url: `${BLOB}/${id}.wav`, title, artist: 'Test Tone', credit: 'generated in the test', duration: 30 });
+test('a remote station streams from the R2 media host through /api/stations: next works and a 404 track is skipped', async ({ page }) => {
+  const MEDIA = 'https://aglow-music.example/tracks/christmas-classics';
+  const track = (id: string, title: string) => ({ id, url: `${MEDIA}/${id}.wav`, title, artist: 'Test Tone', credit: 'generated in the test', duration: 30 });
   const file = {
     version: 1,
     stations: [
@@ -288,7 +288,7 @@ test('a remote station streams from the Blob host through /api/stations: next wo
   await page.route('**/api/stations', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(file) }));
   const wav = toneWav(30);
   const hits: { id: string; range: string | null; cors: boolean }[] = [];
-  await page.route(`${BLOB}/*.wav`, async (r) => {
+  await page.route(`${MEDIA}/*.wav`, async (r) => {
     const req = r.request();
     const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'range' };
     if (req.method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
