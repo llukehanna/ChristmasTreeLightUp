@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { audio } from '../../../src/audio/context';
 import { Fireplace } from '../../../src/radio/fireplace';
+import { RadioPlayer } from '../../../src/radio/player';
 import { Radio } from '../../../src/radio/radio';
 import { loadRadioSettings } from '../../../src/store/radio-settings';
 
@@ -121,14 +122,20 @@ it('clamps the volume so persisted settings stay valid', async () => {
 });
 
 it('re-selecting the playing station does not restart it', async () => {
+  fakeAudio(); // without a context the player never loads, and the test would prove nothing
   const r = await ready();
   r.select('christmas-jazz');
+  expect(r.view().playing).toBe(true);
   const track = r.view().track;
-  const spy = vi.spyOn(HTMLMediaElement.prototype, 'play');
-  spy.mockClear();
+  expect(track).not.toBeNull();
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play');
+  const playStation = vi.spyOn(RadioPlayer.prototype, 'playStation');
+  play.mockClear();
   r.select('christmas-jazz');
+  expect(playStation).not.toHaveBeenCalled();
+  expect(play).not.toHaveBeenCalled();
   expect(r.view().track).toBe(track);
-  expect(spy).not.toHaveBeenCalled();
+  expect(r.view().playing).toBe(true);
 });
 
 it('duck is a no-op during the first fade-in, then ducks and ends back at the volume', async () => {
