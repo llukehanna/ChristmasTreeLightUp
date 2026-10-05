@@ -84,6 +84,8 @@ export class RadioPlayer {
   onChange: (() => void) | null = null;
   /** Consulted first by every Media Session handler (lock screen, headset keys). Return true to consume the action. */
   onRemote: ((action: RemoteAction, seekTime?: number) => boolean) | null = null;
+  /** The current station has just been marked unavailable (3 failures in a row). `wasPlaying`: it was audible, not paused or stopped. */
+  onUnavailable: ((wasPlaying: boolean) => void) | null = null;
   private decks: [Deck, Deck] | null = null;
   private active = 0;
   private queue: Track[] = [];
@@ -135,9 +137,16 @@ export class RadioPlayer {
   /** Leave the lock screen / media keys alone once something else (Fireplace, an embed) is the source. */
   releaseMediaSession(): void {
     if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
     try {
-      navigator.mediaSession.playbackState = 'none';
-      navigator.mediaSession.metadata = null;
+      ms.playbackState = 'none';
+      ms.metadata = null;
+    } catch {
+      /* unsupported: ignore */
+    }
+    try {
+      // No arguments clears the lock-screen scrubber; a source without a position must not inherit the station's.
+      if (typeof ms.setPositionState === 'function') ms.setPositionState();
     } catch {
       /* unsupported: ignore */
     }
@@ -246,7 +255,8 @@ export class RadioPlayer {
       d.el.addEventListener('playing', () => {
         if (k === this.active) this.failures = 0;
       });
-      d.el.addEventListener('ended', () => k === this.active && d.trackId !== null && this.next());
+      // `playing`: an `ended` that lands while paused or stopped (e.g. inside the silence() fade) must not start a track.
+      d.el.addEventListener('ended', () => k === this.active && d.trackId !== null && this.playing && this.next());
       d.el.addEventListener('error', () => k === this.active && d.trackId !== null && this.onError());
       // iOS only allows a non-gesture play() on elements already played inside a gesture: prime both decks now.
       d.el.src = silent;
@@ -261,6 +271,8 @@ export class RadioPlayer {
   /**
    * Switch decks. The incoming deck's fade-in only starts once it is actually playing (it may need to buffer);
    * a crossfade fades the outgoing deck at the same moment, a skip fades it out immediately.
+   * If the incoming deck is still audible (a fast second skip catches it mid fade-out), it is ramped to silence
+   * before it is paused and reloaded, so nothing is hard-cut. The state change itself is synchronous.
    */
   private load(i: number, crossfade: boolean): void {
     if (this.station && this.unavailable.has(this.station.id)) return;
@@ -274,13 +286,10 @@ export class RadioPlayer {
     const gen = ++this.gen;
     this.clearPending();
 
-    incoming.el.pause();
-    if (incoming.trackId !== track.id || incoming.el.error) {
-      incoming.el.src = track.url; // not preloaded (or the preload failed)
-      incoming.trackId = track.id;
-    } else if (incoming.el.currentTime > 0) {
-      incoming.el.currentTime = 0;
-    }
+    const audible = !incoming.el.paused && incoming.gain.gain.value > 1e-3;
+    const reuse = incoming.trackId === track.id && !incoming.el.error; // preloaded (or the same track again)
+    // Until the deck is reloaded its element still holds the old track: no time, ended or error events act on it.
+    if (audible) incoming.trackId = null;
     rampTo(ctx, incoming.gain.gain, 0, QUICK_FADE_S);
 
     const old = outgoing.el;
@@ -309,18 +318,32 @@ export class RadioPlayer {
       }
       rampTo(ctx, incoming.gain.gain, 1, fade);
     };
-    incoming.el.addEventListener('playing', start, { once: true });
-    this.pending = { el: incoming.el, fn: start };
+    const begin = () => {
+      incoming.el.pause();
+      if (!reuse) incoming.el.src = track.url; // not preloaded (or the preload failed)
+      else if (incoming.el.currentTime > 0) incoming.el.currentTime = 0;
+      incoming.trackId = track.id;
+      if (!this.playing) return; // paused during the fade-out: resume() plays the loaded deck
+      incoming.el.addEventListener('playing', start, { once: true });
+      this.pending = { el: incoming.el, fn: start };
+      incoming.el.play().catch((e: unknown) => {
+        if (e instanceof DOMException && e.name === 'NotAllowedError') {
+          this.playing = false;
+          this.syncPlaybackState();
+          this.onChange?.();
+        }
+      });
+    };
 
     this.active = 1 - this.active;
     this.playing = true;
-    incoming.el.play().catch((e: unknown) => {
-      if (e instanceof DOMException && e.name === 'NotAllowedError') {
-        this.playing = false;
-        this.syncPlaybackState();
-        this.onChange?.();
-      }
-    });
+    if (audible) {
+      window.setTimeout(() => {
+        if (gen === this.gen) begin();
+      }, QUICK_FADE_S * 1000 + 10);
+    } else {
+      begin();
+    }
     this.updateMediaSession(track);
     this.syncPlaybackState();
     this.onChange?.();
@@ -364,13 +387,27 @@ export class RadioPlayer {
   /** Skip on error; after 3 consecutive failures mark the station unavailable for this session (spec §8). */
   private onError(): void {
     this.failures++;
-    if (this.failures >= 3) {
-      if (this.station) this.unavailable.add(this.station.id);
-      this.stop();
+    const limit = this.failures >= 3;
+    if (limit && this.station) this.unavailable.add(this.station.id);
+    // With one track there is nothing to skip to: retry it until the failure limit is reached.
+    const i = this.queue.length > 1 ? nextIndex(this.index, this.queue.length) : this.index;
+    if (!this.playing) {
+      // Paused, or stopped because another source took over: never restart here. Point at the next track and
+      // empty the deck, so resume() loads it.
+      this.clearPending();
+      this.index = i;
+      const d = this.decks?.[this.active];
+      if (d) d.trackId = null;
+      this.onChange?.();
+      if (limit) this.onUnavailable?.(false);
       return;
     }
-    // With one track there is nothing to skip to: retry it until the failure limit is reached.
-    this.load(this.queue.length > 1 ? nextIndex(this.index, this.queue.length) : this.index, false);
+    if (limit) {
+      this.stop();
+      this.onUnavailable?.(true);
+      return;
+    }
+    this.load(i, false);
   }
 
   private setupMediaSession(): void {
