@@ -45,6 +45,14 @@ async function admin(page: Page): Promise<Api> {
   return state;
 }
 
+/** Whether leaving the page now would make the browser ask first (the page's beforeunload decision). */
+const leaveWarns = (page: Page) =>
+  page.evaluate(() => {
+    const e = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+
 test('admin page loads and asks for sign-in', async ({ page }) => {
   await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: false } }));
   await page.route('**/api/admin/login', (r) => r.fulfill({ status: 503, json: { error: 'Admin is not configured' } }));
@@ -134,6 +142,7 @@ test('create a station, edit a track, save; a conflict offers a reload', async (
 
 test('other save failures keep the edits; invalid fields are pointed at before sending', async ({ page }) => {
   const api = await admin(page);
+  expect(await leaveWarns(page)).toBe(false); // nothing to lose yet
   await page.getByLabel('Track 1 title').fill('   ');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.locator('.msg')).toHaveText('Christmas Classics, track 1: the title is empty. Every track needs a title.');
@@ -145,9 +154,11 @@ test('other save failures keep the edits; invalid fields are pointed at before s
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.locator('.msg')).toContainText('Could not save. Try again.');
   await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+  expect(await leaveWarns(page)).toBe(true); // unsaved edits
   api.putStatus = null;
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.locator('header .sub')).toHaveText('Radio admin · v8');
+  expect(await leaveWarns(page)).toBe(false);
 });
 
 test('an expired session goes back to sign-in and keeps the unsaved edits', async ({ page }) => {
@@ -247,6 +258,8 @@ test('uploads join one queue, land in the order they were added, and the file in
   await expect(page.getByText('No tracks yet.')).toHaveCount(0);
   await expect(page.locator('tbody tr')).toHaveCount(2); // the later two wait for the first
   await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Clear finished' })).toBeDisabled(); // the two done files are still held
+  expect(await leaveWarns(page)).toBe(true); // uploads running
 
   // Batch 2 joins while batch 1 is still running, through the same element.
   up.failing.set('broken.mp3', { status: 413, error: 'The file is too large (30 MB max)' });
@@ -273,6 +286,51 @@ test('uploads join one queue, land in the order they were added, and the file in
   await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
 });
 
+test('an upload with no progress for 2 minutes fails as stalled, and Retry sends it again', async ({ page }) => {
+  await page.clock.install();
+  await admin(page);
+  let calls = 0;
+  await page.route(/\/api\/admin\/upload\?/, async (route) => {
+    calls++;
+    if (calls === 1) return; // never answered
+    return route.fulfill({ json: { url: `${MEDIA}/tracks/christmas-classics/0123abcd-late.mp3`, key: 'k', size: 3000 } });
+  });
+  await page.getByLabel('Upload tracks').setInputFiles([mp3('Late - Somebody.mp3')]);
+  const row = page.locator('.up', { hasText: 'Late - Somebody.mp3' });
+  await expect(row).toContainText('0%');
+  await page.clock.fastForward(119_000);
+  await expect(row).toContainText('0%');
+  await page.clock.fastForward(2_000);
+  await expect(row).toContainText('failed: Upload stalled');
+  await page.getByRole('button', { name: 'Retry Late - Somebody.mp3' }).click();
+  await expect(row).toContainText('done');
+  expect(calls).toBe(2);
+  await expect(page.getByLabel('Track 3 title')).toHaveValue('Late');
+});
+
+test('after a conflict, Reload is refused while uploads are running', async ({ page }) => {
+  const api = await admin(page);
+  const up = await uploads(page);
+  api.putStatus = { status: 409, error: 'Stations changed somewhere else. Reload to get the latest, then redo your change.' };
+  await page.getByLabel('Track 1 title').fill('Sleigh Ride!');
+  await page.getByRole('button', { name: 'Save' }).click();
+  const msg = page.locator('.msg');
+  await expect(msg).toContainText('Stations changed somewhere else.');
+  up.hold('Slow.mp3');
+  await page.getByLabel('Upload tracks').setInputFiles([mp3('Slow.mp3')]);
+  await msg.getByRole('button', { name: 'Reload' }).click();
+  const gets = api.gets;
+  await msg.getByRole('button', { name: 'Reload and discard edits' }).click();
+  await expect(msg).toContainText('Uploads are still running. Wait for them to finish, then reload.');
+  expect(api.gets).toBe(gets);
+  up.release('Slow.mp3');
+  await expect(page.locator('#upload-summary')).toHaveText('All uploads finished: 1 done.');
+  await msg.getByRole('button', { name: 'Reload' }).click();
+  await msg.getByRole('button', { name: 'Reload and discard edits' }).click();
+  await expect(page.getByLabel('Track 1 title')).toHaveValue('Sleigh Ride');
+  expect(api.gets).toBe(gets + 1);
+});
+
 test('a cover uploads through its own labelled input', async ({ page }) => {
   await admin(page);
   const up = await uploads(page);
@@ -290,4 +348,8 @@ test('phone width: no horizontal page scroll', async ({ page }) => {
   // The track table scrolls inside its own container instead.
   const wrap = await page.locator('.table-wrap').evaluate((e) => e.scrollWidth > e.clientWidth);
   expect(wrap).toBe(true);
+  // The header stays stuck to the top while the page scrolls.
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+  expect((await page.locator('header').boundingBox())?.y).toBe(0);
 });
