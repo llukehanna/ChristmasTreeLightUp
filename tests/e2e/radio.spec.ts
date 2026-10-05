@@ -249,3 +249,90 @@ test('phone: Tab and Shift+Tab stay inside the open radio sheet', async ({ page 
     expect(await inside()).toBe(true);
   }
 });
+
+/** `seconds` of a quiet 440 Hz sine as 16-bit mono PCM WAV (no real music: Chromium decodes WAV, not AAC). */
+function toneWav(seconds: number): Buffer {
+  const rate = 8000;
+  const n = rate * seconds;
+  const buf = Buffer.alloc(44 + n * 2);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + n * 2, 4);
+  buf.write('WAVEfmt ', 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 3000), 44 + i * 2);
+  return buf;
+}
+
+test('a remote station streams from the Blob host through /api/stations: next works and a 404 track is skipped', async ({ page }) => {
+  const BLOB = 'https://test.public.blob.vercel-storage.com/tracks/christmas-classics';
+  const track = (id: string, title: string) => ({ id, url: `${BLOB}/${id}.wav`, title, artist: 'Test Tone', credit: 'generated in the test', duration: 30 });
+  const file = {
+    version: 1,
+    stations: [
+      {
+        id: 'christmas-classics',
+        name: 'Christmas Classics',
+        description: 'Generated tones',
+        tracks: [track('one', 'Tone One'), track('two', 'Tone Two'), track('broken', 'Tone Broken'), track('four', 'Tone Four')],
+      },
+    ],
+  };
+  await page.route('**/api/stations', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(file) }));
+  const wav = toneWav(30);
+  const hits: { id: string; range: string | null }[] = [];
+  await page.route(`${BLOB}/*.wav`, async (r) => {
+    const req = r.request();
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'range' };
+    if (req.method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
+    const id = /\/([a-z]+)\.wav$/.exec(req.url())?.[1] ?? '';
+    const range = req.headers()['range'] ?? null;
+    hits.push({ id, range });
+    if (id === 'broken') return r.fulfill({ status: 404, headers: cors, body: '' });
+    const base = { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', ...cors };
+    const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
+    if (!m) return r.fulfill({ status: 200, headers: base, body: wav });
+    const start = m[1] === '' ? 0 : Number(m[1]);
+    const end = m[2] === '' ? wav.length - 1 : Math.min(Number(m[2]), wav.length - 1);
+    return r.fulfill({
+      status: 206,
+      headers: { ...base, 'Content-Range': `bytes ${start}-${end}/${wav.length}`, 'Content-Length': String(end - start + 1) },
+      body: wav.subarray(start, end + 1),
+    });
+  });
+  // The station is the remembered source and plays in order, so the first tile tap starts it.
+  await page.addInitScript(() => {
+    if (localStorage.getItem('aglow.radio') === null)
+      localStorage.setItem('aglow.radio', JSON.stringify({ v: 1, on: true, source: 'christmas-classics', embedUrl: null, volume: 0.7, shuffle: false, lightShow: true }));
+  });
+  await ready(page);
+  await expect.poll(async () => (await radio(page)).stations).toEqual(['christmas-classics']);
+  await tapTile(page);
+  await expect.poll(async () => await radio(page), { timeout: 10_000 }).toMatchObject({ kind: 'station', playing: true });
+  await page.click('#radio-pill');
+  const panel = page.locator('#radio-panel');
+  await expect(panel.locator('.stations')).toContainText('Christmas Classics');
+  await expect(panel.locator('.title')).toHaveText('Tone One');
+  await expect(panel.locator('.artist')).toHaveText('Test Tone');
+  // It really plays (the position moves), not just claims to.
+  await expect.poll(() => panel.locator('.pos').textContent(), { timeout: 8000 }).not.toBe('0:00');
+
+  await panel.locator('.next').click();
+  await expect(panel.locator('.title')).toHaveText('Tone Two');
+  expect((await radio(page)).playing).toBe(true);
+  await expect.poll(() => panel.locator('.pos').textContent(), { timeout: 8000 }).not.toBe('0:00');
+
+  // The next track 404s: it is skipped, and the one after it plays.
+  await panel.locator('.next').click();
+  await expect(panel.locator('.title')).toHaveText('Tone Four', { timeout: 10_000 });
+  await expect.poll(async () => (await radio(page)).playing).toBe(true);
+  expect(hits.some((h) => h.id === 'broken')).toBe(true);
+  expect((await radio(page)).kind).toBe('station'); // one failure does not make the station unavailable
+});
