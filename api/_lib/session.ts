@@ -9,7 +9,7 @@ const keyCache = new Map<string, Buffer>();
 /**
  * Session HMAC key, derived from the admin password, so ADMIN_PASSWORD is the only secret. Changing the password invalidates every session.
  * The password is stretched with scrypt first: a stolen token is an offline oracle for the key, so guessing the password must be slow.
- * The result is memoised per instance (keyed by a hash of the password, which is never stored or logged).
+ * The most recent result is memoised per instance (keyed by a hash of the password, which is never stored or logged).
  */
 export function sessionKey(password: string): Buffer {
   const id = createHash('sha256').update(password).digest('hex');
@@ -17,7 +17,8 @@ export function sessionKey(password: string): Buffer {
   if (hit) return hit;
   const stretched = scryptSync(password, KEY_SALT, 32, { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
   const key = Buffer.from(hkdfSync('sha256', stretched, KEY_SALT, 'session', 32));
-  if (keyCache.size >= 4) keyCache.clear();
+  // Single entry: an old password's key never lingers once the password changes.
+  keyCache.clear();
   keyCache.set(id, key);
   return key;
 }
