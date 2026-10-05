@@ -288,10 +288,12 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 
 **Behaviour:**
 - Music fades in on the player's **first tile tap**.
-- Tapping the pill to mute is remembered. Station, volume and play state persist in localStorage.
+- Tapping the pill opens the radio panel; its play button mutes and unmutes, and muting is remembered. Station, volume and play state persist in localStorage.
 - Shuffle is on by default, with a 3-second crossfade between tracks.
 - Previous, next and a seekable scrubber.
-- Media Session metadata and actions for lock-screen and media-key control.
+- Media Session metadata and actions for lock-screen and media-key control. Music Box and Fireplace are Web Audio only (no media element), so their lock-screen and media-key controls depend on browser support.
+- The artist shows under the title in the panel, and after it in the pill when there is room (station · title · artist, then station · title, the name, a short name, the icon).
+- If a station fails 3 times in a row (§8) while it plays, the radio falls back to Music Box; the fallback isn't remembered as a choice.
 - If `stations.json` can't be fetched, or has nothing playable, Music Box and Fireplace still work; with no remembered choice the radio falls back to Music Box. Music Box never waits for the catalog.
 - Each scene suggests a matching station without forcing it: Fireside with Christmas Jazz, Midnight with Music Box, Frost with Christmas Classics.
 
@@ -299,7 +301,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 - Eight carols: Jingle Bells (Pierpont, 1857), Deck the Halls (Welsh "Nos Galan", 1794), O Christmas Tree (German, 1824), Joy to the World (Mason, 1839), Silent Night (Gruber, 1818), Hark! The Herald Angels Sing (Mendelssohn, 1840), God Rest Ye Merry, Gentlemen (traditional, 1833) and The First Noel (traditional, 1833). Each is data: MIDI pitches, beats, chords and a tempo a little slower than it is usually sung.
 - Endless, in shuffled order (never the same carol twice in a row); short carols play through twice; each ends with a gentle ritardando and 1.6 seconds of silence.
 - The tone models a music-box tine: a near-sine body decaying over 1.5–3.4 seconds (low tines ring longer), the tine's second bending mode (6.27× the fundamental) as a short metallic shimmer, a pin-pluck transient, and dampers on re-plucked tines. A soft, warmer bass and inner-voice accompaniment, a slight stereo spread by pitch, a light room, and small timing and velocity variations.
-- The panel shows the carol as the track (artist "Music Box") with the credit `"<Carol>" — <traditional or composer> / public domain, arranged for Aglow`. Next and previous skip carols; there is no scrubbing. Lock-screen metadata uses the album "Aglow Radio".
+- The panel shows the carol as the track (the artist is its composer, or "Traditional") with the credit `"<Carol>" — <traditional or composer> / public domain, arranged for Aglow`. Next and previous skip carols; there is no scrubbing. Lock-screen metadata uses the album "Aglow Radio".
 
 **No local file upload.** Players don't drop MP3s; Luke rejected it as dated.
 
@@ -321,7 +323,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 - **Mapping:**
   - Beats: bulb brightness pulses, staggered by row.
   - Low band: breathing of the ground pool and star glow.
-  - Highs: fairy-LED twinkle speed and filament particle rate.
+  - Highs: fairy-LED twinkle speed and filament particle rate. *(Deferred: not wired yet; the show uses beats and the low band.)*
 - The show runs while the solved tree is shown and stops on New tree. It respects reduced motion.
 
 ## 6. Game flow
@@ -372,7 +374,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 |---|---|
 | Audio blocked before a gesture | Silent until the first tap, which is also when music starts. No error UI. |
 | `stations.json` fetch fails | Music Box and Fireplace (Music Box is the fallback), and a quiet "Some stations unavailable" line in the panel |
-| Track fails to load or decode | Skip to the next track. After 3 consecutive failures, mark the station unavailable for the session. |
+| Track fails to load or decode | Skip to the next track (never while paused or switched away: the next play picks it up). After 3 consecutive failures, mark the station unavailable for the session; a playing station falls back to Music Box. |
 | Invalid Spotify/Apple link | Inline "That link isn't a playlist we can play" message |
 | Canvas blur filter unsupported | Downsample-then-upsample blur (§4.6) |
 | Low frame rate | Adaptive quality tiers |
