@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { GLOBAL_KEY, RateLimiter } from '../../../api/_lib/ratelimit';
+import { GLOBAL_KEY, RateLimiter } from '../../../worker/lib/ratelimit';
 
 it('allows up to max attempts per window, per key', () => {
   const r = new RateLimiter(3, 1000);
