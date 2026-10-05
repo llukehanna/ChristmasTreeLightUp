@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { audio } from '../../../src/audio/context';
-import { RadioPlayer, STALL_MS } from '../../../src/radio/player';
+import { RadioPlayer, STALL_MAX_MS, STALL_MS } from '../../../src/radio/player';
 import type { Station } from '../../../src/radio/schema';
 
 /*
@@ -59,6 +59,10 @@ class FakeMedia extends EventTarget {
   paused = true;
   currentTime = 0;
   duration = Number.NaN;
+  /** HAVE_NOTHING until a test says otherwise (3 = HAVE_FUTURE_DATA). */
+  readyState = 0;
+  /** Make the next track play() reject with a DOMException of this name (autoplay gating). */
+  rejectPlayWith: string | null = null;
   error: { code: number } | null = null;
   gain: FakeGain | null = null;
   plays: string[] = [];
@@ -71,6 +75,12 @@ class FakeMedia extends EventTarget {
   play(): Promise<void> {
     this.paused = false;
     if (!this.src.startsWith('data:')) this.plays.push(this.src); // not the silent priming clip
+    if (this.rejectPlayWith && !this.src.startsWith('data:')) {
+      const name = this.rejectPlayWith;
+      this.rejectPlayWith = null;
+      this.paused = true;
+      return Promise.reject(new DOMException('blocked', name));
+    }
     return Promise.resolve();
   }
   pause(): void {
@@ -435,6 +445,79 @@ it('stall watchdog: a user pause cancels it, and so does a stop', () => {
   advance(STALL_MS * 2);
   expect(player.snapshot().track?.id).toBe('t1');
   expect(player.isUnavailable('jazz')).toBe(false);
+});
+
+it('stall watchdog: a blocked play() (NotAllowedError) drops the old timer; a later resume gets a fresh full window', async () => {
+  player.prime();
+  FakeMedia.all[1].rejectPlayWith = 'NotAllowedError'; // the deck the first track loads on
+  player.playStation(station(3), false);
+  await vi.advanceTimersByTimeAsync(0); // let the rejection land
+  expect(player.snapshot().playing).toBe(false);
+  advance(STALL_MS - 100); // tap to resume just before the original deadline
+  player.resume();
+  expect(player.snapshot().playing).toBe(true);
+  advance(200); // original load + STALL_MS has passed
+  expect(player.snapshot().track?.id).toBe('t1'); // no false skip
+  advance(STALL_MS); // nothing played since the resume: the watchdog still works
+  expect(player.snapshot().track?.id).toBe('t2');
+});
+
+it('stall watchdog: `progress` while under-buffered restarts the window', () => {
+  const a = startPlaying();
+  a.fire('waiting');
+  advance(5000);
+  a.fire('progress'); // bytes still arriving: deadline moves to 5 s + STALL_MS
+  advance(STALL_MS - 100);
+  expect(player.snapshot().track?.id).toBe('t1');
+  advance(200);
+  expect(player.snapshot().track?.id).toBe('t2');
+});
+
+it('stall watchdog: a trickling stream (progress every 2 s) is cut off at STALL_MAX_MS, not before and not after', () => {
+  const a = startPlaying();
+  a.fire('waiting');
+  let skippedAt = -1;
+  for (let t = 2000; t <= STALL_MAX_MS + 4000 && skippedAt < 0; t += 2000) {
+    advance(2000);
+    if (player.snapshot().track?.id !== 't1') skippedAt = t;
+    else a.fire('progress');
+  }
+  expect(skippedAt).toBeGreaterThan(STALL_MS); // it outlived the plain 8 s window
+  expect(skippedAt).toBeLessThanOrEqual(STALL_MAX_MS); // but never the cap
+});
+
+it('stall watchdog: `progress` on the idle (preloading) deck does not extend it', () => {
+  const a = startPlaying();
+  const idle = FakeMedia.all.find((m) => m !== a && m.src.startsWith('data:'));
+  if (!idle) throw new Error('no idle deck');
+  a.fire('waiting');
+  advance(5000);
+  idle.fire('progress');
+  advance(3100);
+  expect(player.snapshot().track?.id).toBe('t2');
+});
+
+it('stall watchdog: `progress` once the deck has enough data (readyState >= 3) does not extend it', () => {
+  const a = startPlaying();
+  a.fire('waiting');
+  advance(5000);
+  a.readyState = 3;
+  a.fire('progress');
+  advance(3100);
+  expect(player.snapshot().track?.id).toBe('t2');
+});
+
+it('stall watchdog: a backward seek re-bases the progress mark so playback from the new position clears it', () => {
+  const a = startPlaying();
+  a.duration = 100;
+  a.currentTime = 10;
+  a.fire('waiting');
+  player.seek(0);
+  advance(1000);
+  a.currentTime = 1;
+  a.fire('timeupdate'); // moving forward from the seek target: real progress
+  advance(STALL_MS * 2);
+  expect(player.snapshot().track?.id).toBe('t1');
 });
 
 it("stall watchdog: a skip cancels the old deck's watchdog, and a stall on the outgoing deck is ignored", () => {
