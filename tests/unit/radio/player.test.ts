@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { audio } from '../../../src/audio/context';
-import { RadioPlayer } from '../../../src/radio/player';
+import { RadioPlayer, STALL_MS } from '../../../src/radio/player';
 import type { Station } from '../../../src/radio/schema';
 
 /*
@@ -330,4 +330,120 @@ it('releasing the Media Session also clears the lock-screen position', () => {
   } finally {
     delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
   }
+});
+
+it('a stale pause timer from three skips ago cannot hard-cut a deck that is fading out again', () => {
+  const a = startPlaying(6);
+  player.next(); // t=0: a fades out; a timer will pause it at 300 ms
+  advance(100);
+  player.next(); // a is still audible, so it comes back as the incoming deck (reload deferred)
+  advance(50);
+  a.fire('playing'); // a (now t3) fades in
+  advance(40);
+  player.next(); // a is the outgoing deck again, mid fade-in, with its own pause timer
+  advance(400); // past the first skip's stale 300 ms timer
+  for (const g of a.pausedAt) expect(g).toBeLessThanOrEqual(1e-3); // never a hard cut
+  expect(a.paused).toBe(true);
+});
+
+it('start(): a deck that finishes buffering after a pause stays silent', () => {
+  startPlaying();
+  player.next();
+  const b = deckWith('t2'); // still buffering: its fade-in is waiting for `playing`
+  player.pause();
+  advance(100);
+  b.fire('playing');
+  advance(500);
+  expect(gainOf(b)).toBeCloseTo(0);
+  expect(b.paused).toBe(true);
+  expect(player.snapshot().playing).toBe(false);
+});
+
+it('stall watchdog: waiting for STALL_MS with no progress skips the track', () => {
+  const a = startPlaying();
+  a.fire('waiting');
+  advance(STALL_MS - 100);
+  expect(player.snapshot().track?.id).toBe('t1');
+  advance(200);
+  expect(player.snapshot()).toMatchObject({ playing: true, track: { id: 't2' } });
+  expect(deckWith('t2').plays).toEqual(['/a/t2.m4a']);
+});
+
+it('stall watchdog: `stalled` counts the same way', () => {
+  const a = startPlaying();
+  a.fire('stalled');
+  advance(STALL_MS + 100);
+  expect(player.snapshot().track?.id).toBe('t2');
+});
+
+it('stall watchdog: a track that never starts is a stall too, and 3 in a row make the station unavailable', () => {
+  const unavailable = vi.fn();
+  player.onUnavailable = unavailable;
+  player.playStation(station(3), false); // no events at all from the network
+  advance(STALL_MS + 100);
+  expect(player.snapshot().track?.id).toBe('t2');
+  advance(STALL_MS + 100);
+  expect(player.isUnavailable('jazz')).toBe(false);
+  expect(player.snapshot().track?.id).toBe('t3');
+  advance(STALL_MS + 100);
+  expect(player.isUnavailable('jazz')).toBe(true);
+  expect(unavailable).toHaveBeenCalledWith(true);
+  expect(player.snapshot().playing).toBe(false);
+});
+
+it('stall watchdog: `playing` clears it', () => {
+  const a = startPlaying();
+  a.fire('waiting');
+  advance(STALL_MS - 1000);
+  a.fire('playing');
+  advance(STALL_MS * 2);
+  expect(player.snapshot().track?.id).toBe('t1');
+});
+
+it('stall watchdog: a timeupdate with advancing time clears it', () => {
+  const a = startPlaying();
+  a.currentTime = 1;
+  a.fire('waiting');
+  advance(STALL_MS - 1000);
+  a.currentTime = 2;
+  a.fire('timeupdate');
+  advance(STALL_MS * 2);
+  expect(player.snapshot().track?.id).toBe('t1');
+});
+
+it('stall watchdog: a timeupdate that has not advanced does not clear it', () => {
+  const a = startPlaying();
+  a.currentTime = 1;
+  a.fire('waiting');
+  advance(STALL_MS - 1000);
+  a.fire('timeupdate');
+  advance(1100);
+  expect(player.snapshot().track?.id).toBe('t2');
+});
+
+it('stall watchdog: a user pause cancels it, and so does a stop', () => {
+  const a = startPlaying();
+  a.fire('waiting');
+  player.pause();
+  const plays = totalPlays();
+  advance(STALL_MS * 2);
+  expect(totalPlays()).toBe(plays);
+  expect(player.snapshot()).toMatchObject({ playing: false, track: { id: 't1' } });
+  player.resume();
+  a.fire('waiting');
+  player.stop();
+  advance(STALL_MS * 2);
+  expect(player.snapshot().track?.id).toBe('t1');
+  expect(player.isUnavailable('jazz')).toBe(false);
+});
+
+it("stall watchdog: a skip cancels the old deck's watchdog, and a stall on the outgoing deck is ignored", () => {
+  const a = startPlaying();
+  a.fire('waiting');
+  player.next();
+  const b = deckWith('t2');
+  b.fire('playing');
+  a.fire('waiting'); // a is no longer the active deck
+  advance(STALL_MS * 2);
+  expect(player.snapshot()).toMatchObject({ playing: true, track: { id: 't2' } });
 });
