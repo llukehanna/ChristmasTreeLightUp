@@ -1,0 +1,10 @@
+{
+  // Tooling, tests and the dev-only music helpers. These may use Node (and Vitest's and Playwright's types pull Node
+  // in anyway), so they are checked apart from tsconfig.json: the app in src/ never sees Node globals.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["tests", "dev", "vite.config.ts", "playwright.config.ts"]
+}
