@@ -65,14 +65,17 @@ describe('removedUrls', () => {
 describe('readLatest', () => {
   it('returns an empty version-0 list when nothing is stored', async () => {
     listReturns([]);
-    expect(await readLatest()).toEqual({ file: { version: 0, stations: [] } });
+    expect(await readLatest()).toEqual({ file: { version: 0, stations: [] }, versions: [] });
   });
   it('reads the newest valid version', async () => {
     listReturns([blob(2), { pathname: 'stations/other.json', url: `${B}/stations/other.json` }, blob(10), blob(3)]);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(file([`${B}/tracks/christmas-jazz/a.mp3`], 10))));
     vi.stubGlobal('fetch', fetchMock);
-    const { file: got } = await readLatest();
+    const { file: got, versions } = await readLatest();
     expect(got.version).toBe(10);
+    // The version blobs it saw, oldest first, without the unrelated file: lets a save prune without a second list().
+    expect(versions).toEqual([blob(2), blob(3), blob(10)]);
+    expect(list).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(blob(10).url);
   });
   it('throws a clear error on a failed read', async () => {
@@ -110,21 +113,20 @@ describe('writeVersion', () => {
 
 describe('pruneOldVersions', () => {
   it('deletes all but the newest `keep` versions', async () => {
-    listReturns([blob(7), blob(1), blob(3), blob(2), blob(5), blob(4), blob(6)]);
-    await pruneOldVersions(5);
+    await pruneOldVersions([blob(7), blob(1), blob(3), blob(2), blob(5), blob(4), blob(6)], 5);
     expect(del).toHaveBeenCalledWith([blob(1).url, blob(2).url]);
+    expect(list).not.toHaveBeenCalled();
   });
   it('does nothing when there are few versions', async () => {
-    listReturns([blob(1), blob(2)]);
-    await pruneOldVersions();
+    await pruneOldVersions([blob(1), blob(2)]);
     expect(del).not.toHaveBeenCalled();
   });
   it('always keeps at least the newest version', async () => {
-    listReturns([blob(1), blob(2), blob(3)]);
-    await pruneOldVersions(0);
+    const three = [blob(1), blob(2), blob(3)];
+    await pruneOldVersions(three, 0);
     expect(del).toHaveBeenCalledWith([blob(1).url, blob(2).url]);
     vi.mocked(del).mockClear();
-    await pruneOldVersions(-3);
+    await pruneOldVersions(three, -3);
     expect(del).toHaveBeenCalledWith([blob(1).url, blob(2).url]);
   });
 });
@@ -144,9 +146,9 @@ describe('writeCurrent', () => {
     });
   });
   it('is invisible to version listing and pruning', async () => {
-    listReturns([blob(1), blob(2), { pathname: CURRENT, url: `${B}/${CURRENT}` }]);
-    await pruneOldVersions(1);
+    await pruneOldVersions([blob(1), blob(2), { pathname: CURRENT, url: `${B}/${CURRENT}` }], 1);
     expect(del).toHaveBeenCalledWith([blob(1).url]);
+    listReturns([blob(1), blob(2), { pathname: CURRENT, url: `${B}/${CURRENT}` }]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(file([], 2)))));
     expect((await readLatest()).file.version).toBe(2);
   });

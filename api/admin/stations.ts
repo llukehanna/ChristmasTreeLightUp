@@ -1,7 +1,7 @@
 import { del } from '@vercel/blob';
-import { parseStationsFile, type StationsFile } from '../../src/radio/schema';
-import { adminJson, readTextCapped, requireAdmin } from '../_lib/http';
-import { MAX_VERSION, pruneOldVersions, readLatest, removedUrls, writeCurrent, writeVersion } from '../_lib/stations-store';
+import { parseStationsFile, type StationsFile } from '../../src/radio/schema.js';
+import { adminJson, readTextCapped, requireAdmin } from '../_lib/http.js';
+import { MAX_VERSION, pruneOldVersions, readLatest, removedUrls, versionPath, writeCurrent, writeVersion, type VersionBlob } from '../_lib/stations-store.js';
 
 // The Vercel request body limit is 4.5 MB, and a full list (20 stations x 500 tracks) fits well inside it.
 const MAX_BODY = 4_400_000;
@@ -36,8 +36,9 @@ export async function PUT(req: Request): Promise<Response> {
     return adminJson({ error: 'Invalid JSON' }, { status: 400 });
   }
   let current: StationsFile;
+  let versions: VersionBlob[];
   try {
-    current = (await readLatest()).file;
+    ({ file: current, versions } = await readLatest());
   } catch {
     return adminJson({ error: 'Could not read the stations' }, { status: 503 });
   }
@@ -53,10 +54,12 @@ export async function PUT(req: Request): Promise<Response> {
     // That is a success when the stored newest version is exactly what we tried to write.
     let latest: StationsFile;
     try {
-      latest = (await readLatest()).file;
+      ({ file: latest, versions } = await readLatest());
     } catch {
       return adminJson({ error: 'Could not confirm whether the save went through. Reload to check.' }, { status: 503 });
     }
+    // Nothing newer exists, so the write failed for some other reason: not a conflict.
+    if (latest.version < next.version) return adminJson({ error: 'Could not save. Try again.' }, { status: 503 });
     if (!(latest.version === next.version && sameFile(latest, next))) return conflict();
   }
 
@@ -74,7 +77,7 @@ export async function PUT(req: Request): Promise<Response> {
     // leftover files are harmless
   }
   try {
-    await pruneOldVersions();
+    await pruneOldVersions([...versions, { pathname: versionPath(next.version), url: '' }]);
   } catch {
     // old versions are harmless
   }
