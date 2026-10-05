@@ -14,6 +14,14 @@ describe('session tokens', () => {
   it('memoises the derived key per password', () => {
     expect(sessionKey('correct horse battery staple')).toBe(KEY);
   });
+  it('keeps only the latest key, so an old one is recomputed, not retained', () => {
+    const other = sessionKey('some other password');
+    expect(other.equals(KEY)).toBe(false);
+    expect(sessionKey('some other password')).toBe(other);
+    const again = sessionKey('correct horse battery staple');
+    expect(again).not.toBe(KEY);
+    expect(again.equals(KEY)).toBe(true);
+  });
   it('verifies its own tokens until they expire', () => {
     const t = createToken(KEY, 1000);
     expect(verifyToken(t, KEY, 1000)).toBe(true);
