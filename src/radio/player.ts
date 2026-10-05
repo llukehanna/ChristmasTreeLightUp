@@ -12,6 +12,8 @@ const SKIP_FADE_S = 0.25;
 /** Short ramp used wherever a gain would otherwise jump (pause, resume, stop): long enough to avoid a click. */
 const QUICK_FADE_S = 0.03;
 const POSITION_STATE_MS = 1000;
+/** A playing deck that has not made progress for this long (waiting, stalled, or never started) counts as a failed track. */
+export const STALL_MS = 8000;
 
 export type RemoteAction = 'play' | 'pause' | 'nexttrack' | 'previoustrack' | 'seekto';
 
@@ -96,6 +98,8 @@ export class RadioPlayer {
   /** Bumped on every load; stale fade-start callbacks compare against it. */
   private gen = 0;
   private pending: { el: HTMLAudioElement; fn: () => void } | null = null;
+  /** The stall watchdog of the active deck (at most one), with the playhead it was armed at. */
+  private stall: { timer: number; from: number } | null = null;
   private lastPositionState = 0;
   private mediaSessionReady = false;
   private readonly unavailable = new Set<string>();
@@ -173,6 +177,7 @@ export class RadioPlayer {
 
   pause(): void {
     this.playing = false;
+    this.clearStall();
     this.silence();
     this.syncPlaybackState();
     this.onChange?.();
@@ -189,12 +194,14 @@ export class RadioPlayer {
     this.playing = true;
     rampTo(ctx, d.gain.gain, 1, QUICK_FADE_S);
     void d.el.play().catch(() => undefined);
+    this.armStall();
     this.syncPlaybackState();
     this.onChange?.();
   }
 
   stop(): void {
     this.playing = false;
+    this.clearStall();
     this.silence();
     this.syncPlaybackState();
     this.onChange?.();
@@ -253,8 +260,16 @@ export class RadioPlayer {
       d.el.addEventListener('timeupdate', () => this.onTime(k));
       d.el.addEventListener('durationchange', () => k === this.active && this.updatePositionState(true));
       d.el.addEventListener('playing', () => {
-        if (k === this.active) this.failures = 0;
+        if (k !== this.active) return;
+        this.failures = 0;
+        this.clearStall();
       });
+      // The network went quiet without an error: only the watchdog can tell a dead stream from a slow one.
+      const stalled = () => {
+        if (k === this.active && d.trackId !== null) this.armStall();
+      };
+      d.el.addEventListener('waiting', stalled);
+      d.el.addEventListener('stalled', stalled);
       // `playing`: an `ended` that lands while paused or stopped (e.g. inside the silence() fade) must not start a track.
       d.el.addEventListener('ended', () => k === this.active && d.trackId !== null && this.playing && this.next());
       d.el.addEventListener('error', () => k === this.active && d.trackId !== null && this.onError());
@@ -285,6 +300,7 @@ export class RadioPlayer {
     const outgoing = decks[this.active];
     const gen = ++this.gen;
     this.clearPending();
+    this.clearStall();
 
     const audible = !incoming.el.paused && incoming.gain.gain.value > 1e-3;
     const reuse = incoming.trackId === track.id && !incoming.el.error; // preloaded (or the same track again)
@@ -295,7 +311,8 @@ export class RadioPlayer {
     const old = outgoing.el;
     const scheduleOldPause = (fade: number) =>
       window.setTimeout(() => {
-        if (this.activeEl() !== old) old.pause();
+        // Superseded loads own the decks now: a stale timer must not cut a deck that has since been reloaded or is fading.
+        if (gen === this.gen && this.activeEl() !== old) old.pause();
       }, fade * 1000 + 50);
 
     if (!crossfade) {
@@ -326,6 +343,7 @@ export class RadioPlayer {
       if (!this.playing) return; // paused during the fade-out: resume() plays the loaded deck
       incoming.el.addEventListener('playing', start, { once: true });
       this.pending = { el: incoming.el, fn: start };
+      this.armStall(); // a track that never produces a `playing` (or an error) is a failure too
       incoming.el.play().catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'NotAllowedError') {
           this.playing = false;
@@ -354,11 +372,37 @@ export class RadioPlayer {
     this.pending = null;
   }
 
+  /**
+   * Start the stall watchdog for the active deck unless it is already running (it measures from the first sign of
+   * trouble). After STALL_MS without progress the track is treated like an `error`: skipped and counted toward the
+   * 3-failures rule. Cleared by `playing`, a timeupdate that advances, pause, stop and every load.
+   */
+  private armStall(): void {
+    const el = this.activeEl();
+    if (this.stall || !el || !this.playing) return;
+    const gen = this.gen;
+    this.stall = {
+      from: el.currentTime,
+      timer: window.setTimeout(() => {
+        this.stall = null;
+        const d = this.decks?.[this.active];
+        if (gen !== this.gen || !this.playing || !d || d.trackId === null) return;
+        this.onError();
+      }, STALL_MS),
+    };
+  }
+
+  private clearStall(): void {
+    if (this.stall) window.clearTimeout(this.stall.timer);
+    this.stall = null;
+  }
+
   private onTime(k: number): void {
     const decks = this.decks;
     if (k !== this.active || !decks) return;
     const d = decks[k];
     const el = d.el;
+    if (this.stall && el.currentTime > this.stall.from) this.clearStall();
     // Never advance while paused (a seek into the last seconds while paused must not start the next track).
     if (!this.playing || d.trackId === null || el.paused) return;
     const dur = el.duration;
