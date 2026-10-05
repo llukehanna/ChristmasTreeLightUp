@@ -1,7 +1,7 @@
-import { parseStationsFile, type StationsFile } from '../../src/radio/schema';
-import { CURRENT, publicBaseUrl } from './stations-store';
+import { parseStationsFile, type StationsFile } from '../../src/radio/schema.js';
+import { CURRENT, publicBaseUrl } from './stations-store.js';
 
-const TTL_MS = 60_000;
+const TTL_MS = 300_000;
 let cached: { file: StationsFile; at: number } | null = null;
 
 export const resetPublicCache = (): void => {
@@ -10,7 +10,7 @@ export const resetPublicCache = (): void => {
 
 /**
  * The public station list: stations/current.json fetched by its public URL (a CDN hit, not a billed Blob operation; never list()).
- * A 404 means nothing has been saved yet. Any other failure throws. Kept in memory for 60 seconds per instance.
+ * A 404 means nothing has been saved yet. Any other failure throws. Kept in memory for 5 minutes per instance (the CDN copy is the fresher layer: current.json is cached for 60s).
  */
 export async function loadPublicStations(now = Date.now()): Promise<StationsFile> {
   if (cached && now - cached.at < TTL_MS) return cached.file;

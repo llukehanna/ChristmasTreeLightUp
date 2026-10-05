@@ -1,4 +1,4 @@
-import { isAdmin } from './session';
+import { isAdmin } from './session.js';
 
 /** JSON response for admin endpoints: never cached anywhere. */
 export function adminJson(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}): Response {
