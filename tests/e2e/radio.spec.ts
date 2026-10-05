@@ -138,13 +138,21 @@ test('Escape closes the radio panel and hands focus back to the pill', async ({ 
   await expect(page.locator('#pause')).toBeHidden(); // the Escape was the panel's, not the game's
 });
 
-test('P is ignored while the radio panel is open', async ({ page }) => {
+test('P is ignored while focus is in the radio panel, and pauses once focus is back on the game', async ({ page }) => {
   await ready(page);
   await expect(page.locator('#pause-btn')).toBeVisible();
   await page.click('#radio-pill');
+  expect(await page.evaluate(() => !!document.activeElement?.closest('#radio-panel'))).toBe(true);
   await page.keyboard.press('p'); // the game's key handler runs synchronously
   await expect(page.locator('#pause')).toBeHidden();
   await expect(page.locator('#radio-panel')).toBeVisible();
+  // Desktop: the popover stays open while you play. A click on the stage takes focus out of it, and P works again.
+  await page.mouse.click(8, 200);
+  await expect(page.locator('#radio-panel')).toBeVisible();
+  expect(await page.evaluate(() => !!document.activeElement?.closest('#radio-panel'))).toBe(false);
+  await page.keyboard.press('p');
+  await expect(page.locator('#pause')).toBeVisible();
+  await expect(page.locator('#radio-panel')).toBeHidden(); // pausing closes it
 });
 
 test('desktop: the game stays playable behind the radio popover; opening it closes the settings menu', async ({ page }) => {
@@ -208,4 +216,20 @@ test('pausing closes an open radio panel so it never sits over the pause overlay
   });
   await expect(page.locator('#pause')).toBeVisible();
   await expect(page.locator('#radio-panel')).toBeHidden();
+});
+
+test('phone: Tab and Shift+Tab stay inside the open radio sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await ready(page);
+  await page.click('#radio-pill');
+  await expect(page.locator('#radio-panel')).toBeVisible();
+  const inside = () => page.evaluate(() => !!document.activeElement?.closest('#radio-panel'));
+  for (let k = 0; k < 25; k++) {
+    await page.keyboard.press('Tab');
+    expect(await inside()).toBe(true);
+  }
+  for (let k = 0; k < 25; k++) {
+    await page.keyboard.press('Shift+Tab');
+    expect(await inside()).toBe(true);
+  }
 });

@@ -153,7 +153,7 @@ body[data-scene='frost'] .radio .art { background: radial-gradient(70% 70% at 50
 
 /* Sections and station rows */
 .radio .sec { border-top: 1px solid rgba(236, 196, 116, 0.16); padding: 12px 10px; box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.18); }
-.radio h4 { margin: 2px 12px 8px; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; font-weight: 500; }
+.radio h2 { margin: 2px 12px 8px; line-height: normal; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; font-weight: 500; }
 .radio .st {
   all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 10px;
   border-radius: 12px; cursor: pointer; transition: background 0.15s;
