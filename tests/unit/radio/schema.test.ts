@@ -23,6 +23,10 @@ describe('parseStationsFile', () => {
     expect(parseStationsFile({ ...file, stations: [file.stations[0], file.stations[0]] })).toBeNull();
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [track, track] }] })).toBeNull();
   });
+  it('rejects the ids the radio reserves for its own sources', () => {
+    for (const id of ['music-box', 'fireplace', 'embed']) expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id: 'music-box-2' }] })).not.toBeNull();
+  });
   it('rejects problematic URLs', () => {
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '//evil.com/a.mp3' }] }] })).toBeNull();
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/\\evil.com/a.mp3' }] }] })).toBeNull();

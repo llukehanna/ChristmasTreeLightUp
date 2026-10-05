@@ -344,3 +344,39 @@ it('Music Box owns the lock screen while it plays, and a remote key never wakes 
     delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
   }
 });
+
+/** Fires `error` on the station's active deck (jsdom elements: the player only listens for the event). */
+function failActiveDeck(r: Radio): void {
+  const p = (r as unknown as { player: { decks: { el: HTMLAudioElement }[]; active: number } }).player;
+  p.decks[p.active].el.dispatchEvent(new Event('error'));
+}
+
+it('a playing station that becomes unavailable falls back to Music Box, without remembering it', async () => {
+  fakeAudio();
+  const box = stubMusicBox();
+  const r = await ready();
+  r.select('christmas-jazz');
+  for (let k = 0; k < 3; k++) failActiveDeck(r);
+  expect(r.view().unavailable('christmas-jazz')).toBe(true);
+  expect(r.view().kind).toBe('musicbox');
+  expect(r.view().playing).toBe(true);
+  expect(box.start).toHaveBeenCalledTimes(1);
+  expect(loadRadioSettings()).toMatchObject({ on: true, source: 'christmas-jazz' }); // the fallback is not a choice
+});
+
+it('a paused station that becomes unavailable is let go, so play starts something that can play', async () => {
+  fakeAudio();
+  const box = stubMusicBox();
+  const r = await ready();
+  r.select('christmas-jazz');
+  failActiveDeck(r);
+  failActiveDeck(r);
+  r.playPause(); // paused while the third track is still loading
+  failActiveDeck(r);
+  expect(r.view().unavailable('christmas-jazz')).toBe(true);
+  expect(r.view().kind).toBeNull(); // no dead play button on a station that can't play
+  expect(box.start).not.toHaveBeenCalled(); // and nothing starts on its own while paused
+  r.playPause();
+  expect(r.view().playing).toBe(true);
+  expect(r.view().station?.id).not.toBe('christmas-jazz');
+});

@@ -6,8 +6,11 @@ const WIND_LOOP_S = 17;
 const POOL = 16;
 const BIG_IN_POOL = 2;
 const TICK_MS = 250;
-/** Crackles are scheduled this far ahead on the audio clock, so a late timer tick never leaves a gap. */
-const LOOKAHEAD_S = 0.8;
+/**
+ * Crackles are scheduled this far ahead on the audio clock, so a late timer tick never leaves a gap; more than the
+ * 1 s timer clamp of a hidden tab. stop() still silences them at once through the output gain.
+ */
+const LOOKAHEAD_S = 1.5;
 /** Average crackles per second (random gaps, so the pattern never repeats). */
 const CRACKLE_RATE = 12;
 
@@ -101,7 +104,7 @@ export class Fireplace {
     }, 700);
   }
 
-  /** Lookahead scheduler: lay down the next ~0.8s of crackles on the audio clock, skipping while the context is suspended. */
+  /** Lookahead scheduler: lay down the next ~1.5s of crackles on the audio clock, skipping while the context is suspended. */
   private tick(ctx: AudioContext, out: AudioNode, lfo: OscillatorNode): void {
     if (ctx.state !== 'running') {
       this.cursor = 0; // after an iOS interruption, restart from "now" instead of piling up old crackles
