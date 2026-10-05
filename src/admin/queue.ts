@@ -5,6 +5,8 @@
  * - Results are handed to `onComplete` in the order the files were queued, not the order they finish: a finished file
  *   waits until every file queued before it is done or has failed.
  * - A failed file stays in the list with its error until it is retried; a retry re-queues it.
+ * - A throwing `onComplete` is logged and skipped; it never stops the queue.
+ * - `onChange` for a file comes after any results it released were handed over, so listeners see them landed.
  * - An error `requeueOn` accepts (an expired session) puts the file back in the queue and pauses the queue until
  *   `resume()`, so nothing is lost while the admin signs in again.
  */
@@ -90,6 +92,11 @@ export class UploadQueue<J, T> {
     return true;
   }
 
+  /** How many finished files clearFinished() would remove now (a done file still waiting its turn is not one). */
+  get clearable(): number {
+    return this.list.filter((i) => i.state === 'done' && !this.waiting.includes(i)).length;
+  }
+
   /** Removes finished files that have been handed over. Returns how many were removed. */
   clearFinished(): number {
     const before = this.list.length;
@@ -136,8 +143,8 @@ export class UploadQueue<J, T> {
         item.state = 'done';
         item.pct = 100;
         this.results.set(item.id, result);
-        this.opts.onChange?.(item);
         this.release();
+        this.opts.onChange?.(item);
         this.pump();
       },
       (e: unknown) => {
@@ -150,8 +157,8 @@ export class UploadQueue<J, T> {
           item.state = 'failed';
           item.error = message(e);
         }
-        this.opts.onChange?.(item);
         this.release();
+        this.opts.onChange?.(item);
         this.pump();
       },
     );
@@ -166,7 +173,12 @@ export class UploadQueue<J, T> {
       if (head.state === 'done') {
         const result = this.results.get(head.id) as T;
         this.results.delete(head.id);
-        this.opts.onComplete(head, result);
+        try {
+          this.opts.onComplete(head, result);
+        } catch (e) {
+          // A failing handler must not stall the queue or desync the head; the error is still reported.
+          console.error('An upload result could not be applied', e);
+        }
       }
     }
   }

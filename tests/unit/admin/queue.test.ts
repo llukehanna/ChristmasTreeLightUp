@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { UploadQueue, type QueueItem } from '../../../src/admin/queue';
 
 interface Call {
@@ -151,14 +151,42 @@ describe('UploadQueue', () => {
     expect(h.q.items.map((i) => `${i.job}:${i.state}`)).toEqual(['B:failed', 'C:uploading', 'D:uploading']);
   });
 
-  it('a done file waiting for an earlier one is not cleared, and still lands in order', async () => {
+  it('a done file waiting for an earlier one is not cleared (nor clearable), and still lands in order', async () => {
     const h = harness();
     h.q.add(['A', 'B']);
     h.call('B').resolve('b');
     await flush();
+    expect(h.q.clearable).toBe(0);
     expect(h.q.clearFinished()).toBe(0);
     h.call('A').resolve('a');
     await flush();
     expect(h.done).toEqual(['A:a', 'B:b']);
+    expect(h.q.clearable).toBe(2);
+  });
+
+  it('a throwing onComplete neither skips later files nor stops the queue', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const done: string[] = [];
+    const finish = new Map<string, (v: string) => void>();
+    const q = new UploadQueue<string, string>({
+      concurrency: 1,
+      run: (job) => new Promise<string>((r) => finish.set(job, r)),
+      onComplete: (item, result) => {
+        if (item.job === 'A') throw new Error('boom');
+        done.push(result);
+      },
+    });
+    q.add(['A', 'B', 'C']);
+    finish.get('A')?.('a');
+    await flush();
+    expect(finish.has('B')).toBe(true); // pump() still ran
+    finish.get('B')?.('b');
+    await flush();
+    finish.get('C')?.('c');
+    await flush();
+    expect(done).toEqual(['b', 'c']);
+    expect(q.busy).toBe(false);
+    expect(errors).toHaveBeenCalledTimes(1);
+    errors.mockRestore();
   });
 });
