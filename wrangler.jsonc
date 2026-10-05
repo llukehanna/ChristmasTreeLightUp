@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Static Vite build served as Workers static assets. No Worker script runs, so requests cost
+  // no CPU and don't count against the free plan's daily request limit.
+  "name": "aglow",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}
