@@ -42,7 +42,7 @@ export class Radio {
   private started = false;
   /** AudioContext time until which the first-gesture fade-in is still ramping the music bus. */
   private fadeInUntil = 0;
-  private catalogLoaded = false;
+  private loaded = false;
   /** The first gesture came before the catalog did: start the preferred station as soon as it arrives. */
   private pendingStart = false;
   private catalogSeq = 0;
@@ -67,13 +67,18 @@ export class Radio {
     if (seq !== this.catalogSeq) return; // a newer refresh is in flight: the last one started wins
     this.catalog = c.stations;
     this.remoteOk = c.remoteOk;
-    this.catalogLoaded = true;
+    this.loaded = true;
     // Decks were primed and the context unlocked inside the first gesture, so this non-gesture start is allowed.
     if (this.pendingStart) {
       this.pendingStart = false;
       if (this.settings.on) this.startPreferred();
     }
     this.onChange?.();
+  }
+
+  /** The station catalog has been fetched (or given up on). */
+  get catalogLoaded(): boolean {
+    return this.loaded;
   }
 
   /** Call from every user gesture. The first one fades music in (spec §5.2). */
@@ -243,7 +248,7 @@ export class Radio {
 
   /** Start the remembered source, or the scene's suggestion. Following a suggestion isn't a choice, so `source` is left as it was. */
   private startPreferred(): void {
-    if (this.needsCatalog() && !this.catalogLoaded) {
+    if (this.needsCatalog() && !this.loaded) {
       // Prime the decks now (this is the gesture); refreshCatalog starts playback when the catalog arrives.
       this.player.prime();
       this.pendingStart = true;

@@ -176,7 +176,8 @@ export class RadioPanel {
     });
     document.addEventListener('pointerdown', (e) => {
       const t = e.target as Node;
-      // A tap on the stage closes the panel through the app's tap handler (so it never also turns a tile).
+      // Stage taps go to the app's tap handler: on desktop the game stays playable behind the popover, and on phones
+      // the tap only closes the sheet (it never also turns a tile).
       if (this.isOpen && !this.panel.contains(t) && !this.pill.contains(t) && t !== el('stage')) this.close();
     });
     document.addEventListener('keydown', (e) => {
