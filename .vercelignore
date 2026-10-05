@@ -8,3 +8,4 @@
 !vite.config.ts
 !vercel.json
 !dev
+!api

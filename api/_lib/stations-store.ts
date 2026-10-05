@@ -2,6 +2,8 @@ import { del, list, put } from '@vercel/blob';
 import { parseStationsFile, type StationsFile } from '../../src/radio/schema';
 
 export const PREFIX = 'stations/';
+/** Copy of the newest version, overwritten on every save. Public readers fetch it by URL, so the public path never calls list() (a billed "advanced operation"). */
+export const CURRENT = `${PREFIX}current.json`;
 export const MAX_VERSION = 999_999;
 export function versionPath(v: number): string {
   if (!Number.isInteger(v) || v < 1 || v > MAX_VERSION) throw new Error(`Invalid station list version: ${v}`);
@@ -34,6 +36,32 @@ export async function writeVersion(file: StationsFile): Promise<void> {
     allowOverwrite: false,
     cacheControlMaxAge: 31536000,
   });
+}
+
+/**
+ * Refreshes the public cache copy. Never used by the admin path: that reads via list(), the source of truth for concurrency.
+ * VERSION_RE does not match this name, so version listing and pruning ignore it.
+ */
+export async function writeCurrent(file: StationsFile): Promise<void> {
+  await put(CURRENT, JSON.stringify(file), {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    cacheControlMaxAge: 60,
+  });
+}
+
+/**
+ * `https://<storeId>.public.blob.vercel-storage.com`, with the store id taken from BLOB_READ_WRITE_TOKEN
+ * exactly as @vercel/blob does (`vercel_blob_rw_<storeId>_<secret>`: the fourth `_`-separated part of the trimmed value).
+ * The id becomes part of a hostname, so anything but letters and digits is refused. Never includes or logs the token.
+ */
+export function publicBaseUrl(): string {
+  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim() ?? '';
+  const [, , , storeId = ''] = token.split('_');
+  if (!/^[A-Za-z0-9]+$/.test(storeId)) throw new Error('BLOB_READ_WRITE_TOKEN is missing or has an unexpected format');
+  return `https://${storeId.toLowerCase()}.public.blob.vercel-storage.com`;
 }
 
 export async function pruneOldVersions(keep = 5): Promise<void> {

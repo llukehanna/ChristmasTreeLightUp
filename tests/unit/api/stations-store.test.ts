@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@vercel/blob', () => ({ del: vi.fn(), list: vi.fn(), put: vi.fn() }));
 
 import { del, list, put } from '@vercel/blob';
-import { isBlobUrl, isDeletableUrl, pruneOldVersions, readLatest, removedUrls, versionPath, writeVersion } from '../../../api/_lib/stations-store';
+import { CURRENT, isBlobUrl, isDeletableUrl, pruneOldVersions, publicBaseUrl, readLatest, removedUrls, versionPath, writeCurrent, writeVersion } from '../../../api/_lib/stations-store';
 import type { StationsFile } from '../../../src/radio/schema';
 
 const B = 'https://abc123.public.blob.vercel-storage.com';
@@ -18,7 +18,10 @@ const listReturns = (blobs: { pathname: string; url: string }[]): void => {
 };
 
 beforeEach(() => vi.resetAllMocks());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe('versionPath', () => {
   it('names versions so they sort lexically', () => {
@@ -123,5 +126,43 @@ describe('pruneOldVersions', () => {
     vi.mocked(del).mockClear();
     await pruneOldVersions(-3);
     expect(del).toHaveBeenCalledWith([blob(1).url, blob(2).url]);
+  });
+});
+
+describe('writeCurrent', () => {
+  it('overwrites the public cache copy at a fixed path', async () => {
+    vi.mocked(put).mockResolvedValue({} as Awaited<ReturnType<typeof put>>);
+    const f = file([], 4);
+    await writeCurrent(f);
+    expect(CURRENT).toBe('stations/current.json');
+    expect(put).toHaveBeenCalledWith(CURRENT, JSON.stringify(f), {
+      access: 'public',
+      contentType: 'application/json',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+    });
+  });
+  it('is invisible to version listing and pruning', async () => {
+    listReturns([blob(1), blob(2), { pathname: CURRENT, url: `${B}/${CURRENT}` }]);
+    await pruneOldVersions(1);
+    expect(del).toHaveBeenCalledWith([blob(1).url]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(file([], 2)))));
+    expect((await readLatest()).file.version).toBe(2);
+  });
+});
+
+describe('publicBaseUrl', () => {
+  it('takes the store id from BLOB_READ_WRITE_TOKEN the way @vercel/blob does (fourth "_" part), lower-cased', () => {
+    vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_AbC123_fakeSecretValue');
+    expect(publicBaseUrl()).toBe('https://abc123.public.blob.vercel-storage.com');
+    vi.stubEnv('BLOB_READ_WRITE_TOKEN', '  vercel_blob_rw_xyz789_fake_secret_with_underscores \n');
+    expect(publicBaseUrl()).toBe('https://xyz789.public.blob.vercel-storage.com');
+  });
+  it('refuses a missing or malformed token without echoing it', () => {
+    for (const t of ['', '   ', 'garbage', 'vercel_blob_rw__secret', 'vercel_blob_rw_a.evil.com_secret', 'vercel_blob_rw_a/b_secret']) {
+      vi.stubEnv('BLOB_READ_WRITE_TOKEN', t);
+      expect(() => publicBaseUrl(), t).toThrow(/BLOB_READ_WRITE_TOKEN is missing or has an unexpected format$/);
+    }
   });
 });
