@@ -104,7 +104,7 @@ export class RadioPanel {
   private readonly pill = document.createElement('button');
   private readonly panel = document.createElement('div');
   private rows: Row[] = [];
-  private rowsKey = '';
+  private rowsKey: string | null = null;
   private embedSrc = '';
   private pillKey = '';
   private scrubbing = false;
