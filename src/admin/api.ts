@@ -51,8 +51,10 @@ export const api = {
    */
   uploadFile: (folder: Folder, stationId: string, file: File, onProgress: (pct: number) => void, signal?: AbortSignal): Promise<{ url: string }> =>
     new Promise((resolve, reject) => {
+      // Aborting through `signal` rejects with its reason when that is an Error (e.g. the stall watchdog's).
+      const cancelled = (): Error => (signal?.reason instanceof Error ? signal.reason : new ApiError(0, 'Upload cancelled'));
       if (signal?.aborted) {
-        reject(new ApiError(0, 'Upload cancelled'));
+        reject(cancelled());
         return;
       }
       const query = new URLSearchParams({ folder, station: stationId, name: safeUploadName(file.name) });
@@ -76,7 +78,7 @@ export const api = {
         else reject(new ApiError(xhr.status, errorText(data, xhr.status)));
       };
       xhr.onerror = () => reject(new ApiError(0, UNREACHABLE));
-      xhr.onabort = () => reject(new ApiError(0, 'Upload cancelled'));
+      xhr.onabort = () => reject(cancelled());
       signal?.addEventListener('abort', () => xhr.abort(), { once: true });
       xhr.send(file);
     }),

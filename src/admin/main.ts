@@ -2,19 +2,24 @@ import './admin.css';
 import { parseStation, type Station, type StationsFile, type Track } from '../radio/schema.js';
 import { ApiError, api, audioDuration } from './api.js';
 import { slugify } from './names.js';
+import { mustWarnBeforeLeaving } from './leave.js';
 import { UploadQueue, type QueueItem } from './queue.js';
 import { tagsFromBlob } from './tags.js';
 import { firstProblem, type Field, type Problem } from './validate.js';
+import { watchdog } from './watchdog.js';
 
 /*
  * Radio admin. Claude drives this page through a browser extension, so:
- * - no alert/confirm/prompt (native dialogs block it), and no beforeunload prompt either;
+ * - no alert/confirm/prompt (native dialogs block it). The one native prompt kept is beforeunload, which appears only
+ *   when leaving would lose unsaved edits, queued uploads or a save in flight: never navigate or reload the tab then;
  * - the file inputs are real, visually hidden (never display:none) and labelled, and each station keeps the same
  *   input element for the whole session, so a reference to it stays valid through a long upload;
  * - the upload queue and its rows live outside render(), and a finished track updates the table in place.
  */
 
 const MAX_UPLOAD = 30 * 1024 * 1024;
+/** An upload with no progress (and no answer) for this long is aborted, and its row offers Retry. */
+const STALL_MS = 120_000;
 const MAX_STATIONS = 20;
 const SESSION_EXPIRED = 'Your session expired. Sign in again.';
 
@@ -252,7 +257,15 @@ function showConflict(text: string): void {
     onclick: () =>
       showMessage(
         'Reloading discards your unsaved edits here.',
-        h('button', { class: 'danger', textContent: 'Reload and discard edits', onclick: () => void loadAndRender() }),
+        h('button', {
+          class: 'danger',
+          textContent: 'Reload and discard edits',
+          onclick: () => {
+            // A reload would also drop the tracks still uploading (they land in the list it replaces).
+            if (queue.busy) showMessage('Uploads are still running. Wait for them to finish, then reload.', reload);
+            else void loadAndRender();
+          },
+        }),
         h('button', { textContent: 'Cancel', onclick: () => showConflict(text) }),
       ),
   });
@@ -278,15 +291,35 @@ interface Job {
 }
 type Result = { kind: 'track'; track: Track } | { kind: 'cover'; url: string };
 
+/** One upload, aborted as "Upload stalled" when neither progress nor an answer arrives for STALL_MS. */
+async function upload(folder: 'tracks' | 'covers', job: Job, onProgress: (pct: number) => void): Promise<{ url: string }> {
+  const ctl = new AbortController();
+  const dog = watchdog(STALL_MS, () => ctl.abort(new Error('Upload stalled')));
+  try {
+    return await api.uploadFile(
+      folder,
+      job.stationId,
+      job.file,
+      (pct) => {
+        dog.poke();
+        onProgress(pct);
+      },
+      ctl.signal,
+    );
+  } finally {
+    dog.stop();
+  }
+}
+
 async function runJob(job: Job, onProgress: (pct: number) => void): Promise<Result> {
   if (job.file.size > MAX_UPLOAD) throw new Error('The file is too large (30 MB max)');
   if (job.file.size === 0) throw new Error('The file is empty');
   if (job.kind === 'cover') {
-    const { url } = await api.uploadFile('covers', job.stationId, job.file, onProgress);
+    const { url } = await upload('covers', job, onProgress);
     return { kind: 'cover', url };
   }
   const [{ url }, duration, tags] = await Promise.all([
-    api.uploadFile('tracks', job.stationId, job.file, onProgress),
+    upload('tracks', job, onProgress),
     audioDuration(job.file),
     tagsFromBlob(job.file, job.file.name),
   ]);
@@ -369,7 +402,7 @@ function refreshUploads(): void {
   else if (queue.busy) uploadSummary.textContent = `Uploading: ${c.done} done, ${c.uploading} uploading, ${c.queued} queued${failed}.`;
   else uploadSummary.textContent = `All uploads finished: ${c.done} done${failed}.`;
   uploadsPanel.dataset.busy = String(queue.busy);
-  clearBtn.disabled = c.done === 0;
+  clearBtn.disabled = queue.clearable === 0;
 }
 
 function clearFinished(): void {
@@ -643,6 +676,13 @@ function trackRow(s: Station, i: number): HTMLElement {
 
 // A file dropped anywhere but the drop zone would otherwise replace the page (and everything unsaved) with the file.
 for (const type of ['dragover', 'drop'] as const) addEventListener(type, (e) => e.preventDefault());
+
+// Closing or reloading the tab would lose unsaved edits, queued uploads or a save in flight: the browser asks first.
+addEventListener('beforeunload', (e) => {
+  if (!mustWarnBeforeLeaving({ dirty: dirty(), busy: queue.busy, saving })) return;
+  e.preventDefault();
+  e.returnValue = ''; // older browsers only prompt when this is set
+});
 
 refreshUploads();
 void boot();
