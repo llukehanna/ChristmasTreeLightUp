@@ -18,13 +18,20 @@ export function mergeCatalog(remote: readonly Station[], bundledPiano: readonly 
   return out;
 }
 
+/** A hung endpoint must not hold the whole catalog (and the bundled piano) hostage. */
+const FETCH_TIMEOUT_MS = 4000;
+
 async function fetchStations(fetchFn: typeof fetch, url: string): Promise<Station[] | null> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const r = await fetchFn(url, { cache: 'no-cache' });
+    const r = await fetchFn(url, { cache: 'no-cache', signal: ctl.signal });
     if (!r.ok) return null;
     return parseStationsFile(await r.json())?.stations ?? null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
