@@ -1,10 +1,12 @@
 {
   // Tooling, tests and the dev-only music helpers. These may use Node (and Vitest's and Playwright's types pull Node
   // in anyway), so they are checked apart from tsconfig.json: the app in src/ never sees Node globals.
+  // The Worker has its own config (tsconfig.worker.json). The tests still check the worker/lib and worker/routes files
+  // they import, which is why those stay free of Workers-only types.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": ["vite/client", "node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["api", "tests", "dev", "vite.config.ts", "playwright.config.ts"]
+  "include": ["tests", "dev", "vite.config.ts", "playwright.config.ts"]
 }

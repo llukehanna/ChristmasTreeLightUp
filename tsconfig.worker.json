@@ -1,0 +1,17 @@
+{
+  // The Worker script (worker/**), checked against the real Workers runtime types. Only this config and
+  // worker/index.ts know them: worker/lib and worker/routes are written against small structural types, so the
+  // unit tests can type-check them under Node (tsconfig.node.json).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "WebWorker"],
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": ["worker"]
+}
