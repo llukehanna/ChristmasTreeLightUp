@@ -1,170 +1,136 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { CURRENT, deleteKeys, mediaBase, mediaKey, mediaUrl, readStations, removedMediaKeys, writeStations } from '../../../worker/lib/stations-store';
+import { isUrl, type StationsFile } from '../../../src/radio/schema';
+import { FakeBucket } from './fake-bucket';
 
-vi.mock('@vercel/blob', () => ({ del: vi.fn(), list: vi.fn(), put: vi.fn() }));
-
-import { del, list, put } from '@vercel/blob';
-import { CURRENT, isBlobUrl, isDeletableUrl, pruneOldVersions, publicBaseUrl, readLatest, removedUrls, versionPath, writeCurrent, writeVersion } from '../../../api/_lib/stations-store';
-import type { StationsFile } from '../../../src/radio/schema';
-
-const B = 'https://abc123.public.blob.vercel-storage.com';
+const B = 'https://aglow-music.example';
 const file = (urls: string[], version = 1): StationsFile => ({
   version,
   stations: [{ id: 'christmas-jazz', name: 'Christmas Jazz', description: '', cover: `${B}/covers/christmas-jazz/c.png`, tracks: urls.map((u, i) => ({ id: `t${i}`, url: u, title: 'T', artist: '', credit: '', duration: 1 })) }],
 });
-const blob = (n: number) => ({ pathname: `stations/v${String(n).padStart(6, '0')}.json`, url: `${B}/stations/v${String(n).padStart(6, '0')}.json` });
-// list() is generic; these tests only need the fields stations-store reads.
-const listReturns = (blobs: { pathname: string; url: string }[]): void => {
-  vi.mocked(list).mockResolvedValue({ blobs, hasMore: false } as unknown as Awaited<ReturnType<typeof list>>);
-};
 
-beforeEach(() => vi.resetAllMocks());
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
-});
-
-describe('versionPath', () => {
-  it('names versions so they sort lexically', () => {
-    expect(versionPath(7)).toBe('stations/v000007.json');
-    expect(versionPath(999999)).toBe('stations/v999999.json');
-  });
-  it('rejects versions outside 1..999999 or non-integers', () => {
-    for (const v of [0, -1, 1000000, 1.5, NaN, Infinity]) expect(() => versionPath(v), String(v)).toThrow();
-  });
-});
-
-describe('removedUrls', () => {
-  it('lists uploaded blob files that are no longer referenced (never bundled paths)', () => {
-    const prev = file([`${B}/tracks/christmas-jazz/a.mp3`, `${B}/tracks/christmas-jazz/b.mp3`, '/audio/piano/x.m4a']);
-    const next = file([`${B}/tracks/christmas-jazz/b.mp3`]);
-    expect(removedUrls(prev, next)).toEqual([`${B}/tracks/christmas-jazz/a.mp3`]);
-    expect(isBlobUrl('/audio/piano/x.m4a')).toBe(false);
-  });
-  it('never deletes version files or anything outside tracks/ and covers/', () => {
-    const evil = [
-      `${B}/stations/v000001.json`,
-      `${B}/current.json`,
-      `${B}/tracks/../stations/v000002.json`,
-      `${B}/tracks/%2e%2e/stations/v000002.json`,
-      `${B}/tracks%2F..%2Fstations/v1.json`,
-      `${B}/tracks/`,
-      `${B}/tracksx/a.mp3`,
-      'https://evil.example/tracks/a.mp3',
-      'http://abc123.public.blob.vercel-storage.com/tracks/a.mp3',
-      'https://u:p@abc123.public.blob.vercel-storage.com/tracks/a.mp3',
-    ];
-    for (const u of evil) expect(isDeletableUrl(u), u).toBe(false);
-    const prev = file(evil);
-    prev.stations[0].cover = undefined;
-    expect(removedUrls(prev, file([]))).toEqual([]);
-    expect(isDeletableUrl(`${B}/covers/christmas-jazz/c.png`)).toBe(true);
-    expect(isBlobUrl(`${B}/stations/v000001.json`)).toBe(true);
-  });
-});
-
-describe('readLatest', () => {
-  it('returns an empty version-0 list when nothing is stored', async () => {
-    listReturns([]);
-    expect(await readLatest()).toEqual({ file: { version: 0, stations: [] }, versions: [] });
-  });
-  it('reads the newest valid version', async () => {
-    listReturns([blob(2), { pathname: 'stations/other.json', url: `${B}/stations/other.json` }, blob(10), blob(3)]);
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(file([`${B}/tracks/christmas-jazz/a.mp3`], 10))));
-    vi.stubGlobal('fetch', fetchMock);
-    const { file: got, versions } = await readLatest();
-    expect(got.version).toBe(10);
-    // The version blobs it saw, oldest first, without the unrelated file: lets a save prune without a second list().
-    expect(versions).toEqual([blob(2), blob(3), blob(10)]);
-    expect(list).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(blob(10).url);
-  });
-  it('throws a clear error on a failed read', async () => {
-    listReturns([blob(1)]);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('nope', { status: 503 })));
-    await expect(readLatest()).rejects.toThrow('Could not read stations/v000001.json (HTTP 503)');
-  });
-  it('throws on an invalid stored file', async () => {
-    listReturns([blob(1)]);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ nope: true }))));
-    await expect(readLatest()).rejects.toThrow('Stored stations file is invalid');
-  });
-});
-
-describe('writeVersion', () => {
-  it('puts an immutable, non-overwriting, public JSON blob', async () => {
-    vi.mocked(put).mockResolvedValue({} as Awaited<ReturnType<typeof put>>);
-    const f = file([], 4);
-    await writeVersion(f);
-    expect(put).toHaveBeenCalledWith('stations/v000004.json', JSON.stringify(f), {
-      access: 'public',
-      contentType: 'application/json',
-      addRandomSuffix: false,
-      allowOverwrite: false,
-      cacheControlMaxAge: 31536000,
-    });
-  });
-  it('refuses a bad version without calling Blob, and propagates a conflict', async () => {
-    await expect(writeVersion(file([], 0))).rejects.toThrow();
-    expect(put).not.toHaveBeenCalled();
-    vi.mocked(put).mockRejectedValue(new Error('This blob already exists'));
-    await expect(writeVersion(file([], 2))).rejects.toThrow('already exists');
-  });
-});
-
-describe('pruneOldVersions', () => {
-  it('deletes all but the newest `keep` versions', async () => {
-    await pruneOldVersions([blob(7), blob(1), blob(3), blob(2), blob(5), blob(4), blob(6)], 5);
-    expect(del).toHaveBeenCalledWith([blob(1).url, blob(2).url]);
-    expect(list).not.toHaveBeenCalled();
-  });
-  it('does nothing when there are few versions', async () => {
-    await pruneOldVersions([blob(1), blob(2)]);
-    expect(del).not.toHaveBeenCalled();
-  });
-  it('always keeps at least the newest version', async () => {
-    const three = [blob(1), blob(2), blob(3)];
-    await pruneOldVersions(three, 0);
-    expect(del).toHaveBeenCalledWith([blob(1).url, blob(2).url]);
-    vi.mocked(del).mockClear();
-    await pruneOldVersions(three, -3);
-    expect(del).toHaveBeenCalledWith([blob(1).url, blob(2).url]);
-  });
-});
-
-describe('writeCurrent', () => {
-  it('overwrites the public cache copy at a fixed path', async () => {
-    vi.mocked(put).mockResolvedValue({} as Awaited<ReturnType<typeof put>>);
-    const f = file([], 4);
-    await writeCurrent(f);
+describe('readStations', () => {
+  it('returns an empty version-0 list and no etag when nothing is stored', async () => {
     expect(CURRENT).toBe('stations/current.json');
-    expect(put).toHaveBeenCalledWith(CURRENT, JSON.stringify(f), {
-      access: 'public',
-      contentType: 'application/json',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      cacheControlMaxAge: 60,
-    });
+    expect(await readStations(new FakeBucket())).toEqual({ file: { version: 0, stations: [] }, etag: null });
   });
-  it('is invisible to version listing and pruning', async () => {
-    await pruneOldVersions([blob(1), blob(2), { pathname: CURRENT, url: `${B}/${CURRENT}` }], 1);
-    expect(del).toHaveBeenCalledWith([blob(1).url]);
-    listReturns([blob(1), blob(2), { pathname: CURRENT, url: `${B}/${CURRENT}` }]);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(file([], 2)))));
-    expect((await readLatest()).file.version).toBe(2);
+  it('reads the stored file with its etag', async () => {
+    const b = new FakeBucket();
+    const f = file([`${B}/tracks/christmas-jazz/a.mp3`], 10);
+    const etag = b.seed(CURRENT, JSON.stringify(f));
+    expect(await readStations(b)).toEqual({ file: f, etag });
+  });
+  it('throws on an invalid stored file, or one that is not JSON', async () => {
+    const b = new FakeBucket();
+    b.seed(CURRENT, JSON.stringify({ nope: true }));
+    await expect(readStations(b)).rejects.toThrow('Stored stations file is invalid');
+    b.seed(CURRENT, '{nope');
+    await expect(readStations(b)).rejects.toThrow();
   });
 });
 
-describe('publicBaseUrl', () => {
-  it('takes the store id from BLOB_READ_WRITE_TOKEN the way @vercel/blob does (fourth "_" part), lower-cased', () => {
-    vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_AbC123_fakeSecretValue');
-    expect(publicBaseUrl()).toBe('https://abc123.public.blob.vercel-storage.com');
-    vi.stubEnv('BLOB_READ_WRITE_TOKEN', '  vercel_blob_rw_xyz789_fake_secret_with_underscores \n');
-    expect(publicBaseUrl()).toBe('https://xyz789.public.blob.vercel-storage.com');
+describe('writeStations', () => {
+  it('creates the file only if it does not exist yet when there is no etag', async () => {
+    const b = new FakeBucket();
+    const put = vi.spyOn(b, 'put');
+    expect(await writeStations(b, file([], 1), null)).toBe(true);
+    expect(put).toHaveBeenCalledWith(CURRENT, JSON.stringify(file([], 1)), { onlyIf: { etagDoesNotMatch: '*' }, httpMetadata: { contentType: 'application/json' } });
+    expect(JSON.parse(b.text(CURRENT) ?? '')).toEqual(file([], 1));
+    // Somebody else created it first.
+    expect(await writeStations(b, file([], 1), null)).toBe(false);
   });
-  it('refuses a missing or malformed token without echoing it', () => {
-    for (const t of ['', '   ', 'garbage', 'vercel_blob_rw__secret', 'vercel_blob_rw_a.evil.com_secret', 'vercel_blob_rw_a/b_secret']) {
-      vi.stubEnv('BLOB_READ_WRITE_TOKEN', t);
-      expect(() => publicBaseUrl(), t).toThrow(/BLOB_READ_WRITE_TOKEN is missing or has an unexpected format$/);
+  it('overwrites only the version it read (etag match)', async () => {
+    const b = new FakeBucket();
+    const etag = b.seed(CURRENT, JSON.stringify(file([], 1)));
+    expect(await writeStations(b, file([], 2), etag)).toBe(true);
+    expect(JSON.parse(b.text(CURRENT) ?? '').version).toBe(2);
+    // The etag changed with that write, so a second writer holding the old one loses.
+    expect(await writeStations(b, file([], 2), etag)).toBe(false);
+    expect(JSON.parse(b.text(CURRENT) ?? '').version).toBe(2);
+  });
+  it('propagates a failed put', async () => {
+    const b = new FakeBucket();
+    vi.spyOn(b, 'put').mockRejectedValueOnce(new Error('network'));
+    await expect(writeStations(b, file([], 1), null)).rejects.toThrow('network');
+  });
+});
+
+describe('media URLs and keys', () => {
+  it('normalises the configured base and refuses anything that is not a plain https origin', () => {
+    expect(mediaBase(B)).toBe(B);
+    expect(mediaBase(`${B}/`)).toBe(B);
+    expect(mediaBase(' https://Aglow-Music.Example ')).toBe(B);
+    for (const bad of [undefined, '', '   ', 'http://aglow-music.example', 'https://u:p@aglow-music.example', 'https://aglow-music.example/sub', 'https://aglow-music.example?x=1', 'nope']) {
+      expect(mediaBase(bad), String(bad)).toBeNull();
     }
+  });
+  it('builds a URL with each key segment encoded, which maps back to the same key and passes the schema', () => {
+    for (const key of ['tracks/christmas-jazz/0a1b2c3d-a.mp3', 'tracks/christmas-jazz/0a1b2c3d-Sleigh Ride #2 (100%)?.mp3', 'covers/christmas-jazz/0a1b2c3d-Noël ☃.png']) {
+      const url = mediaUrl(key, B);
+      expect(url.startsWith(`${B}/`), url).toBe(true);
+      expect(isUrl(url), url).toBe(true);
+      expect(mediaKey(url, B), url).toBe(key);
+    }
+    expect(mediaUrl('tracks/christmas-jazz/0a1b2c3d-a b.mp3', B)).toBe(`${B}/tracks/christmas-jazz/0a1b2c3d-a%20b.mp3`);
+  });
+  it('maps only uploaded media under the base back to keys: never station data or anything elsewhere', () => {
+    const evil = [
+      `${B}/stations/current.json`,
+      `${B}/current.json`,
+      `${B}/tracks/../stations/current.json`,
+      `${B}/tracks/%2e%2e/stations/current.json`,
+      `${B}/tracks/christmas-jazz/%2e%2e`,
+      `${B}/tracks%2F..%2Fstations/current.json`,
+      `${B}/tracks/christmas-jazz%2Fx/a.mp3`,
+      `${B}/tracks/christmas-jazz/a%5Cb.mp3`,
+      `${B}/tracks/christmas-jazz/%E0%A4%A.mp3`,
+      `${B}/tracks/`,
+      `${B}/tracks/a.mp3`,
+      `${B}/tracks//a.mp3`,
+      `${B}/tracksx/a/b.mp3`,
+      `${B}/tracks/christmas-jazz/a.mp3?v=1`,
+      `${B}/tracks/christmas-jazz/a.mp3#x`,
+      'https://evil.example/tracks/christmas-jazz/a.mp3',
+      'https://aglow-music.example.evil.example/tracks/christmas-jazz/a.mp3',
+      'https://aglow-music.example:8443/tracks/christmas-jazz/a.mp3',
+      'http://aglow-music.example/tracks/christmas-jazz/a.mp3',
+      'https://u:p@aglow-music.example/tracks/christmas-jazz/a.mp3',
+      '/audio/piano/x.m4a',
+      'not a url',
+    ];
+    for (const u of evil) expect(mediaKey(u, B), u).toBeNull();
+    expect(mediaKey(`${B}/covers/christmas-jazz/c.png`, B)).toBe('covers/christmas-jazz/c.png');
+    expect(mediaKey(`${B}/tracks/christmas-jazz/sub/a.mp3`, B)).toBe('tracks/christmas-jazz/sub/a.mp3');
+  });
+});
+
+describe('removedMediaKeys', () => {
+  it('lists keys of uploaded media that are no longer referenced (never bundled paths or foreign hosts)', () => {
+    const prev = file([`${B}/tracks/christmas-jazz/a.mp3`, `${B}/tracks/christmas-jazz/b%20b.mp3`, '/audio/piano/x.m4a', 'https://elsewhere.example/tracks/christmas-jazz/z.mp3']);
+    prev.stations[0].tracks[0].cover = `${B}/covers/christmas-jazz/t.png`;
+    const next = file([`${B}/tracks/christmas-jazz/a.mp3`]);
+    next.stations[0].cover = undefined;
+    expect(removedMediaKeys(prev, next, B).sort()).toEqual(['covers/christmas-jazz/c.png', 'covers/christmas-jazz/t.png', 'tracks/christmas-jazz/b b.mp3']);
+  });
+  it('lists a file once even if it was referenced twice, and keeps one still used elsewhere', () => {
+    const shared = `${B}/covers/christmas-jazz/c.png`;
+    const prev = file([`${B}/tracks/christmas-jazz/a.mp3`, `${B}/tracks/christmas-jazz/a.mp3`]);
+    prev.stations[0].tracks[1].cover = shared;
+    const next = file([]);
+    expect(removedMediaKeys(prev, next, B)).toEqual(['tracks/christmas-jazz/a.mp3']);
+  });
+  it('removes nothing when the base is not configured', () => {
+    expect(removedMediaKeys(file([`${B}/tracks/christmas-jazz/a.mp3`]), file([]), null)).toEqual([]);
+  });
+});
+
+describe('deleteKeys', () => {
+  it('deletes in batches of at most 1000 keys', async () => {
+    const b = new FakeBucket();
+    const del = vi.spyOn(b, 'delete');
+    await deleteKeys(b, Array.from({ length: 2001 }, (_, i) => `tracks/s/${i}`));
+    expect(del.mock.calls.map((c) => c[0].length)).toEqual([1000, 1000, 1]);
+    await deleteKeys(b, []);
+    expect(del).toHaveBeenCalledTimes(3);
   });
 });

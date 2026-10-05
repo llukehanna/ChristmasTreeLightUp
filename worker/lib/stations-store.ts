@@ -1,113 +1,94 @@
-import { del, list, put } from '@vercel/blob';
-import { parseStationsFile, type StationsFile } from '../../src/radio/schema.js';
-
-export const PREFIX = 'stations/';
-/** Copy of the newest version, overwritten on every save. Public readers fetch it by URL, so the public path never calls list() (a billed "advanced operation"). */
-export const CURRENT = `${PREFIX}current.json`;
-export const MAX_VERSION = 999_999;
-export function versionPath(v: number): string {
-  if (!Number.isInteger(v) || v < 1 || v > MAX_VERSION) throw new Error(`Invalid station list version: ${v}`);
-  return `${PREFIX}v${String(v).padStart(6, '0')}.json`;
-}
-const VERSION_RE = /^stations\/v\d{6}\.json$/;
-
-export interface VersionBlob {
-  pathname: string;
-  url: string;
-}
-
-const onlyVersions = (blobs: readonly VersionBlob[]): VersionBlob[] =>
-  blobs.filter((b) => VERSION_RE.test(b.pathname)).sort((a, b) => a.pathname.localeCompare(b.pathname));
+import { STATION_ID, parseStationsFile, type StationsFile } from '../../src/radio/schema.js';
+import type { Bucket } from './bucket.js';
 
 /**
- * Newest version, found via list() (strongly consistent; one billed "advanced operation"). Each version blob is immutable, so reading it is safe to cache.
- * Also returns the version blobs it saw (oldest first), so a save can prune without listing again.
+ * The station list: one object, overwritten on every save. R2 is strongly consistent and supports etag-conditional
+ * writes, so there are no versioned copies, no list() and no pruning.
  */
-export async function readLatest(): Promise<{ file: StationsFile; versions: VersionBlob[] }> {
-  const { blobs } = await list({ prefix: PREFIX });
-  const versions = onlyVersions(blobs);
-  const latest = versions[versions.length - 1];
-  if (!latest) return { file: { version: 0, stations: [] }, versions };
-  const r = await fetch(latest.url);
-  if (!r.ok) throw new Error(`Could not read ${latest.pathname} (HTTP ${r.status})`);
-  const file = parseStationsFile(await r.json());
+export const CURRENT = 'stations/current.json';
+
+const empty = (): StationsFile => ({ version: 0, stations: [] });
+
+/** The stored list and its etag. Nothing stored yet: an empty version-0 list and a null etag. An invalid object throws. */
+export async function readStations(bucket: Bucket): Promise<{ file: StationsFile; etag: string | null }> {
+  const obj = await bucket.get(CURRENT);
+  if (!obj) return { file: empty(), etag: null };
+  const file = parseStationsFile(JSON.parse(await obj.text()));
   if (!file) throw new Error('Stored stations file is invalid');
-  return { file, versions };
+  return { file, etag: obj.etag };
 }
 
-/** Throws if this version already exists (Blob refuses to overwrite by default), which signals a concurrent save. */
-export async function writeVersion(file: StationsFile): Promise<void> {
-  await put(versionPath(file.version), JSON.stringify(file), {
-    access: 'public',
-    contentType: 'application/json',
-    addRandomSuffix: false,
-    allowOverwrite: false,
-    cacheControlMaxAge: 31536000,
+/**
+ * Writes `file` only if the stored object is still the one read (same etag), or, with a null etag, only if nothing
+ * is stored yet. Resolves to false when that condition fails (somebody else saved first). A failed put throws.
+ */
+export async function writeStations(bucket: Bucket, file: StationsFile, etag: string | null): Promise<boolean> {
+  const written = await bucket.put(CURRENT, JSON.stringify(file), {
+    onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
+    httpMetadata: { contentType: 'application/json' },
   });
+  return written !== null;
 }
 
-/**
- * Refreshes the public cache copy. Never used by the admin path: that reads via list(), the source of truth for concurrency.
- * VERSION_RE does not match this name, so version listing and pruning ignore it.
- */
-export async function writeCurrent(file: StationsFile): Promise<void> {
-  await put(CURRENT, JSON.stringify(file), {
-    access: 'public',
-    contentType: 'application/json',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    cacheControlMaxAge: 60,
-  });
-}
-
-/**
- * `https://<storeId>.public.blob.vercel-storage.com`, with the store id taken from BLOB_READ_WRITE_TOKEN
- * exactly as @vercel/blob does (`vercel_blob_rw_<storeId>_<secret>`: the fourth `_`-separated part of the trimmed value).
- * The id becomes part of a hostname, so anything but letters and digits is refused. Never includes or logs the token.
- */
-export function publicBaseUrl(): string {
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim() ?? '';
-  const [, , , storeId = ''] = token.split('_');
-  if (!/^[A-Za-z0-9]+$/.test(storeId)) throw new Error('BLOB_READ_WRITE_TOKEN is missing or has an unexpected format');
-  return `https://${storeId.toLowerCase()}.public.blob.vercel-storage.com`;
-}
-
-/**
- * Deletes all but the newest `keep` versions among `known` (from readLatest, plus the version just written), without listing again.
- * The newest is always kept, so a blob that was only just written never needs a real URL here.
- */
-export async function pruneOldVersions(known: readonly VersionBlob[], keep = 5): Promise<void> {
-  keep = Number.isFinite(keep) ? Math.max(1, Math.floor(keep)) : 5; // never delete the newest version
-  const all = onlyVersions(known);
-  const old = all.slice(0, Math.max(0, all.length - keep)).map((b) => b.url);
-  if (old.length) await del(old);
-}
-
-const BLOB_HOST = /^[a-z0-9]+\.public\.blob\.vercel-storage\.com$/;
-
-function blobPath(u: string): string | null {
+/** MUSIC_BASE_URL as a bare https origin ("https://host"), or null if it is anything else. */
+export function mediaBase(raw: string | undefined): string | null {
   try {
-    const url = new URL(u);
-    if (url.protocol !== 'https:' || url.username || url.password || !BLOB_HOST.test(url.hostname)) return null;
-    return decodeURIComponent(url.pathname).slice(1);
+    const u = new URL((raw ?? '').trim());
+    if (u.protocol !== 'https:' || u.username || u.password || u.pathname !== '/' || u.search || u.hash) return null;
+    return u.origin;
   } catch {
     return null;
   }
 }
 
-export const isBlobUrl = (u: string): boolean => blobPath(u) !== null;
+/** The public URL of a stored object: the base, then the key with each segment percent-encoded. */
+export const mediaUrl = (key: string, base: string): string => `${base}/${key.split('/').map(encodeURIComponent).join('/')}`;
 
-/** A file uploaded through the admin (tracks/ or covers/). Version files and anything else in the store are never deletable via a station edit. */
-export function isDeletableUrl(u: string): boolean {
-  const p = blobPath(u);
-  return p !== null && /^(tracks|covers)\/[^/]/.test(p) && !p.split('/').some((seg) => seg === '..' || seg === '.');
+const MEDIA_FOLDER = /^(tracks|covers)$/;
+const BAD_SEGMENT = /[/\\\u0000-\u001f\u007f]/;
+
+/**
+ * The key of uploaded media behind `url`: only `<base>/tracks/<station>/…` or `<base>/covers/<station>/…`, each path
+ * segment decoded. Anything else (station data, other hosts, traversal, encoded separators, queries) is null, so it
+ * can never be deleted through a station edit.
+ */
+export function mediaKey(url: string, base: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  if (u.origin !== base || u.username || u.password || u.search || u.hash) return null;
+  const segments: string[] = [];
+  for (const raw of u.pathname.slice(1).split('/')) {
+    let s: string;
+    try {
+      s = decodeURIComponent(raw);
+    } catch {
+      return null;
+    }
+    if (s === '' || s === '.' || s === '..' || BAD_SEGMENT.test(s)) return null;
+    segments.push(s);
+  }
+  if (segments.length < 3 || !MEDIA_FOLDER.test(segments[0]) || !STATION_ID.test(segments[1])) return null;
+  return segments.join('/');
 }
 
 const urlsOf = (f: StationsFile): string[] =>
   f.stations.flatMap((s) => [s.cover, ...s.tracks.flatMap((t) => [t.url, t.cover])]).filter((u): u is string => typeof u === 'string');
 
-/** Blob URLs referenced before but not after a save; their files get deleted (only tracks/ and covers/ files). */
-export function removedUrls(prev: StationsFile, next: StationsFile): string[] {
-  const keep = new Set(urlsOf(next));
-  return [...new Set(urlsOf(prev))].filter((u) => !keep.has(u) && isDeletableUrl(u));
+const keysOf = (f: StationsFile, base: string): Set<string> =>
+  new Set(urlsOf(f).flatMap((u) => mediaKey(u, base) ?? []));
+
+/** Keys of uploaded media referenced before a save but not after it (compared by key, so no spelling of a URL keeps or loses a file by accident). */
+export function removedMediaKeys(prev: StationsFile, next: StationsFile, base: string | null): string[] {
+  if (!base) return [];
+  const keep = keysOf(next, base);
+  return [...keysOf(prev, base)].filter((k) => !keep.has(k));
+}
+
+/** R2 deletes at most 1000 keys per call. */
+export async function deleteKeys(bucket: Bucket, keys: readonly string[]): Promise<void> {
+  for (let i = 0; i < keys.length; i += 1000) await bucket.delete(keys.slice(i, i + 1000));
 }

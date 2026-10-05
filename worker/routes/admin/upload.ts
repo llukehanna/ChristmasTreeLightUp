@@ -1,50 +1,68 @@
-import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
-import { adminJson, readTextCapped, requireAdmin } from '../_lib/http.js';
+import { STATION_ID } from '../../../src/radio/schema.js';
+import type { AppEnv } from '../../lib/env.js';
+import { adminJson, notConfigured, requireAdmin } from '../../lib/http.js';
+import { mediaBase, mediaUrl } from '../../lib/stations-store.js';
 
-const AUDIO = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg'];
-const IMAGES = ['image/jpeg', 'image/png', 'image/webp'];
-const MAX_BODY = 16 * 1024;
-/** tracks/<station-id>/<file> or covers/<station-id>/<file>; the station id follows the schema's id rule. */
-const UPLOAD_PATH = /^(tracks|covers)\/[a-z0-9][a-z0-9-]{0,63}\/[^/\\\u0000-\u001f\u007f]{1,200}$/;
+const ALLOWED: Readonly<Record<'tracks' | 'covers', readonly string[]>> = {
+  tracks: ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg'],
+  covers: ['image/jpeg', 'image/png', 'image/webp'],
+};
+const MAX_BYTES = 30 * 1024 * 1024;
+const BAD_NAME = /[/\\\u0000-\u001f\u007f]/;
 
-class PathRejected extends Error {}
+const badPath = (): Response =>
+  adminJson({ error: 'Uploads must go to tracks/<station>/<file> or covers/<station>/<file>' }, { status: 400 });
 
-/** Blob client-upload handshake. Token requests need a session; completion callbacks are verified by the SDK's signature check. */
-export async function POST(req: Request): Promise<Response> {
-  const text = await readTextCapped(req, MAX_BODY);
-  if (text === null) return adminJson({ error: 'Request too large' }, { status: 413 });
-  let body: HandleUploadBody;
+function randomHex(bytes: number): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * PUT /api/admin/upload?folder=tracks|covers&station=<id>&name=<file>, body = the file.
+ * Streamed straight to R2 (never buffered) under `<folder>/<station>/<8 hex>-<name>`; answers `{url, key, size}`.
+ */
+export async function PUT(req: Request, env: AppEnv): Promise<Response> {
+  const denied = await requireAdmin(req, env);
+  if (denied) return denied;
+  const base = mediaBase(env.MUSIC_BASE_URL);
+  if (!base) return notConfigured();
+
+  const params = new URL(req.url).searchParams;
+  const folder = params.get('folder');
+  const station = params.get('station') ?? '';
+  const name = params.get('name') ?? '';
+  if (folder !== 'tracks' && folder !== 'covers') return badPath();
+  if (!STATION_ID.test(station)) return badPath();
+  if (name.length < 1 || name.length > 200 || name === '.' || name === '..' || BAD_NAME.test(name)) return badPath();
+
+  const contentType = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  if (!ALLOWED[folder].includes(contentType)) return adminJson({ error: 'That file type is not allowed here' }, { status: 415 });
+
+  const declared = req.headers.get('content-length') ?? '';
+  if (!/^\d{1,12}$/.test(declared)) return adminJson({ error: 'Content-Length is required' }, { status: 411 });
+  const length = Number(declared);
+  if (length > MAX_BYTES) return adminJson({ error: 'The file is too large (30 MB max)' }, { status: 413 });
+  if (length === 0 || !req.body) return adminJson({ error: 'The file is empty' }, { status: 400 });
+
+  const key = `${folder}/${station}/${randomHex(4)}-${name}`;
+  let size: number;
   try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { type?: unknown }).type !== 'string') throw new Error('bad body');
-    body = parsed as HandleUploadBody;
-  } catch {
-    return adminJson({ error: 'Invalid request' }, { status: 400 });
-  }
-  if (body.type !== 'blob.upload-completed') {
-    const denied = requireAdmin(req);
-    if (denied) return denied;
-  }
-  try {
-    const json = await handleUpload({
-      body,
-      request: req,
-      onBeforeGenerateToken: async (pathname) => {
-        if (typeof pathname !== 'string' || !UPLOAD_PATH.test(pathname) || /(^|\/)\.\.?(\/|$)/.test(pathname)) {
-          throw new PathRejected('Uploads must go to tracks/<station>/<file> or covers/<station>/<file>');
-        }
-        return {
-          allowedContentTypes: pathname.startsWith('covers/') ? IMAGES : AUDIO,
-          maximumSizeInBytes: 30 * 1024 * 1024,
-          addRandomSuffix: true,
-        };
-      },
-      onUploadCompleted: async () => {
-        // Nothing to do: the admin saves the track into the station list itself.
-      },
+    const obj = await env.MUSIC.put(key, req.body, {
+      httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
     });
-    return adminJson(json);
-  } catch (e) {
-    return adminJson({ error: e instanceof PathRejected ? e.message : 'Upload request refused' }, { status: 400 });
+    if (!obj) throw new Error('not written');
+    size = obj.size;
+  } catch {
+    return adminJson({ error: 'Upload failed. Try again.' }, { status: 503 });
   }
+  // The runtime holds a request body to its Content-Length; this guards the cap if that ever changes.
+  if (size !== length) {
+    try {
+      await env.MUSIC.delete(key);
+    } catch {
+      // an orphaned object is harmless: no station refers to it
+    }
+    return adminJson({ error: 'The upload was incomplete. Try again.' }, { status: 400 });
+  }
+  return adminJson({ url: mediaUrl(key, base), key, size });
 }

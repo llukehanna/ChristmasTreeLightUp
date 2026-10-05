@@ -1,7 +1,8 @@
-import { parseStationsFile, type StationsFile } from '../../src/radio/schema.js';
-import { CURRENT, publicBaseUrl } from './stations-store.js';
+import type { StationsFile } from '../../src/radio/schema.js';
+import type { Bucket } from './bucket.js';
+import { readStations } from './stations-store.js';
 
-const TTL_MS = 300_000;
+const TTL_MS = 60_000;
 let cached: { file: StationsFile; at: number } | null = null;
 
 export const resetPublicCache = (): void => {
@@ -9,21 +10,13 @@ export const resetPublicCache = (): void => {
 };
 
 /**
- * The public station list: stations/current.json fetched by its public URL (a CDN hit, not a billed Blob operation; never list()).
- * A 404 means nothing has been saved yet. Any other failure throws. Kept in memory for 5 minutes per instance (the CDN copy is the fresher layer: current.json is cached for 60s).
+ * The public station list, read through the R2 binding (one Class B read; never list()) and validated.
+ * Nothing saved yet gives an empty version-0 list. Any failure throws and is not cached.
+ * Kept in memory for 60 seconds per isolate; a save in the same isolate clears it.
  */
-export async function loadPublicStations(now = Date.now()): Promise<StationsFile> {
+export async function loadPublicStations(bucket: Bucket, now = Date.now()): Promise<StationsFile> {
   if (cached && now - cached.at < TTL_MS) return cached.file;
-  const r = await fetch(`${publicBaseUrl()}/${CURRENT}`, { signal: AbortSignal.timeout(5000) });
-  let file: StationsFile;
-  if (r.status === 404) {
-    file = { version: 0, stations: [] };
-  } else {
-    if (!r.ok) throw new Error(`Could not read ${CURRENT} (HTTP ${r.status})`);
-    const parsed = parseStationsFile(await r.json());
-    if (!parsed) throw new Error(`${CURRENT} is invalid`);
-    file = parsed;
-  }
+  const { file } = await readStations(bucket);
   cached = { file, at: now };
   return file;
 }

@@ -1,8 +1,7 @@
 import type { SceneId } from '../render/scenes';
+import { FIREPLACE_ID, MUSIC_BOX_ID } from './ids';
 
-export const FIREPLACE_ID = 'fireplace';
-/** Synthesized public-domain carols (`musicbox.ts`): always available, needs no catalog. */
-export const MUSIC_BOX_ID = 'music-box';
+export { FIREPLACE_ID, MUSIC_BOX_ID };
 export const MUSIC_BOX_META = { id: MUSIC_BOX_ID, name: 'Music Box', description: 'Public-domain carols on a music box' } as const;
 
 /** Built-in sources that are synthesized in the browser, so they work without the station catalog. */

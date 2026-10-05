@@ -1,19 +1,26 @@
-import { isAdmin } from './session.js';
+import { adminSecrets, isAdmin } from './session.js';
 
-/** JSON response for admin endpoints: never cached anywhere. */
+/** JSON response for admin and error paths: never cached anywhere. */
 export function adminJson(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}): Response {
   return Response.json(body, { status: init.status ?? 200, headers: { 'Cache-Control': 'no-store', ...init.headers } });
 }
 
 export const notConfigured = (): Response => adminJson({ error: 'Admin is not configured' }, { status: 503 });
 
-/** null when the caller has a valid session, otherwise the response to send (401, or 503 if ADMIN_PASSWORD is unset). */
-export function requireAdmin(req: Request): Response | null {
-  try {
-    return isAdmin(req) ? null : adminJson({ error: 'Not signed in' }, { status: 401 });
-  } catch {
-    return notConfigured();
-  }
+/** null when the caller has a valid session, otherwise the response to send (401, or 503 if a secret is unset). */
+export async function requireAdmin(req: Request, env: { ADMIN_PASSWORD?: string; SESSION_SECRET?: string }): Promise<Response | null> {
+  const secrets = adminSecrets(env);
+  if (!secrets) return notConfigured();
+  return (await isAdmin(req, secrets)) ? null : adminJson({ error: 'Not signed in' }, { status: 401 });
+}
+
+/**
+ * CSRF defence on top of SameSite=Strict: browsers send Origin on every POST/PUT, so a state-changing admin request
+ * must carry one equal to the request's own origin. A missing header fails too.
+ */
+export function sameOrigin(req: Request): boolean {
+  const origin = req.headers.get('origin');
+  return origin !== null && origin === new URL(req.url).origin;
 }
 
 /** Reads the body as text, or returns null if it is larger than `max` bytes (it stops reading as soon as the cap is passed). */

@@ -1,12 +1,9 @@
-import { adminJson } from '../_lib/http.js';
-import { isAdmin } from '../_lib/session.js';
+import type { AppEnv } from '../../lib/env.js';
+import { adminJson } from '../../lib/http.js';
+import { adminSecrets, isAdmin } from '../../lib/session.js';
 
-export function GET(req: Request): Response {
-  let admin = false;
-  try {
-    admin = isAdmin(req);
-  } catch {
-    // ADMIN_PASSWORD unset: nobody is an admin.
-  }
-  return adminJson({ admin });
+export async function GET(req: Request, env: AppEnv): Promise<Response> {
+  const secrets = adminSecrets(env);
+  // A secret unset: nobody is an admin.
+  return adminJson({ admin: secrets ? await isAdmin(req, secrets) : false });
 }
