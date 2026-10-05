@@ -236,10 +236,14 @@ export function nextOrder(n: number, rng: Rng, avoid: number): number[] {
 }
 
 export const creditFor = (c: Carol): string => `"${c.title}" — ${c.by} / public domain, arranged for Aglow`;
+/** The artist line: the composer, or "Traditional". */
+export const artistFor = (c: Carol): string => (c.by === 'traditional' ? 'Traditional' : c.by);
 
 export interface NowPlaying {
   id: string;
   title: string;
+  /** The composer, or "Traditional". */
+  artist: string;
   credit: string;
   /** Seconds. */
   duration: number;
@@ -374,6 +378,7 @@ export class MusicBox {
     return {
       id: p.carol.id,
       title: p.carol.title,
+      artist: artistFor(p.carol),
       credit: creditFor(p.carol),
       duration: p.score.duration,
       position: Math.min(p.score.duration, Math.max(0, ctx.currentTime - p.cur.start)),

@@ -218,6 +218,22 @@ test('pausing closes an open radio panel so it never sits over the pause overlay
   await expect(page.locator('#radio-panel')).toBeHidden();
 });
 
+test('Music Box shows the composer as the artist, in the panel and in the pill', async ({ page }) => {
+  await pinSource(page, 'music-box');
+  await ready(page);
+  await tapTile(page);
+  await expect.poll(async () => (await radio(page)).playing).toBe(true);
+  const artist = page.locator('#radio-pill .rp-artist');
+  await expect(artist).toHaveText(/^(Traditional|[A-Z][a-z]+ .+)$/);
+  await expect(artist).toBeVisible(); // there is room at this width for station · title · artist
+  expect(await page.locator('#radio-pill').getAttribute('data-fit')).toBe('full');
+  await page.click('#radio-pill');
+  await expect(page.locator('#radio-panel .artist')).toHaveText((await artist.textContent()) ?? '');
+  // The scrubber reads as times, and the panel's section headings follow its dialog label.
+  await expect(page.locator('#radio-panel .scrub')).toHaveAttribute('aria-valuetext', /^\d+:\d\d of \d+:\d\d$/);
+  await expect(page.locator('#radio-panel h2')).toHaveText(['Stations', 'Your music']);
+});
+
 test('phone: Tab and Shift+Tab stay inside the open radio sheet', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await ready(page);

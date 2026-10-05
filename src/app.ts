@@ -369,8 +369,8 @@ export class App {
   }
 
   /**
-   * The radio pill takes the widest label (station · track, station, short name, icon only) that leaves the
-   * wordmark clear, then the tagline is placed around the HUD's new width.
+   * The radio pill takes the widest label (station · title · artist, station · title, station, short name, icon only)
+   * that leaves the wordmark clear, then the tagline is placed around the HUD's new width.
    */
   private fitHud(): void {
     if (!this.laidOut) return;
@@ -379,7 +379,7 @@ export class App {
     const mark = document.querySelector('.wordmark');
     if (pill && hud && mark) {
       const markRight = mark.getBoundingClientRect().right;
-      for (const fit of ['full', 'name', 'short', 'icon']) {
+      for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
         pill.dataset.fit = fit;
         if (hud.getBoundingClientRect().left - markRight >= 16) break;
       }

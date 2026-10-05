@@ -1,18 +1,20 @@
 /* ---------- Radio (spec §5.3) in the festive chrome of §4.8 ---------- */
 
 /* Pill: a .pill (cranberry glass, gold hairline) with gold equalizer bars. */
-.radio-pill { padding: 0 14px 0 13px; max-width: 360px; }
+.radio-pill { padding: 0 14px 0 13px; max-width: 500px; }
 .radio-pill .rp-name, .radio-pill .rp-short { white-space: nowrap; }
-.radio-pill .rp-track { opacity: 0.62; font-weight: 400; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: -2px; }
-.radio-pill .rp-track:empty { display: none; }
-.radio-pill .rp-track::before { content: '· '; }
-/* The app picks the widest label that leaves the wordmark clear (App.fitHud). */
+.radio-pill .rp-track, .radio-pill .rp-artist { opacity: 0.62; font-weight: 400; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: -2px; }
+.radio-pill .rp-artist { max-width: 150px; }
+.radio-pill .rp-track:empty, .radio-pill .rp-artist:empty, .radio-pill .rp-track:empty + .rp-artist { display: none; }
+.radio-pill .rp-track::before, .radio-pill .rp-artist::before { content: '· '; }
+/* The app picks the widest label that leaves the wordmark clear (App.fitHud): station · title · artist, station · title, name, short, icon. */
 .radio-pill .rp-short { display: none; }
-.radio-pill[data-fit='name'] .rp-track { display: none; }
-.radio-pill[data-fit='short'] .rp-name, .radio-pill[data-fit='short'] .rp-track { display: none; }
+.radio-pill[data-fit='title'] .rp-artist { display: none; }
+.radio-pill[data-fit='name'] .rp-track, .radio-pill[data-fit='name'] .rp-artist { display: none; }
+.radio-pill[data-fit='short'] .rp-name, .radio-pill[data-fit='short'] .rp-track, .radio-pill[data-fit='short'] .rp-artist { display: none; }
 .radio-pill[data-fit='short'] .rp-short { display: inline; }
 .radio-pill[data-fit='icon'] { width: 38px; padding: 0; justify-content: center; }
-.radio-pill[data-fit='icon'] .rp-name, .radio-pill[data-fit='icon'] .rp-track, .radio-pill[data-fit='icon'] .rp-short { display: none; }
+.radio-pill[data-fit='icon'] .rp-name, .radio-pill[data-fit='icon'] .rp-track, .radio-pill[data-fit='icon'] .rp-artist, .radio-pill[data-fit='icon'] .rp-short { display: none; }
 
 .eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; flex: none; }
 .eq i {
