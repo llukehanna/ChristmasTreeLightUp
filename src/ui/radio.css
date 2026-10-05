@@ -240,3 +240,6 @@ body[data-scene='frost'] .radio .art { background: radial-gradient(70% 70% at 50
   .radio .st { padding-top: 9px; padding-bottom: 9px; }
 }
 @keyframes sheet-in { from { transform: translateY(40px); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) {
+  .eq i, .radio-pill .eq i, .radio .st.live .eq i, .radio .art .bulb, .radio.playing .art .bulb, .radio { animation: none !important; }
+}
