@@ -6,7 +6,7 @@ import { loadCatalog } from './catalog';
 import { parseEmbed, type Embed } from './embed';
 import { Fireplace } from './fireplace';
 import { LightShow } from './lightshow';
-import { RadioPlayer } from './player';
+import { RadioPlayer, type RemoteAction } from './player';
 import type { Station, Track } from './schema';
 
 export type SourceKind = 'station' | 'fireplace' | 'embed';
@@ -40,21 +40,33 @@ export class Radio {
   private started = false;
   /** AudioContext time until which the first-gesture fade-in is still ramping the music bus. */
   private fadeInUntil = 0;
+  private catalogLoaded = false;
+  /** The first gesture came before the catalog did: start the preferred station as soon as it arrives. */
+  private pendingStart = false;
+  private catalogSeq = 0;
   private sceneId: SceneId = 'fireside';
   private analyser: AnalyserNode | null = null;
 
   constructor() {
     this.player.onChange = () => this.onChange?.();
+    this.player.onRemote = (action) => this.onRemote(action);
     this.show = new LightShow(() => this.analyser);
     this.embed = this.settings.embedUrl ? parseEmbed(this.settings.embedUrl) : null;
     void this.refreshCatalog();
   }
 
   async refreshCatalog(): Promise<void> {
+    const seq = ++this.catalogSeq;
     const c = await loadCatalog();
+    if (seq !== this.catalogSeq) return; // a newer refresh is in flight: the last one started wins
     this.catalog = c.stations;
     this.remoteOk = c.remoteOk;
-    if (this.started && this.kind === null && this.settings.on) this.startPreferred();
+    this.catalogLoaded = true;
+    // Decks were primed and the context unlocked inside the first gesture, so this non-gesture start is allowed.
+    if (this.pendingStart) {
+      this.pendingStart = false;
+      if (this.settings.on) this.startPreferred();
+    }
     this.onChange?.();
   }
 
@@ -84,6 +96,12 @@ export class Radio {
 
   playPause(): void {
     this.prepare();
+    if (this.pendingStart) {
+      // Paused while still waiting for the catalog: cancel the pending start.
+      this.pendingStart = false;
+      this.save({ on: false });
+      return;
+    }
     if (this.kind === 'station') {
       if (this.player.snapshot().playing) this.player.pause();
       else this.player.resume();
@@ -92,7 +110,7 @@ export class Radio {
     } else {
       this.startPreferred();
     }
-    this.save({ on: this.isPlaying() });
+    this.save({ on: this.isPlaying() || this.pendingStart });
   }
 
   next(): void {
@@ -194,19 +212,44 @@ export class Radio {
     return s.tracks.length > 0 && !this.player.isUnavailable(s.id);
   }
 
+  /** Fireplace and a set-up embed work without the station catalog. */
+  private needsCatalog(): boolean {
+    const s = this.settings.source;
+    return !(s === FIREPLACE_ID || (s === 'embed' && this.embed));
+  }
+
   private preferredSource(): string {
     const s = this.settings.source;
     if (s === FIREPLACE_ID || (s === 'embed' && this.embed)) return s;
-    const usable = (id: string | null) => this.catalog.some((x) => x.id === id && this.playable(x));
-    if (usable(s)) return s as string;
-    const suggested = SCENE_STATION[this.sceneId];
-    if (usable(suggested)) return suggested;
-    return this.catalog.find((x) => this.playable(x))?.id ?? FIREPLACE_ID;
+    const byId = (id: string | null): Station | undefined => (id === null ? undefined : this.catalog.find((x) => x.id === id && this.playable(x)));
+    const chosen = byId(s) ?? byId(SCENE_STATION[this.sceneId]) ?? this.catalog.find((x) => this.playable(x));
+    return chosen?.id ?? FIREPLACE_ID; // only reached once the catalog has loaded and has nothing usable
   }
 
   /** Start the remembered source, or the scene's suggestion. Following a suggestion isn't a choice, so `source` is left as it was. */
   private startPreferred(): void {
+    if (this.needsCatalog() && !this.catalogLoaded) {
+      // Prime the decks now (this is the gesture); refreshCatalog starts playback when the catalog arrives.
+      this.player.prime();
+      this.pendingStart = true;
+      return;
+    }
     this.play(this.preferredSource(), false);
+  }
+
+  /** Lock-screen / headset keys. Only a playing or paused station owns them; otherwise they are swallowed. */
+  private onRemote(action: RemoteAction): boolean {
+    if (this.kind !== 'station') return true;
+    const playing = this.player.snapshot().playing;
+    if (action === 'play') {
+      if (!playing) this.playPause(); // routed through here so `on` is saved
+      return true;
+    }
+    if (action === 'pause') {
+      if (playing) this.playPause();
+      return true;
+    }
+    return false; // next / previous / seek: the player handles them
   }
 
   private play(source: string, remember: boolean): void {
@@ -221,6 +264,17 @@ export class Radio {
     this.prepare();
     const ctx = audio.ctx;
     if (source === FIREPLACE_ID && (!ctx || !audio.music)) return;
+    this.pendingStart = false; // an explicit or resolved choice supersedes any waiting start
+    const already =
+      (source === FIREPLACE_ID && this.kind === 'fireplace') ||
+      (source === 'embed' && this.kind === 'embed') ||
+      (station !== undefined && this.kind === 'station' && this.player.snapshot().station?.id === station.id);
+    if (already) {
+      // Re-selecting what is already the source must not restart it (a paused station just resumes).
+      if (station && !this.player.snapshot().playing) this.player.resume();
+      this.save({ on: true, ...(remember ? { source } : {}) });
+      return;
+    }
     this.stopAll();
     if (source === FIREPLACE_ID && ctx && audio.music) {
       this.fireplace.start(ctx, audio.music);
@@ -236,6 +290,7 @@ export class Radio {
 
   private stopAll(): void {
     this.player.stop();
+    this.player.releaseMediaSession();
     this.fireplace.stop(audio.ctx);
     this.kind = null;
   }

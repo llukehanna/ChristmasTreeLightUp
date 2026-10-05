@@ -13,6 +13,8 @@ const SKIP_FADE_S = 0.25;
 const QUICK_FADE_S = 0.03;
 const POSITION_STATE_MS = 1000;
 
+export type RemoteAction = 'play' | 'pause' | 'nexttrack' | 'previoustrack' | 'seekto';
+
 export interface PlayerSnapshot {
   station: Station | null;
   track: Track | null;
@@ -80,6 +82,8 @@ class Deck {
 /** Two decks crossfading through Web Audio (spec §5.2). */
 export class RadioPlayer {
   onChange: (() => void) | null = null;
+  /** Consulted first by every Media Session handler (lock screen, headset keys). Return true to consume the action. */
+  onRemote: ((action: RemoteAction, seekTime?: number) => boolean) | null = null;
   private decks: [Deck, Deck] | null = null;
   private active = 0;
   private queue: Track[] = [];
@@ -112,6 +116,22 @@ export class RadioPlayer {
     this.load(0, false);
   }
 
+  /** Create and prime both decks. Call inside a user gesture when playback will only start later (e.g. once the catalog has loaded). */
+  prime(): void {
+    this.ensureDecks();
+  }
+
+  /** Leave the lock screen / media keys alone once something else (Fireplace, an embed) is the source. */
+  releaseMediaSession(): void {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = 'none';
+      navigator.mediaSession.metadata = null;
+    } catch {
+      /* unsupported: ignore */
+    }
+  }
+
   setShuffle(on: boolean): void {
     if (!this.station || this.queue.length === 0) return;
     const current = this.queue[this.index];
@@ -134,6 +154,7 @@ export class RadioPlayer {
   pause(): void {
     this.playing = false;
     this.silence();
+    this.syncPlaybackState();
     this.onChange?.();
   }
 
@@ -148,12 +169,14 @@ export class RadioPlayer {
     this.playing = true;
     rampTo(ctx, d.gain.gain, 1, QUICK_FADE_S);
     void d.el.play().catch(() => undefined);
+    this.syncPlaybackState();
     this.onChange?.();
   }
 
   stop(): void {
     this.playing = false;
     this.silence();
+    this.syncPlaybackState();
     this.onChange?.();
   }
 
@@ -283,10 +306,12 @@ export class RadioPlayer {
     incoming.el.play().catch((e: unknown) => {
       if (e instanceof DOMException && e.name === 'NotAllowedError') {
         this.playing = false;
+        this.syncPlaybackState();
         this.onChange?.();
       }
     });
     this.updateMediaSession(track);
+    this.syncPlaybackState();
     this.onChange?.();
   }
 
@@ -340,17 +365,19 @@ export class RadioPlayer {
   private setupMediaSession(): void {
     if (!('mediaSession' in navigator)) return;
     const ms = navigator.mediaSession;
+    const remote = (action: RemoteAction, fallback: (seekTime?: number) => void): MediaSessionActionHandler => (d) => {
+      const seekTime = d.seekTime ?? undefined;
+      if (this.onRemote?.(action, seekTime)) return;
+      fallback(seekTime);
+    };
     const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
-      ['play', () => this.resume()],
-      ['pause', () => this.pause()],
-      ['nexttrack', () => this.next()],
-      ['previoustrack', () => this.prev()],
-      [
-        'seekto',
-        (d) => {
-          if (d.seekTime !== undefined && d.seekTime !== null) this.seek(d.seekTime);
-        },
-      ],
+      ['play', remote('play', () => this.resume())],
+      ['pause', remote('pause', () => this.pause())],
+      ['nexttrack', remote('nexttrack', () => this.next())],
+      ['previoustrack', remote('previoustrack', () => this.prev())],
+      ['seekto', remote('seekto', (t) => {
+        if (t !== undefined) this.seek(t);
+      })],
     ];
     for (const [action, handler] of handlers) {
       try {
@@ -358,6 +385,15 @@ export class RadioPlayer {
       } catch {
         /* this browser does not support that action */
       }
+    }
+  }
+
+  private syncPlaybackState(): void {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = this.playing ? 'playing' : 'paused';
+    } catch {
+      /* unsupported: ignore */
     }
   }
 
