@@ -95,6 +95,7 @@ export class RadioPlayer {
   private gen = 0;
   private pending: { el: HTMLAudioElement; fn: () => void } | null = null;
   private lastPositionState = 0;
+  private mediaSessionReady = false;
   private readonly unavailable = new Set<string>();
 
   constructor(private readonly out: () => AudioNode | null) {}
@@ -119,6 +120,16 @@ export class RadioPlayer {
   /** Create and prime both decks. Call inside a user gesture when playback will only start later (e.g. once the catalog has loaded). */
   prime(): void {
     this.ensureDecks();
+  }
+
+  /**
+   * Register the lock-screen / media-key handlers, once. Each handler asks `onRemote` first, so the Radio can route
+   * them for sources that have no decks (Music Box) as well as for stations.
+   */
+  claimMediaSession(): void {
+    if (this.mediaSessionReady) return;
+    this.mediaSessionReady = true;
+    this.setupMediaSession();
   }
 
   /** Leave the lock screen / media keys alone once something else (Fireplace, an embed) is the source. */
@@ -243,7 +254,7 @@ export class RadioPlayer {
       d.el.pause();
     });
     this.decks = decks;
-    this.setupMediaSession();
+    this.claimMediaSession();
     return decks;
   }
 

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { audio } from '../../../src/audio/context';
+import * as builtin from '../../../src/radio/builtin';
+import { STATIONS_URL } from '../../../src/radio/catalog';
 import { Fireplace } from '../../../src/radio/fireplace';
+import { MusicBox } from '../../../src/radio/musicbox';
 import { RadioPlayer } from '../../../src/radio/player';
 import { Radio } from '../../../src/radio/radio';
 import { loadRadioSettings } from '../../../src/store/radio-settings';
@@ -48,15 +51,18 @@ function fakeAudio() {
 }
 
 let gate: Promise<void> = Promise.resolve();
+let fetched: string[] = [];
 
 beforeEach(() => {
   localStorage.clear();
   gate = Promise.resolve();
+  fetched = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
+      fetched.push(url);
       await gate;
-      return url.includes('piano') ? new Response('nope', { status: 404 }) : new Response(JSON.stringify(STATIONS));
+      return new Response(JSON.stringify(STATIONS));
     }),
   );
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
@@ -193,14 +199,18 @@ it('a first gesture before the catalog loads primes, waits, then starts the pref
   expect(loadRadioSettings().source).toBeNull();
 });
 
-it('uses Fireplace only once the catalog has loaded with nothing playable', async () => {
+it('falls back to Music Box (not Fireplace) once the catalog has loaded with nothing playable', async () => {
   fakeAudio();
   vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 503 })));
   const fire = vi.spyOn(Fireplace.prototype, 'start').mockReturnValue(undefined);
+  const box = vi.spyOn(MusicBox.prototype, 'start').mockReturnValue(undefined);
   const r = new Radio();
   r.firstGesture();
-  await vi.waitFor(() => expect(r.view().kind).toBe('fireplace'));
-  expect(fire).toHaveBeenCalledTimes(1);
+  expect(r.view().kind).toBeNull(); // Fireside suggests Jazz, which needs the catalog: wait for it
+  await vi.waitFor(() => expect(r.view().kind).toBe('musicbox'));
+  expect(box).toHaveBeenCalledTimes(1);
+  expect(fire).not.toHaveBeenCalled();
+  expect(loadRadioSettings().source).toBeNull(); // a fallback is not a choice
 });
 
 it('lock-screen play/pause go through playPause (saving `on`) and are ignored for Fireplace', async () => {
@@ -218,4 +228,119 @@ it('lock-screen play/pause go through playPause (saving `on`) and are ignored fo
   expect(remote('nexttrack')).toBe(true); // swallowed: the old station must not wake up
   expect(remote('play')).toBe(true);
   expect(r.view().kind).toBe('fireplace');
+});
+
+const CAROL = { id: 'silent-night', title: 'Silent Night', credit: '"Silent Night" — Franz Xaver Gruber / public domain, arranged for Aglow', duration: 66, position: 3 };
+
+function stubMusicBox() {
+  return {
+    start: vi.spyOn(MusicBox.prototype, 'start').mockReturnValue(undefined),
+    stop: vi.spyOn(MusicBox.prototype, 'stop'),
+    next: vi.spyOn(MusicBox.prototype, 'next').mockReturnValue(undefined),
+    prev: vi.spyOn(MusicBox.prototype, 'prev').mockReturnValue(undefined),
+    current: vi.spyOn(MusicBox.prototype, 'current').mockReturnValue(CAROL),
+  };
+}
+
+it('scenes suggest Jazz by the fire, Classics in the frost and Music Box at midnight', () => {
+  expect(builtin.SCENE_STATION).toEqual({ fireside: 'christmas-jazz', frost: 'christmas-classics', midnight: 'music-box' });
+});
+
+it('has no Piano Carols left: no ids, no bundled fetch', async () => {
+  expect(Object.keys(builtin).filter((k) => /piano/i.test(k))).toEqual([]);
+  expect(JSON.stringify(builtin)).not.toMatch(/piano/i);
+  await ready(); // constructor + explicit refresh: two catalog loads
+  expect(fetched).toEqual([STATIONS_URL, STATIONS_URL]); // one request each, to the station list only
+});
+
+it('a first gesture at midnight starts Music Box at once, without waiting for the catalog', async () => {
+  fakeAudio();
+  let open!: () => void;
+  gate = new Promise<void>((res) => (open = res));
+  const box = stubMusicBox();
+  const prime = vi.spyOn(RadioPlayer.prototype, 'prime');
+  const r = new Radio();
+  r.setScene('midnight');
+  r.firstGesture();
+  expect(r.view().kind).toBe('musicbox');
+  expect(box.start).toHaveBeenCalledTimes(1);
+  expect(prime).not.toHaveBeenCalled();
+  expect(loadRadioSettings()).toMatchObject({ on: true, source: null });
+  open();
+  await r.refreshCatalog();
+  expect(r.view().kind).toBe('musicbox'); // the catalog arriving doesn't switch it
+  expect(box.start).toHaveBeenCalledTimes(1);
+});
+
+it('select(music-box) plays it, shows the carol as the track and allows the light show', async () => {
+  fakeAudio();
+  stubMusicBox();
+  const r = await ready();
+  r.select('music-box');
+  const v = r.view();
+  expect(v.kind).toBe('musicbox');
+  expect(v.playing).toBe(true);
+  expect(v.station).toBeNull();
+  expect(v.track).toMatchObject({ title: 'Silent Night', artist: 'Music Box', credit: CAROL.credit, duration: 66 });
+  expect(v.position).toBe(3);
+  expect(r.lightShowActive).toBe(true);
+  expect(loadRadioSettings()).toMatchObject({ on: true, source: 'music-box' });
+});
+
+it('Music Box: next/prev skip carols, playPause stops it, and choosing a station stops it', async () => {
+  fakeAudio();
+  const box = stubMusicBox();
+  const r = await ready();
+  r.select('music-box');
+  r.next();
+  r.prev();
+  expect(box.next).toHaveBeenCalledTimes(1);
+  expect(box.prev).toHaveBeenCalledTimes(1);
+  r.playPause();
+  expect(r.view().kind).toBeNull();
+  expect(box.stop).toHaveBeenCalled();
+  expect(loadRadioSettings().on).toBe(false);
+  r.playPause(); // the remembered source comes back
+  expect(r.view().kind).toBe('musicbox');
+  box.stop.mockClear();
+  r.select('christmas-jazz');
+  expect(box.stop).toHaveBeenCalled();
+  expect(r.view().kind).toBe('station');
+});
+
+it('Music Box owns the lock screen while it plays, and a remote key never wakes it once stopped', async () => {
+  fakeAudio();
+  const box = stubMusicBox();
+  const handlers = new Map<string, (d: { seekTime?: number }) => void>();
+  const session = { metadata: null as unknown, playbackState: 'none', setActionHandler: (a: string, h: (d: { seekTime?: number }) => void) => handlers.set(a, h) };
+  Object.defineProperty(navigator, 'mediaSession', { value: session, configurable: true });
+  vi.stubGlobal(
+    'MediaMetadata',
+    class {
+      constructor(readonly init: MediaMetadataInit) {}
+    },
+  );
+  try {
+    const r = await ready();
+    r.select('music-box');
+    expect(session.metadata).toMatchObject({ init: { title: 'Silent Night', artist: 'Music Box', album: 'Aglow Radio' } });
+    expect(session.playbackState).toBe('playing');
+    handlers.get('nexttrack')?.({});
+    expect(box.next).toHaveBeenCalledTimes(1);
+    handlers.get('previoustrack')?.({});
+    expect(box.prev).toHaveBeenCalledTimes(1);
+    handlers.get('play')?.({});
+    expect(box.start).toHaveBeenCalledTimes(1); // already playing: nothing restarts
+    handlers.get('pause')?.({});
+    expect(r.view().kind).toBeNull();
+    expect(loadRadioSettings().on).toBe(false);
+    expect(session.metadata).toBeNull();
+    handlers.get('play')?.({});
+    handlers.get('nexttrack')?.({});
+    expect(r.view().kind).toBeNull(); // stopped stays stopped
+    expect(box.start).toHaveBeenCalledTimes(1);
+    expect(box.next).toHaveBeenCalledTimes(1);
+  } finally {
+    delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
+  }
 });

@@ -9,7 +9,7 @@ describe('parseStationsFile', () => {
     expect(parseStationsFile(file)).toEqual(file);
   });
   it('accepts site-relative URLs (bundled audio)', () => {
-    const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/audio/piano/a.m4a' }] }] };
+    const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/audio/a.m4a' }] }] };
     expect(parseStationsFile(f)).not.toBeNull();
   });
   it('accepts HTTPS Vercel Blob URL with query string', () => {
