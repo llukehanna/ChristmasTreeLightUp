@@ -1,0 +1,293 @@
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
+import type { Station, StationsFile } from '../../src/radio/schema';
+
+// Every API call is routed: `vite preview` has no Worker, and no real uploads happen in e2e.
+
+const MEDIA = 'https://aglow-music.example';
+const fixture = (): StationsFile => ({
+  version: 7,
+  stations: [
+    {
+      id: 'christmas-classics',
+      name: 'Christmas Classics',
+      description: '',
+      tracks: [
+        { id: 't1', url: `${MEDIA}/tracks/christmas-classics/aaaa1111-sleigh.mp3`, title: 'Sleigh Ride', artist: 'The Ronettes', credit: '', duration: 182 },
+        { id: 't2', url: `${MEDIA}/tracks/christmas-classics/bbbb2222-blue.mp3`, title: 'Blue Christmas', artist: 'Elvis Presley', credit: '', duration: 127 },
+      ],
+    },
+  ],
+});
+
+interface Api {
+  puts: { expectedVersion: number; stations: Station[] }[];
+  gets: number;
+  /** What the next PUT /api/admin/stations answers (null: success, echoing version + 1). */
+  putStatus: { status: number; error: string } | null;
+}
+
+/** A signed-in admin over a routed API. */
+async function admin(page: Page): Promise<Api> {
+  const state: Api = { puts: [], gets: 0, putStatus: null };
+  await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: true } }));
+  await page.route('**/api/admin/stations', async (r) => {
+    if (r.request().method() === 'GET') {
+      state.gets++;
+      return r.fulfill({ json: fixture() });
+    }
+    const body = r.request().postDataJSON() as Api['puts'][number];
+    state.puts.push(body);
+    if (state.putStatus) return r.fulfill({ status: state.putStatus.status, json: { error: state.putStatus.error } });
+    return r.fulfill({ json: { version: body.expectedVersion + 1 } });
+  });
+  await page.goto('/admin.html');
+  await expect(page.getByRole('button', { name: /Christmas Classics/ })).toBeVisible();
+  return state;
+}
+
+test('admin page loads and asks for sign-in', async ({ page }) => {
+  await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: false } }));
+  await page.route('**/api/admin/login', (r) => r.fulfill({ status: 503, json: { error: 'Admin is not configured' } }));
+  await page.goto('/admin.html');
+  await expect(page.getByRole('heading', { name: 'Radio admin' })).toBeVisible();
+  await expect(page.locator('input[type="password"]')).toBeFocused();
+  await expect(page.getByText('Too many failed attempts pause sign-in for everyone for up to 15 minutes.')).toBeVisible();
+  // The server's own words.
+  await page.getByLabel('Password').fill('anything');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Admin is not configured');
+});
+
+test('the game bundle has no admin code (and the admin bundle does)', async ({ page }) => {
+  await page.route('**/api/stations', (r) => r.fulfill({ status: 404, body: '' }));
+  const scripts = new Map<string, string>();
+  page.on('response', async (r) => {
+    if (r.url().endsWith('.js')) scripts.set(r.url(), await r.text());
+  });
+  await page.goto('/?test');
+  await page.waitForLoadState('networkidle');
+  const game = [...scripts.values()].join('\n');
+  expect(game.length).toBeGreaterThan(10_000);
+  expect(game).not.toContain('/api/admin/');
+  expect(game).not.toContain('handleUploadUrl');
+
+  scripts.clear();
+  await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: false } }));
+  await page.goto('/admin.html');
+  await page.waitForLoadState('networkidle');
+  expect([...scripts.values()].join('\n')).toContain('/api/admin/');
+});
+
+test('create a station, edit a track, save; a conflict offers a reload', async ({ page }) => {
+  const api = await admin(page);
+  const save = page.getByRole('button', { name: 'Save' });
+  await expect(save).toBeDisabled(); // nothing changed yet
+
+  // 1. A new station through the inline form.
+  await page.getByRole('button', { name: '+ New station' }).click();
+  await page.getByLabel('New station name').fill('Christmas Jazz');
+  await expect(page.getByText('id: christmas-jazz')).toBeVisible(); // the preview
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('button', { name: /Christmas Jazz/ })).toHaveAttribute('aria-current', 'true');
+  await expect(page.locator('.meta-row .id')).toHaveText('id: christmas-jazz');
+  await expect(page.getByText('No tracks yet.')).toBeVisible();
+
+  // A second station with the same id is refused in the page.
+  await page.getByRole('button', { name: '+ New station' }).click();
+  await page.getByLabel('New station name').fill('christmas  JAZZ!');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.locator('.new-station .err')).toHaveText('A station with the id "christmas-jazz" already exists.');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  // 2. Edit a track title.
+  await page.getByRole('button', { name: /Christmas Classics/ }).click();
+  await page.getByLabel('Track 2 title').fill('Blue Christmas (Live)');
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v7 · unsaved changes');
+
+  // 3. Save: the PUT carries the version that was loaded.
+  await save.click();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved. Live in the game within about 5 minutes' })).toBeVisible();
+  expect(api.puts).toHaveLength(1);
+  expect(api.puts[0].expectedVersion).toBe(7);
+  expect(api.puts[0].stations.map((s) => s.id)).toEqual(['christmas-classics', 'christmas-jazz']);
+  expect(api.puts[0].stations[0].tracks[1].title).toBe('Blue Christmas (Live)');
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v8');
+  await expect(save).toBeDisabled();
+
+  // 4. Somebody else saved first: the server's message, and a reload behind an in-page confirm.
+  api.putStatus = { status: 409, error: 'Stations changed somewhere else. Reload to get the latest, then redo your change.' };
+  await page.getByLabel('Track 1 artist').fill('Ronettes');
+  await save.click();
+  const msg = page.locator('.msg');
+  await expect(msg).toContainText('Stations changed somewhere else. Reload to get the latest, then redo your change.');
+  expect(api.puts.at(-1)?.expectedVersion).toBe(8);
+  await expect(save).toBeEnabled(); // the edits are kept
+  await msg.getByRole('button', { name: 'Reload' }).click();
+  await expect(msg).toContainText('Reloading discards your unsaved edits here.');
+  const getsBefore = api.gets;
+  await msg.getByRole('button', { name: 'Reload and discard edits' }).click();
+  await expect(page.getByLabel('Track 1 artist')).toHaveValue('The Ronettes');
+  expect(api.gets).toBe(getsBefore + 1);
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v7');
+  await expect(msg).toBeHidden();
+});
+
+test('other save failures keep the edits; invalid fields are pointed at before sending', async ({ page }) => {
+  const api = await admin(page);
+  await page.getByLabel('Track 1 title').fill('   ');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('.msg')).toHaveText('Christmas Classics, track 1: the title is empty. Every track needs a title.');
+  await expect(page.getByLabel('Track 1 title')).toBeFocused();
+  expect(api.puts).toHaveLength(0);
+
+  await page.getByLabel('Track 1 title').fill('Sleigh Ride');
+  api.putStatus = { status: 503, error: 'Could not save. Try again.' };
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('.msg')).toContainText('Could not save. Try again.');
+  await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+  api.putStatus = null;
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v8');
+});
+
+test('an expired session goes back to sign-in and keeps the unsaved edits', async ({ page }) => {
+  const api = await admin(page);
+  await page.route('**/api/admin/login', (r) => r.fulfill({ json: { ok: true } }));
+  await page.getByLabel('Track 1 title').fill('Sleigh Ride (Mono)');
+  api.putStatus = { status: 401, error: 'Not signed in' };
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Your session expired. Sign in again.');
+  await expect(page.getByLabel('Password')).toBeFocused();
+  const gets = api.gets;
+  await page.getByLabel('Password').fill('anything');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByLabel('Track 1 title')).toHaveValue('Sleigh Ride (Mono)');
+  expect(api.gets).toBe(gets); // no load() over the edits
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v7 · unsaved changes');
+});
+
+test('delete a station with an in-page confirm', async ({ page }) => {
+  const api = await admin(page);
+  await page.getByRole('button', { name: 'Delete station' }).click();
+  const confirm = page.getByRole('group', { name: 'Confirm delete' });
+  await expect(confirm).toContainText('Delete "Christmas Classics" and its 2 tracks?');
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: /Christmas Classics/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Delete station' }).click();
+  await page.getByRole('group', { name: 'Confirm delete' }).getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByText('Create a station to start uploading music.')).toBeVisible();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v8');
+  expect(api.puts[0].stations).toEqual([]);
+});
+
+// ---------- uploads (routed: no storage is touched) ----------
+
+const ascii = (s: string): number[] => [...s].map((c) => c.charCodeAt(0));
+/** A few KB that start with an ID3v2.3 tag carrying a title and an artist. */
+function taggedMp3(title: string, artist: string): Buffer {
+  const frame = (id: string, text: string) => [...ascii(id), 0, 0, 0, text.length + 1, 0, 0, 0, ...ascii(text)];
+  const body = [...frame('TIT2', title), ...frame('TPE1', artist), ...new Array<number>(16).fill(0)];
+  return Buffer.from([...ascii('ID3'), 3, 0, 0, 0, 0, 0, body.length, ...body, ...new Array<number>(4000).fill(0x55)]);
+}
+const mp3 = (name: string, buffer = Buffer.alloc(3000, 0x55)) => ({ name, mimeType: 'audio/mpeg', buffer });
+
+interface Upload {
+  folder: string | null;
+  station: string | null;
+  name: string | null;
+  type: string | undefined;
+}
+/** Routes PUT /api/admin/upload. `hold(name)` delays that file's answer until `release(name)`. */
+async function uploads(page: Page) {
+  const seen: Upload[] = [];
+  const held = new Map<string, () => void>();
+  const holding = new Set<string>();
+  const failing = new Map<string, { status: number; error: string }>();
+  await page.route(/\/api\/admin\/upload\?/, async (route: Route, req: Request) => {
+    const q = new URL(req.url()).searchParams;
+    const name = q.get('name') ?? '';
+    seen.push({ folder: q.get('folder'), station: q.get('station'), name, type: req.headers()['content-type'] });
+    if (holding.has(name)) await new Promise<void>((r) => held.set(name, r));
+    const fail = failing.get(name);
+    if (fail) return route.fulfill({ status: fail.status, json: { error: fail.error } });
+    const key = `${q.get('folder')}/${q.get('station')}/0123abcd-${name}`;
+    return route.fulfill({ json: { url: `${MEDIA}/${key.split('/').map(encodeURIComponent).join('/')}`, key, size: 3000 } });
+  });
+  return {
+    seen,
+    failing,
+    hold: (name: string) => holding.add(name),
+    release: (name: string) => {
+      holding.delete(name);
+      held.get(name)?.();
+    },
+  };
+}
+
+test('uploads join one queue, land in the order they were added, and the file input survives', async ({ page }) => {
+  await admin(page);
+  const up = await uploads(page);
+  const input = page.getByLabel('Upload tracks');
+  await expect(input).toHaveAttribute('type', 'file');
+  await page.evaluate(() => {
+    (window as unknown as { pinned: Element | null }).pinned = document.querySelector('input[aria-label="Upload tracks"]');
+  });
+
+  // Batch 1: the first file finishes last.
+  up.hold('Jingle Bells - Frank Sinatra.mp3');
+  await input.setInputFiles([
+    mp3('Jingle Bells - Frank Sinatra.mp3'),
+    { name: 'tagged.mp3', mimeType: 'audio/mpeg', buffer: taggedMp3('Silver Bells', 'Bing Crosby') },
+    mp3('Linus And Lucy.mp3'),
+  ]);
+  await expect(input).toHaveValue(''); // reset so the same names can be picked again
+  const summary = page.locator('#upload-summary');
+  await expect(summary).toHaveText('Uploading: 2 done, 1 uploading, 0 queued.');
+  await expect(page.getByText('No tracks yet.')).toHaveCount(0);
+  await expect(page.locator('tbody tr')).toHaveCount(2); // the later two wait for the first
+  await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+  // Batch 2 joins while batch 1 is still running, through the same element.
+  up.failing.set('broken.mp3', { status: 413, error: 'The file is too large (30 MB max)' });
+  await input.setInputFiles([mp3('Feliz Navidad - José Feliciano.mp3'), mp3('broken.mp3')]);
+  await expect(page.locator('.up', { hasText: 'broken.mp3' })).toContainText('failed: The file is too large (30 MB max)');
+  up.release('Jingle Bells - Frank Sinatra.mp3');
+  await expect(summary).toHaveText('All uploads finished: 4 done, 1 failed.');
+
+  const titles = await page.locator('tbody tr td.title input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  expect(titles).toEqual(['Sleigh Ride', 'Blue Christmas', 'Jingle Bells', 'Silver Bells', 'Linus And Lucy', 'Feliz Navidad']);
+  await expect(page.getByLabel('Track 4 artist')).toHaveValue('Bing Crosby'); // from the ID3 tag
+  await expect(page.getByLabel('Track 6 artist')).toHaveValue('José Feliciano');
+  await expect(page.getByRole('button', { name: /Christmas Classics/ })).toContainText('6 tracks');
+  expect(await page.evaluate(() => (window as unknown as { pinned: Element | null }).pinned === document.querySelector('input[aria-label="Upload tracks"]'))).toBe(true);
+  expect(up.seen[0]).toEqual({ folder: 'tracks', station: 'christmas-classics', name: 'Jingle Bells - Frank Sinatra.mp3', type: 'audio/mpeg' });
+
+  // Retry the failed one; clearing finished rows keeps nothing but what still matters.
+  up.failing.delete('broken.mp3');
+  await page.getByRole('button', { name: 'Retry broken.mp3' }).click();
+  await expect(summary).toHaveText('All uploads finished: 5 done.');
+  await expect(page.locator('tbody tr')).toHaveCount(7);
+  await page.getByRole('button', { name: 'Clear finished' }).click();
+  await expect(page.locator('.up')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+});
+
+test('a cover uploads through its own labelled input', async ({ page }) => {
+  await admin(page);
+  const up = await uploads(page);
+  await page.getByLabel('Upload cover').setInputFiles({ name: 'art.png', mimeType: 'image/png', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]) });
+  await expect(page.locator('.cover img')).toHaveAttribute('src', /covers\/christmas-classics\/0123abcd-art.png$/);
+  await expect(page.getByLabel('Upload cover')).toHaveCount(1);
+  expect(up.seen[0]).toMatchObject({ folder: 'covers', type: 'image/png' });
+});
+
+test('phone width: no horizontal page scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 760 });
+  await admin(page);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+  // The track table scrolls inside its own container instead.
+  const wrap = await page.locator('.table-wrap').evaluate((e) => e.scrollWidth > e.clientWidth);
+  expect(wrap).toBe(true);
+});

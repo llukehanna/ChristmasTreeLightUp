@@ -8,3 +8,12 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# The radio admin: never indexed, never cached (it is served at /admin; /admin.html redirects there).
+/admin
+  X-Robots-Tag: noindex
+  Cache-Control: no-store
+
+/admin.html
+  X-Robots-Tag: noindex
+  Cache-Control: no-store

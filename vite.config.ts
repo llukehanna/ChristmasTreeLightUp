@@ -1,5 +1,6 @@
 import { closeSync, createReadStream, existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
@@ -189,6 +190,15 @@ function devMusic(): Plugin {
 
 export default defineConfig({
   plugins: [devMusic()],
-  build: { target: 'es2022' },
+  build: {
+    target: 'es2022',
+    // Two pages: the game, and the radio admin (served at /admin). The game's chunks never include admin code.
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        admin: fileURLToPath(new URL('./admin.html', import.meta.url)),
+      },
+    },
+  },
   test: { include: ['tests/unit/**/*.test.ts'], environment: 'node' },
 });
