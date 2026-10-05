@@ -11,7 +11,11 @@ async function fetchStations(fetchFn: typeof fetch, url: string): Promise<Statio
   const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
   try {
     const r = await fetchFn(url, { cache: 'no-cache', signal: ctl.signal });
+    // No endpoint yet (Plan 3) is "no remote stations", not a failure: Music Box and Fireplace cover it silently.
+    // That is a 404, or a host's single-page fallback answering the unknown path with the app's index.html.
+    if (r.status === 404) return [];
     if (!r.ok) return null;
+    if (r.headers.get('content-type')?.includes('text/html')) return [];
     return parseStationsFile(await r.json())?.stations ?? null;
   } catch {
     return null;
@@ -20,7 +24,11 @@ async function fetchStations(fetchFn: typeof fetch, url: string): Promise<Statio
   }
 }
 
-/** The remote stations in their published order, or none (`remoteOk: false`) if the list can't be fetched or parsed. */
+/**
+ * The remote stations in their published order. A 404 (or an HTML fallback page) means there are none
+ * (`remoteOk: true`); a network error, timeout, other error status or unparseable list means they can't be reached
+ * (`remoteOk: false`).
+ */
 export async function loadCatalog(fetchFn: typeof fetch = fetch): Promise<{ stations: Station[]; remoteOk: boolean }> {
   const remote = await fetchStations(fetchFn, STATIONS_URL);
   return { stations: remote ?? [], remoteOk: remote !== null };

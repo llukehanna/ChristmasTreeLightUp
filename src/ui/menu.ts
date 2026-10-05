@@ -6,6 +6,8 @@ export interface MenuHandlers {
   onNewTree(): void;
   /** True while a game is in progress (New tree then needs a second tap). */
   needsConfirm(): boolean;
+  /** The menu is about to open (the app closes the radio panel). */
+  onOpen?(): void;
 }
 
 export class Menu {
@@ -52,6 +54,7 @@ export class Menu {
   }
 
   open(): void {
+    this.h.onOpen?.();
     this.root.hidden = false;
     this.button.setAttribute('aria-expanded', 'true');
     // Focus the current choice of the first setting (else the first control) so keyboard users start inside the dialog.
@@ -68,6 +71,12 @@ export class Menu {
     this.render();
     // Hand focus back to the button unless the user has moved it somewhere else on purpose.
     if (wasOpen && (!active || active === document.body || this.root.contains(active))) this.button.focus({ preventScroll: true });
+  }
+
+  /** Keep the menu's copy of the settings in step when they change elsewhere (e.g. the radio's Effects slider). */
+  sync(s: Settings): void {
+    this.settings = s;
+    this.render();
   }
 
   private onNewTree(): void {
