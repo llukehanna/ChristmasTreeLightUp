@@ -1,15 +1,16 @@
 import { audio } from '../audio/context';
 import type { SceneId } from '../render/scenes';
 import { loadRadioSettings, saveRadioSettings, type RadioSettings } from '../store/radio-settings';
-import { FIREPLACE_ID, SCENE_STATION } from './builtin';
+import { FIREPLACE_ID, isSynthSource, MUSIC_BOX_ID, SCENE_STATION } from './builtin';
 import { loadCatalog } from './catalog';
 import { parseEmbed, type Embed } from './embed';
 import { Fireplace } from './fireplace';
 import { LightShow } from './lightshow';
+import { MusicBox } from './musicbox';
 import { RadioPlayer, type RemoteAction } from './player';
 import type { Station, Track } from './schema';
 
-export type SourceKind = 'station' | 'fireplace' | 'embed';
+export type SourceKind = 'station' | 'musicbox' | 'fireplace' | 'embed';
 
 export interface RadioView {
   kind: SourceKind | null;
@@ -35,6 +36,7 @@ export class Radio {
   private remoteOk = true;
   private readonly player = new RadioPlayer(() => audio.music);
   private readonly fireplace = new Fireplace();
+  private readonly musicbox = new MusicBox();
   private embed: Embed | null;
   private kind: SourceKind | null = null;
   private started = false;
@@ -50,6 +52,10 @@ export class Radio {
   constructor() {
     this.player.onChange = () => this.onChange?.();
     this.player.onRemote = (action) => this.onRemote(action);
+    this.musicbox.onChange = () => {
+      if (this.kind === 'musicbox') this.syncMusicBoxSession();
+      this.onChange?.();
+    };
     this.show = new LightShow(() => this.analyser);
     this.embed = this.settings.embedUrl ? parseEmbed(this.settings.embedUrl) : null;
     void this.refreshCatalog();
@@ -105,7 +111,7 @@ export class Radio {
     if (this.kind === 'station') {
       if (this.player.snapshot().playing) this.player.pause();
       else this.player.resume();
-    } else if (this.kind === 'fireplace' || this.kind === 'embed') {
+    } else if (this.kind === 'fireplace' || this.kind === 'musicbox' || this.kind === 'embed') {
       this.stopAll();
     } else {
       this.startPreferred();
@@ -115,9 +121,11 @@ export class Radio {
 
   next(): void {
     if (this.kind === 'station') this.player.next();
+    else if (this.kind === 'musicbox') this.musicbox.next();
   }
   prev(): void {
     if (this.kind === 'station') this.player.prev();
+    else if (this.kind === 'musicbox') this.musicbox.prev();
   }
   seek(sec: number): void {
     if (this.kind === 'station') this.player.seek(sec);
@@ -161,20 +169,25 @@ export class Radio {
     m.gain.linearRampToValueAtTime(v, t + 0.28);
   }
 
-  /** The light show needs analysable audio: our stations or the Fireplace, not embeds (spec §5.4). Reduced motion is the caller's check. */
+  /** The light show needs analysable audio: our stations, Music Box or the Fireplace, not embeds (spec §5.4). Reduced motion is the caller's check. */
   get lightShowActive(): boolean {
-    return this.settings.lightShow && (this.kind === 'station' || this.kind === 'fireplace') && this.isPlaying();
+    return this.settings.lightShow && this.kind !== null && this.kind !== 'embed' && this.isPlaying();
   }
 
   view(): RadioView {
     const snap = this.player.snapshot();
+    const carol = this.kind === 'musicbox' ? this.musicbox.current() : null;
     return {
       kind: this.kind,
       playing: this.isPlaying(),
       station: this.kind === 'station' ? snap.station : null,
-      track: this.kind === 'station' ? snap.track : null,
-      position: snap.position,
-      duration: snap.duration,
+      track: carol
+        ? { id: `${MUSIC_BOX_ID}:${carol.id}`, url: '', title: carol.title, artist: 'Music Box', credit: carol.credit, duration: carol.duration }
+        : this.kind === 'station'
+          ? snap.track
+          : null,
+      position: carol ? carol.position : snap.position,
+      duration: carol ? carol.duration : snap.duration,
       stations: this.catalog,
       unavailable: (id) => this.player.isUnavailable(id),
       embed: this.embed,
@@ -205,25 +218,27 @@ export class Radio {
   }
 
   private isPlaying(): boolean {
-    return this.kind === 'fireplace' || this.kind === 'embed' || (this.kind === 'station' && this.player.snapshot().playing);
+    return this.kind === 'fireplace' || this.kind === 'musicbox' || this.kind === 'embed' || (this.kind === 'station' && this.player.snapshot().playing);
   }
 
   private playable(s: Station): boolean {
     return s.tracks.length > 0 && !this.player.isUnavailable(s.id);
   }
 
-  /** Fireplace and a set-up embed work without the station catalog. */
+  /** Music Box, Fireplace and a set-up embed work without the station catalog, and so does a scene that suggests Music Box. */
   private needsCatalog(): boolean {
     const s = this.settings.source;
-    return !(s === FIREPLACE_ID || (s === 'embed' && this.embed));
+    if (isSynthSource(s) || (s === 'embed' && this.embed)) return false;
+    return !(s === null && isSynthSource(SCENE_STATION[this.sceneId]));
   }
 
   private preferredSource(): string {
     const s = this.settings.source;
-    if (s === FIREPLACE_ID || (s === 'embed' && this.embed)) return s;
+    if (isSynthSource(s) || (s === 'embed' && this.embed)) return s;
     const byId = (id: string | null): Station | undefined => (id === null ? undefined : this.catalog.find((x) => x.id === id && this.playable(x)));
-    const chosen = byId(s) ?? byId(SCENE_STATION[this.sceneId]) ?? this.catalog.find((x) => this.playable(x));
-    return chosen?.id ?? FIREPLACE_ID; // only reached once the catalog has loaded and has nothing usable
+    const suggested = SCENE_STATION[this.sceneId];
+    const chosen = byId(s)?.id ?? (isSynthSource(suggested) ? suggested : byId(suggested)?.id) ?? this.catalog.find((x) => this.playable(x))?.id;
+    return chosen ?? MUSIC_BOX_ID; // the catalog has loaded with nothing usable: Music Box is always there
   }
 
   /** Start the remembered source, or the scene's suggestion. Following a suggestion isn't a choice, so `source` is left as it was. */
@@ -237,8 +252,17 @@ export class Radio {
     this.play(this.preferredSource(), false);
   }
 
-  /** Lock-screen / headset keys. Only a playing or paused station owns them; otherwise they are swallowed. */
+  /**
+   * Lock-screen / headset keys. A playing or paused station, or a playing Music Box, owns them; otherwise they are
+   * swallowed, so a remote key never wakes a stopped source.
+   */
   private onRemote(action: RemoteAction): boolean {
+    if (this.kind === 'musicbox') {
+      if (action === 'pause') this.playPause(); // stops it, saving `on`
+      else if (action === 'nexttrack') this.next();
+      else if (action === 'previoustrack') this.prev();
+      return true; // play: already playing; seekto: not supported
+    }
     if (this.kind !== 'station') return true;
     const playing = this.player.snapshot().playing;
     if (action === 'play') {
@@ -257,16 +281,17 @@ export class Radio {
     let station: Station | undefined;
     if (source === 'embed') {
       if (!this.embed) return;
-    } else if (source !== FIREPLACE_ID) {
+    } else if (!isSynthSource(source)) {
       station = this.catalog.find((s) => s.id === source);
       if (!station || !this.playable(station)) return;
     }
     this.prepare();
     const ctx = audio.ctx;
-    if (source === FIREPLACE_ID && (!ctx || !audio.music)) return;
+    if (isSynthSource(source) && (!ctx || !audio.music)) return;
     this.pendingStart = false; // an explicit or resolved choice supersedes any waiting start
     const already =
       (source === FIREPLACE_ID && this.kind === 'fireplace') ||
+      (source === MUSIC_BOX_ID && this.kind === 'musicbox') ||
       (source === 'embed' && this.kind === 'embed') ||
       (station !== undefined && this.kind === 'station' && this.player.snapshot().station?.id === station.id);
     if (already) {
@@ -279,6 +304,11 @@ export class Radio {
     if (source === FIREPLACE_ID && ctx && audio.music) {
       this.fireplace.start(ctx, audio.music);
       this.kind = 'fireplace';
+    } else if (source === MUSIC_BOX_ID && ctx && audio.music) {
+      this.musicbox.start(ctx, audio.music);
+      this.kind = 'musicbox';
+      this.player.claimMediaSession();
+      this.syncMusicBoxSession();
     } else if (station) {
       this.player.playStation(station, this.settings.shuffle);
       this.kind = 'station';
@@ -292,7 +322,21 @@ export class Radio {
     this.player.stop();
     this.player.releaseMediaSession();
     this.fireplace.stop(audio.ctx);
+    this.musicbox.stop(audio.ctx);
     this.kind = null;
+  }
+
+  /** Lock-screen metadata for the carol that is playing. */
+  private syncMusicBoxSession(): void {
+    if (!('mediaSession' in navigator)) return;
+    const c = this.musicbox.current();
+    try {
+      navigator.mediaSession.metadata =
+        c && typeof MediaMetadata === 'function' ? new MediaMetadata({ title: c.title, artist: 'Music Box', album: 'Aglow Radio' }) : null;
+      navigator.mediaSession.playbackState = 'playing';
+    } catch {
+      /* unsupported: ignore */
+    }
   }
 
   private save(p: Partial<RadioSettings>): void {
