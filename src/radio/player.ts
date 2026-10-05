@@ -14,6 +14,10 @@ const QUICK_FADE_S = 0.03;
 const POSITION_STATE_MS = 1000;
 /** A playing deck that has not made progress for this long (waiting, stalled, or never started) counts as a failed track. */
 export const STALL_MS = 8000;
+/** Bytes still trickling in (`progress`) may extend a stall, but never beyond this long after the stall began. */
+export const STALL_MAX_MS = 20_000;
+/** HTMLMediaElement.HAVE_FUTURE_DATA: enough buffered to play on, so a stall past this is not a slow start. */
+const HAVE_FUTURE_DATA = 3;
 
 export type RemoteAction = 'play' | 'pause' | 'nexttrack' | 'previoustrack' | 'seekto';
 
@@ -99,7 +103,7 @@ export class RadioPlayer {
   private gen = 0;
   private pending: { el: HTMLAudioElement; fn: () => void } | null = null;
   /** The stall watchdog of the active deck (at most one), with the playhead it was armed at. */
-  private stall: { timer: number; from: number } | null = null;
+  private stall: { timer: number; from: number; since: number; deadline: number } | null = null;
   private lastPositionState = 0;
   private mediaSessionReady = false;
   private readonly unavailable = new Set<string>();
@@ -211,6 +215,7 @@ export class RadioPlayer {
     const el = this.activeEl();
     if (el && Number.isFinite(el.duration)) {
       el.currentTime = Math.max(0, Math.min(el.duration - 0.5, sec));
+      if (this.stall) this.stall.from = el.currentTime; // progress is measured from the new position, even after a backward seek
       this.updatePositionState(true);
     }
   }
@@ -270,6 +275,7 @@ export class RadioPlayer {
       };
       d.el.addEventListener('waiting', stalled);
       d.el.addEventListener('stalled', stalled);
+      d.el.addEventListener('progress', () => k === this.active && this.extendStall(d.el));
       // `playing`: an `ended` that lands while paused or stopped (e.g. inside the silence() fade) must not start a track.
       d.el.addEventListener('ended', () => k === this.active && d.trackId !== null && this.playing && this.next());
       d.el.addEventListener('error', () => k === this.active && d.trackId !== null && this.onError());
@@ -347,6 +353,7 @@ export class RadioPlayer {
       incoming.el.play().catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'NotAllowedError') {
           this.playing = false;
+          this.clearStall(); // a later tap-to-resume must get a fresh window, not the dead load's deadline
           this.syncPlaybackState();
           this.onChange?.();
         }
@@ -380,16 +387,30 @@ export class RadioPlayer {
   private armStall(): void {
     const el = this.activeEl();
     if (this.stall || !el || !this.playing) return;
+    const now = Date.now();
+    this.stall = { from: el.currentTime, since: now, deadline: now + STALL_MS, timer: this.stallTimer(STALL_MS) };
+  }
+
+  private stallTimer(ms: number): number {
     const gen = this.gen;
-    this.stall = {
-      from: el.currentTime,
-      timer: window.setTimeout(() => {
-        this.stall = null;
-        const d = this.decks?.[this.active];
-        if (gen !== this.gen || !this.playing || !d || d.trackId === null) return;
-        this.onError();
-      }, STALL_MS),
-    };
+    return window.setTimeout(() => {
+      this.stall = null;
+      const d = this.decks?.[this.active];
+      if (gen !== this.gen || !this.playing || !d || d.trackId === null) return;
+      this.onError();
+    }, ms);
+  }
+
+  /** Bytes are still arriving on a deck that cannot play yet: a slow start, not a dead stream. Restart the window, within the cap. */
+  private extendStall(el: HTMLAudioElement): void {
+    const s = this.stall;
+    if (!s || el.readyState >= HAVE_FUTURE_DATA) return;
+    const now = Date.now();
+    const deadline = Math.min(now + STALL_MS, s.since + STALL_MAX_MS);
+    if (deadline <= s.deadline) return;
+    window.clearTimeout(s.timer);
+    s.deadline = deadline;
+    s.timer = this.stallTimer(deadline - now);
   }
 
   private clearStall(): void {

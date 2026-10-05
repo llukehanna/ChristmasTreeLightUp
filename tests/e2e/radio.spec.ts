@@ -287,14 +287,15 @@ test('a remote station streams from the Blob host through /api/stations: next wo
   };
   await page.route('**/api/stations', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(file) }));
   const wav = toneWav(30);
-  const hits: { id: string; range: string | null }[] = [];
+  const hits: { id: string; range: string | null; cors: boolean }[] = [];
   await page.route(`${BLOB}/*.wav`, async (r) => {
     const req = r.request();
     const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'range' };
     if (req.method() === 'OPTIONS') return r.fulfill({ status: 204, headers: cors });
     const id = /\/([a-z]+)\.wav$/.exec(req.url())?.[1] ?? '';
     const range = req.headers()['range'] ?? null;
-    hits.push({ id, range });
+    const headers = req.headers();
+    hits.push({ id, range, cors: headers['origin'] === 'http://localhost:4173' }); // a no-cors media request carries no Origin
     if (id === 'broken') return r.fulfill({ status: 404, headers: cors, body: '' });
     const base = { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', ...cors };
     const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
@@ -329,10 +330,15 @@ test('a remote station streams from the Blob host through /api/stations: next wo
   expect((await radio(page)).playing).toBe(true);
   await expect.poll(() => panel.locator('.pos').textContent(), { timeout: 8000 }).not.toBe('0:00');
 
-  // The next track 404s: it is skipped, and the one after it plays.
+  // The next track 404s: it is skipped by the error path (well inside the 8 s stall watchdog, which must not be what saves it).
   await panel.locator('.next').click();
-  await expect(panel.locator('.title')).toHaveText('Tone Four', { timeout: 10_000 });
+  await expect(panel.locator('.title')).toHaveText('Tone Four', { timeout: 3000 });
   await expect.poll(async () => (await radio(page)).playing).toBe(true);
+  // ...and the track after the skip really plays: its position grows.
+  await expect.poll(async () => Number(/:(\d\d)$/.exec((await panel.locator('.pos').textContent()) ?? '')?.[1] ?? 0), { timeout: 5000 }).toBeGreaterThanOrEqual(1);
   expect(hits.some((h) => h.id === 'broken')).toBe(true);
+  // Every media request was a CORS request (crossOrigin='anonymous'): Web Audio would silence the deck otherwise.
+  expect(hits.length).toBeGreaterThan(0);
+  for (const h of hits) expect(h.cors).toBe(true);
   expect((await radio(page)).kind).toBe('station'); // one failure does not make the station unavailable
 });
