@@ -61,6 +61,10 @@ export class App {
   private lastCanPause = false;
   private sceneId: SceneId = 'fireside';
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  /** The radio panel's breakpoint (radio.css): below it the panel is a bottom sheet. */
+  private readonly phone = matchMedia('(max-width: 600px)');
+  /** The post-win light show drew this frame (read by the test probe). */
+  lightShowOn = false;
   private readonly toast = new Toast(el('toast'));
   private readonly results: Results;
   private readonly menu: Menu;
@@ -250,6 +254,7 @@ export class App {
     } else this.pausedDrawn = false;
     // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow.
     const show = this.winAt !== null && this.radio.lightShowActive && !this.reduced.matches;
+    this.lightShowOn = show;
     if (show) this.radio.show.sample(now);
     this.renderer.frame({
       board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover,
@@ -307,10 +312,12 @@ export class App {
   private tap(x: number, y: number): void {
     const now = performance.now();
     this.sfx.unlock();
-    // The first tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
-    this.radio.firstGesture();
-    if (this.menu.isOpen || this.radioPanel.isOpen) {
+    if (this.menu.isOpen) {
       this.menu.close();
+      return;
+    }
+    // On desktop the game stays playable behind the radio popover (spec §5.3); the phone sheet closes like the menu.
+    if (this.radioPanel.isOpen && this.phone.matches) {
       this.radioPanel.close();
       return;
     }
@@ -323,6 +330,8 @@ export class App {
     const i = tileAt(this.renderer.layout, GRID, wx, wy);
     if (i < 0) return;
     this.hideIntro();
+    // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
+    this.radio.firstGesture();
     this.handle(this.board.tap(i, now), now);
   }
 
@@ -477,6 +486,11 @@ export class App {
 
   /** Pause state and its DOM: blurred stage, overlay, and the controls beneath it taken out of reach (inert). */
   private setPaused(on: boolean): void {
+    if (on) {
+      // The dialogs would otherwise sit on top of the pause overlay, inert.
+      this.menu.close();
+      this.radioPanel.close();
+    }
     this.paused = on;
     this.pausedDrawn = false;
     document.body.classList.toggle('paused', on);

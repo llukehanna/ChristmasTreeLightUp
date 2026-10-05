@@ -6,7 +6,8 @@ export interface AglowProbe {
   tileCenter(i: number): [number, number];
   solve(): void;
   ids: number[];
-  radio(): { kind: string | null; playing: boolean; stations: string[]; lightShow: boolean };
+  /** `lightShow`: the post-win light show drew the last frame (win, analysable source, setting on, no reduced motion). */
+  radio(): { kind: string | null; playing: boolean; stations: string[]; catalogLoaded: boolean; lightShow: boolean };
 }
 
 /** Test hook for Playwright. Only installed when the URL contains ?test. */
@@ -26,7 +27,7 @@ export function installDebugHook(app: App): void {
     ids: [...GRID.ids],
     radio: () => {
       const v = app.radio.view();
-      return { kind: v.kind, playing: v.playing, stations: v.stations.map((s) => s.id), lightShow: app.radio.lightShowActive };
+      return { kind: v.kind, playing: v.playing, stations: v.stations.map((s) => s.id), catalogLoaded: app.radio.catalogLoaded, lightShow: app.lightShowOn };
     },
   };
   (window as Window & { __aglow?: AglowProbe }).__aglow = probe;
