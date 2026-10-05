@@ -1,0 +1,26 @@
+import { describe, expect, it } from 'vitest';
+import { parseStationsFile } from '../../../src/radio/schema';
+
+const track = { id: 't1', url: 'https://x.public.blob.vercel-storage.com/a.mp3', title: 'Sleigh Ride', artist: 'Someone', credit: 'Uploaded by Luke', duration: 185 };
+const file = { version: 3, stations: [{ id: 'christmas-jazz', name: 'Christmas Jazz', description: 'Curated by Luke', tracks: [track] }] };
+
+describe('parseStationsFile', () => {
+  it('accepts a valid file', () => {
+    expect(parseStationsFile(file)).toEqual(file);
+  });
+  it('accepts site-relative URLs (bundled audio)', () => {
+    const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/audio/piano/a.m4a' }] }] };
+    expect(parseStationsFile(f)).not.toBeNull();
+  });
+  it('rejects bad ids, empty titles, http URLs and duplicate ids', () => {
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id: 'Bad Id' }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, title: ' ' }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'http://evil/a.mp3' }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [file.stations[0], file.stations[0]] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [track, track] }] })).toBeNull();
+  });
+  it('rejects non-objects', () => {
+    expect(parseStationsFile(null)).toBeNull();
+    expect(parseStationsFile({ version: -1, stations: [] })).toBeNull();
+  });
+});
