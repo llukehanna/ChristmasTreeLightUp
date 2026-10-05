@@ -1,8 +1,9 @@
-import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, createReadStream, existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { ID3_HEAD_BYTES, ID3V1_BYTES, tagsFromFilename, trackTags, type Tags } from './dev/id3.ts';
 
 const MUSIC_FOLDER = 'Music MP3s';
 const AUDIO = /\.(mp3|m4a)$/i;
@@ -30,14 +31,42 @@ function audioFiles(dir: string): string[] {
   }
 }
 
+/** Tags by path, kept while the file's size and mtime are unchanged. */
+const tagCache = new Map<string, { stamp: string; tags: Required<Tags> }>();
+
+/** Title and artist from the file's ID3 tags (only the first 64 KB and the last 128 bytes are read), else its name. */
+function fileTags(file: string, name: string): Required<Tags> {
+  try {
+    const st = statSync(file);
+    const stamp = `${st.size}:${st.mtimeMs}`;
+    const hit = tagCache.get(file);
+    if (hit?.stamp === stamp) return hit.tags;
+    const fd = openSync(file, 'r');
+    try {
+      const head = new Uint8Array(Math.min(st.size, ID3_HEAD_BYTES));
+      readSync(fd, head, 0, head.length, 0);
+      const tail = new Uint8Array(Math.min(st.size, ID3V1_BYTES));
+      readSync(fd, tail, 0, tail.length, st.size - tail.length);
+      const tags = trackTags(name, head, tail);
+      tagCache.set(file, { stamp, tags });
+      return tags;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return tagsFromFilename(name);
+  }
+}
+
 function buildDevStations(musicDir: string) {
   const stations = DEV_STATIONS.map((def) => {
-    const tracks = def.folders.flatMap((folder) =>
-      audioFiles(folder ? resolve(musicDir, folder) : musicDir).map((f) => ({
+    const tracks = def.folders.flatMap((folder) => {
+      const dir = folder ? resolve(musicDir, folder) : musicDir;
+      return audioFiles(dir).map((f) => ({
         url: `/dev-music/${folder ? `${encodeURIComponent(folder)}/` : ''}${encodeURIComponent(f)}`,
-        title: f.replace(AUDIO, ''),
-      })),
-    );
+        ...fileTags(resolve(dir, f), f),
+      }));
+    });
     return {
       id: def.id,
       name: def.name,
@@ -45,8 +74,8 @@ function buildDevStations(musicDir: string) {
       tracks: tracks.map((t, i) => ({
         id: `dev-${def.id}-${i}`,
         url: t.url,
-        title: t.title,
-        artist: 'Local test file',
+        title: t.title.slice(0, 200),
+        artist: t.artist.slice(0, 200),
         credit: 'Local test file (never deployed)',
         duration: 0,
       })),

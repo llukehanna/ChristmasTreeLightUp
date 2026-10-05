@@ -124,7 +124,7 @@ export class RadioPanel {
     this.pill.setAttribute('aria-haspopup', 'dialog');
     this.pill.setAttribute('aria-expanded', 'false');
     this.pill.setAttribute('aria-controls', 'radio-panel');
-    this.pill.innerHTML = `${EQ}<span class="rp-name"></span><span class="rp-short"></span><span class="rp-track"></span>`;
+    this.pill.innerHTML = `${EQ}<span class="rp-name"></span><span class="rp-short"></span><span class="rp-track"></span><span class="rp-artist"></span>`;
     this.panel.className = 'radio';
     this.panel.id = 'radio-panel';
     this.panel.setAttribute('role', 'dialog');
@@ -297,8 +297,7 @@ export class RadioPanel {
       this.q('.artist'),
       v.kind === 'fireplace' ? 'No music, just the fire'
       : v.kind === 'embed' ? (v.embed?.provider === 'apple' ? 'Apple Music' : 'Spotify')
-      : carol ? 'Public-domain carol'
-      : v.kind === 'station' ? (v.track?.artist ?? '')
+      : carol || v.kind === 'station' ? (v.track?.artist ?? '')
       : v.settings.on ? 'Starts with your first move' : 'Pick a station, or press play',
     );
     const cover = v.track?.cover ?? v.station?.cover;
@@ -362,15 +361,19 @@ export class RadioPanel {
     const on = v.playing && name !== null;
     const full = on ? name : v.settings.on && v.kind === null ? 'Radio' : 'Music off';
     const short = on ? shortName(name) : full === 'Radio' ? 'Radio' : 'Off';
-    const track = on && (v.kind === 'station' || v.kind === 'musicbox') && v.track ? v.track.title : '';
-    const key = `${on}|${full}|${short}|${track}`;
+    const song = on && (v.kind === 'station' || v.kind === 'musicbox') && v.track ? v.track : null;
+    const track = song?.title ?? '';
+    const artist = song?.artist ?? '';
+    const key = `${on}|${full}|${short}|${track}|${artist}`;
     if (key === this.pillKey) return;
     this.pillKey = key;
     this.pill.classList.toggle('muted', !on);
     setText(this.pill.querySelector('.rp-name') as HTMLElement, full);
     setText(this.pill.querySelector('.rp-short') as HTMLElement, short);
     setText(this.pill.querySelector('.rp-track') as HTMLElement, track);
-    this.pill.setAttribute('aria-label', on ? `Radio: ${full}${track ? `, ${track}` : ''}` : `Radio: ${full.toLowerCase()}`);
+    setText(this.pill.querySelector('.rp-artist') as HTMLElement, artist);
+    const label = [full, track, track && artist ? `by ${artist}` : ''].filter(Boolean).join(', ');
+    this.pill.setAttribute('aria-label', on ? `Radio: ${label}` : `Radio: ${full.toLowerCase()}`);
     this.hooks.onPillChange?.();
   }
 

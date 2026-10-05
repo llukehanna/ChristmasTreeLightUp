@@ -188,7 +188,7 @@ export class Radio {
       playing: this.isPlaying(),
       station: this.kind === 'station' ? snap.station : null,
       track: carol
-        ? { id: `${MUSIC_BOX_ID}:${carol.id}`, url: '', title: carol.title, artist: 'Music Box', credit: carol.credit, duration: carol.duration }
+        ? { id: `${MUSIC_BOX_ID}:${carol.id}`, url: '', title: carol.title, artist: carol.artist, credit: carol.credit, duration: carol.duration }
         : this.kind === 'station'
           ? snap.track
           : null,
@@ -353,7 +353,7 @@ export class Radio {
     const c = this.musicbox.current();
     try {
       navigator.mediaSession.metadata =
-        c && typeof MediaMetadata === 'function' ? new MediaMetadata({ title: c.title, artist: 'Music Box', album: 'Aglow Radio' }) : null;
+        c && typeof MediaMetadata === 'function' ? new MediaMetadata({ title: c.title, artist: c.artist, album: 'Aglow Radio' }) : null;
       navigator.mediaSession.playbackState = 'playing';
     } catch {
       /* unsupported: ignore */

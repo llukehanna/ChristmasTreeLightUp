@@ -230,7 +230,7 @@ it('lock-screen play/pause go through playPause (saving `on`) and are ignored fo
   expect(r.view().kind).toBe('fireplace');
 });
 
-const CAROL = { id: 'silent-night', title: 'Silent Night', credit: '"Silent Night" — Franz Xaver Gruber / public domain, arranged for Aglow', duration: 66, position: 3 };
+const CAROL = { id: 'silent-night', title: 'Silent Night', artist: 'Franz Xaver Gruber', credit: '"Silent Night" — Franz Xaver Gruber / public domain, arranged for Aglow', duration: 66, position: 3 };
 
 function stubMusicBox() {
   return {
@@ -281,7 +281,7 @@ it('select(music-box) plays it, shows the carol as the track and allows the ligh
   expect(v.kind).toBe('musicbox');
   expect(v.playing).toBe(true);
   expect(v.station).toBeNull();
-  expect(v.track).toMatchObject({ title: 'Silent Night', artist: 'Music Box', credit: CAROL.credit, duration: 66 });
+  expect(v.track).toMatchObject({ title: 'Silent Night', artist: 'Franz Xaver Gruber', credit: CAROL.credit, duration: 66 });
   expect(v.position).toBe(3);
   expect(r.lightShowActive).toBe(true);
   expect(loadRadioSettings()).toMatchObject({ on: true, source: 'music-box' });
@@ -323,7 +323,7 @@ it('Music Box owns the lock screen while it plays, and a remote key never wakes 
   try {
     const r = await ready();
     r.select('music-box');
-    expect(session.metadata).toMatchObject({ init: { title: 'Silent Night', artist: 'Music Box', album: 'Aglow Radio' } });
+    expect(session.metadata).toMatchObject({ init: { title: 'Silent Night', artist: 'Franz Xaver Gruber', album: 'Aglow Radio' } });
     expect(session.playbackState).toBe('playing');
     handlers.get('nexttrack')?.({});
     expect(box.next).toHaveBeenCalledTimes(1);
