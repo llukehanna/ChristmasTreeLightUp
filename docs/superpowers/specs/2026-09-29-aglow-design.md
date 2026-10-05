@@ -116,6 +116,7 @@ src/
     sfx.ts         synthesized tick / wave / chimes / win (Web Audio, no assets)
     radio.ts       station playback, crossfade, ducking, Media Session
     fireplace.ts   procedural crackle + wind
+    musicbox.ts    synthesized music box playing public-domain carols (carols.ts), no audio files
     embed.ts       Spotify / Apple Music embed parsing + mini player
     analyser.ts    beat/energy extraction for the light show
   ui/          HUD, radio panel/sheet, settings menu, results card, share, toasts
@@ -279,7 +280,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 |---|---|---|
 | **Christmas Jazz** | Uploaded by Luke via admin | Public station |
 | **Christmas Classics** | Uploaded by Luke via admin | Public station |
-| **Piano Carols** | Public-domain carols, solo piano, CC0/PD recordings (e.g. Musopen) | Seeded by us; also admin-managed |
+| **Music Box** | Public-domain carols (published before 1929) synthesized in the browser as a music box (`musicbox.ts`, `carols.ts`) | No files, no licence; always available. An original recreation in the spirit of the original game's music, which can't be obtained legitimately |
 | **Fireplace** | Procedural crackle and wind (`fireplace.ts`) | No files; always available |
 | **Spotify / Apple Music** | Official embeds: preset playlists, or a pasted playlist link | Full tracks only for listeners signed in to that service; otherwise 30-second previews. No light show. |
 
@@ -291,8 +292,14 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 - Shuffle is on by default, with a 3-second crossfade between tracks.
 - Previous, next and a seekable scrubber.
 - Media Session metadata and actions for lock-screen and media-key control.
-- If `stations.json` can't be fetched, show Piano Carols (a small bundled fallback set) and Fireplace only.
-- Each scene suggests a matching station without forcing it: Fireside with Christmas Jazz, Midnight with Piano Carols, Frost with Christmas Classics.
+- If `stations.json` can't be fetched, or has nothing playable, Music Box and Fireplace still work; with no remembered choice the radio falls back to Music Box. Music Box never waits for the catalog.
+- Each scene suggests a matching station without forcing it: Fireside with Christmas Jazz, Midnight with Music Box, Frost with Christmas Classics.
+
+**Music Box:**
+- Eight carols: Jingle Bells (Pierpont, 1857), Deck the Halls (Welsh "Nos Galan", 1794), O Christmas Tree (German, 1824), Joy to the World (Mason, 1839), Silent Night (Gruber, 1818), Hark! The Herald Angels Sing (Mendelssohn, 1840), God Rest Ye Merry, Gentlemen (traditional, 1833) and The First Noel (traditional, 1833). Each is data: MIDI pitches, beats, chords and a tempo a little slower than it is usually sung.
+- Endless, in shuffled order (never the same carol twice in a row); short carols play through twice; each ends with a gentle ritardando and 1.6 seconds of silence.
+- The tone models a music-box tine: a near-sine body decaying over 1.5–3.4 seconds (low tines ring longer), the tine's second bending mode (6.27× the fundamental) as a short metallic shimmer, a pin-pluck transient, and dampers on re-plucked tines. A soft, warmer bass and inner-voice accompaniment, a slight stereo spread by pitch, a light room, and small timing and velocity variations.
+- The panel shows the carol as the track (artist "Music Box") with the credit `"<Carol>" — <traditional or composer> / public domain, arranged for Aglow`. Next and previous skip carols; there is no scrubbing. Lock-screen metadata uses the album "Aglow Radio".
 
 **No local file upload.** Players don't drop MP3s; Luke rejected it as dated.
 
@@ -309,7 +316,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 
 ### 5.4 Light show
 
-- Enabled by default after winning, for Web Audio sources only (stations and Fireplace). The toggle is greyed out for embeds.
+- Enabled by default after winning, for Web Audio sources only (stations, Music Box and Fireplace). The toggle is greyed out for embeds.
 - An `AnalyserNode` provides energy in low, mid and high bands plus simple onset (beat) detection.
 - **Mapping:**
   - Beats: bulb brightness pulses, staggered by row.
@@ -364,7 +371,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 | Failure | Behaviour |
 |---|---|
 | Audio blocked before a gesture | Silent until the first tap, which is also when music starts. No error UI. |
-| `stations.json` fetch fails | Bundled Piano Carols fallback plus Fireplace, and a quiet "Some stations unavailable" line in the panel |
+| `stations.json` fetch fails | Music Box and Fireplace (Music Box is the fallback), and a quiet "Some stations unavailable" line in the panel |
 | Track fails to load or decode | Skip to the next track. After 3 consecutive failures, mark the station unavailable for the session. |
 | Invalid Spotify/Apple link | Inline "That link isn't a playlist we can play" message |
 | Canvas blur filter unsupported | Downsample-then-upsample blur (§4.6) |
@@ -414,7 +421,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 
 ## 11. Open items for implementation planning
 
-- Source and verify the licences for about 20–30 Piano Carols recordings, and bundle 3–4 as the offline fallback.
+- Luke's by-ear check of the Music Box: tone, accompaniment balance, tempos and level against the other stations.
 - Track lists for Luke's uploads (audio he supplies himself; Spotify is only the list, never the source): Christmas Jazz = https://open.spotify.com/playlist/3rKFTakI4TxtuNLJ1Ruog4, Christmas Classics = https://open.spotify.com/playlist/0N1jXhN0GD3mUEs6prVPVQ.
 - Choose the Spotify and Apple preset playlists.
 - Design the Open Graph image and share-image composition. The layout is in §6, step 7; the visual will be polished during build.

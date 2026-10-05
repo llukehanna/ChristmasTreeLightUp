@@ -4,9 +4,11 @@
 
 **Goal:** Add Aglow Radio: stations with crossfading playback, a synthesized Fireplace, Spotify/Apple Music embeds, the radio pill/panel/sheet, music ducking, and the post-win light show synced to the music.
 
-**Architecture:** Everything lives in `src/radio/` behind a `Radio` facade. Playback runs two `HTMLAudioElement` decks routed through Web Audio into `audio.music` (from Plan 1), which lets us crossfade, duck and analyse. Stations come from `/api/stations` in production (Plan 3 serves it) or `/dev-stations.json` in development (served from the git-ignored `Music MP3s/` folder by a dev-only Vite plugin). Bundled Piano Carols live in `public/audio/piano/`. `src/ui/radio-panel.ts` renders into `#radio-slot`.
+**Architecture:** Everything lives in `src/radio/` behind a `Radio` facade. Playback runs two `HTMLAudioElement` decks routed through Web Audio into `audio.music` (from Plan 1), which lets us crossfade, duck and analyse. Stations come from `/api/stations` in production (Plan 3 serves it) or `/dev-stations.json` in development (served from the git-ignored `Music MP3s/` folder by a dev-only Vite plugin). Music Box (`src/radio/musicbox.ts` with `carols.ts`) synthesizes public-domain carols in the browser, like the Fireplace. `src/ui/radio-panel.ts` renders into `#radio-slot`.
 
-**Tech Stack:** TypeScript, Web Audio (MediaElementSource, AnalyserNode), Media Session API, Vite plugin API, Vitest, Playwright, ffmpeg (for transcoding the bundled carols).
+> **Change (2026-10-04):** Piano Carols was dropped (nothing was ever bundled) and replaced by the synthesized **Music Box** (Task 5b). Task 1's piano steps and the piano parts of Task 3 below are historical; the code no longer has `PIANO_ID`, `PIANO_META`, `public/audio/piano/` or the catalog's piano merge. Midnight suggests Music Box, and it is the fallback when the catalog has nothing playable.
+
+**Tech Stack:** TypeScript, Web Audio (MediaElementSource, AnalyserNode), Media Session API, Vite plugin API, Vitest, Playwright.
 
 **Spec:** `docs/superpowers/specs/2026-09-29-aglow-design.md` (§5.2–5.4, §8). Visual reference: `docs/prototype/radio-mockup.html`. **Do not build the "My Music" / MP3 drop section shown in the mockup; it was cut.**
 
@@ -15,12 +17,12 @@
 ## Global Constraints
 
 - Plan 1 constraints still apply (strict TS, no `any`, storage only via `src/store/storage.ts`, commit trailer).
-- Stations (launch): **Christmas Jazz** (`christmas-jazz`) and **Christmas Classics** (`christmas-classics`), both uploaded by Luke via Plan 3; **Piano Carols** (`piano-carols`), bundled PD/CC0/CC-BY recordings; **Fireplace** (`fireplace`), synthesized. No local file upload.
+- Stations (launch): **Christmas Jazz** (`christmas-jazz`) and **Christmas Classics** (`christmas-classics`), both uploaded by Luke via Plan 3; **Music Box** (`music-box`), public-domain carols synthesized in the browser; **Fireplace** (`fireplace`), synthesized. No local file upload.
 - Spotify/Apple: official embeds only. Presets are Luke's playlists: Jazz `https://open.spotify.com/playlist/3rKFTakI4TxtuNLJ1Ruog4`, Classics `https://open.spotify.com/playlist/0N1jXhN0GD3mUEs6prVPVQ`. Spotify is never an audio *source* for our own stations.
 - Music starts (fading in) on the player's **first tile tap**. Muting via the pill is remembered.
 - Crossfade 3s; shuffle on by default; skip on error; 3 consecutive failures → the station is marked unavailable for the session.
 - Game sounds duck music by ~4dB (×0.63) for ~250ms.
-- Light show: default on after winning, only for analysable sources (stations and Fireplace), disabled under reduced motion.
+- Light show: default on after winning, only for analysable sources (stations, Music Box and Fireplace), disabled under reduced motion.
 - `Music MP3s/` is local test audio only: it is served by the dev server and never committed or deployed.
 - Every track shows its credit line.
 
@@ -29,11 +31,11 @@
 ## File Map
 
 ```
-public/audio/piano/*.m4a           bundled Piano Carols (Task 1)
-public/audio/piano/credits.json    StationsFile describing them (Task 1)
 src/radio/schema.ts                Track/Station/StationsFile + validators (shared with Plan 3's API)
-src/radio/builtin.ts               built-in ids, Piano Carols metadata, scene → station suggestion
-src/radio/catalog.ts               load + merge remote and bundled stations
+src/radio/builtin.ts               built-in ids (Fireplace, Music Box), scene → station suggestion
+src/radio/catalog.ts               load the remote stations (4 s timeout)
+src/radio/carols.ts                public-domain carols as data (Task 5b)
+src/radio/musicbox.ts              synthesized music-box station (Task 5b)
 src/radio/queue.ts                 shuffle / next / prev
 src/radio/embed.ts                 Spotify/Apple link parsing + presets
 src/radio/player.ts                RadioPlayer: two decks, crossfade, errors, Media Session
@@ -1847,7 +1849,7 @@ test('the radio panel lists stations and plays the Fireplace', async ({ page }) 
   await page.click('#radio-pill');
   await expect(page.locator('#radio-panel')).toBeVisible();
   await expect(page.locator('#radio-panel .stations')).toContainText('Fireplace');
-  await expect(page.locator('#radio-panel .stations')).toContainText('Piano Carols');
+  await expect(page.locator('#radio-panel .stations')).toContainText('Music Box');
   await expect(page.locator('#radio-panel .warn')).toBeVisible(); // preview build has no /api/stations
   await page.locator('#radio-panel .st', { hasText: 'Fireplace' }).click();
   await expect.poll(async () => (await radio(page)).kind).toBe('fireplace');
@@ -1891,7 +1893,7 @@ Expected: all unit tests and all e2e tests (5 smoke + 3 radio) pass.
 - [ ] **Step 8: Manual check in dev** (the local test tracks appear as Christmas Classics)
 
 Run `npm run dev` and check:
-- **First tap:** music fades in. With the auto scene, Frost suggests Classics (the local files), Fireside suggests Jazz (absent in dev, so the first station plays), and Midnight suggests Piano Carols.
+- **First tap:** music fades in. With the auto scene, Frost suggests Classics (the local files), Fireside suggests Jazz (absent in dev, so the first station plays), and Midnight suggests Music Box (which starts at once, without waiting for the catalog).
 - **Ducking:** each rotation briefly dips the music.
 - **Pill and panel:** the pill shows station · track. The panel's controls, scrubber, shuffle and next/prev work, and the crossfade at the end of a track is smooth.
 - **Mute persists:** the pill play/pause is remembered across a reload (music stays off after the first tap).
@@ -1916,7 +1918,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 | Spec | Task |
 |---|---|
-| §5.2 sources | Tasks 1 (Piano), 3 (remote/dev), 4 (Fireplace), 2 and 6 (embeds) |
+| §5.2 sources | Tasks 3 (remote/dev), 4 (Fireplace), 5b (Music Box), 2 and 6 (embeds) |
 | §5.2 behaviour: autostart, mute memory, shuffle, crossfade, prev/next/seek, Media Session | Tasks 4, 5, 7 |
 | §5.2 fallback | Task 3 |
 | §5.2 scene suggestion | Tasks 1, 5 |
