@@ -1,5 +1,6 @@
 import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { pipeline } from 'node:stream';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
@@ -74,7 +75,7 @@ function resolveMusicFile(musicDir: string, rest: string): string | null {
   }
   const file = resolve(musicDir, ...decoded);
   const rel = relative(musicDir, file);
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return null;
+  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
   if (!AUDIO.test(file) || !existsSync(file) || !statSync(file).isFile()) return null;
   return file;
 }
@@ -147,8 +148,8 @@ function devMusic(): Plugin {
             return;
           }
           const stream = createReadStream(file, { start, end });
-          stream.on('error', () => res.destroy());
-          stream.pipe(res);
+          // pipeline destroys the file stream when the client aborts (e.g. seeking) and on read errors.
+          pipeline(stream, res, () => {});
           return;
         }
         next();
