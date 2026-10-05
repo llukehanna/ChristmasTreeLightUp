@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.worker.json",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -16,6 +16,7 @@
     "deploy": "npm run build && wrangler deploy"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261005.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.4",
     "jsdom": "^30.1.1",
@@ -23,8 +24,5 @@
     "vite": "^8.3.1",
     "vitest": "^5.0.2",
     "wrangler": "^4.147.0"
-  },
-  "dependencies": {
-    "@vercel/blob": "^2.8.0"
   }
 }

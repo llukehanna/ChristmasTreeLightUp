@@ -1,0 +1,7 @@
+# Local secrets for `wrangler dev`. Copy to .dev.vars (git-ignored) and fill in locally. Never commit values.
+# Production values are set with `wrangler secret put` in Task 4, never written to a committed file.
+
+# The admin password Luke chooses.
+ADMIN_PASSWORD=
+# 256 random bits (for example 64 hex characters) that nobody needs to read. Changing it signs every admin out.
+SESSION_SECRET=

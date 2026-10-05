@@ -9,3 +9,4 @@ Music MP3s
 test-results/
 playwright-report/
 .wrangler/
+.dev.vars
