@@ -3,6 +3,8 @@
 A premium remake of the classic Christmas Tree Light Up puzzle. Turn the wires, light the tree.
 Live at https://aglow.lukeghanna.com
 
+![Aglow, a lit Christmas tree in the fireside scene](.github/screenshot.webp)
+
 ```bash
 npm install
 npm run dev     # local dev server
