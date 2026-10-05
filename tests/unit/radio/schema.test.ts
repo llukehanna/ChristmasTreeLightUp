@@ -12,12 +12,36 @@ describe('parseStationsFile', () => {
     const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/audio/piano/a.m4a' }] }] };
     expect(parseStationsFile(f)).not.toBeNull();
   });
+  it('accepts HTTPS Vercel Blob URL with query string', () => {
+    const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'https://example.public.blob.vercel-storage.com/file.m4a?foo=bar' }] }] };
+    expect(parseStationsFile(f)).not.toBeNull();
+  });
   it('rejects bad ids, empty titles, http URLs and duplicate ids', () => {
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id: 'Bad Id' }] })).toBeNull();
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, title: ' ' }] }] })).toBeNull();
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'http://evil/a.mp3' }] }] })).toBeNull();
     expect(parseStationsFile({ ...file, stations: [file.stations[0], file.stations[0]] })).toBeNull();
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [track, track] }] })).toBeNull();
+  });
+  it('rejects problematic URLs', () => {
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '//evil.com/a.mp3' }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/\\evil.com/a.mp3' }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/\t/evil.com/a.mp3' }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'https://' }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'javascript:alert(1)' }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'data:audio/mp3;base64,AAAA' }] }] })).toBeNull();
+  });
+  it('rejects invalid cover URLs', () => {
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], cover: 'http://evil/cover.jpg' }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, cover: 'javascript:alert(1)' }] }] })).toBeNull();
+  });
+  it('rejects non-integer version', () => {
+    expect(parseStationsFile({ ...file, version: 3.5 })).toBeNull();
+    expect(parseStationsFile({ ...file, version: '3' })).toBeNull();
+  });
+  it('rejects infinite or negative duration', () => {
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, duration: Infinity }] }] })).toBeNull();
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, duration: -1 }] }] })).toBeNull();
   });
   it('rejects non-objects', () => {
     expect(parseStationsFile(null)).toBeNull();
