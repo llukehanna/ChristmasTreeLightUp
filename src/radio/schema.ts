@@ -1,4 +1,4 @@
-import { FIREPLACE_ID, MUSIC_BOX_ID } from './builtin';
+import { FIREPLACE_ID, MUSIC_BOX_ID } from './builtin.js';
 
 export interface Track {
   id: string;

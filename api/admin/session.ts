@@ -1,5 +1,5 @@
-import { adminJson } from '../_lib/http';
-import { isAdmin } from '../_lib/session';
+import { adminJson } from '../_lib/http.js';
+import { isAdmin } from '../_lib/session.js';
 
 export function GET(req: Request): Response {
   let admin = false;

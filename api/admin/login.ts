@@ -1,6 +1,6 @@
-import { adminJson, notConfigured, readTextCapped } from '../_lib/http';
-import { GLOBAL_KEY, RateLimiter } from '../_lib/ratelimit';
-import { createToken, env, passwordMatches, sessionCookie, sessionKey } from '../_lib/session';
+import { adminJson, notConfigured, readTextCapped } from '../_lib/http.js';
+import { GLOBAL_KEY, RateLimiter } from '../_lib/ratelimit.js';
+import { createToken, env, passwordMatches, sessionCookie, sessionKey } from '../_lib/session.js';
 
 const WINDOW_MS = 15 * 60 * 1000;
 const perIp = new RateLimiter(10, WINDOW_MS);

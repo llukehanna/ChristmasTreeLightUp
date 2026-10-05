@@ -1,4 +1,4 @@
-import { loadPublicStations } from './_lib/public-stations';
+import { loadPublicStations } from './_lib/public-stations.js';
 
 /** Public station list for the game. Served from stations/current.json; never calls Blob's list(). */
 export async function GET(): Promise<Response> {
