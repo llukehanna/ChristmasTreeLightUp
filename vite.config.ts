@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
-import { ID3_HEAD_BYTES, ID3V1_BYTES, tagsFromFilename, trackTags, type Tags } from './dev/id3.ts';
+import { ID3_HEAD_BYTES, ID3V1_BYTES, tagsFromFilename, trackTags, type Tags } from './src/radio/id3.ts';
 
 const MUSIC_FOLDER = 'Music MP3s';
 const AUDIO = /\.(mp3|m4a)$/i;

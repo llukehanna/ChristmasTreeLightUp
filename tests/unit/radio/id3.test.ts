@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { decodeText, readId3v1, readId3v2, tagsFromFilename, trackTags } from '../../../dev/id3';
+import { decodeText, readId3v1, readId3v2, tagsFromFilename, trackTags } from '../../../src/radio/id3';
 
 const bytes = (...parts: (number[] | Uint8Array | string)[]): Uint8Array =>
   Uint8Array.from(parts.flatMap((p) => (typeof p === 'string' ? [...p].map((c) => c.charCodeAt(0)) : [...p])));

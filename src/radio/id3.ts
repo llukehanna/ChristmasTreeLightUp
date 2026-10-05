@@ -1,5 +1,6 @@
 /**
- * Dev-only track tags for the local test music (used by the dev-music plugin in vite.config.ts; never bundled).
+ * Track tags for uploaded music: the radio admin reads them from each file it uploads, and the dev-music plugin in
+ * vite.config.ts from the local test music. The game never imports this.
  * A tiny reader for the two text frames we need: ID3v2.2–2.4 title/artist, then ID3v1, then the file name.
  * Pure functions over bytes, so it is unit-tested without the file system.
  */
