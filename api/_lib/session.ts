@@ -1,11 +1,28 @@
-import { createHash, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, hkdfSync, scryptSync, timingSafeEqual } from 'node:crypto';
 
 export const COOKIE = 'aglow_admin';
 export const SESSION_SECONDS = 7 * 24 * 3600;
 
-/** Session HMAC key, derived from the admin password (HKDF-SHA256), so ADMIN_PASSWORD is the only secret. Changing the password invalidates every session. */
-export const sessionKey = (password: string): Buffer => Buffer.from(hkdfSync('sha256', password, 'aglow-admin-v1', 'session', 32));
+const KEY_SALT = 'aglow-admin-v1';
+const keyCache = new Map<string, Buffer>();
 
+/**
+ * Session HMAC key, derived from the admin password, so ADMIN_PASSWORD is the only secret. Changing the password invalidates every session.
+ * The password is stretched with scrypt first: a stolen token is an offline oracle for the key, so guessing the password must be slow.
+ * The result is memoised per instance (keyed by a hash of the password, which is never stored or logged).
+ */
+export function sessionKey(password: string): Buffer {
+  const id = createHash('sha256').update(password).digest('hex');
+  const hit = keyCache.get(id);
+  if (hit) return hit;
+  const stretched = scryptSync(password, KEY_SALT, 32, { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+  const key = Buffer.from(hkdfSync('sha256', stretched, KEY_SALT, 'session', 32));
+  if (keyCache.size >= 4) keyCache.clear();
+  keyCache.set(id, key);
+  return key;
+}
+
+const TOKEN_RE = /^\d{1,12}\.[A-Za-z0-9_-]{43}$/;
 const sign = (payload: string, key: Buffer): string => createHmac('sha256', key).update(payload).digest('base64url');
 
 /** `<expiry>.<hmac>`: stateless, so it works across function instances. */
@@ -15,10 +32,11 @@ export function createToken(key: Buffer, nowSec: number): string {
 }
 
 export function verifyToken(token: string | undefined, key: Buffer, nowSec: number): boolean {
-  if (!token) return false;
+  if (!token || !TOKEN_RE.test(token)) return false;
   const [expStr, sig] = token.split('.');
   const exp = Number(expStr);
-  if (!Number.isInteger(exp) || exp < nowSec || !sig) return false;
+  // Canonical decimal only: "007" would otherwise carry a valid signature for 7.
+  if (String(exp) !== expStr || exp < nowSec) return false;
   const expected = Buffer.from(sign(`admin.${exp}`, key));
   const given = Buffer.from(sig);
   return expected.length === given.length && timingSafeEqual(expected, given);
@@ -52,7 +70,7 @@ export const clearCookie = (): string => `${COOKIE}=; HttpOnly; Secure; SameSite
 
 export function env(name: string): string {
   const v = process.env[name];
-  if (!v) throw new Error(`${name} is not set`);
+  if (!v || !v.trim()) throw new Error(`${name} is not set`);
   return v;
 }
 
