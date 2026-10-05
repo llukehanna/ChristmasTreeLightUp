@@ -57,12 +57,12 @@ const PANEL_HTML = `
       <button class="show" type="button" aria-label="Light show after you win">${ICON.show}</button>
     </div>
     <div class="sec">
-      <h4>Stations</h4>
+      <h2>Stations</h2>
       <div class="stations"></div>
       <p class="warn" hidden>Some stations are unavailable right now.</p>
     </div>
     <div class="sec">
-      <h4>Your music</h4>
+      <h2>Your music</h2>
       <button class="st embed-row" type="button" aria-expanded="false">
         <span class="dot">${ICON.playlist}</span>
         <span class="txt"><span class="n">Spotify or Apple Music</span><span class="d">Paste a playlist link</span></span>
@@ -109,6 +109,8 @@ export class RadioPanel {
   private pillKey = '';
   private scrubbing = false;
   private ticker = 0;
+  /** The bottom-sheet layout (spec §5.3), where the panel is modal and keeps Tab inside it. */
+  private readonly phone = window.matchMedia('(max-width: 600px)');
 
   constructor(
     private readonly radio: Radio,
@@ -140,6 +142,11 @@ export class RadioPanel {
     return !this.panel.hidden;
   }
 
+  /** Keyboard focus is inside the open panel (the game's keys stand aside only then). */
+  get hasFocus(): boolean {
+    return this.isOpen && this.panel.contains(document.activeElement);
+  }
+
   open(): void {
     if (this.isOpen) return;
     this.hooks.onOpen?.();
@@ -160,6 +167,12 @@ export class RadioPanel {
     this.scrubbing = false;
     // Hand focus back to the pill unless the user has moved it somewhere else on purpose.
     if (!active || active === document.body || this.panel.contains(active)) this.pill.focus({ preventScroll: true });
+  }
+
+  /** The panel's focusable controls, in order, skipping disabled and hidden ones. */
+  private tabStops(): HTMLElement[] {
+    const all = this.panel.querySelectorAll<HTMLElement>('button, input, iframe, [tabindex]:not([tabindex="-1"])');
+    return [...all].filter((n) => !(n as HTMLButtonElement).disabled && n.tabIndex >= 0 && n.getClientRects().length > 0);
   }
 
   private q<T extends HTMLElement = HTMLElement>(sel: string): T {
@@ -186,6 +199,19 @@ export class RadioPanel {
         this.close();
       }
     });
+    // The phone sheet covers the game like a modal: Tab and Shift+Tab cycle inside it while it's open.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab' || !this.isOpen || !this.phone.matches || e.defaultPrevented) return;
+      const stops = this.tabStops();
+      if (stops.length === 0) return;
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      const at = document.activeElement;
+      if (!this.panel.contains(at) || (e.shiftKey && at === first) || (!e.shiftKey && at === last)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus({ preventScroll: true });
+      }
+    });
     this.q('.play').addEventListener('click', () => this.radio.playPause());
     this.q('.next').addEventListener('click', () => this.radio.next());
     this.q('.prev').addEventListener('click', () => this.radio.prev());
@@ -196,7 +222,9 @@ export class RadioPanel {
       this.scrubbing = true;
       const d = this.radio.view().duration;
       fill(scrub, Number(scrub.value) / 1000);
-      setText(this.q('.pos'), formatTime(Math.floor((Number(scrub.value) / 1000) * d)));
+      const pos = Math.floor((Number(scrub.value) / 1000) * d);
+      setText(this.q('.pos'), formatTime(pos));
+      setValueText(scrub, pos, d);
     });
     scrub.addEventListener('change', () => {
       this.scrubbing = false;
@@ -309,6 +337,7 @@ export class RadioPanel {
       if (scrub.value !== value) scrub.value = value;
       fill(scrub, f);
       setText(this.q('.pos'), formatTime(Math.floor(v.position)));
+      setValueText(scrub, Math.floor(v.position), v.duration);
     }
     setText(this.q('.dur'), v.duration ? formatTime(Math.floor(v.duration)) : '–:––');
 
@@ -423,6 +452,12 @@ export class RadioPanel {
 
 function setText(node: HTMLElement, s: string): void {
   if (node.textContent !== s) node.textContent = s;
+}
+
+/** What a screen reader announces for the scrubber: "1:23 of 3:40". */
+function setValueText(scrub: HTMLInputElement, pos: number, dur: number): void {
+  const text = dur ? `${formatTime(pos)} of ${formatTime(Math.floor(dur))}` : formatTime(pos);
+  if (scrub.getAttribute('aria-valuetext') !== text) scrub.setAttribute('aria-valuetext', text);
 }
 
 /** Gold fill for the custom range tracks. */

@@ -444,9 +444,10 @@ export class App {
     });
     el('pause-btn').addEventListener('click', () => this.pause(true));
     document.addEventListener('keydown', (e) => {
-      // The settings and radio dialogs handle their own Escape (and mark it handled); keys never reach the game while
-      // either is open.
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.isOpen || isEditable(e.target)) return;
+      // The settings and radio dialogs handle their own Escape (and mark it handled). Keys never reach the game while
+      // the menu is open, or while focus is inside the radio panel; the desktop popover stays open while you play, so
+      // with focus back on the game (or nowhere) P still pauses.
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.hasFocus || isEditable(e.target)) return;
       if (e.key === 'Escape' && this.paused) {
         e.preventDefault();
         this.resume();
