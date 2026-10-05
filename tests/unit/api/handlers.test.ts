@@ -154,6 +154,15 @@ describe('admin stations', () => {
     expect(calls[1][2]).toMatchObject({ access: 'public', allowOverwrite: true, addRandomSuffix: false, cacheControlMaxAge: 60 });
     expect(JSON.parse(calls[1][1] as string)).toEqual({ version: 4, stations: next });
     expect(vi.mocked(del)).toHaveBeenCalledWith([`${B}/tracks/christmas-jazz/a.mp3`]);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+  it('prunes old versions from the list it already has: one list() per save', async () => {
+    listReturns(1, 2, 3, 4, 5, 6);
+    vi.mocked(fetch).mockImplementation(async () => json({ ...v3, version: 6 }));
+    const r = await adminStations.PUT(put_({ expectedVersion: 6, stations: v3.stations }));
+    expect(await r.json()).toEqual({ version: 7 });
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(del)).toHaveBeenCalledWith([`${B}/stations/v000001.json`, `${B}/stations/v000002.json`]);
   });
   it('writes current.json only after the version has been written', async () => {
     const order: string[] = [];
@@ -164,11 +173,44 @@ describe('admin stations', () => {
     await adminStations.PUT(put_({ expectedVersion: 3, stations: v3.stations }));
     expect(order).toEqual(['stations/v000004.json', 'stations/current.json']);
   });
-  it('reports a concurrent save as a conflict, and writes no public copy', async () => {
+  // Re-read results for the save-failure cases: first list() is the pre-save read, second is the re-read after put failed.
+  const reread = (version: number, content: unknown) => {
+    vi.mocked(list).mockReset();
+    listReturns(3);
+    vi.mocked(list).mockResolvedValueOnce({ blobs: [{ pathname: 'stations/v000003.json', url: `${B}/stations/v000003.json` }], hasMore: false } as never);
+    const name = `v${String(version).padStart(6, '0')}.json`;
+    vi.mocked(list).mockResolvedValueOnce({ blobs: [{ pathname: `stations/${name}`, url: `${B}/stations/${name}` }], hasMore: false } as never);
+    vi.mocked(fetch).mockImplementation(async (u) => json(String(u).endsWith(name) ? content : v3));
+  };
+  it('reports a concurrent save (version N+1 holds different content) as a conflict, and writes no public copy', async () => {
     vi.mocked(put).mockRejectedValueOnce(new Error('This blob already exists'));
+    reread(4, { version: 4, stations: [{ ...v3.stations[0], name: 'Somebody Else' }] });
     const r = await adminStations.PUT(put_({ expectedVersion: 3, stations: v3.stations }));
     expect(r.status).toBe(409);
     expect(put).toHaveBeenCalledTimes(1);
+    expect(del).not.toHaveBeenCalled();
+  });
+  it('answers 503, not 409, when the write failed and nothing newer exists', async () => {
+    vi.mocked(put).mockRejectedValueOnce(new Error('network down'));
+    const next = [{ ...v3.stations[0], tracks: [v3.stations[0].tracks[1]] }];
+    reread(3, v3);
+    const r = await adminStations.PUT(put_({ expectedVersion: 3, stations: next }));
+    expect(r.status).toBe(503);
+    expect(await r.json()).toEqual({ error: 'Could not save. Try again.' });
+    expect(r.headers.get('cache-control')).toBe('no-store');
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(del).not.toHaveBeenCalled();
+  });
+  it('answers 503 when the write failed and the re-read fails too', async () => {
+    vi.mocked(put).mockRejectedValueOnce(new Error('network down'));
+    vi.mocked(list).mockReset();
+    listReturns(3);
+    vi.mocked(list).mockResolvedValueOnce({ blobs: [{ pathname: 'stations/v000003.json', url: `${B}/stations/v000003.json` }], hasMore: false } as never);
+    vi.mocked(list).mockRejectedValueOnce(new Error('list failed'));
+    const r = await adminStations.PUT(put_({ expectedVersion: 3, stations: v3.stations }));
+    expect(r.status).toBe(503);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(del).not.toHaveBeenCalled();
   });
   it('treats a lost-response retry as success when the stored version is exactly what was sent', async () => {
     vi.mocked(put).mockRejectedValueOnce(new Error('This blob already exists'));
@@ -182,15 +224,14 @@ describe('admin stations', () => {
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ version: 4 });
     expect(vi.mocked(put).mock.calls.map((c) => c[0])).toEqual(['stations/v000004.json', 'stations/current.json']);
+    expect(list).toHaveBeenCalledTimes(2);
   });
-  it('is a conflict, not a success, when version N+1 holds different content', async () => {
+  it('is a conflict, not a success, when a newer version than ours already exists', async () => {
     vi.mocked(put).mockRejectedValueOnce(new Error('This blob already exists'));
-    const other = { version: 4, stations: [{ ...v3.stations[0], name: 'Somebody Else' }] };
-    vi.mocked(list).mockResolvedValueOnce({ blobs: [{ pathname: 'stations/v000003.json', url: `${B}/stations/v000003.json` }], hasMore: false } as never);
-    vi.mocked(list).mockResolvedValueOnce({ blobs: [{ pathname: 'stations/v000004.json', url: `${B}/stations/v000004.json` }], hasMore: false } as never);
-    vi.mocked(fetch).mockImplementation(async (u) => json(String(u).endsWith('v000004.json') ? other : v3));
+    reread(5, { version: 5, stations: v3.stations });
     const r = await adminStations.PUT(put_({ expectedVersion: 3, stations: v3.stations }));
     expect(r.status).toBe(409);
+    expect(del).not.toHaveBeenCalled();
   });
   it('still reports success, with a warning, if the public copy cannot be refreshed', async () => {
     vi.mocked(put).mockResolvedValueOnce({} as never).mockRejectedValueOnce(new Error('boom'));
@@ -241,8 +282,9 @@ describe('uploads', () => {
     const track = await onBeforeGenerateToken('tracks/christmas-jazz/x.mp3', null, false);
     expect(track).toMatchObject({ maximumSizeInBytes: 30 * 1024 * 1024, addRandomSuffix: true });
     expect(track.allowedContentTypes).toEqual(['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg']);
+    await expect(onBeforeGenerateToken(`tracks/christmas-jazz/${'x'.repeat(200)}`, null, false)).resolves.toBeDefined();
     expect((await onBeforeGenerateToken('covers/christmas-jazz/c.png', null, false)).allowedContentTypes).toEqual(['image/jpeg', 'image/png', 'image/webp']);
-    for (const bad of ['stations/v000009.json', 'tracks/x.mp3', 'tracks//x.mp3', 'tracks/christmas-jazz/', 'tracks/Christmas Jazz/x.mp3', 'tracks/-a/x.mp3', 'tracks/christmas-jazz/a/b.mp3', 'tracks/christmas-jazz/..', 'tracks/../x/y.mp3', '/tracks/christmas-jazz/x.mp3', 'tracks/christmas-jazz/a\\b.mp3']) {
+    for (const bad of ['stations/v000009.json', 'tracks/x.mp3', 'tracks//x.mp3', 'tracks/christmas-jazz/', 'tracks/Christmas Jazz/x.mp3', 'tracks/-a/x.mp3', 'tracks/christmas-jazz/a/b.mp3', 'tracks/christmas-jazz/..', 'tracks/../x/y.mp3', '/tracks/christmas-jazz/x.mp3', 'tracks/christmas-jazz/a\\b.mp3', `tracks/christmas-jazz/${'x'.repeat(201)}`]) {
       await expect(onBeforeGenerateToken(bad, null, false), bad).rejects.toThrow();
     }
   });
@@ -302,12 +344,15 @@ describe('public list', () => {
     }
     expect(fetch).not.toHaveBeenCalled();
   });
-  it('keeps the list in memory for 60 seconds', async () => {
+  it('keeps the list in memory for 5 minutes', async () => {
     await publicStations.GET();
     await publicStations.GET();
     expect(fetch).toHaveBeenCalledTimes(1);
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.now() + 61_000);
+    vi.setSystemTime(Date.now() + 200_000);
+    await publicStations.GET();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + 101_000);
     await publicStations.GET();
     vi.useRealTimers();
     expect(fetch).toHaveBeenCalledTimes(2);

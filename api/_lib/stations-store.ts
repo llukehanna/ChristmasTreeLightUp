@@ -1,5 +1,5 @@
 import { del, list, put } from '@vercel/blob';
-import { parseStationsFile, type StationsFile } from '../../src/radio/schema';
+import { parseStationsFile, type StationsFile } from '../../src/radio/schema.js';
 
 export const PREFIX = 'stations/';
 /** Copy of the newest version, overwritten on every save. Public readers fetch it by URL, so the public path never calls list() (a billed "advanced operation"). */
@@ -11,20 +11,28 @@ export function versionPath(v: number): string {
 }
 const VERSION_RE = /^stations\/v\d{6}\.json$/;
 
-async function versionBlobs(): Promise<{ pathname: string; url: string }[]> {
-  const { blobs } = await list({ prefix: PREFIX });
-  return blobs.filter((b) => VERSION_RE.test(b.pathname)).sort((a, b) => a.pathname.localeCompare(b.pathname));
+export interface VersionBlob {
+  pathname: string;
+  url: string;
 }
 
-/** Newest version, found via list() (strongly consistent). Each version blob is immutable, so reading it is safe to cache. */
-export async function readLatest(): Promise<{ file: StationsFile }> {
-  const latest = (await versionBlobs()).pop();
-  if (!latest) return { file: { version: 0, stations: [] } };
+const onlyVersions = (blobs: readonly VersionBlob[]): VersionBlob[] =>
+  blobs.filter((b) => VERSION_RE.test(b.pathname)).sort((a, b) => a.pathname.localeCompare(b.pathname));
+
+/**
+ * Newest version, found via list() (strongly consistent; one billed "advanced operation"). Each version blob is immutable, so reading it is safe to cache.
+ * Also returns the version blobs it saw (oldest first), so a save can prune without listing again.
+ */
+export async function readLatest(): Promise<{ file: StationsFile; versions: VersionBlob[] }> {
+  const { blobs } = await list({ prefix: PREFIX });
+  const versions = onlyVersions(blobs);
+  const latest = versions[versions.length - 1];
+  if (!latest) return { file: { version: 0, stations: [] }, versions };
   const r = await fetch(latest.url);
   if (!r.ok) throw new Error(`Could not read ${latest.pathname} (HTTP ${r.status})`);
   const file = parseStationsFile(await r.json());
   if (!file) throw new Error('Stored stations file is invalid');
-  return { file };
+  return { file, versions };
 }
 
 /** Throws if this version already exists (Blob refuses to overwrite by default), which signals a concurrent save. */
@@ -64,9 +72,13 @@ export function publicBaseUrl(): string {
   return `https://${storeId.toLowerCase()}.public.blob.vercel-storage.com`;
 }
 
-export async function pruneOldVersions(keep = 5): Promise<void> {
+/**
+ * Deletes all but the newest `keep` versions among `known` (from readLatest, plus the version just written), without listing again.
+ * The newest is always kept, so a blob that was only just written never needs a real URL here.
+ */
+export async function pruneOldVersions(known: readonly VersionBlob[], keep = 5): Promise<void> {
   keep = Number.isFinite(keep) ? Math.max(1, Math.floor(keep)) : 5; // never delete the newest version
-  const all = await versionBlobs();
+  const all = onlyVersions(known);
   const old = all.slice(0, Math.max(0, all.length - keep)).map((b) => b.url);
   if (old.length) await del(old);
 }

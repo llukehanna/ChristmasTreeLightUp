@@ -1,11 +1,11 @@
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
-import { adminJson, readTextCapped, requireAdmin } from '../_lib/http';
+import { adminJson, readTextCapped, requireAdmin } from '../_lib/http.js';
 
 const AUDIO = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg'];
 const IMAGES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_BODY = 16 * 1024;
 /** tracks/<station-id>/<file> or covers/<station-id>/<file>; the station id follows the schema's id rule. */
-const UPLOAD_PATH = /^(tracks|covers)\/[a-z0-9][a-z0-9-]{0,63}\/[^/\\\u0000-\u001f\u007f]+$/;
+const UPLOAD_PATH = /^(tracks|covers)\/[a-z0-9][a-z0-9-]{0,63}\/[^/\\\u0000-\u001f\u007f]{1,200}$/;
 
 class PathRejected extends Error {}
 
