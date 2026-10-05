@@ -6,6 +6,7 @@ export interface AglowProbe {
   tileCenter(i: number): [number, number];
   solve(): void;
   ids: number[];
+  radio(): { kind: string | null; playing: boolean; stations: string[]; lightShow: boolean };
 }
 
 /** Test hook for Playwright. Only installed when the URL contains ?test. */
@@ -23,6 +24,10 @@ export function installDebugHook(app: App): void {
     tileCenter: (i) => app.tileScreenCenter(i),
     solve: () => app.debugSolve(),
     ids: [...GRID.ids],
+    radio: () => {
+      const v = app.radio.view();
+      return { kind: v.kind, playing: v.playing, stations: v.stations.map((s) => s.id), lightShow: app.radio.lightShowActive };
+    },
   };
   (window as Window & { __aglow?: AglowProbe }).__aglow = probe;
 }

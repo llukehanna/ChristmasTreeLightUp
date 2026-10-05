@@ -33,6 +33,21 @@ it('returns no stations when the list fails or is malformed', async () => {
   expect(thrown).toEqual({ stations: [], remoteOk: false });
 });
 
+it('treats a missing endpoint (404) as no remote stations, not as a failure', async () => {
+  const missing = await loadCatalog((async () => new Response('Not found', { status: 404 })) as unknown as typeof fetch);
+  expect(missing).toEqual({ stations: [], remoteOk: true });
+  // A single-page host (e.g. `vite preview`) answers the unknown path with index.html instead of a 404.
+  const spa = await loadCatalog((async () => new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch);
+  expect(spa).toEqual({ stations: [], remoteOk: true });
+});
+
+it('still reports a failure for server errors and other non-OK statuses', async () => {
+  for (const status of [500, 502, 403, 410]) {
+    const c = await loadCatalog((async () => new Response('', { status })) as unknown as typeof fetch);
+    expect(c, `status ${status}`).toEqual({ stations: [], remoteOk: false });
+  }
+});
+
 it(`gives up on a hung endpoint after ${FETCH_TIMEOUT_MS / 1000}s`, async () => {
   vi.useFakeTimers();
   const hung = (_url: string, init?: RequestInit) =>

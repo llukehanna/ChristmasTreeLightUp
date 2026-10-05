@@ -4,6 +4,7 @@ import { GRID } from './core/mask';
 import { formatTime, scoreFor, wholeSeconds } from './core/score';
 import { Sfx } from './audio/sfx';
 import { bindInput } from './input';
+import { Radio } from './radio/radio';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { tileAt, tileCenter } from './render/layout';
 import { Renderer } from './render/renderer';
@@ -15,6 +16,7 @@ import { loadStats, localDay, recordWin, saveStats } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
 import { el } from './ui/dom';
 import { Menu } from './ui/menu';
+import { RadioPanel } from './ui/radio-panel';
 import { Results } from './ui/results';
 import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
 import { Toast } from './ui/toast';
@@ -33,6 +35,7 @@ export class App {
   interactiveAt = 0;
   readonly sfx = new Sfx();
   readonly renderer: Renderer;
+  readonly radio = new Radio();
   private vis!: VisualState;
   private clock!: GameClock;
   private settings: Settings = loadSettings();
@@ -48,6 +51,8 @@ export class App {
   /** The paused frame has been drawn; the renderer idles until resume. */
   private pausedDrawn = false;
   private resizeQueued = false;
+  /** The first resize has measured the stage (the HUD fit and tagline placement need it). */
+  private laidOut = false;
   /** The results card's share image, rendered when the card appears so the Share tap needs no await. */
   private shareImage: ShareImage | null = null;
   private lastFrame = 0;
@@ -59,6 +64,7 @@ export class App {
   private readonly toast = new Toast(el('toast'));
   private readonly results: Results;
   private readonly menu: Menu;
+  private readonly radioPanel: RadioPanel;
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -67,7 +73,22 @@ export class App {
       onChange: (s) => this.applySettings(s),
       onNewTree: () => this.newGame(),
       needsConfirm: () => this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
+      onOpen: () => this.radioPanel.close(),
     });
+    this.radioPanel = new RadioPanel(
+      this.radio,
+      {
+        get: () => this.settings.effectsVolume,
+        set: (v) => this.applySettings({ ...this.settings, effectsVolume: v }),
+      },
+      { onOpen: () => this.menu.close(), onPillChange: () => this.fitHud() },
+    );
+    // Game sounds duck the music (spec §5.1), alongside anything else already listening.
+    const onSound = this.sfx.onSound;
+    this.sfx.onSound = () => {
+      onSound?.();
+      this.radio.duck();
+    };
   }
 
   start(): void {
@@ -93,7 +114,7 @@ export class App {
       this.beginGame(now, Board.random(GRID, Math.random), 0);
     }
     if (!this.board.won) this.showIntro();
-    void document.fonts?.ready.then(() => this.placeIntro());
+    void document.fonts?.ready.then(() => this.fitHud());
     this.bindControls();
     this.bindLifecycle();
     setInterval(() => this.refreshAutoScene(), 60_000);
@@ -161,6 +182,7 @@ export class App {
     this.clock.pause(now);
     clearGame();
     this.menu.close();
+    this.radioPanel.close();
     this.hideIntro();
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
@@ -226,9 +248,14 @@ export class App {
       if (this.pausedDrawn) return;
       this.pausedDrawn = true;
     } else this.pausedDrawn = false;
+    // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow.
+    const show = this.winAt !== null && this.radio.lightShowActive && !this.reduced.matches;
+    if (show) this.radio.show.sample(now);
     this.renderer.frame({
       board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover,
       revealAt: this.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
+      extraBulb: show ? (i) => this.radio.show.extraBulb(Math.floor(i / GRID.w), now) : undefined,
+      ambient: show ? this.radio.show.low : 0,
     });
   }
 
@@ -243,6 +270,7 @@ export class App {
     if (canPause !== this.lastCanPause) {
       el('pause-btn').hidden = !canPause;
       this.lastCanPause = canPause;
+      this.fitHud(); // the pause pill came or went: the HUD changed width
     }
     const lit = (this.winAt !== null ? 1 : this.board.lighting.count / GRID.ids.length).toFixed(2);
     if (lit !== this.lastLit) {
@@ -270,6 +298,8 @@ export class App {
         if (this.winAt === null) this.setCamera(panBy(this.camera, dx, dy));
       },
     });
+    // Any HUD button can be the first gesture: unlock audio inside it (the music itself waits for the first tap).
+    for (const id of ['radio-pill', 'pause-btn', 'menu-btn']) el(id).addEventListener('click', () => this.sfx.unlock());
     el('zoom-reset').addEventListener('click', () => this.setCamera(IDENTITY));
     el('corner-new').addEventListener('click', () => this.newGame());
   }
@@ -277,8 +307,11 @@ export class App {
   private tap(x: number, y: number): void {
     const now = performance.now();
     this.sfx.unlock();
-    if (this.menu.isOpen) {
+    // The first tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
+    this.radio.firstGesture();
+    if (this.menu.isOpen || this.radioPanel.isOpen) {
       this.menu.close();
+      this.radioPanel.close();
       return;
     }
     if (this.paused) {
@@ -302,6 +335,7 @@ export class App {
 
   private applySettings(s: Settings, persist = true): void {
     this.settings = s;
+    this.menu.sync(s);
     this.pausedDrawn = false;
     if (persist) saveSettings(s);
     this.sfx.setVolume(s.effectsVolume);
@@ -313,6 +347,7 @@ export class App {
 
   /** Returns whether the scene changed. */
   private setScene(id: SceneId): boolean {
+    this.radio.setScene(id);
     if (id === this.sceneId && this.renderer.scene === SCENES[id]) return false;
     this.sceneId = id;
     document.body.dataset.scene = id;
@@ -322,6 +357,25 @@ export class App {
 
   private refreshAutoScene(): void {
     if (this.settings.scene === 'auto' && this.setScene(sceneForHour(new Date().getHours()))) this.refreshShare();
+  }
+
+  /**
+   * The radio pill takes the widest label (station · track, station, short name, icon only) that leaves the
+   * wordmark clear, then the tagline is placed around the HUD's new width.
+   */
+  private fitHud(): void {
+    if (!this.laidOut) return;
+    const pill = document.getElementById('radio-pill');
+    const hud = document.querySelector('.hud');
+    const mark = document.querySelector('.wordmark');
+    if (pill && hud && mark) {
+      const markRight = mark.getBoundingClientRect().right;
+      for (const fit of ['full', 'name', 'short', 'icon']) {
+        pill.dataset.fit = fit;
+        if (hud.getBoundingClientRect().left - markRight >= 16) break;
+      }
+    }
+    this.placeIntro();
   }
 
   /**
@@ -347,7 +401,8 @@ export class App {
     for (const sel of ['.hud', '.wordmark']) chromeBottom = Math.max(chromeBottom, document.querySelector(sel)?.getBoundingClientRect().bottom ?? 0);
     this.renderer.resize(innerWidth, innerHeight, Math.min(2, devicePixelRatio || 1), chromeBottom || undefined);
     document.body.style.setProperty('--garland-bottom', `${Math.round(this.renderer.garland.geo.bottom)}px`);
-    this.placeIntro();
+    this.laidOut = true;
+    this.fitHud();
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
     this.pausedDrawn = false; // resizing clears the stage
@@ -380,8 +435,9 @@ export class App {
     });
     el('pause-btn').addEventListener('click', () => this.pause(true));
     document.addEventListener('keydown', (e) => {
-      // The settings dialog handles its own Escape (and marks it handled); keys never reach the game while it is open.
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || isEditable(e.target)) return;
+      // The settings and radio dialogs handle their own Escape (and mark it handled); keys never reach the game while
+      // either is open.
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.isOpen || isEditable(e.target)) return;
       if (e.key === 'Escape' && this.paused) {
         e.preventDefault();
         this.resume();
@@ -425,7 +481,7 @@ export class App {
     this.pausedDrawn = false;
     document.body.classList.toggle('paused', on);
     el('pause').hidden = !on;
-    for (const sel of ['.hud', '#menu']) {
+    for (const sel of ['.hud', '#menu', '#radio-panel']) {
       const node = document.querySelector<HTMLElement>(sel);
       if (node) node.inert = on;
     }

@@ -27,7 +27,9 @@ test('loads cleanly', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
-    if (m.type() === 'error' && !m.text().includes('fonts.g')) errors.push(m.text());
+    // A host without Plan 3's /api/stations answers 404 (the radio treats that as "no remote stations").
+    const src = m.location().url;
+    if (m.type() === 'error' && !m.text().includes('fonts.g') && !src.includes('/api/stations')) errors.push(m.text());
   });
   await ready(page);
   await expect(page.locator('.wordmark')).toHaveText(/aglow/i);
