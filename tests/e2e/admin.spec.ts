@@ -182,6 +182,7 @@ test('delete a station with an in-page confirm', async ({ page }) => {
   await page.getByRole('button', { name: 'Delete station' }).click();
   const confirm = page.getByRole('group', { name: 'Confirm delete' });
   await expect(confirm).toContainText('Delete "Christmas Classics" and its 2 tracks?');
+  await expect(confirm).toContainText('copies may stay cached at the edge for up to a week');
   await confirm.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByRole('button', { name: /Christmas Classics/ })).toBeVisible();
   await page.getByRole('button', { name: 'Delete station' }).click();
