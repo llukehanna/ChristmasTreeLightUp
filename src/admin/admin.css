@@ -50,6 +50,7 @@ header {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 14px 24px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 2; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); background: rgba(14, 9, 6, 0.85);
 }
+header button[hidden] { display: none; }
 header .sub { color: var(--dim); font-size: 13px; }
 .spacer { flex: 1; }
 .msg { display: none; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 24px 0; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(255, 176, 112, 0.4); background: rgba(255, 176, 112, 0.08); }
