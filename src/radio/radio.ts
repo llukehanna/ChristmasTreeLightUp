@@ -151,11 +151,6 @@ export class Radio {
     this.fadeInUntil = 0;
   }
 
-  setShuffle(on: boolean): void {
-    this.player.setShuffle(on);
-    this.save({ shuffle: on });
-  }
-
   setLightShow(on: boolean): void {
     this.save({ lightShow: on });
   }
@@ -331,7 +326,7 @@ export class Radio {
       this.player.claimMediaSession();
       this.syncMusicBoxSession();
     } else if (station) {
-      this.player.playStation(station, this.settings.shuffle);
+      this.player.playStation(station);
       this.kind = 'station';
     } else {
       this.kind = 'embed';
