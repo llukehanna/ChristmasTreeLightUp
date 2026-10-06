@@ -27,13 +27,13 @@ interface Api {
 }
 
 /** A signed-in admin over a routed API. */
-async function admin(page: Page): Promise<Api> {
+async function admin(page: Page, data: StationsFile = fixture()): Promise<Api> {
   const state: Api = { puts: [], gets: 0, putStatus: null };
   await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: true } }));
   await page.route('**/api/admin/stations', async (r) => {
     if (r.request().method() === 'GET') {
       state.gets++;
-      return r.fulfill({ json: fixture() });
+      return r.fulfill({ json: data });
     }
     const body = r.request().postDataJSON() as Api['puts'][number];
     state.puts.push(body);
@@ -114,7 +114,7 @@ test('create a station, edit a track, save; a conflict offers a reload', async (
 
   // 3. Save: the PUT carries the version that was loaded.
   await save.click();
-  await expect(page.getByRole('status').filter({ hasText: 'Saved. Live in the game within about 5 minutes' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved. Live in the game within a minute' })).toBeVisible();
   expect(api.puts).toHaveLength(1);
   expect(api.puts[0].expectedVersion).toBe(7);
   expect(api.puts[0].stations.map((s) => s.id)).toEqual(['christmas-classics', 'christmas-jazz']);
@@ -338,6 +338,66 @@ test('a cover uploads through its own labelled input', async ({ page }) => {
   await expect(page.locator('.cover img')).toHaveAttribute('src', /covers\/christmas-classics\/0123abcd-art.png$/);
   await expect(page.getByLabel('Upload cover')).toHaveCount(1);
   expect(up.seen[0]).toMatchObject({ folder: 'covers', type: 'image/png' });
+});
+
+// ---------- lengths (a routed fake media host: no real storage, no real music) ----------
+
+/** MPEG-1 Layer III, 128 kbit/s: 16 000 audio bytes per second. Zeros after two frame headers. */
+function silentMp3(seconds: number): Buffer {
+  const b = Buffer.alloc(seconds * 16_000);
+  for (const at of [0, 417]) b.set([0xff, 0xfb, 0x90, 0x00], at);
+  return b;
+}
+
+test('"Fill in missing lengths" reads each 0:00 track by range request, marks the list unsaved, and one Save keeps them', async ({ page }) => {
+  const track = (id: string, name: string, duration: number) => ({ id, url: `${MEDIA}/tracks/christmas-classics/${name}.mp3`, title: name, artist: '', credit: '', duration });
+  const data: StationsFile = {
+    version: 3,
+    stations: [{ id: 'christmas-classics', name: 'Christmas Classics', description: '', tracks: [track('a', 'aaaa', 0), track('b', 'bbbb', 0), track('c', 'cccc', 61), track('d', 'dddd', 0)] }],
+  };
+  const files = new Map([
+    ['aaaa', silentMp3(95)],
+    ['cccc', silentMp3(10)],
+    ['dddd', silentMp3(200)],
+  ]);
+  const ranges: (string | undefined)[] = [];
+  // bbbb is missing from the host; the others answer with a 206 and Content-Range, like R2 does.
+  await page.route(`${MEDIA}/**`, (route) => {
+    const name = /\/([a-z]+)\.mp3$/.exec(route.request().url())?.[1] ?? '';
+    const file = files.get(name);
+    const range = route.request().headers()['range'];
+    ranges.push(range);
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'Content-Range' };
+    if (!file) return route.fulfill({ status: 404, headers: cors, body: 'missing' });
+    const end = Math.min(65_535, file.length - 1);
+    return route.fulfill({ status: 206, headers: { ...cors, 'Content-Range': `bytes 0-${end}/${file.length}` }, body: file.subarray(0, end + 1) });
+  });
+  const api = await admin(page, data);
+  const fill = page.getByRole('button', { name: /Fill in missing lengths/ });
+  await expect(fill).toHaveText('Fill in missing lengths (3)');
+  await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+  await fill.click();
+  await expect(page.locator('.msg')).toHaveText('Filled in 2 lengths; 1 could not be read and stay blank. Save to keep the rest.');
+  await expect(page.locator('tbody tr td.dur')).toHaveText(['1:35', '–', '1:01', '3:20']); // c was never asked
+  expect(ranges.every((r) => r === 'bytes=0-65535')).toBe(true);
+  expect(ranges).toHaveLength(3);
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v3 · unsaved changes');
+  await expect(fill).toHaveText('Fill in missing lengths (1)'); // the track that failed is still offered
+
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('header .sub')).toHaveText('Radio admin · v4');
+  expect(api.puts).toHaveLength(1);
+  expect(api.puts[0].stations[0].tracks.map((t) => t.duration)).toEqual([95, 0, 61, 200]);
+});
+
+test('an uploaded MP3 gets its length from its own bytes, even when the browser could not load it', async ({ page }) => {
+  await admin(page);
+  await uploads(page);
+  // Not decodable audio (frame headers over zeros), so only the byte reader can know it is 75 s long.
+  await page.getByLabel('Upload tracks').setInputFiles([{ name: 'Silent Night.mp3', mimeType: 'audio/mpeg', buffer: silentMp3(75) }]);
+  await expect(page.locator('tbody tr')).toHaveCount(3);
+  await expect(page.locator('tbody tr td.dur').last()).toHaveText('1:15');
 });
 
 test('phone width: no horizontal page scroll', async ({ page }) => {

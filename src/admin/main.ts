@@ -3,6 +3,7 @@ import { parseStation, type Station, type StationsFile, type Track } from '../ra
 import { ApiError, api, audioDuration } from './api.js';
 import { slugify } from './names.js';
 import { mustWarnBeforeLeaving } from './leave.js';
+import { fillMissingLengths, isMp3, mp3DurationOfBlob } from './lengths.js';
 import { UploadQueue, type QueueItem } from './queue.js';
 import { tagsFromBlob } from './tags.js';
 import { firstProblem, type Field, type Problem } from './validate.js';
@@ -51,6 +52,8 @@ let selected: string | null = null;
 let edits = 0;
 let savedAt = 0;
 let saving = false;
+/** A "Fill in missing lengths" run is in flight. */
+let filling = false;
 let screen: 'boot' | 'login' | 'editor' = 'boot';
 let creating = false;
 let deleting: string | null = null;
@@ -64,7 +67,10 @@ const stationById = (id: string): Station | undefined => file.stations.find((s) 
 const subtitle = h('span', { class: 'sub' });
 const saveBtn = h('button', { class: 'primary', textContent: 'Save', onclick: () => void save() });
 const signOutBtn = h('button', { textContent: 'Sign out', onclick: () => void signOut() });
-const header = h('header', {}, h('div', { class: 'wm' }, h('span', { class: 'dot' }), 'Aglow'), subtitle, h('div', { class: 'spacer' }), saveBtn, signOutBtn);
+/** Shown only while some track has no length (they were saved as 0:00 by an older upload). */
+const fillBtn = h('button', { textContent: 'Fill in missing lengths', onclick: () => void fillLengths() });
+fillBtn.hidden = true;
+const header = h('header', {}, h('div', { class: 'wm' }, h('span', { class: 'dot' }), 'Aglow'), subtitle, h('div', { class: 'spacer' }), fillBtn, saveBtn, signOutBtn);
 /** Errors and notices (the toast is for success). */
 const msgBox = h('div', { class: 'msg', attrs: { role: 'alert' } });
 const toastEl = h('div', { class: 'toast', attrs: { role: 'status', 'aria-live': 'polite' } });
@@ -111,9 +117,13 @@ function clearMessage(): void {
 
 function refreshHeader(): void {
   const busy = queue.busy;
-  saveBtn.disabled = saving || busy || !dirty();
+  saveBtn.disabled = saving || busy || filling || !dirty();
   saveBtn.textContent = saving ? 'Saving…' : 'Save';
-  saveBtn.title = busy ? 'Wait for the uploads to finish' : '';
+  saveBtn.title = busy ? 'Wait for the uploads to finish' : filling ? 'Wait for the lengths to be filled in' : '';
+  const missing = file.stations.reduce((n, s) => n + s.tracks.filter((t) => t.duration === 0).length, 0);
+  fillBtn.hidden = missing === 0 && !filling;
+  fillBtn.disabled = filling;
+  fillBtn.textContent = filling ? 'Filling in lengths…' : `Fill in missing lengths (${missing})`;
   subtitle.textContent = `Radio admin · v${file.version}${dirty() ? ' · unsaved changes' : ''}`;
 }
 
@@ -240,7 +250,7 @@ async function save(): Promise<void> {
     const r = await api.save(file.version, file.stations);
     file.version = r.version;
     savedAt = sentAt; // edits made while the save was in flight stay unsaved
-    toast('Saved. Live in the game within about 5 minutes');
+    toast('Saved. Live in the game within a minute');
   } catch (e) {
     if (isExpired(e)) expired();
     else if (e instanceof ApiError && e.status === 409) showConflict(e.message);
@@ -282,6 +292,38 @@ function showProblem(p: Problem): void {
   el?.focus();
 }
 
+// ---------- lengths ----------
+
+/**
+ * Looks up the length of every track saved as 0:00 from the public media host (a range request each, 4 at a time),
+ * fills them into the list and marks it unsaved; one Save then keeps them all. A track that can't be read stays 0.
+ */
+async function fillLengths(): Promise<void> {
+  if (filling) return;
+  const owner = new Map<Track, Station>();
+  for (const s of file.stations) for (const t of s.tracks) if (t.duration === 0) owner.set(t, s);
+  if (!owner.size) return;
+  filling = true;
+  clearMessage();
+  refreshHeader();
+  try {
+    const { found, failed } = await fillMissingLengths([...owner.keys()], (t, seconds) => {
+      const s = owner.get(t);
+      const i = s && file.stations.includes(s) ? s.tracks.indexOf(t) : -1;
+      if (!s || i < 0) return; // the list was reloaded or the track removed meanwhile
+      t.duration = seconds;
+      touch();
+      if (s.id === selected && screen === 'editor') tableHost?.querySelectorAll('tbody tr')[i]?.querySelector('.dur')?.replaceChildren(fmt(seconds));
+    });
+    if (failed) {
+      showMessage(`Filled in ${plural(found, 'length')}; ${failed} could not be read and stay blank.${found ? ' Save to keep the rest.' : ''}`);
+    } else if (found) toast(`Filled in ${plural(found, 'length')}. Save to keep them.`);
+  } finally {
+    filling = false;
+    refreshHeader();
+  }
+}
+
 // ---------- uploads ----------
 
 interface Job {
@@ -311,6 +353,18 @@ async function upload(folder: 'tracks' | 'covers', job: Job, onProgress: (pct: n
   }
 }
 
+/**
+ * A track's length in seconds. MP3s are measured from their own bytes, which works in a hidden tab; the browser's
+ * decoder (which a hidden tab throttles into a timeout) is only the fallback for other formats and unreadable MP3s.
+ */
+async function trackLength(f: File): Promise<number> {
+  if (isMp3(f)) {
+    const seconds = await mp3DurationOfBlob(f);
+    if (seconds > 0) return seconds;
+  }
+  return audioDuration(f);
+}
+
 async function runJob(job: Job, onProgress: (pct: number) => void): Promise<Result> {
   if (job.file.size > MAX_UPLOAD) throw new Error('The file is too large (30 MB max)');
   if (job.file.size === 0) throw new Error('The file is empty');
@@ -318,11 +372,7 @@ async function runJob(job: Job, onProgress: (pct: number) => void): Promise<Resu
     const { url } = await upload('covers', job, onProgress);
     return { kind: 'cover', url };
   }
-  const [{ url }, duration, tags] = await Promise.all([
-    upload('tracks', job, onProgress),
-    audioDuration(job.file),
-    tagsFromBlob(job.file, job.file.name),
-  ]);
+  const [{ url }, duration, tags] = await Promise.all([upload('tracks', job, onProgress), trackLength(job.file), tagsFromBlob(job.file, job.file.name)]);
   const title = tags.title.trim().slice(0, 200) || 'Untitled';
   return { kind: 'track', track: { id: crypto.randomUUID(), url, title, artist: tags.artist.trim().slice(0, 200), credit: '', duration } };
 }
