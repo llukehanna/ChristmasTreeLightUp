@@ -5,6 +5,7 @@ import { slugify } from './names.js';
 import { mustWarnBeforeLeaving } from './leave.js';
 import { fillMissingLengths, isMp3, mp3DurationOfBlob } from './lengths.js';
 import { UploadQueue, type QueueItem } from './queue.js';
+import { retryOnce } from './retry.js';
 import { tagsFromBlob } from './tags.js';
 import { firstProblem, type Field, type Problem } from './validate.js';
 import { watchdog } from './watchdog.js';
@@ -333,8 +334,15 @@ interface Job {
 }
 type Result = { kind: 'track'; track: Track } | { kind: 'cover'; url: string };
 
-/** One upload, aborted as "Upload stalled" when neither progress nor an answer arrives for STALL_MS. */
-async function upload(folder: 'tracks' | 'covers', job: Job, onProgress: (pct: number) => void): Promise<{ url: string }> {
+/**
+ * One upload, aborted as "Upload stalled" when neither progress nor an answer arrives for STALL_MS. A network error or a
+ * 5xx is retried once by itself after a short wait (each attempt with its own stall watchdog); the row's Retry stays.
+ */
+function upload(folder: 'tracks' | 'covers', job: Job, onProgress: (pct: number) => void): Promise<{ url: string }> {
+  return retryOnce(() => uploadOnce(folder, job, onProgress));
+}
+
+async function uploadOnce(folder: 'tracks' | 'covers', job: Job, onProgress: (pct: number) => void): Promise<{ url: string }> {
   const ctl = new AbortController();
   const dog = watchdog(STALL_MS, () => ctl.abort(new Error('Upload stalled')));
   try {

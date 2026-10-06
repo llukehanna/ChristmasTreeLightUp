@@ -309,6 +309,23 @@ test('an upload with no progress for 2 minutes fails as stalled, and Retry sends
   await expect(page.getByLabel('Track 3 title')).toHaveValue('Late');
 });
 
+test('an upload that fails with a 503 is retried once by itself; a 413 is not', async ({ page }) => {
+  await admin(page);
+  const calls: Record<string, number> = {};
+  await page.route(/\/api\/admin\/upload\?/, (route) => {
+    const name = new URL(route.request().url()).searchParams.get('name') ?? '';
+    calls[name] = (calls[name] ?? 0) + 1;
+    if (name === 'flaky.mp3' && calls[name] === 1) return route.fulfill({ status: 503, json: { error: 'Upload failed. Try again.' } });
+    if (name === 'big.mp3') return route.fulfill({ status: 413, json: { error: 'The file is too large (30 MB max)' } });
+    return route.fulfill({ json: { url: `${MEDIA}/tracks/christmas-classics/0123abcd-${name}`, key: 'k', size: 3000 } });
+  });
+  await page.getByLabel('Upload tracks').setInputFiles([mp3('flaky.mp3'), mp3('big.mp3')]);
+  await expect(page.locator('.up', { hasText: 'big.mp3' })).toContainText('failed: The file is too large (30 MB max)');
+  await expect(page.locator('.up', { hasText: 'flaky.mp3' })).toContainText('done'); // after its automatic retry
+  expect(calls).toEqual({ 'flaky.mp3': 2, 'big.mp3': 1 });
+  await expect(page.getByLabel('Track 3 title')).toHaveValue('flaky');
+});
+
 test('after a conflict, Reload is refused while uploads are running', async ({ page }) => {
   const api = await admin(page);
   const up = await uploads(page);
