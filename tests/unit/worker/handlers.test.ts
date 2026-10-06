@@ -476,7 +476,7 @@ describe('uploads', () => {
     expect(isUrl(url)).toBe(true);
     expect(size).toBe(5);
     expect([...(bucket.objects.get(key)?.body ?? [])]).toEqual([1, 2, 3, 4, 5]);
-    expect(bucket.objects.get(key)?.httpMetadata).toEqual({ contentType: 'audio/mpeg', cacheControl: 'public, max-age=31536000, immutable' });
+    expect(bucket.objects.get(key)?.httpMetadata).toEqual({ contentType: 'audio/mpeg', cacheControl: 'public, max-age=604800' });
     // The body is handed over as a stream, never read into memory first.
     expect(put.mock.calls[0][1]).toBeInstanceOf(ReadableStream);
   });

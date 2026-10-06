@@ -47,8 +47,9 @@ export async function PUT(req: Request, env: AppEnv): Promise<Response> {
   const key = `${folder}/${station}/${randomHex(4)}-${name}`;
   let size: number;
   try {
+    // A week, not immutable: a removed file can stay cached at the edge that long (the admin says so when deleting).
     const obj = await env.MUSIC.put(key, req.body, {
-      httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
+      httpMetadata: { contentType, cacheControl: 'public, max-age=604800' },
     });
     if (!obj) throw new Error('not written');
     size = obj.size;

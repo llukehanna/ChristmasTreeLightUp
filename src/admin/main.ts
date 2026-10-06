@@ -632,7 +632,7 @@ function deleteControl(s: Station): HTMLElement {
   return h(
     'div',
     { class: 'confirm', attrs: { role: 'group', 'aria-label': 'Confirm delete' } },
-    h('span', { textContent: `Delete "${s.name || s.id}" and its ${plural(s.tracks.length, 'track')}? The files are removed from storage when you save.` }),
+    h('span', { textContent: `Delete "${s.name || s.id}" and its ${plural(s.tracks.length, 'track')}? The files are removed from storage when you save, but copies may stay cached at the edge for up to a week.` }),
     h('button', {
       class: 'danger',
       textContent: 'Delete',
