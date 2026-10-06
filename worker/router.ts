@@ -22,8 +22,9 @@ const isMethod = (m: string): m is keyof Methods => m === 'GET' || m === 'POST' 
 
 /** The Worker's request handler (it only runs for /api/*; everything else is static assets). */
 export async function handle(req: Request, env: AppEnv, ctx: Ctx): Promise<Response> {
+  let pathname = '';
   try {
-    const { pathname } = new URL(req.url);
+    pathname = new URL(req.url).pathname;
     const route = ROUTES.get(pathname);
     if (!route) return adminJson({ error: 'Not found' }, { status: 404 });
     const handler = isMethod(req.method) ? route[req.method] : undefined;
@@ -32,7 +33,10 @@ export async function handle(req: Request, env: AppEnv, ctx: Ctx): Promise<Respo
       return adminJson({ error: 'Cross-origin request refused' }, { status: 403 });
     }
     return await handler(req, env, ctx);
-  } catch {
+  } catch (e) {
+    // Visible in Workers Logs (wrangler.jsonc "observability"). Only the route and the error's class: never its
+    // message, the request body or cookies, or a secret.
+    console.error('api', pathname, req.method, e instanceof Error ? e.name : 'error');
     // Never a 500, and never the error itself (it could carry request data).
     return adminJson({ error: 'Something went wrong. Try again.' }, { status: 503 });
   }

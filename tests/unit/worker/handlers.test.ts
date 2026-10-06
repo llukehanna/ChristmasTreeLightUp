@@ -124,6 +124,35 @@ describe('routing', () => {
     expect(r.status).toBe(503);
     expect(r.headers.get('cache-control')).toBe('no-store');
   });
+  it('logs the route, method and error class of an unexpected error, never its message, body, cookie or secrets', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const broken = new Proxy(env(), {
+        get(target, p, receiver) {
+          if (p === 'ADMIN_PASSWORD') throw new RangeError(`boom ${PASSWORD} ${SECRET}`);
+          return Reflect.get(target, p, receiver) as unknown;
+        },
+      });
+      const r = await call(req('PUT', '/api/admin/upload?folder=tracks&station=x&name=secret-name.mp3', { headers: { cookie: 'aglow_admin=abc.def' }, body: 'private body' }), broken);
+      expect(r.status).toBe(503);
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0]).toEqual(['api', '/api/admin/upload', 'PUT', 'RangeError']);
+      const logged = JSON.stringify(log.mock.calls);
+      for (const leak of ['boom', PASSWORD, SECRET, 'private body', 'abc.def', 'secret-name']) expect(logged).not.toContain(leak);
+      expect(JSON.stringify(await r.json())).not.toContain('boom');
+
+      log.mockClear();
+      const odd = new Proxy(env(), {
+        get() {
+          throw 'a thrown string';
+        },
+      });
+      expect((await call(req('GET', '/api/admin/session'), odd)).status).toBe(503);
+      expect(log.mock.calls).toEqual([['api', '/api/admin/session', 'GET', 'error']]);
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
 
 describe('origin check', () => {
