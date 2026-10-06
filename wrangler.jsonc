@@ -6,6 +6,9 @@
   // Station data and uploaded media live in the R2 bucket bound as MUSIC; media is public at MUSIC_BASE_URL.
   // Secrets (ADMIN_PASSWORD, SESSION_SECRET) are never in this file: see .dev.vars.example.
   "name": "aglow",
+  "routes": [
+    { "pattern": "aglow.lukeghanna.com", "custom_domain": true }
+  ],
   "compatibility_date": "2026-10-01",
   "main": "worker/index.ts",
   "assets": {
