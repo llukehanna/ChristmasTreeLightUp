@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseStationsFile } from '../../../src/radio/schema';
 
-const track = { id: 't1', url: 'https://x.public.blob.vercel-storage.com/a.mp3', title: 'Sleigh Ride', artist: 'Someone', credit: 'Uploaded by Luke', duration: 185 };
+const track = { id: 't1', url: 'https://aglow-music.example/tracks/christmas-jazz/a1b2c3d4-sleigh-ride.mp3', title: 'Sleigh Ride', artist: 'Someone', credit: 'Uploaded by Luke', duration: 185 };
 const file = { version: 3, stations: [{ id: 'christmas-jazz', name: 'Christmas Jazz', description: 'Curated by Luke', tracks: [track] }] };
 
 describe('parseStationsFile', () => {
@@ -12,8 +12,8 @@ describe('parseStationsFile', () => {
     const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: '/audio/a.m4a' }] }] };
     expect(parseStationsFile(f)).not.toBeNull();
   });
-  it('accepts HTTPS Vercel Blob URL with query string', () => {
-    const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'https://example.public.blob.vercel-storage.com/file.m4a?foo=bar' }] }] };
+  it('accepts an HTTPS media-host URL with a query string', () => {
+    const f = { ...file, stations: [{ ...file.stations[0], tracks: [{ ...track, url: 'https://aglow-music.example/tracks/christmas-jazz/e5f6a7b8-file.m4a?foo=bar' }] }] };
     expect(parseStationsFile(f)).not.toBeNull();
   });
   it('rejects bad ids, empty titles, http URLs and duplicate ids', () => {
