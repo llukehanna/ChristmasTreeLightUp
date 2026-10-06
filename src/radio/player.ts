@@ -75,7 +75,7 @@ class Deck {
   trackId: string | null = null;
   constructor(ctx: AudioContext, out: AudioNode) {
     // Required for any audio routed through a MediaElementSource from another origin (not just for analysers):
-    // without it the element's output is silenced. TODO(Plan 3, Task 4): the R2 bucket's CORS policy must send Access-Control-Allow-Origin.
+    // without it the element's output is silenced. The R2 media host sends Access-Control-Allow-Origin: * (verified).
     this.el.crossOrigin = 'anonymous';
     this.el.preload = 'auto';
     const src = ctx.createMediaElementSource(this.el);
