@@ -13,7 +13,7 @@
     "e2e": "playwright test",
     "og": "node scripts/og.mjs",
     "icon": "node scripts/icon.mjs",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run typecheck && npm test && npm run build && wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261005.1",
