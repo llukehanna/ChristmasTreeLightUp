@@ -95,8 +95,8 @@ Consequence: times aren't directly comparable with the original. The puzzle rule
 ## 3. Architecture
 
 - **Front end:** Vite + TypeScript, no framework.
-- **Backend:** a few Vercel serverless functions for admin, plus Vercel Blob for music storage.
-- **Hosting:** a new Vercel project in team `lllukehanna-8723's projects`. Domain `aglow.lukeghanna.com` is added through a CNAME in Cloudflare, where lukeghanna.com's DNS lives. Its web hosting is already on Vercel.
+- **Backend:** one small Cloudflare Worker (`worker/`) for the public station list and the admin API, plus an R2 bucket for station data and music.
+- **Hosting:** Cloudflare Workers static assets serve the Vite build; the Worker runs only for `/api/*` (`run_worker_first`), so the game itself costs no Worker CPU. The custom domain `aglow.lukeghanna.com` is attached to the Worker, in the Cloudflare account where lukeghanna.com's DNS lives. Deploys are `npm run deploy` (typecheck, tests and build first, then `wrangler deploy`).
 
 ```
 src/
@@ -121,8 +121,8 @@ src/
     analyser.ts    beat/energy extraction for the light show
   ui/          HUD, radio panel/sheet, settings menu, results card, share, toasts
   store/       localStorage: in-progress game, stats, settings
-api/           Vercel functions: admin session, Blob upload token, station writes
-admin/         admin page (same stack)
+worker/        Cloudflare Worker (Web APIs only): public station list, admin session, station writes, uploads to R2
+admin.html     admin page entry; its code is src/admin/ (same stack, never in the game bundle)
 tests/         vitest (core) + Playwright (smoke)
 ```
 
@@ -289,12 +289,12 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 **Behaviour:**
 - Music fades in on the player's **first tile tap**.
 - Tapping the pill opens the radio panel; its play button mutes and unmutes, and muting is remembered. Station, volume and play state persist in localStorage.
-- Shuffle is on by default, with a 3-second crossfade between tracks.
+- Stations always play in shuffled order (there is no shuffle control), with a 3-second crossfade between tracks.
 - Previous, next and a seekable scrubber.
 - Media Session metadata and actions for lock-screen and media-key control. Music Box and Fireplace are Web Audio only (no media element), so their lock-screen and media-key controls depend on browser support.
 - The artist shows under the title in the panel, and after it in the pill when there is room (station · title · artist, then station · title, the name, a short name, the icon).
 - If a station fails 3 times in a row (§8) while it plays, the radio falls back to Music Box; the fallback isn't remembered as a choice.
-- If `stations.json` can't be fetched, or has nothing playable, Music Box and Fireplace still work; with no remembered choice the radio falls back to Music Box. Music Box never waits for the catalog.
+- If the station list (`/api/stations`) can't be fetched, or has nothing playable, Music Box and Fireplace still work; with no remembered choice the radio falls back to Music Box. Music Box never waits for the catalog.
 - Each scene suggests a matching station without forcing it: Fireside with Christmas Jazz, Midnight with Music Box, Frost with Christmas Classics.
 
 **Music Box:**
@@ -311,7 +311,7 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 - **Desktop:** a 380px glass popover below the pill; the game stays playable behind it. It contains:
   - Now playing: generated glowing-bulb cover art in the scene palette (or the uploaded cover), the station label in the accent colour, the title in Instrument Serif, and the artist.
   - Scrubber with times.
-  - Controls: shuffle, previous, play/pause, next, light-show toggle.
+  - Controls: previous, play/pause, next, light-show toggle.
   - Stations list, then a "Spotify or Apple Music" entry that opens a link field and presets.
   - Music and Effects sliders, and the credit line.
 - **Phone:** the same content as a bottom sheet with a grab handle and larger controls.
@@ -353,33 +353,37 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 
 ## 7. Admin
 
-- **`/admin`** is a separate Vite entry using the same design language, so it's usable on a phone.
+Runs on the Cloudflare Worker with an R2 bucket (`aglow-music`, ruling P14); no Vercel and no database.
+
+- **`/admin`** is a separate Vite entry (`admin.html`) using the same design language, so it's usable on a phone. It sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `noindex`.
 - **Auth:**
-  - `POST /api/admin/login` compares against the `ADMIN_PASSWORD` environment variable using a constant-time comparison.
-  - It sets an HttpOnly, Secure, SameSite=Strict cookie holding an HMAC-signed session (`ADMIN_SECRET`) that lasts 7 days.
-  - A basic rate limit applies to login attempts.
+  - `POST /api/admin/login` compares against the `ADMIN_PASSWORD` secret using a constant-time comparison.
+  - It sets an HttpOnly, Secure, SameSite=Strict cookie holding an HMAC-signed session that lasts 7 days. The key is HMAC-SHA256 of the `SESSION_SECRET` secret with the password, so changing either signs everyone out.
+  - Login is rate limited (in-memory per IP and global, plus a Cloudflare ratelimit binding). Admin `POST`/`PUT` requests must carry a same-origin `Origin`.
+  - Secrets are `ADMIN_PASSWORD` (Luke's) and `SESSION_SECRET` (256 random bits), both set with `wrangler secret put`; never in the repo.
 - **Stations:** create, rename, set description, reorder and delete.
 - **Tracks:**
-  - Upload via Vercel Blob client uploads. `POST /api/admin/upload-token` issues a token only for a valid session; the allowed types are `audio/mpeg`, `audio/mp4`, `audio/aac` and `audio/ogg`, up to 30MB.
-  - Duration is read client-side.
-  - Edit title, artist, credit and cover image; reorder; delete (which also deletes the blob).
+  - Uploads are streamed through `PUT /api/admin/upload` straight into R2 under `tracks/<station>/<8hex>-<name>` (covers under `covers/…`); only a valid session may upload. The allowed audio types are `audio/mpeg`, `audio/mp4`, `audio/x-m4a`, `audio/aac` and `audio/ogg`, up to 30MB. New files carry `Cache-Control: public, max-age=604800`.
+  - Duration is read from the file's own bytes (an MP3's Xing/Info frame count, else its first frame's bitrate), not from the browser's decoder, so it works in a hidden tab; the decoder is only the fallback for M4A. "Fill in missing lengths" repairs tracks saved at 0:00 with `Range` requests to the media host.
+  - Edit title, artist, credit and cover image; reorder; delete (which also deletes the file after a successful save; edge caches may keep a copy for up to a week).
 - **Data:**
-  - `stations.json` in Blob (public read, no-cache), containing `{version, stations:[{id, name, description, cover?, tracks:[{id, url, title, artist, credit, duration, cover?}]}]}`.
-  - Writes go through `PUT /api/admin/stations`: the session is validated, then a read-modify-write with a `version` check (optimistic concurrency).
-- **Cost:** Vercel Blob storage and transfer. About 100 tracks is roughly 500MB, which fits the Hobby tier at modest traffic. Watch usage in December.
+  - A single object, `stations/current.json`, containing `{version, stations:[{id, name, description, cover?, tracks:[{id, url, title, artist, credit, duration, cover?}]}]}`. The game reads it through `GET /api/stations` (cached for a minute), so a save is live within about a minute.
+  - Writes go through `PUT /api/admin/stations`: the session is validated, then an etag-conditional `put` with a `version` check (optimistic concurrency; a conflict is a 409 and a prompt to reload).
+- **Media** is public at `https://aglow-music.lukeghanna.com` (the bucket's custom domain, CORS `*`). Uploads that are never saved stay in R2; they are harmless.
+- **Cost:** R2 storage and requests, with no egress fees. About 100 tracks is roughly 500MB, inside R2's free tier. The Workers Free plan allows 10 ms CPU per request and 100k requests a day, which is why there are no expensive KDFs and no Worker on static paths.
 
 ## 8. Error handling
 
 | Failure | Behaviour |
 |---|---|
 | Audio blocked before a gesture | Silent until the first tap, which is also when music starts. No error UI. |
-| `stations.json` fetch fails | Music Box and Fireplace (Music Box is the fallback), and a quiet "Some stations unavailable" line in the panel |
+| Station list fetch fails | Music Box and Fireplace (Music Box is the fallback), and a quiet "Some stations unavailable" line in the panel |
 | Track fails to load or decode | Skip to the next track (never while paused or switched away: the next play picks it up). After 3 consecutive failures, mark the station unavailable for the session; a playing station falls back to Music Box. |
 | Invalid Spotify/Apple link | Inline "That link isn't a playlist we can play" message |
 | Canvas blur filter unsupported | Downsample-then-upsample blur (§4.6) |
 | Low frame rate | Adaptive quality tiers |
 | localStorage unavailable or corrupt | Treat as a fresh player. Wrap every read and write in try/catch. Validate a saved game against the mask before restoring it; discard it if invalid. |
-| Admin API errors | Toast with the message. An upload is retried once. A version conflict prompts a reload. |
+| Admin API errors | Toast with the message. An upload that fails with a network error or a 5xx is retried once automatically (not a 401, another 4xx or a stall), then offers a manual Retry. A version conflict prompts a reload. |
 
 ## 9. Testing
 
