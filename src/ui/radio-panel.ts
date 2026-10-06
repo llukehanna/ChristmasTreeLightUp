@@ -6,7 +6,6 @@ import { el } from './dom';
 
 /** Static markup only: every title, credit and station name is set later with textContent. */
 const ICON = {
-  shuffle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3c5 0 5 10 10 10h3M4 17h3c1.6 0 2.7-1 3.6-2.4M14 9.4C15 8 16 7 17 7h3M18 4l3 3-3 3M18 14l3 3-3 3"/></svg>',
   prev: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="6" width="2.4" height="12" rx="1"/><path d="M19.2 6.9v10.2a.9.9 0 0 1-1.4.75l-7.6-5.1a.9.9 0 0 1 0-1.5l7.6-5.1a.9.9 0 0 1 1.4.75z"/></svg>',
   next: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="16.1" y="6" width="2.4" height="12" rx="1"/><path d="M4.8 6.9v10.2a.9.9 0 0 0 1.4.75l7.6-5.1a.9.9 0 0 0 0-1.5L6.2 6.15a.9.9 0 0 0-1.4.75z"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.6 5.3v13.4a1 1 0 0 0 1.53.85l10.4-6.7a1 1 0 0 0 0-1.7L10.13 4.45A1 1 0 0 0 8.6 5.3z"/></svg>',
@@ -50,7 +49,6 @@ const PANEL_HTML = `
       <div class="times"><span class="pos">0:00</span><span class="dur">0:00</span></div>
     </div>
     <div class="ctl">
-      <button class="shuffle" type="button" aria-label="Shuffle">${ICON.shuffle}</button>
       <button class="prev" type="button" aria-label="Previous">${ICON.prev}</button>
       <button class="play" type="button" aria-label="Play">${ICON.play}</button>
       <button class="next" type="button" aria-label="Next">${ICON.next}</button>
@@ -215,7 +213,6 @@ export class RadioPanel {
     this.q('.play').addEventListener('click', () => this.radio.playPause());
     this.q('.next').addEventListener('click', () => this.radio.next());
     this.q('.prev').addEventListener('click', () => this.radio.prev());
-    this.q('.shuffle').addEventListener('click', () => this.radio.setShuffle(!this.radio.view().settings.shuffle));
     this.q('.show').addEventListener('click', () => this.radio.setLightShow(!this.radio.view().settings.lightShow));
     const scrub = this.q<HTMLInputElement>('.scrub');
     scrub.addEventListener('input', () => {
@@ -311,9 +308,6 @@ export class RadioPanel {
     const steps = v.kind === 'station' || carol;
     this.q<HTMLButtonElement>('.next').disabled = !steps;
     this.q<HTMLButtonElement>('.prev').disabled = !steps;
-    const shuffle = this.q<HTMLButtonElement>('.shuffle');
-    shuffle.disabled = v.kind !== 'station';
-    shuffle.setAttribute('aria-pressed', String(v.settings.shuffle));
     const show = this.q<HTMLButtonElement>('.show');
     show.disabled = v.kind === 'embed';
     show.setAttribute('aria-pressed', String(v.settings.lightShow && v.kind !== 'embed'));

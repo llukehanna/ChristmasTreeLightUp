@@ -1,6 +1,7 @@
 import { audio } from '../audio/context';
+import type { Rng } from '../core/rng';
 import { crossfadeLength, equalPowerCurve } from './dsp';
-import { buildQueue, nextIndex, prevIndex } from './queue';
+import { nextIndex, prevIndex, shuffled } from './queue';
 import type { Station, Track } from './schema';
 
 export const CROSSFADE_S = 3;
@@ -108,10 +109,11 @@ export class RadioPlayer {
   private mediaSessionReady = false;
   private readonly unavailable = new Set<string>();
 
-  constructor(private readonly out: () => AudioNode | null) {}
+  /** `rng` orders every station's queue; it is only injectable so tests can pin the order. */
+  constructor(private readonly out: () => AudioNode | null, private readonly rng: Rng = Math.random) {}
 
   /** Call inside the user gesture that starts playback (it primes both decks for iOS). */
-  playStation(station: Station, shuffle: boolean): void {
+  playStation(station: Station): void {
     if (station.tracks.length === 0) return; // nothing to play: leave whatever is playing alone
     if (this.unavailable.has(station.id)) {
       // Show the station as unavailable and stop the old one rather than restarting a station that already failed.
@@ -122,7 +124,7 @@ export class RadioPlayer {
       return;
     }
     this.station = station;
-    this.queue = buildQueue(station.tracks, shuffle, Math.random);
+    this.queue = shuffled(station.tracks, this.rng);
     this.failures = 0;
     this.load(0, false);
   }
@@ -158,14 +160,6 @@ export class RadioPlayer {
     } catch {
       /* unsupported: ignore */
     }
-  }
-
-  setShuffle(on: boolean): void {
-    if (!this.station || this.queue.length === 0) return;
-    const current = this.queue[this.index];
-    const rest = this.station.tracks.filter((t) => t.id !== current.id);
-    this.queue = [current, ...buildQueue(rest, on, Math.random)];
-    this.index = 0;
   }
 
   next(): void {

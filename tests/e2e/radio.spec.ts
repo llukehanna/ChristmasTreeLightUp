@@ -25,7 +25,7 @@ const bits = (page: Page) => page.evaluate(() => (window as unknown as W).__aglo
 const pinSource = (page: Page, source: string) =>
   page.addInitScript((s) => {
     if (localStorage.getItem('aglow.radio') === null)
-      localStorage.setItem('aglow.radio', JSON.stringify({ v: 1, on: true, source: s, embedUrl: null, volume: 0.7, shuffle: true, lightShow: true }));
+      localStorage.setItem('aglow.radio', JSON.stringify({ v: 1, on: true, source: s, embedUrl: null, volume: 0.7, lightShow: true }));
   }, source);
 /** Clicks the centre of a real tile. */
 async function tapTile(page: Page): Promise<void> {
@@ -308,10 +308,14 @@ test('a remote station streams from the R2 media host through /api/stations: nex
       body: wav.subarray(start, end + 1),
     });
   });
-  // The station is the remembered source and plays in order, so the first tile tap starts it.
+  // Stations always shuffle; pin Math.random to the top of its range so the shuffle keeps the catalog order and the track sequence below is deterministic.
+  await page.addInitScript(() => {
+    Math.random = () => 0.999999;
+  });
+  // The station is the remembered source, so the first tile tap starts it.
   await page.addInitScript(() => {
     if (localStorage.getItem('aglow.radio') === null)
-      localStorage.setItem('aglow.radio', JSON.stringify({ v: 1, on: true, source: 'christmas-classics', embedUrl: null, volume: 0.7, shuffle: false, lightShow: true }));
+      localStorage.setItem('aglow.radio', JSON.stringify({ v: 1, on: true, source: 'christmas-classics', embedUrl: null, volume: 0.7, lightShow: true }));
   });
   await ready(page);
   await expect.poll(async () => (await radio(page)).stations).toEqual(['christmas-classics']);

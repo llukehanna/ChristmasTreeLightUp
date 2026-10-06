@@ -127,7 +127,8 @@ beforeEach(() => {
   };
   audio.ctx = ctx as unknown as AudioContext;
   audio.music = new FakeGain() as unknown as GainNode;
-  player = new RadioPlayer(() => audio.music);
+  // A top-of-range rng makes the shuffle a no-op, so these tests see the catalog order; the shuffle itself has its own test.
+  player = new RadioPlayer(() => audio.music, () => 0.999999);
 });
 
 afterEach(() => {
@@ -147,9 +148,20 @@ const deckWith = (id: string): FakeMedia => {
 const gainOf = (m: FakeMedia): number => m.gain?.gain.value ?? Number.NaN;
 const totalPlays = () => FakeMedia.all.reduce((n, m) => n + m.plays.length, 0);
 
+it('playStation always plays the station in a shuffled order: the injected rng, not the catalog order, decides it', () => {
+  // rng = 0 swaps every slot with slot 0: [t1,t2,t3] becomes [t2,t3,t1].
+  player = new RadioPlayer(() => audio.music, () => 0);
+  player.playStation(station(3));
+  deckWith('t2').fire('playing');
+  advance(300);
+  expect(FakeMedia.all.some((m) => m.src === '/a/t1.m4a' && m.plays.length > 0)).toBe(false);
+  player.next();
+  expect(deckWith('t3').plays).toEqual(['/a/t3.m4a']);
+});
+
 /** Starts a station and lets its first track start playing and fade in. */
 function startPlaying(n = 3): FakeMedia {
-  player.playStation(station(n), false);
+  player.playStation(station(n));
   const first = deckWith('t1');
   first.fire('playing');
   advance(300);
@@ -203,7 +215,7 @@ it('skips to the next track on an error', () => {
 it('marks the station unavailable after 3 failures in a row, and says so', () => {
   const unavailable = vi.fn();
   player.onUnavailable = unavailable;
-  player.playStation(station(3), false);
+  player.playStation(station(3));
   deckWith('t1').fire('error');
   deckWith('t2').fire('error');
   expect(player.isUnavailable('jazz')).toBe(false);
@@ -217,7 +229,7 @@ it('marks the station unavailable after 3 failures in a row, and says so', () =>
 });
 
 it('a track that plays resets the failure count', () => {
-  player.playStation(station(3), false);
+  player.playStation(station(3));
   deckWith('t1').fire('error');
   deckWith('t2').fire('error');
   deckWith('t3').fire('playing');
@@ -226,7 +238,7 @@ it('a track that plays resets the failure count', () => {
 });
 
 it('retries a one-track station until the failure limit', () => {
-  player.playStation(station(1), false);
+  player.playStation(station(1));
   const first = deckWith('t1');
   first.fire('error');
   const retry = FakeMedia.all.find((m) => m !== first && m.src === '/a/t1.m4a');
@@ -282,7 +294,7 @@ it('I1: an error after a stop (another source took over) does not start playback
 it('I1: a third error while stopped marks the station unavailable without playing anything', () => {
   const unavailable = vi.fn();
   player.onUnavailable = unavailable;
-  player.playStation(station(3), false);
+  player.playStation(station(3));
   deckWith('t1').fire('error');
   deckWith('t2').fire('error');
   player.stop();
@@ -389,7 +401,7 @@ it('stall watchdog: `stalled` counts the same way', () => {
 it('stall watchdog: a track that never starts is a stall too, and 3 in a row make the station unavailable', () => {
   const unavailable = vi.fn();
   player.onUnavailable = unavailable;
-  player.playStation(station(3), false); // no events at all from the network
+  player.playStation(station(3)); // no events at all from the network
   advance(STALL_MS + 100);
   expect(player.snapshot().track?.id).toBe('t2');
   advance(STALL_MS + 100);
@@ -450,7 +462,7 @@ it('stall watchdog: a user pause cancels it, and so does a stop', () => {
 it('stall watchdog: a blocked play() (NotAllowedError) drops the old timer; a later resume gets a fresh full window', async () => {
   player.prime();
   FakeMedia.all[1].rejectPlayWith = 'NotAllowedError'; // the deck the first track loads on
-  player.playStation(station(3), false);
+  player.playStation(station(3));
   await vi.advanceTimersByTimeAsync(0); // let the rejection land
   expect(player.snapshot().playing).toBe(false);
   advance(STALL_MS - 100); // tap to resume just before the original deadline

@@ -9,7 +9,6 @@ export function shuffled<T>(items: readonly T[], rng: Rng): T[] {
   return a;
 }
 
-export const buildQueue = <T>(items: readonly T[], shuffle: boolean, rng: Rng): T[] => (shuffle ? shuffled(items, rng) : [...items]);
 export const nextIndex = (i: number, n: number): number => (i + 1) % n;
 /** Previous restarts the current track if it has played for more than 3 seconds. */
 export const prevIndex = (i: number, n: number, positionSec: number): number => (positionSec > 3 ? i : (i - 1 + n) % n);

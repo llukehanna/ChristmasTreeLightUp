@@ -132,13 +132,15 @@ body[data-scene='frost'] .radio .art { background: radial-gradient(70% 70% at 50
 
 /* Transport: cream glyphs, gold when a toggle is on, a gold play button with a cranberry glyph. */
 .radio .ctl { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 8px 0 18px; }
+/* An empty slot the width of a button where Shuffle used to be, so Play stays centred between it and the light-show toggle. */
+.radio .ctl::before { content: ''; flex: none; width: 40px; height: 40px; }
 .radio .ctl button {
   all: unset; box-sizing: border-box; cursor: pointer; width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center; color: #f6e7c8; opacity: 0.88; transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 .radio .ctl button:hover:not(:disabled) { opacity: 1; background: rgba(255, 220, 160, 0.07); }
 .radio .ctl svg { width: 21px; height: 21px; display: block; }
-.radio .ctl .shuffle svg, .radio .ctl .show svg { width: 19px; height: 19px; }
+.radio .ctl .show svg { width: 19px; height: 19px; }
 .radio .ctl button[aria-pressed='false'] { opacity: 0.42; }
 .radio .ctl button[aria-pressed='true'] { color: #f3d492; opacity: 1; filter: drop-shadow(0 0 5px rgba(255, 196, 100, 0.55)); }
 .radio .ctl button:disabled { opacity: 0.2; cursor: default; filter: none; color: #f6e7c8; }
