@@ -433,6 +433,22 @@ it('stall watchdog: a timeupdate with advancing time clears it', () => {
   expect(player.snapshot().track?.id).toBe('t1');
 });
 
+it('stall watchdog: when it fires with the playhead past the mark (a resumed page, no timeupdate yet), that is progress, not an error', () => {
+  const a = startPlaying();
+  a.currentTime = 1;
+  a.fire('waiting');
+  advance(STALL_MS - 1000);
+  a.currentTime = 1.4; // moved on, but no `timeupdate` was delivered before the timer
+  advance(1100);
+  expect(player.snapshot()).toMatchObject({ playing: true, track: { id: 't1' } });
+  advance(STALL_MS * 2); // and nothing is still pending
+  expect(player.snapshot().track?.id).toBe('t1');
+  // A real stall later re-arms it and still skips.
+  a.fire('waiting');
+  advance(STALL_MS + 100);
+  expect(player.snapshot().track?.id).toBe('t2');
+});
+
 it('stall watchdog: a timeupdate that has not advanced does not clear it', () => {
   const a = startPlaying();
   a.currentTime = 1;

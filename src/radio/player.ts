@@ -376,7 +376,7 @@ export class RadioPlayer {
   /**
    * Start the stall watchdog for the active deck unless it is already running (it measures from the first sign of
    * trouble). After STALL_MS without progress the track is treated like an `error`: skipped and counted toward the
-   * 3-failures rule. Cleared by `playing`, a timeupdate that advances, pause, stop and every load.
+   * 3-failures rule. Cleared by `playing`, a timeupdate that advances (or, when it fires, a playhead that has advanced), pause, stop and every load.
    */
   private armStall(): void {
     const el = this.activeEl();
@@ -388,9 +388,13 @@ export class RadioPlayer {
   private stallTimer(ms: number): number {
     const gen = this.gen;
     return window.setTimeout(() => {
+      const mark = this.stall?.from;
       this.stall = null;
       const d = this.decks?.[this.active];
       if (gen !== this.gen || !this.playing || !d || d.trackId === null) return;
+      // A suspended page (iOS) can resume with this timer firing before the catch-up `timeupdate`: a playhead that
+      // has moved past the mark is progress, so the watchdog stands down (a later `waiting` re-arms it).
+      if (mark !== undefined && d.el.currentTime > mark) return;
       this.onError();
     }, ms);
   }
