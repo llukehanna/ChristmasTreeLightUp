@@ -5,7 +5,7 @@ import { resetPublicCache } from '../../../worker/lib/public-stations';
 import { createToken, sessionKey, verifyToken } from '../../../worker/lib/session';
 import { CURRENT } from '../../../worker/lib/stations-store';
 import { resetLoginLimits } from '../../../worker/routes/admin/login';
-import { handle } from '../../../worker/router';
+import { handle, type Route } from '../../../worker/router';
 import { FakeBucket } from './fake-bucket';
 import { NO_DB } from './no-db';
 
@@ -194,11 +194,29 @@ describe('write checks and fake mode', () => {
     expect(stored()).toEqual(v3);
   });
   it('refuses every request with 500 misconfigured when fake sign-in is set on a non-local host', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const r = await call(req('GET', '/api/stations'), env({ AUTH_MODE: 'fake' }));
     expect(r.status).toBe(500);
     expect(await r.json()).toEqual({ error: 'misconfigured', message: 'Sign-in is misconfigured.' });
-    const local = await handle(new Request('http://localhost/api/stations'), env({ AUTH_MODE: 'fake' }), ctx);
-    expect(local.status).toBe(200);
+    // Logged without any detail (no host, path, cookie or secret).
+    expect(logged.mock.calls).toEqual([['api', 'misconfigured']]);
+    for (const host of ['localhost', '127.0.0.1', '[::1]', 'localhost:8787']) {
+      const local = await handle(new Request(`http://${host}/api/stations`), env({ AUTH_MODE: 'fake' }), ctx);
+      expect(local.status, host).toBe(200);
+    }
+    for (const host of ['localhost.evil.example', '127.0.0.2', 'aglow.lukeghanna.com']) {
+      const remote = await handle(new Request(`http://${host}/api/stations`), env({ AUTH_MODE: 'fake' }), ctx);
+      expect(remote.status, host).toBe(500);
+    }
+  });
+
+  it("passes a route's capture groups to its handler as raw, still URL-encoded params", async () => {
+    let seen: readonly string[] = [];
+    const routes: readonly Route[] = [['GET', /^\/api\/test\/([^/]+)\/x$/, (_r, _e, _c, params) => ((seen = params), new Response('ok'))]];
+    const r = await handle(new Request(`${SITE}/api/test/a%2Fb%20c/x`), env(), ctx, routes);
+    expect(r.status).toBe(200);
+    expect(seen).toEqual(['a%2Fb%20c']);
+    expect((await handle(new Request(`${SITE}/api/test/a/b/x`), env(), ctx, routes)).status).toBe(404);
   });
 });
 
