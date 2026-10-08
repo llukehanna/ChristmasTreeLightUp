@@ -11,6 +11,8 @@ import { DAY_MS, dayNumber, isTzOffset, localDayOf, localMidnight } from './days
 export const TREND = 0.6;
 /** Spread of the log-normal factor on each game's time above the best (solve times skew right). */
 export const SIGMA = 0.5;
+/** The spread below the median is wider, so a few games come close to the best instead of the best standing alone. */
+export const LOW_SIGMA = 0.9;
 /** The best run is among the last 40% of games. */
 export const BEST_FROM = 0.6;
 
@@ -128,7 +130,7 @@ function times(n: number, bestMs: number, total: number, rng: Rng): number[] {
     if (i === bestAt) continue;
     const pos = n > 1 ? i / (n - 1) : 0;
     const z = Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
-    weights.push((1 + TREND * (1 - pos)) * Math.exp(SIGMA * z));
+    weights.push((1 + TREND * (1 - pos)) * Math.exp((z < 0 ? LOW_SIGMA : SIGMA) * z));
   }
   const shares = split(excess - floor * others, weights);
   const out: number[] = [];
