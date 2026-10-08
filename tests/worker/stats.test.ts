@@ -63,7 +63,9 @@ describe('GET /api/me/stats', () => {
   it('a new account: zeros and nulls', async () => {
     const res = await stats(await signIn(env, 'ana@example.com', 'Meridian'));
     expect(res.headers.get('Cache-Control')).toBe('no-store');
-    expect(await res.json()).toEqual({ solved: 0, totalMs: 0, averageMs: null, bestMs: null, streak: 0, longestStreak: 0, lastSolvedDay: null, imported: 0 } satisfies AccountStats);
+    const body = (await res.json()) as AccountStats;
+    expect(typeof body.userId).toBe('number');
+    expect({ ...body, userId: 0 }).toEqual({ userId: 0, solved: 0, totalMs: 0, averageMs: null, bestMs: null, streak: 0, longestStreak: 0, lastSolvedDay: null, imported: 0 } satisfies AccountStats);
   });
 
   it('counts every finished game, imported ones too, and averages them; the best is the best ranked run', async () => {
@@ -75,6 +77,7 @@ describe('GET /api/me/stats', () => {
     await game(ana, 30_000, null); // never finished: not counted
     await game(bo, 10_000, noonPdt(0)); // someone else's
     expect(await (await stats(await signIn(env, 'ana@example.com'))).json()).toEqual({
+      userId: ana,
       solved: 3,
       totalMs: 155_000,
       averageMs: 51_667,

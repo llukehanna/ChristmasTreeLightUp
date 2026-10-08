@@ -11,7 +11,7 @@ vi.mock('../../../src/api/client', async (orig) => ({ ...(await orig<typeof impo
 
 import { Accounts } from '../../../src/ui/accounts';
 
-const stats = (solved: number): AccountStats => ({ solved, totalMs: solved * 60_000, averageMs: 60_000, bestMs: 50_000, streak: 1, longestStreak: 1, lastSolvedDay: '2026-10-08', imported: 0 });
+const stats = (solved: number): AccountStats => ({ userId: 1, solved, totalMs: solved * 60_000, averageMs: 60_000, bestMs: 50_000, streak: 1, longestStreak: 1, lastSolvedDay: '2026-10-08', imported: 0 });
 const games: MyGamesResponse = { best: null, inTop: 0, total: 0, games: [] };
 const me = { name: 'Meridian', isAdmin: false };
 

@@ -387,10 +387,11 @@ test("signed in with a bigger device history, the tag keeps the device's numbers
   await solveByTapping(page);
   const results = page.locator('#results');
   await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
-  // The device has solved more (8) than the account holds (this one game): the tag shows the device's three numbers
-  // instead of dropping them on sign-in. Your games still totals the account.
+  // The device had 8 at its first signed-in view and the account holds 1 (this game): the tag shows the device's three
+  // numbers instead of dropping them on sign-in. Your games still totals the account.
   await expect(results.locator('#r-solved')).toHaveText('8');
   await expect(results.locator('#r-streak')).toHaveText('11');
+  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.statsBaseline') ?? '{}') as { solved?: number }).solved)).toBe(8);
   // The device still records its own.
   expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.stats') ?? '{}') as { solved?: number }).solved)).toBe(8);
 
@@ -405,15 +406,19 @@ test("signed in with a bigger device history, the tag keeps the device's numbers
   expect(fits).toBe(true);
 });
 
-test("signed in with more games on the account than on this device, the tag shows the account's numbers", async ({ page }) => {
+test("signed in with as many games on the account as the device had at first sign-in, the tag shows the account's numbers", async ({ page }) => {
   const player = await asPlayer(page);
   await seedDeviceHistory(page);
+  // A baseline left by another account on this browser is replaced, not obeyed.
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('aglow.statsBaseline')) localStorage.setItem('aglow.statsBaseline', JSON.stringify({ userId: 1, solved: 999 }));
+  });
   // The account holds 312 games (as after an import or play on other devices); the device has 8 after this win.
   await page.route(
     (url) => url.pathname === '/api/me/stats',
     (route) =>
       route.fulfill({
-        json: { solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 41_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-10-08', imported: 300 },
+        json: { userId: 4242, solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 41_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-10-08', imported: 300 },
         headers: { 'Cache-Control': 'no-store' },
       }),
   );
@@ -428,6 +433,7 @@ test("signed in with more games on the account than on this device, the tag show
   await expect(results.locator('#r-solved')).toHaveText('312');
   await expect(results.locator('#r-avg')).toHaveText('1:18');
   await expect(results.locator('#r-streak')).toHaveText('4');
+  expect(await page.evaluate(() => localStorage.getItem('aglow.statsBaseline'))).toBe(JSON.stringify({ userId: 4242, solved: 8 }));
 });
 
 test("signed in but the stats can't be read:the tag keeps this device's numbers, and Your games says so", async ({ page }) => {

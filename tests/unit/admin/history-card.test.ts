@@ -17,7 +17,7 @@ const today = (): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const device = (): Stats => ({ v: 1, solved: 3, totalSeconds: 9300, bestSeconds: 3000, bestScore: -250000, streak: 1, longestStreak: 2, lastSolvedDay: today() });
-const account: AccountStats = { solved: 5, totalMs: 0, averageMs: null, bestMs: null, streak: 0, longestStreak: 0, lastSolvedDay: null, imported: 0 };
+const account: AccountStats = { userId: 1, solved: 5, totalMs: 0, averageMs: null, bestMs: null, streak: 0, longestStreak: 0, lastSolvedDay: null, imported: 0 };
 const flush = async (): Promise<void> => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 };

@@ -21,7 +21,7 @@ import { SCENES, sceneForHour, type SceneId } from './render/scenes';
 import { VisualState } from './render/visual-state';
 import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
-import { loadStats, localDay, recordWin, saveStats } from './store/stats';
+import { loadStats, localDay, recordWin, saveStats, statsBaseline } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
 import { el } from './ui/dom';
@@ -96,6 +96,8 @@ export class App {
   private returning = false;
   /** The account's stats for the solved tree on the tag (spec 2026-10-08 §6.2); null: the device's. */
   private accountStats: AccountStats | null = null;
+  /** The device's solved count when it first showed this account's tag (aglow.statsBaseline); null: storage failed. */
+  private statsBase: number | null = null;
   /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
   private statsSeq = 0;
 
@@ -210,6 +212,7 @@ export class App {
     this.claimState = null;
     this.returning = false;
     this.accountStats = null;
+    this.statsBase = null;
     this.statsSeq++;
     this.setOutcome(null);
     this.vis = new VisualState(GRID.w * GRID.h);
@@ -331,7 +334,7 @@ export class App {
     setTimeout(() => {
       if (this.board !== game || this.starting) return;
       this.prepareShare();
-      this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: statsViewFor(this.stats, this.accountStats) });
+      this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: statsViewFor(this.stats, this.accountStats, this.statsBase) });
     }, delay + 1500);
   }
 
@@ -465,21 +468,22 @@ export class App {
 
   /**
    * The results tag's Solved, Average and Day streak: the account's when signed in (the same on every device), unless
-   * this device has solved more than the account (a pre-accounts history), and this device's while they load, offline,
-   * or signed out (`statsViewFor`). The device keeps recording its own either way.
+   * the account has fewer games than this device had when it first showed them (a pre-accounts history), and this
+   * device's while they load, offline, or signed out (`statsViewFor`). The device keeps recording its own either way.
    */
   private async syncStats(): Promise<void> {
     const seq = ++this.statsSeq;
     if (!this.won || !this.session.current) {
       this.accountStats = null;
-      this.results.setStats(statsViewFor(this.stats, null));
+      this.results.setStats(statsViewFor(this.stats, null, null));
       return;
     }
     try {
       const a = await api.myStats();
       if (seq !== this.statsSeq) return;
       this.accountStats = a;
-      this.results.setStats(statsViewFor(this.stats, a));
+      this.statsBase = statsBaseline(a.userId, this.stats.solved);
+      this.results.setStats(statsViewFor(this.stats, a, this.statsBase));
     } catch {
       // offline, or signed out meanwhile: the device's numbers stay
     }

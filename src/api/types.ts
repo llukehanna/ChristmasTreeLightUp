@@ -134,6 +134,8 @@ export interface ImportResponse {
 
 /** GET /api/me/stats (spec 2026-10-08 §3.2): the account's stats, the same on every device. */
 export interface AccountStats {
+  /** The signed-in account's id: the client keys its per-device stats baseline (spec §6.2) by it. */
+  userId: number;
   /** Finished games, any ranked state, imported ones included. */
   solved: number;
   totalMs: number;
