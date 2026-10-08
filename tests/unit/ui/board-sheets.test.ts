@@ -117,6 +117,28 @@ it('your games: the account totals, and imported runs say so', () => {
   expect(texts(render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now), '.acct-totals b')).toEqual(['–', '–', '–', '–']);
 });
 
+it('your games totals: a list with labels; loading, failed and empty read as words, not bare dashes', () => {
+  const games: MyGamesResponse = { best: null, inTop: 0, total: 0, games: [] };
+  const totals = (stats?: Parameters<typeof listView>[5]) => render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now, stats).querySelector('.acct-totals');
+  const ready = totals({ status: 'ready', data: { solved: 1234, totalMs: 0, averageMs: null, bestMs: null, streak: 1000, longestStreak: 1000, lastSolvedDay: null, imported: 0 } });
+  expect(ready?.getAttribute('role')).toBe('list');
+  expect(ready?.getAttribute('aria-label')).toBe('Account totals');
+  expect([...(ready?.querySelectorAll('[role="listitem"]') ?? [])].map((n) => n.getAttribute('aria-label'))).toEqual([null, 'Average: not available', null, null]);
+  // One number format for 1,000 and up, as on the results tag.
+  expect(texts(ready as HTMLElement, 'b')).toEqual(['1,234', '–', '1,000', '1,000']);
+  // Loading: busy, and each dash says so.
+  const loading = totals();
+  expect(loading?.getAttribute('aria-busy')).toBe('true');
+  expect(loading?.querySelector('[role="listitem"]')?.getAttribute('aria-label')).toBe('Solved: loading');
+  // Failed: dashes that say "not available", and a visible note.
+  const failed = render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now, { status: 'error' });
+  expect(failed.querySelector('.acct-totals')?.hasAttribute('aria-busy')).toBe(false);
+  expect(failed.querySelector('.acct-totals [role="listitem"]')?.getAttribute('aria-label')).toBe('Solved: not available');
+  expect(failed.querySelector('.acct-totals-err')?.textContent).toBe("Couldn't load your totals.");
+  expect(texts(failed, '.acct-totals b')).toEqual(['–', '–', '–', '–']);
+  expect(totals({ status: 'loading' })?.nextElementSibling?.classList.contains('acct-totals-err')).toBe(false);
+});
+
 it('your games, signed out: an invitation to sign in', () => {
   const el = render('games', { status: 'loading' }, { status: 'loading' }, null, now);
   expect(el.querySelector('.acct-empty h3')?.textContent).toBe('Keep every tree');

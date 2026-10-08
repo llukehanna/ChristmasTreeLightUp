@@ -1,5 +1,5 @@
 import type { AccountStats, BoardResponse, BoardRow, MyGamesResponse, RecentGame, User } from '../api/types';
-import { esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
+import { count, esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
 import { G_LOGO, I } from './icons';
 import type { SheetView } from './sheet';
 
@@ -59,11 +59,15 @@ function gameHtml(g: RecentGame, now: number): string {
 /** The account's totals (GET /api/me/stats), the same on every device; dashes until they arrive. */
 function totalsHtml(s: Loadable<AccountStats>): string {
   const d = s.status === 'ready' ? s.data : null;
-  const cell = (value: string, label: string): string => `<div><b>${value}</b><span>${label}</span></div>`;
-  return `<div class="acct-totals">${cell(d ? Number(d.solved).toLocaleString('en-US') : '–', 'Solved')}${cell(
-    d && d.averageMs !== null ? formatMs(Number(d.averageMs)) : '–',
+  // A dash reads as "Solved: loading" (or "not available"), not as a bare symbol.
+  const gap = s.status === 'loading' ? 'loading' : 'not available';
+  const cell = (value: string | null, label: string): string =>
+    `<div role="listitem"${value === null ? ` aria-label="${label}: ${gap}"` : ''}><b>${value ?? '–'}</b><span>${label}</span></div>`;
+  const row = `<div class="acct-totals" role="list" aria-label="Account totals"${s.status === 'loading' ? ' aria-busy="true"' : ''}>${cell(d ? count(d.solved) : null, 'Solved')}${cell(
+    d && d.averageMs !== null ? formatMs(Number(d.averageMs)) : null,
     'Average',
-  )}${cell(d ? String(Number(d.streak)) : '–', 'Day streak')}${cell(d ? String(Number(d.longestStreak)) : '–', 'Longest')}</div>`;
+  )}${cell(d ? count(d.streak) : null, 'Day streak')}${cell(d ? count(d.longestStreak) : null, 'Longest')}</div>`;
+  return s.status === 'error' ? `${row}<p class="acct-note acct-totals-err">Couldn't load your totals.</p>` : row;
 }
 
 function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, now: number, s: Loadable<AccountStats>): string {

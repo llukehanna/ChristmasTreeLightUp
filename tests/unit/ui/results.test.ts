@@ -34,3 +34,12 @@ it('the tag paints the view it is given; setStats repaints the three numbers, sh
   expect(['r-solved', 'r-avg', 'r-streak'].map(text)).toEqual(['312', '1:18', '4']);
   expect(text('r-badge')).toBe('Best 1:00');
 });
+
+it('counts of 1,000 and up carry a comma, as in Your games; the device view is the fallback when the account view is dropped', () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  r.setStats(accountStatsView({ ...account, solved: 1234, streak: 1000 }));
+  expect(['r-solved', 'r-avg', 'r-streak'].map(text)).toEqual(['1,234', '1:18', '1,000']);
+  // Offline or signed out: the app repaints the device's numbers.
+  r.setStats(deviceStatsView(device));
+  expect(['r-solved', 'r-avg', 'r-streak'].map(text)).toEqual(['8', '1:40', '11']);
+});

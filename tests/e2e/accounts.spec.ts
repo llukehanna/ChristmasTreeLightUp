@@ -395,6 +395,42 @@ test("signed in, the results tag and Your games show the account's stats, not th
   const games = page.getByRole('dialog', { name: 'Your games' });
   await expect(games.locator('.acct-totals span')).toHaveText(['Solved', 'Average', 'Day streak', 'Longest']);
   await expect(games.locator('.acct-totals b').first()).toHaveText('1');
+  // The four columns fit the sheet at this width (375 px on the phone project).
+  const fits = await games.locator('.acct-body').evaluate((n) => n.scrollWidth <= n.clientWidth);
+  expect(fits).toBe(true);
+});
+
+test("signed in but the stats can't be read: the tag keeps this device's numbers, and Your games says so", async ({ page }) => {
+  const player = await asPlayer(page);
+  await page.addInitScript(() => {
+    if (localStorage.getItem('aglow.stats')) return;
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('aglow.stats', JSON.stringify({ v: 1, solved: 7, totalSeconds: 700, bestSeconds: 60, bestScore: 44000, streak: 10, longestStreak: 10, lastSolvedDay: yesterday }));
+  });
+  await page.route(
+    (url) => url.pathname === '/api/me/stats',
+    (route) => route.abort(),
+  );
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
+  await expect(results.locator('#r-solved')).toHaveText('8');
+  await expect(results.locator('#r-streak')).toHaveText('11');
+
+  await page.locator('#account-chip').click();
+  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+  await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
+  const games = page.getByRole('dialog', { name: 'Your games' });
+  await expect(games.locator('.acct-totals-err')).toHaveText("Couldn't load your totals.");
+  await expect(games.locator('.acct-totals b')).toHaveText(['–', '–', '–', '–']);
+  await expect(games.locator('.acct-game')).toHaveCount(1);
 });
 
 test('the settings menu links to the privacy page', async ({ page }) => {

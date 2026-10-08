@@ -31,6 +31,8 @@ export class Accounts {
   private board: Loadable<BoardResponse> = { status: 'loading' };
   private games: Loadable<MyGamesResponse> = { status: 'loading' };
   private stats: Loadable<AccountStats> = { status: 'loading' };
+  /** Bumped by each stats load and each session change: only the newest answer is kept. */
+  private statsSeq = 0;
   private name: NameState = { status: 'empty', value: '' };
   private nameTimer = 0;
   private nameSeq = 0;
@@ -138,9 +140,13 @@ export class Accounts {
   /** Your games' totals: the account's stats (spec 2026-10-08 §6.3). */
   private async loadStats(): Promise<void> {
     if (!this.session.current) return;
+    const seq = ++this.statsSeq;
     try {
-      this.stats = { status: 'ready', data: await api.myStats() };
+      const data = await api.myStats();
+      if (seq !== this.statsSeq) return;
+      this.stats = { status: 'ready', data };
     } catch {
+      if (seq !== this.statsSeq) return;
       if (this.stats.status !== 'ready') this.stats = { status: 'error' };
     }
     this.refreshList();
@@ -170,6 +176,7 @@ export class Accounts {
     this.menu.render(user, null);
     this.games = { status: 'loading' };
     this.stats = { status: 'loading' };
+    this.statsSeq++;
     this.refreshList();
     if (user && user.name === null && !this.sheet.isOpen && this.firstNameAsk()) this.openName();
   }
