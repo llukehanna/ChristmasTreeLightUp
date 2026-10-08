@@ -193,9 +193,23 @@ test('play signed out, Save to leaderboard: sign in, pick a name, and the run is
   await results.getByRole('button', { name: 'Save to leaderboard' }).click();
   const card = page.getByRole('dialog', { name: 'Sign in' });
   await expect(card).toContainText(/Your \d+:\d\d\.\d is waiting on this device\./);
+  // Back from Google, /api/me answers slowly: the tag says "Saving…", never a flash of "Save to leaderboard".
+  let releaseMe = (): void => {};
+  const meHeld = new Promise<void>((r) => (releaseMe = r));
+  await page.route(
+    (url) => url.pathname === '/api/me',
+    async (route) => {
+      await meHeld;
+      await route.fallback();
+    },
+  );
   await card.getByRole('link', { name: 'Continue with Google' }).click();
   // Back from (fake) Google on the same results tag, asked for a name; naming claims the run.
   await page.waitForURL(/\/\?test$/);
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await expect(results.locator('.rib-line')).toHaveText('Saving your time…');
+  await expect(results.locator('.rib-ribbon')).toHaveCount(0);
+  releaseMe();
   await pickName(page, player.name);
   await expect(results).toBeVisible({ timeout: 15_000 });
   await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · New personal best!$/, { timeout: 15_000 });
@@ -219,7 +233,10 @@ test('paused more than 20 times: the tag says "Unranked: paused too long" under 
   const results = page.locator('#results');
   await expect(results).toBeVisible({ timeout: 15_000 });
   await expect(results.locator('.rib-line')).toHaveText('Unranked: paused too long');
-  await expect(results.getByRole('button', { name: 'Unranked' })).toBeDisabled();
+  await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();
+  await expect(results.getByRole('button', { name: 'Unranked' })).toHaveCount(0);
+  // The device's best pill would contradict the grey rosette: it steps aside.
+  await expect(results.locator('#r-badge')).toBeHidden();
   await expect(results.locator('.rib-ribbon')).toHaveCount(0);
 });
 
@@ -237,9 +254,28 @@ test("a finish that never reaches the server: Couldn't save this run, and a late
   // it, so the verdict is always the same.
   await page.waitForTimeout(3500);
   await results.getByRole('button', { name: 'Retry' }).click();
-  await expect(results.locator('.rib-line')).toHaveText("Unranked: couldn't verify the clock");
+  await expect(results.locator('.rib-line')).toHaveText('Saved, unranked: reached the server too late');
   await expect.poll(() => game(page)).toMatchObject({ outcome: 'done', reason: 'clock', ranked: false });
-  await expect(results.getByRole('button', { name: 'Unranked' })).toBeDisabled();
+  await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();
+});
+
+test('a claim that fails after naming offers Retry, and Retry ranks the run', async ({ page }) => {
+  const player = await asPlayer(page);
+  let fails = 1;
+  await page.route('**/api/games/claim', (route) => (fails-- > 0 ? route.abort() : route.fallback()));
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^Would place #/, { timeout: 15_000 });
+  await results.getByRole('button', { name: 'Save to leaderboard' }).click();
+  await page.getByRole('dialog', { name: 'Sign in' }).getByRole('link', { name: 'Continue with Google' }).click();
+  await page.waitForURL(/\/\?test$/);
+  await pickName(page, player.name);
+  await expect(results.locator('.rib-line')).toHaveText("Couldn't save this run. Retry", { timeout: 15_000 });
+  await results.getByRole('button', { name: 'Retry' }).click();
+  await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · New personal best!$/, { timeout: 15_000 });
+  await expect(results.getByRole('button', { name: /^Rank \d+ of \d+: open the leaderboard$/ })).toBeVisible();
 });
 
 test('a tree the server never started: "Unranked: offline" on the tag', async ({ page }) => {

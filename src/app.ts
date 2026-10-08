@@ -5,6 +5,7 @@ import { Session } from './api/session';
 import type { ClaimResponse, FinishResult } from './api/types';
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
+import { CLOCK_TOLERANCE_MS } from './core/judge';
 import type { LogEntry } from './core/log';
 import { GRID } from './core/mask';
 import { Run } from './core/run';
@@ -88,6 +89,10 @@ export class App {
   private won: WonRun | null = null;
   private outcome: RunOutcome | null = null;
   private claiming = false;
+  /** This run's claim after naming: it failed ('stuck', Retry), or the server didn't take it ('gone'). */
+  private claimState: 'stuck' | 'gone' | null = null;
+  /** Back from Google for this run (the return marker matched): "Saving…" while /api/me is in flight. */
+  private returning = false;
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -173,7 +178,7 @@ export class App {
     const saved = loadGame(GRID);
     const returning = takeReturn();
     if (saved?.won && saved.online && (saved.won.result === null || returning === saved.online.gameId)) {
-      this.restoreWin(saved, saved.won, now);
+      this.restoreWin(saved, saved.won, now, returning === saved.online.gameId);
     } else if (saved && !saved.won) {
       this.beginGame(now, new Board(GRID, saved.state), saved.elapsedMs, saved);
       this.moved = true;
@@ -197,6 +202,8 @@ export class App {
     this.live = true;
     this.online = run.online;
     this.won = null;
+    this.claimState = null;
+    this.returning = false;
     this.setOutcome(null);
     this.vis = new VisualState(GRID.w * GRID.h);
     this.winAt = null;
@@ -322,11 +329,12 @@ export class App {
   }
 
   /** Back from sign-in, or a reload before the finish was answered: the solved tree and its results tag again (stats were recorded at the win). */
-  private restoreWin(saved: LoadedGame, won: WonRun, now: number): void {
+  private restoreWin(saved: LoadedGame, won: WonRun, now: number, returning: boolean): void {
     this.beginGame(now, new Board(GRID, saved.state), saved.elapsedMs, saved);
     this.moved = true;
     this.board.settleWin();
     this.won = won;
+    this.returning = returning;
     this.presentWin(now, won, false);
     if (won.result) this.setOutcome({ kind: 'done', result: won.result });
     else void this.sendFinish();
@@ -338,6 +346,13 @@ export class App {
     const won = this.won;
     if (!run || !won) return;
     const game = this.board;
+    // Sent (or resent, after a reload or a Retry) past the judge's clock tolerance: the server keeps the run but can't
+    // time it ('clock'). Remembered with the run, so the tag can say why after a reload or sign-in.
+    const last = this.run.log.entries.at(-1);
+    if (!won.late && Date.now() - (this.run.startEpoch + (last?.t ?? 0)) > CLOCK_TOLERANCE_MS) {
+      won.late = true;
+      this.saveWon();
+    }
     this.setOutcome({ kind: 'saving' });
     try {
       const result = await finishWithRetry(run.gameId, this.run.log.entries);
@@ -364,23 +379,47 @@ export class App {
     if (this.outcome?.kind === 'failed') void this.sendFinish();
   }
 
-  /** Signed-out runs saved on this browser join the account, 8 per request, once it has a name (spec §5.4). */
+  /**
+   * Signed-out runs saved on this browser join the account, 8 per request, once it has a name (spec §5.4). The run on
+   * the results tag says how its claim went: a failed request offers Retry; a claim the server didn't take (claimed in
+   * another tab, or gone) can't be retried, and says the run is saved to Your games.
+   */
   private async claimAll(): Promise<void> {
     if (this.claiming || !this.session.current?.name) return;
     this.claiming = true;
+    const current = this.won && this.online ? this.online.gameId : null;
+    const stillHere = (): boolean => current !== null && this.online?.gameId === current;
     try {
       for (const batch of claimBatches(readClaims(Date.now()))) {
+        const mine = current !== null && batch.some((c) => c.id === current);
+        if (mine && this.claimState === 'stuck') this.setClaimState(null);
         let res: ClaimResponse;
         try {
           res = await api.claim(batch);
         } catch {
+          if (mine && stillHere()) this.setClaimState('stuck');
           return; // keep them for next time
         }
         removeClaims(batch.map((c) => c.id));
         for (const r of res.results) this.onClaimed(r);
+        if (mine && stillHere() && !res.results.some((r) => r.id === current)) this.setClaimState('gone');
       }
     } finally {
       this.claiming = false;
+    }
+  }
+
+  private setClaimState(s: 'stuck' | 'gone' | null): void {
+    this.claimState = s;
+    this.setOutcome(this.outcome);
+  }
+
+  /** The ribbon's Retry: the finish that never arrived, or the claim that failed. */
+  private retry(): void {
+    if (this.outcome?.kind === 'failed') this.retryFinish();
+    else if (this.claimState === 'stuck') {
+      this.setClaimState(null);
+      void this.claimAll();
     }
   }
 
@@ -400,10 +439,11 @@ export class App {
   /** The run's outcome on the results tag (pick 3B): drawn now, so it is there when the tag appears. */
   private setOutcome(o: RunOutcome | null): void {
     this.outcome = o;
-    renderRibbon(el('results'), o && ribbonModel(o, this.session.current), {
+    const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning };
+    renderRibbon(el('results'), o && ribbonModel(o, this.session.current, ctx), {
       board: () => this.accounts.openBoard(),
       save: () => this.saveRun(),
-      retry: () => this.retryFinish(),
+      retry: () => this.retry(),
     });
   }
 

@@ -116,6 +116,14 @@ it('v2 keeps the online run, its log and a won run', () => {
   expect(loadGame(GRID)).toEqual({ state: { solution: [...b.solution], bits: b.bits, colors: [...b.colors] }, elapsedMs: 5000, startEpoch: 123, online, log, won });
 });
 
+it('a won run sent too late keeps saying so after a reload', () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null };
+  const won = { seconds: 81, score: 41_900, newBest: false, result: null, late: true };
+  saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
+  expect(loadGame(GRID)?.won).toEqual(won);
+});
+
 it('a save from before accounts (v1) restores as a local tree', () => {
   const b = Board.random(GRID, mulberry32(4));
   localStorage.setItem('aglow.game', JSON.stringify({ v: 1, solution: b.solution, bits: b.bits, colors: b.colors, elapsedMs: 9000 }));
@@ -130,6 +138,7 @@ it('refuses a v2 save with a bad log, half an online run or a malformed result',
     (raw) => (raw.seed = null),
     (raw) => (raw.gameId = 'short'),
     (raw) => (raw.won = { seconds: 1, score: 1, newBest: false, result: { id: 'x' } }),
+    (raw) => (raw.won = { seconds: 1, score: 1, newBest: false, result: null, late: 'yes' }),
     (raw) => (raw.startEpoch = 'soon'),
   ];
   for (const mutate of mutations) {
