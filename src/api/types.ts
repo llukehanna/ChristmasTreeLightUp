@@ -75,6 +75,8 @@ export interface RecentGame {
   reason: UnrankedReason | null;
   /** This run is the player's best ranked run. */
   isBest: boolean;
+  /** Imported from a device's pre-accounts stats (spec 2026-10-08), not played on Aglow. */
+  imported: boolean;
 }
 
 export interface MyGamesResponse {
@@ -123,4 +125,22 @@ export interface ImportResponse {
   streak: number;
   longestStreak: number;
   clamped: boolean;
+}
+
+/** GET /api/me/stats (spec 2026-10-08 §3.2): the account's stats, the same on every device. */
+export interface AccountStats {
+  /** Finished games, any ranked state, imported ones included. */
+  solved: number;
+  totalMs: number;
+  /** round(totalMs / solved); null with no game. */
+  averageMs: number | null;
+  /** The best ranked run (the board's "your best"); null with none. */
+  bestMs: number | null;
+  /** Consecutive local days ending today or yesterday; 0 otherwise. */
+  streak: number;
+  longestStreak: number;
+  /** The last local day with a finish, YYYY-MM-DD. */
+  lastSolvedDay: string | null;
+  /** How many of `solved` were imported. */
+  imported: number;
 }
