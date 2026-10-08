@@ -9,6 +9,15 @@ afterEach(() => {
 });
 
 describe('api client', () => {
+  it('asks for the account stats with the local day and the offset, never from the cache', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    const at = new Date(2026, 9, 8, 21, 0);
+    await api.myStats(at);
+    expect(fetch.mock.calls[0][0]).toBe(`/api/me/stats?today=2026-10-08&tz=${at.getTimezoneOffset()}`);
+    expect(fetch.mock.calls[0][1].cache).toBe('no-store');
+  });
+
   it('sends same-origin JSON and reads JSON', async () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ id: 'x', seed: 1, genVersion: 1, claim: null }));
     vi.stubGlobal('fetch', fetch);

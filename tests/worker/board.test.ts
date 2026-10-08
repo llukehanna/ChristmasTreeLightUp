@@ -222,9 +222,9 @@ describe('your games', () => {
       inTop: 2,
       total: 3,
       games: [
-        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false },
-        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false },
-        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true },
+        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false },
+        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false },
+        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false },
       ],
     });
   });

@@ -80,9 +80,9 @@ it('your games: best, rank, top-50 count, then recent games with their status', 
     inTop: 2,
     total: 340,
     games: [
-      { id: 'a', ms: 94_200, finishedAt: now - 3_600_000, ranked: true, reason: null, isBest: false },
-      { id: 'b', ms: 125_100, finishedAt: day, ranked: false, reason: 'paused', isBest: false },
-      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true },
+      { id: 'a', ms: 94_200, finishedAt: now - 3_600_000, ranked: true, reason: null, isBest: false, imported: false },
+      { id: 'b', ms: 125_100, finishedAt: day, ranked: false, reason: 'paused', isBest: false, imported: false },
+      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: false },
     ],
   };
   const el = render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now);

@@ -1,8 +1,9 @@
-import type { MeResponse, MyGamesResponse, RecentGame, UnrankedReason } from '../../src/api/types.js';
+import type { AccountStats, MeResponse, MyGamesResponse, RecentGame, UnrankedReason } from '../../src/api/types.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
 import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
-import { bestOf, rankOf } from '../lib/ranks.js';
+import { dayNumber, dayText, isTzOffset, streaksOf } from '../lib/days.js';
+import { BEST_SQL, bestOf, rankOf, type BestRun } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
 
 const DAY_MS = 86_400_000;
@@ -34,6 +35,7 @@ interface RecentRow {
   finished_at: number;
   ranked: number;
   unranked_reason: UnrankedReason | null;
+  source: string;
 }
 
 /** GET /api/me/games: your best and its rank, how many of the top 50 are yours, and your last 30 games. */
@@ -41,7 +43,7 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
   const [best, recent, { top, total }] = await Promise.all([
     bestOf(env.DB, user.id),
-    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
+    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
       .bind(user.id)
       .all<RecentRow>(),
     // The top 50 and the total from the isolate's copy (BOARD_TTL_MS); your best and its rank are read live.
@@ -55,6 +57,7 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
     ranked: g.ranked === 1,
     reason: g.unranked_reason,
     isBest: g.id === best?.id,
+    imported: g.source === 'import',
   }));
   return json({
     best: best && { ms: best.ms, rank, finishedAt: best.finished_at },
@@ -62,4 +65,41 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
     total,
     games,
   } satisfies MyGamesResponse);
+}
+
+const TZ = /^-?\d{1,3}$/;
+
+/**
+ * GET /api/me/stats?today=YYYY-MM-DD&tz=<minutes> (spec 2026-10-08 §3.2): the account's stats, the same on every
+ * device. One batch: totals, the distinct local days of finishes (for the streaks), and the best ranked run.
+ */
+export async function myStats(req: Request, env: AppEnv): Promise<Response> {
+  const user = await requireUser(req, env);
+  const q = new URL(req.url).searchParams;
+  const today = dayNumber(q.get('today'));
+  const tzText = q.get('tz') ?? '';
+  const tz = TZ.test(tzText) ? Number(tzText) : Number.NaN;
+  if (today === null || !isTzOffset(tz)) throw new HttpError(400, 'invalid', 'today must be YYYY-MM-DD and tz whole minutes from -840 to 840.');
+  const [totals, days, best] = await env.DB.batch([
+    env.DB.prepare("SELECT count(*) AS solved, coalesce(sum(ms), 0) AS total, coalesce(sum(source = 'import'), 0) AS imported FROM games WHERE user_id = ? AND finished_at IS NOT NULL").bind(user.id),
+    // A finish's local day, in days since 1970-01-01; the CAST keeps the division whole whatever type D1 binds the offset as.
+    env.DB.prepare('SELECT DISTINCT (finished_at - CAST(?2 AS INTEGER)) / 86400000 AS day FROM games WHERE user_id = ?1 AND finished_at IS NOT NULL ORDER BY day').bind(user.id, tz * 60_000),
+    env.DB.prepare(BEST_SQL).bind(user.id),
+  ]);
+  const t = totals.results[0] as { solved: number; total: number; imported: number } | undefined;
+  const list = (days.results as { day: number }[]).map((r) => r.day);
+  const { streak, longestStreak } = streaksOf(list, today);
+  const solved = t?.solved ?? 0;
+  const totalMs = t?.total ?? 0;
+  const last = list.at(-1);
+  return json({
+    solved,
+    totalMs,
+    averageMs: solved ? Math.round(totalMs / solved) : null,
+    bestMs: (best.results[0] as BestRun | undefined)?.ms ?? null,
+    streak,
+    longestStreak,
+    lastSolvedDay: last === undefined ? null : dayText(last),
+    imported: t?.imported ?? 0,
+  } satisfies AccountStats);
 }
