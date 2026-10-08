@@ -28,6 +28,8 @@ const type = (el: HTMLInputElement, value: string): void => {
 };
 const button = (card: HTMLElement): HTMLButtonElement => card.querySelector('button') as HTMLButtonElement;
 const preview = (card: HTMLElement): HTMLElement => card.querySelector('.preview') as HTMLElement;
+/** The button is aria-disabled, never `disabled`: it keeps keyboard focus, and its reason is read through aria-describedby. */
+const off = (card: HTMLElement): boolean => button(card).getAttribute('aria-disabled') === 'true';
 
 async function build(stats: Stats | null = device()): Promise<{ card: HTMLElement; authLost: ReturnType<typeof vi.fn> }> {
   if (stats) localStorage.setItem('aglow.stats', JSON.stringify(stats));
@@ -77,12 +79,12 @@ describe('the import card', () => {
     type(input(card, 'average'), '40:00.0');
     expect(preview(card).textContent).toBe("Average time can't be faster than the best time.");
     expect(preview(card).classList.contains('bad')).toBe(true);
-    expect(button(card).disabled).toBe(true);
+    expect(off(card)).toBe(true);
     card.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
     await flush();
     expect(calls.importHistory).not.toHaveBeenCalled();
     type(input(card, 'average'), '51:40.0');
-    expect(button(card).disabled).toBe(false);
+    expect(off(card)).toBe(false);
     expect(preview(card).classList.contains('bad')).toBe(false);
   });
 
@@ -96,7 +98,7 @@ describe('the import card', () => {
     expect(JSON.parse(localStorage.getItem('aglow.historyImport') as string)).toEqual({ v: 1, importId: body.importId, done: true, added: 3 });
     expect(card.querySelector('[role=status]')?.textContent).toBe('Imported 3 runs from this device.');
     expect(button(card).textContent).toBe('Imported');
-    expect(button(card).disabled).toBe(true);
+    expect(off(card)).toBe(true);
     expect(input(card, 'solved').disabled).toBe(true);
     expect(preview(card).hidden).toBe(true);
   });
@@ -116,11 +118,83 @@ describe('the import card', () => {
     expect(second.card.querySelector('[role=status]')?.textContent).toBe("This device's history was already imported.");
   });
 
+  it('on an already-imported answer says only that, even when the response is marked clamped', async () => {
+    // The server's streak, longestStreak and clamped describe the request just sent, not what is stored.
+    calls.importHistory.mockResolvedValueOnce({ added: 0, already: true, streak: 1, longestStreak: 1, clamped: true });
+    const { card } = await build();
+    button(card).click();
+    await flush();
+    expect(card.querySelector('[role=status]')?.textContent).toBe("This device's history was already imported.");
+  });
+
+  it("a failed storage write cannot mint a second importId: the resend reuses the page's own", async () => {
+    calls.importHistory.mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server. Check the connection and try again."));
+    const { card } = await build(); // the device's stats are seeded; from here every storage write fails
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+    try {
+      button(card).click();
+      await flush();
+      expect(localStorage.getItem('aglow.historyImport')).toBeNull(); // nothing was kept
+      calls.importHistory.mockResolvedValueOnce({ added: 3, already: false, streak: 1, longestStreak: 2, clamped: false });
+      button(card).click();
+      await flush();
+      expect(calls.importHistory).toHaveBeenCalledTimes(2);
+      expect(calls.importHistory.mock.calls[1][0].importId).toBe(calls.importHistory.mock.calls[0][0].importId);
+    } finally {
+      set.mockRestore();
+    }
+  });
+
+  it('announces the preview and exposes why Import is off, on a button that keeps focus', async () => {
+    const { card } = await build();
+    expect(preview(card).getAttribute('aria-live')).toBe('polite');
+    expect(button(card).getAttribute('aria-describedby')).toContain(preview(card).id);
+    expect(input(card, 'average').getAttribute('aria-describedby')).toBe(preview(card).id);
+    type(input(card, 'average'), '40:00.0');
+    expect(off(card)).toBe(true);
+    expect(button(card).hasAttribute('disabled')).toBe(false); // focusable, so its description is reachable
+    const described = (button(card).getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent);
+    expect(described).toContain("Average time can't be faster than the best time.");
+  });
+
+  it('does not drop keyboard focus when Import goes inactive (clicked, or Enter in a field)', async () => {
+    let finish!: (r: ImportResponse) => void;
+    calls.importHistory.mockReturnValueOnce(new Promise<ImportResponse>((res) => (finish = res)));
+    const { card } = await build();
+    button(card).focus();
+    button(card).click();
+    await flush();
+    expect(off(card)).toBe(true);
+    expect(document.activeElement).toBe(button(card));
+    finish({ added: 3, already: false, streak: 1, longestStreak: 2, clamped: false });
+    await flush();
+    expect(document.activeElement).toBe(button(card));
+    // Once done, the button describes itself with the result.
+    const ids = (button(card).getAttribute('aria-describedby') ?? '').split(' ');
+    expect(ids.map((id) => document.getElementById(id)?.textContent)).toEqual(['Imported 3 runs from this device.']);
+  });
+
+  it('Enter in a field that then disables moves focus to the button, not the page', async () => {
+    let finish!: (r: ImportResponse) => void;
+    calls.importHistory.mockReturnValueOnce(new Promise<ImportResponse>((res) => (finish = res)));
+    const { card } = await build();
+    input(card, 'solved').focus();
+    expect(document.activeElement).toBe(input(card, 'solved'));
+    card.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(input(card, 'solved').disabled).toBe(true);
+    expect(document.activeElement).toBe(button(card));
+    finish({ added: 3, already: false, streak: 1, longestStreak: 2, clamped: false });
+    await flush();
+  });
+
   it('stays imported on a later visit', async () => {
     localStorage.setItem('aglow.historyImport', JSON.stringify({ v: 1, importId: 'AbCdEfGhIjKlMnOpQrStUv', done: true, added: 3 }));
     const { card } = await build();
     expect(card.querySelector('[role=status]')?.textContent).toBe("This device's history was imported (3 runs).");
-    expect(button(card).disabled).toBe(true);
+    expect(off(card)).toBe(true);
     expect(button(card).textContent).toBe('Imported');
   });
 
@@ -130,7 +204,7 @@ describe('the import card', () => {
     button(card).click();
     await flush();
     expect(card.querySelector('.err')?.textContent).toBe("Couldn't reach the server. Check the connection and try again.");
-    expect(button(card).disabled).toBe(false);
+    expect(off(card)).toBe(false);
     const id = calls.importHistory.mock.calls[0][0].importId;
     calls.importHistory.mockResolvedValueOnce({ added: 3, already: false, streak: 1, longestStreak: 2, clamped: false });
     button(card).click();
@@ -159,5 +233,11 @@ describe('the import card', () => {
     calls.stats.mockResolvedValue({ ...account, solved: 45, imported: 40 });
     const { card } = await build();
     expect(card.textContent).toContain('Your account already has 5 played games and 40 imported runs.');
+  });
+
+  it("shows the account's current and longest streak, so a second device is entered with them in view", async () => {
+    calls.stats.mockResolvedValue({ ...account, streak: 1, longestStreak: 9 });
+    const { card } = await build();
+    expect(card.textContent).toContain('Your account already has 5 played games. Its streak is 1 day, longest 9 days. This device');
   });
 });
