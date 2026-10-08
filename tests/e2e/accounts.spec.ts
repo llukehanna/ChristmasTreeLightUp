@@ -365,9 +365,8 @@ test('two runs by the same player both appear in Your games', async ({ page }) =
   expect(((await mine.json()) as { games: unknown[] }).games).toHaveLength(2);
 });
 
-test("signed in, the results tag and Your games show the account's stats, not this device's", async ({ page }) => {
-  const player = await asPlayer(page);
-  // This device has a history of its own: 7 solved and a 10-day streak up to yesterday.
+/** This device has a history of its own from before accounts: 7 solved and a 10-day streak up to yesterday. */
+async function seedDeviceHistory(page: Page): Promise<void> {
   await page.addInitScript(() => {
     if (localStorage.getItem('aglow.stats')) return;
     const d = new Date();
@@ -375,6 +374,11 @@ test("signed in, the results tag and Your games show the account's stats, not th
     const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     localStorage.setItem('aglow.stats', JSON.stringify({ v: 1, solved: 7, totalSeconds: 700, bestSeconds: 60, bestScore: 44000, streak: 10, longestStreak: 10, lastSolvedDay: yesterday }));
   });
+}
+
+test("signed in with a bigger device history, the tag keeps the device's numbers and Your games shows the account's", async ({ page }) => {
+  const player = await asPlayer(page);
+  await seedDeviceHistory(page);
   await ready(page);
   await signInFromChip(page);
   await pickName(page, player.name);
@@ -383,9 +387,10 @@ test("signed in, the results tag and Your games show the account's stats, not th
   await solveByTapping(page);
   const results = page.locator('#results');
   await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
-  // The account's numbers (this one game), not the device's (8 solved, an 11-day streak).
-  await expect(results.locator('#r-solved')).toHaveText('1');
-  await expect(results.locator('#r-streak')).toHaveText('1');
+  // The device has solved more (8) than the account holds (this one game): the tag shows the device's three numbers
+  // instead of dropping them on sign-in. Your games still totals the account.
+  await expect(results.locator('#r-solved')).toHaveText('8');
+  await expect(results.locator('#r-streak')).toHaveText('11');
   // The device still records its own.
   expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.stats') ?? '{}') as { solved?: number }).solved)).toBe(8);
 
@@ -400,18 +405,17 @@ test("signed in, the results tag and Your games show the account's stats, not th
   expect(fits).toBe(true);
 });
 
-test("signed in but the stats can't be read: the tag keeps this device's numbers, and Your games says so", async ({ page }) => {
+test("signed in with more games on the account than on this device, the tag shows the account's numbers", async ({ page }) => {
   const player = await asPlayer(page);
-  await page.addInitScript(() => {
-    if (localStorage.getItem('aglow.stats')) return;
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    localStorage.setItem('aglow.stats', JSON.stringify({ v: 1, solved: 7, totalSeconds: 700, bestSeconds: 60, bestScore: 44000, streak: 10, longestStreak: 10, lastSolvedDay: yesterday }));
-  });
+  await seedDeviceHistory(page);
+  // The account holds 312 games (as after an import or play on other devices); the device has 8 after this win.
   await page.route(
     (url) => url.pathname === '/api/me/stats',
-    (route) => route.abort(),
+    (route) =>
+      route.fulfill({
+        json: { solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 41_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-10-08', imported: 300 },
+        headers: { 'Cache-Control': 'no-store' },
+      }),
   );
   await ready(page);
   await signInFromChip(page);
@@ -421,6 +425,29 @@ test("signed in but the stats can't be read: the tag keeps this device's numbers
   await solveByTapping(page);
   const results = page.locator('#results');
   await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
+  await expect(results.locator('#r-solved')).toHaveText('312');
+  await expect(results.locator('#r-avg')).toHaveText('1:18');
+  await expect(results.locator('#r-streak')).toHaveText('4');
+});
+
+test("signed in but the stats can't be read:the tag keeps this device's numbers, and Your games says so", async ({ page }) => {
+  const player = await asPlayer(page);
+  await seedDeviceHistory(page);
+  await page.route(
+    (url) => url.pathname === '/api/me/stats',
+    (route) => route.abort(),
+  );
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  await onlineTree(page);
+  // The stats call is made after the win; the tag's fallback only means something once it has actually failed.
+  const failed = page.waitForEvent('requestfailed', (r) => new URL(r.url()).pathname === '/api/me/stats');
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
+  await failed;
   await expect(results.locator('#r-solved')).toHaveText('8');
   await expect(results.locator('#r-streak')).toHaveText('11');
 

@@ -2,7 +2,7 @@ import { ApiError, api, finishWithRetry, setUnauthorizedHandler } from './api/cl
 import { addClaim, claimBatches, coalesced, readClaims, removeClaims } from './api/claims';
 import type { RunOutcome } from './api/outcome';
 import { Session } from './api/session';
-import type { ClaimResponse, FinishResult } from './api/types';
+import type { AccountStats, ClaimResponse, FinishResult } from './api/types';
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
 import { CLOCK_TOLERANCE_MS } from './core/judge';
@@ -27,7 +27,7 @@ import { Accounts } from './ui/accounts';
 import { el } from './ui/dom';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
-import { accountStatsView, deviceStatsView, Results, type StatsView } from './ui/results';
+import { Results, statsViewFor } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
 import { Toast } from './ui/toast';
@@ -94,8 +94,8 @@ export class App {
   private claimState: 'stuck' | 'gone' | null = null;
   /** Back from Google for this run (the return marker matched): "Saving…" while /api/me is in flight. */
   private returning = false;
-  /** The account's Solved, Average and Day streak for the solved tree on the tag (spec 2026-10-08 §6.2); null: the device's. */
-  private accountStats: StatsView | null = null;
+  /** The account's stats for the solved tree on the tag (spec 2026-10-08 §6.2); null: the device's. */
+  private accountStats: AccountStats | null = null;
   /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
   private statsSeq = 0;
 
@@ -331,7 +331,7 @@ export class App {
     setTimeout(() => {
       if (this.board !== game || this.starting) return;
       this.prepareShare();
-      this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: this.accountStats ?? deviceStatsView(this.stats) });
+      this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: statsViewFor(this.stats, this.accountStats) });
     }, delay + 1500);
   }
 
@@ -464,21 +464,22 @@ export class App {
   }
 
   /**
-   * The results tag's Solved, Average and Day streak: the account's when signed in (the same on every device), this
-   * device's while they load, offline, or signed out. The device keeps recording its own either way.
+   * The results tag's Solved, Average and Day streak: the account's when signed in (the same on every device), unless
+   * this device has solved more than the account (a pre-accounts history), and this device's while they load, offline,
+   * or signed out (`statsViewFor`). The device keeps recording its own either way.
    */
   private async syncStats(): Promise<void> {
     const seq = ++this.statsSeq;
     if (!this.won || !this.session.current) {
       this.accountStats = null;
-      this.results.setStats(deviceStatsView(this.stats));
+      this.results.setStats(statsViewFor(this.stats, null));
       return;
     }
     try {
       const a = await api.myStats();
       if (seq !== this.statsSeq) return;
-      this.accountStats = accountStatsView(a);
-      this.results.setStats(this.accountStats);
+      this.accountStats = a;
+      this.results.setStats(statsViewFor(this.stats, a));
     } catch {
       // offline, or signed out meanwhile: the device's numbers stay
     }
