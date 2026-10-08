@@ -192,11 +192,12 @@ export default defineConfig({
   plugins: [devMusic()],
   build: {
     target: 'es2022',
-    // Two pages: the game, and the radio admin (served at /admin). The game's chunks never include admin code.
+    // Three pages: the game, the radio admin (served at /admin) and the privacy page (/privacy). The game's chunks never include admin code.
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         admin: fileURLToPath(new URL('./admin.html', import.meta.url)),
+        privacy: fileURLToPath(new URL('./privacy.html', import.meta.url)),
       },
     },
   },

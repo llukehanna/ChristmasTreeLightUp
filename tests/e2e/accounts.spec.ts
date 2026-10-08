@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping } from './helpers';
 
@@ -276,6 +277,91 @@ test('a claim that fails after naming offers Retry, and Retry ranks the run', as
   await results.getByRole('button', { name: 'Retry' }).click();
   await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · New personal best!$/, { timeout: 15_000 });
   await expect(results.getByRole('button', { name: /^Rank \d+ of \d+: open the leaderboard$/ })).toBeVisible();
+});
+
+/** The sign-in round trip for a run finished signed out: Save to leaderboard, Google, a name. */
+async function saveFromTag(page: Page, name: string): Promise<void> {
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^Would place #/, { timeout: 15_000 });
+  await results.getByRole('button', { name: 'Save to leaderboard' }).click();
+  await page.getByRole('dialog', { name: 'Sign in' }).getByRole('link', { name: 'Continue with Google' }).click();
+  await page.waitForURL(/\/\?test$/);
+  await pickName(page, name);
+}
+
+test('a claim that failed on an earlier batch offers Retry (never "Saving…" for ever), and Retry ranks the run', async ({ page }) => {
+  const player = await asPlayer(page);
+  let fails = 1;
+  await page.route('**/api/games/claim', (route) => (fails-- > 0 ? route.abort() : route.fallback()));
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^Would place #/, { timeout: 15_000 });
+  // Nine older claims on this browser ahead of this run's: the first batch of eight is the one that fails.
+  await page.evaluate(() => {
+    const older = Array.from({ length: 9 }, (_, i) => ({ id: `older-game-${String(i).padStart(2, '0')}-padding`, claim: 'x', at: Date.now() - 1000 - i }));
+    const mine = JSON.parse(localStorage.getItem('aglow.claims') ?? '[]') as unknown[];
+    localStorage.setItem('aglow.claims', JSON.stringify([...older, ...mine]));
+  });
+  await saveFromTag(page, player.name);
+  await expect(results.locator('.rib-line')).toHaveText("Couldn't save this run. Retry", { timeout: 15_000 });
+  await results.getByRole('button', { name: 'Retry' }).click();
+  await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · New personal best!$/, { timeout: 15_000 });
+});
+
+test('a claim another tab already took out of storage ends as "Saved to Your games", not "Saving…"', async ({ page }) => {
+  const player = await asPlayer(page);
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^Would place #/, { timeout: 15_000 });
+  await page.evaluate(() => localStorage.removeItem('aglow.claims'));
+  await saveFromTag(page, player.name);
+  await expect(results.locator('.rib-line')).toHaveText('Saved to Your games', { timeout: 15_000 });
+});
+
+test('a finish whose automatic retry lands past the clock tolerance says "reached the server too late"', async ({ page }) => {
+  let first = true;
+  await page.route('**/api/games/*/finish', async (route) => {
+    if (!first) return route.fallback();
+    first = false;
+    // The first attempt fails after 2.5 s; the retry 0.8 s later is over the 3 s tolerance.
+    await new Promise((r) => setTimeout(r, 2500));
+    await route.abort();
+  });
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#results .rib-line')).toHaveText('Saved, unranked: reached the server too late', { timeout: 20_000 });
+});
+
+test('two runs by the same player both appear on the board', async ({ page }) => {
+  const player = await asPlayer(page);
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  for (let run = 0; run < 2; run++) {
+    if (run) await page.locator('#r-new').click();
+    await onlineTree(page);
+    await solveByTapping(page);
+    await expect(page.locator('#results .rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
+  }
+  await page.locator('#account-chip').click();
+  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+  await expect(page.getByRole('dialog', { name: 'Leaderboard' }).locator('.acct-row.acct-me')).toHaveCount(2);
+});
+
+test('the privacy page says what is stored, why, for how long, and how to delete it', async ({ page }) => {
+  await page.goto('/privacy');
+  await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
+  for (const text of ['Google account ID and email address', 'display name', 'log of your taps and pauses', 'hashed copy of your IP address', '90 days', 'Delete account']) {
+    await expect(page.locator('main')).toContainText(text);
+  }
+  // Phone width included: no sideways scroll.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test('a tree the server never started: "Unranked: offline" on the tag', async ({ page }) => {
