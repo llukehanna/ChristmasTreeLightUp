@@ -24,10 +24,10 @@ export const STAR_HIT = 0.9;
 /** The idle sway after the win, either way. */
 export const SWAY_DEG = 4;
 
-/** The head's height in tiles: a touch larger than the star (1.56). The sticker is 240×256. */
-const HEAD_H = 1.9;
-/** The sticker's top, in tiles from the star's centre: the hat sits where the star's top point was. */
-const HEAD_TOP = -0.82;
+/** The head's height in tiles: well above the star's (1.56), so the face reads. The sticker is 240×256. */
+const HEAD_H = 2.4;
+/** The sticker's top, in tiles from the star's centre: set so the chin stays at the tree's tip (HEAD_PIVOT) and the hat rises above. */
+const HEAD_TOP = -1.24;
 /** The chin, in tiles below the star's centre (about the tree's tip): the head sways and wobbles about it. */
 const HEAD_PIVOT = 0.76;
 /** The bottom fraction of the sticker that fades out into the tree's tip. */
