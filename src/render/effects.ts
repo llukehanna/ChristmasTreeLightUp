@@ -338,7 +338,7 @@ export function starState(now: number, winAt: number | null, litFrac: number, re
 export function drawStarGlow(c: CanvasRenderingContext2D, L: Layout, sc: Scene, st: StarState, won: boolean): void {
   if (st.glow <= 0) return;
   const x = X(L, 0);
-  const y = Y(L, -1.3);
+  const y = Y(L, STAR_V);
   radial(c, x, y, L.s * 3.2 * st.glow, [[0, rgba(sc.glow, 0.9)], [0.25, rgba(sc.glow, 0.3)], [1, rgba(sc.glow, 0)]]);
   if (!won) return;
   c.globalAlpha = Math.min(1, st.glow * 0.8);
@@ -351,42 +351,38 @@ export function drawStarGlow(c: CanvasRenderingContext2D, L: Layout, sc: Scene, 
   c.globalAlpha = 1;
 }
 
-/** The star's centre (and the topper's): above row 0, on the tree's axis. */
-export const starCenter = (L: Layout): [number, number] => [X(L, 0), Y(L, -1.3)];
+/** The star's centre (and the topper's), in tiles from row 0's top: above the tree, on its axis. */
+export const STAR_V = -1.3;
+export const starCenter = (L: Layout): [number, number] => [X(L, 0), Y(L, STAR_V)];
 
 /** The win's pop: the star (or the head) springs from 0.8 to full size as it ignites. */
 export const ignitePop = (st: StarState, won: boolean): number => (won ? 0.8 + 0.2 * easeOutBack(st.on) : 1);
 
-/** Eight-point starburst above row 0. Dim until the win, then it ignites (spec §4.5 item 10). */
-export function drawStar(c: CanvasRenderingContext2D, L: Layout, sc: Scene, st: StarState, won: boolean): void {
-  c.save();
-  c.translate(...starCenter(L));
-  const k = ignitePop(st, won);
-  c.scale(k, k);
-  drawStarBody(c, L.s, sc, st.on);
-  c.restore();
+function starPath(c: CanvasRenderingContext2D, s: number): void {
+  c.beginPath();
+  for (let k = 0; k < 16; k++) {
+    const a = -Math.PI / 2 + (k * Math.PI) / 8;
+    const rad = k % 2 ? s * 0.1 : k % 4 === 0 ? s * 0.78 : s * 0.42;
+    c.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+  }
+  c.closePath();
 }
 
-/** The star itself, centred on the origin: its dim glass, then the lit gold at `on` (0..1). Leaves globalAlpha changed. */
+/**
+ * The eight-point starburst on top of the tree, centred on the origin: dim glass until the win, then the lit gold at
+ * `on` (0..1) as it ignites (spec §4.5 item 10). The topper (topper.ts) places it, pops it and turns it. Leaves
+ * globalAlpha changed.
+ */
 export function drawStarBody(c: CanvasRenderingContext2D, s: number, sc: Scene, on: number): void {
   const alpha = c.globalAlpha;
-  const path = () => {
-    c.beginPath();
-    for (let k = 0; k < 16; k++) {
-      const a = -Math.PI / 2 + (k * Math.PI) / 8;
-      const rad = k % 2 ? s * 0.1 : k % 4 === 0 ? s * 0.78 : s * 0.42;
-      c.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
-    }
-    c.closePath();
-  };
-  path();
+  starPath(c, s);
   c.fillStyle = sc.starOff;
   c.fill();
   c.strokeStyle = sc.starEdge;
   c.lineWidth = 1;
   c.stroke();
   if (on > 0) {
-    path();
+    starPath(c, s);
     const g = c.createRadialGradient(0, 0, 0, 0, 0, s * 0.8);
     g.addColorStop(0, '#ffffff');
     g.addColorStop(0.4, sc.core);
