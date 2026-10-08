@@ -2,6 +2,7 @@ import type { AccountStats } from '../api/types';
 import { formatTime } from '../core/score';
 import { averageSeconds, type Stats } from '../store/stats';
 import { el } from './dom';
+import { count } from './format';
 
 /** The three numbers under the badge: this device's, or (signed in) the account's (spec 2026-10-08 §6.2). */
 export interface StatsView {
@@ -50,9 +51,9 @@ export class Results {
 
   /** Repaints Solved, Average and Day streak: also while the tag is hidden, so it is right when it appears. */
   setStats(v: StatsView): void {
-    el('r-solved').textContent = String(Number(v.solved));
+    el('r-solved').textContent = count(v.solved);
     el('r-avg').textContent = formatTime(Number(v.averageSeconds));
-    el('r-streak').textContent = String(Number(v.streak));
+    el('r-streak').textContent = count(v.streak);
   }
 
   hide(): void {

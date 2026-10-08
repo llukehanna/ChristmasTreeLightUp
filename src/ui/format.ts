@@ -27,6 +27,9 @@ export function formatWhen(at: number, now: number): string {
   return `${day} · ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
 }
 
+/** A count as the tag and the sheets show it: digits with a comma from 1,000, and only ever a number. */
+export const count = (n: number): string => Number(n).toLocaleString('en-US');
+
 /** "1 run", "1,340 runs". `n` is coerced, so a server value can only ever paint as a number. */
 export const plural = (n: number, word: string): string => {
   const v = Number(n);
