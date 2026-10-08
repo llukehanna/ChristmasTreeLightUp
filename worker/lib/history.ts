@@ -140,6 +140,11 @@ function times(n: number, bestMs: number, total: number, rng: Rng): number[] {
 /** The runs for an import (spec §4). Throws RangeError for input the route never passes. */
 export function fabricateHistory(input: HistoryInput): History {
   if (!(input.solved >= 1) || !(input.lastDay >= FIRST_DAY)) throw new RangeError('fabricateHistory: at least one game, on or after the first day');
+  if (!(input.averageMs >= input.bestMs) || (input.solved === 1 && input.averageMs !== input.bestMs)) {
+    throw new RangeError('fabricateHistory: the average is the best or slower, and with one game it is the best');
+  }
+  // The last day needs room for all its games before a second ago: 1 ms apart is the least (spec §4.4).
+  if (!(localMidnight(input.lastDay, input.tz) + 1000 + (input.solved - 1) <= input.now)) throw new RangeError('fabricateHistory: the last day is too recent for every game to finish a second before now');
   const rng = mulberry32(seedOf(input.importId));
   const n = input.solved;
   const plan = planDays(n, input.streak, input.longestStreak, FIRST_DAY, input.lastDay, rng);
@@ -190,6 +195,7 @@ export function parseImportRequest(body: Record<string, unknown>, now: number): 
   }
   if (!isTzOffset(tz)) return 'tz must be whole minutes from -840 to 840.';
   const lastDay = dayNumber(lastSolvedDay);
-  if (lastDay === null || lastDay < FIRST_DAY || lastDay > localDayOf(now, tz)) return 'Last solved day must be a date from 2026-09-29 to today.';
+  // Today only once the day is old enough for all `solved` finishes to sit before a second ago, 1 ms apart at the least.
+  if (lastDay === null || lastDay < FIRST_DAY || lastDay > localDayOf(now - 1000 - (solved - 1), tz)) return 'Last solved day must be a date from 2026-09-29 to today.';
   return { importId, solved, bestMs, averageMs, streak, longestStreak, lastDay, tz };
 }
