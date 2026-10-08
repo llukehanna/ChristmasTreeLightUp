@@ -94,13 +94,15 @@ async function resultsOf(env: AppEnv, userId: number | null, games: readonly Fin
   return games.map((g, k) => {
     const rank = ranks[k];
     // A run with a place that isn't on the board yet (signed out, or no name) would join it: "#r of total + 1".
+    // The rank is live and the total may be the isolate's older copy, so the total never reads below the rank.
+    const shown = rank !== null && !onBoard(g) ? total + 1 : total;
     return {
       id: g.id,
       ranked: g.ranked === 1,
       reason: g.unranked_reason,
       ms: g.ms,
       rank,
-      total: rank !== null && !onBoard(g) ? total + 1 : total,
+      total: rank === null ? shown : Math.max(shown, rank),
       best: best?.ms ?? null,
       newBest: g.ranked === 1 && best?.id === g.id,
     };
