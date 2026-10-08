@@ -1,0 +1,6 @@
+// Bindings for the Worker integration tests: a throwaway in-memory D1 per test file (R2 is the FakeBucket).
+{
+  "name": "aglow-test",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [{ "binding": "DB", "database_name": "aglow-test", "database_id": "00000000-0000-0000-0000-000000000000" }]
+}

@@ -17,6 +17,10 @@
     "run_worker_first": ["/api/*"]
   },
   "r2_buckets": [{ "binding": "MUSIC", "bucket_name": "aglow-music" }],
+  // D1 "aglow": users, sessions and games. Create it with `npx wrangler d1 create aglow` and paste its id here (rollout).
+  "d1_databases": [
+    { "binding": "DB", "database_name": "aglow", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ],
   // Workers Logs: the router logs the route and error class of any unexpected failure (never messages or secrets).
   "observability": { "enabled": true },
   "vars": { "MUSIC_BASE_URL": "https://aglow-music.lukeghanna.com" },

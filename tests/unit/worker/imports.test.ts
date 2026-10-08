@@ -64,6 +64,13 @@ describe('Worker imports', () => {
     expect(['node:crypto', 'crypto', 'fs/promises', '@vercel/blob/client'].every(forbidden)).toBe(true);
     expect(['./x.js', '../../src/radio/schema.js', '@cloudflare/workers-types'].some(forbidden)).toBe(false);
   });
+  it('reaches no browser code: only the pure core, the shared API types and names, and the station schema', () => {
+    const safe = /^src\/(core\/[a-z-]+\.ts|api\/(types|names)\.ts|radio\/(schema|ids)\.ts)$/;
+    const src = reachable()
+      .map((f) => f.slice(ROOT.length + 1))
+      .filter((f) => f.startsWith('src/'));
+    expect(src.filter((f) => !safe.test(f))).toEqual([]);
+  });
   it('no node: built-ins and no @vercel packages anywhere the Worker can reach', () => {
     const bad: string[] = [];
     for (const file of reachable()) {

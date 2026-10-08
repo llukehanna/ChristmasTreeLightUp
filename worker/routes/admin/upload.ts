@@ -1,6 +1,6 @@
 import { STATION_ID } from '../../../src/radio/schema.js';
 import type { AppEnv } from '../../lib/env.js';
-import { adminJson, notConfigured, requireAdmin } from '../../lib/http.js';
+import { json, notConfigured, requireAdmin } from '../../lib/http.js';
 import { mediaBase, mediaUrl } from '../../lib/stations-store.js';
 
 const ALLOWED: Readonly<Record<'tracks' | 'covers', readonly string[]>> = {
@@ -11,7 +11,7 @@ const MAX_BYTES = 30 * 1024 * 1024;
 const BAD_NAME = /[/\\\u0000-\u001f\u007f]/;
 
 const badPath = (): Response =>
-  adminJson({ error: 'Uploads must go to tracks/<station>/<file> or covers/<station>/<file>' }, { status: 400 });
+  json({ error: 'Uploads must go to tracks/<station>/<file> or covers/<station>/<file>' }, { status: 400 });
 
 function randomHex(bytes: number): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -36,13 +36,13 @@ export async function PUT(req: Request, env: AppEnv): Promise<Response> {
   if (name.length < 1 || name.length > 200 || name === '.' || name === '..' || BAD_NAME.test(name)) return badPath();
 
   const contentType = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  if (!ALLOWED[folder].includes(contentType)) return adminJson({ error: 'That file type is not allowed here' }, { status: 415 });
+  if (!ALLOWED[folder].includes(contentType)) return json({ error: 'That file type is not allowed here' }, { status: 415 });
 
   const declared = req.headers.get('content-length') ?? '';
-  if (!/^\d{1,12}$/.test(declared)) return adminJson({ error: 'Content-Length is required' }, { status: 411 });
+  if (!/^\d{1,12}$/.test(declared)) return json({ error: 'Content-Length is required' }, { status: 411 });
   const length = Number(declared);
-  if (length > MAX_BYTES) return adminJson({ error: 'The file is too large (30 MB max)' }, { status: 413 });
-  if (length === 0 || !req.body) return adminJson({ error: 'The file is empty' }, { status: 400 });
+  if (length > MAX_BYTES) return json({ error: 'The file is too large (30 MB max)' }, { status: 413 });
+  if (length === 0 || !req.body) return json({ error: 'The file is empty' }, { status: 400 });
 
   const key = `${folder}/${station}/${randomHex(4)}-${name}`;
   let size: number;
@@ -54,7 +54,7 @@ export async function PUT(req: Request, env: AppEnv): Promise<Response> {
     if (!obj) throw new Error('not written');
     size = obj.size;
   } catch {
-    return adminJson({ error: 'Upload failed. Try again.' }, { status: 503 });
+    return json({ error: 'Upload failed. Try again.' }, { status: 503 });
   }
   // The runtime holds a request body to its Content-Length; this guards the cap if that ever changes.
   if (size !== length) {
@@ -63,7 +63,7 @@ export async function PUT(req: Request, env: AppEnv): Promise<Response> {
     } catch {
       // an orphaned object is harmless: no station refers to it
     }
-    return adminJson({ error: 'The upload was incomplete. Try again.' }, { status: 400 });
+    return json({ error: 'The upload was incomplete. Try again.' }, { status: 400 });
   }
-  return adminJson({ url: mediaUrl(key, base), key, size });
+  return json({ url: mediaUrl(key, base), key, size });
 }
