@@ -113,3 +113,39 @@ describe('Board win', () => {
     expect(ev.map((e) => e.type)).toContain('won');
   });
 });
+
+describe('Board.advanceTo (shared by the browser Run and the server replay)', () => {
+  it('finishes queued turns one by one at their exact finishing times, where a single tick only takes one step', () => {
+    const t = endTile();
+    const late = solved();
+    for (let k = 0; k < 3; k++) late.tap(t, 0);
+    late.tick(1000);
+    expect(late.rotating.get(t)?.t0).toBe(ROTATE_MS); // one step per tick
+    const b = solved();
+    for (let k = 0; k < 3; k++) b.tap(t, 0);
+    const out: BoardEvent[] = [];
+    expect(b.advanceTo(3 * ROTATE_MS - 1, out)).toBeNull();
+    expect(b.rotating.get(t)?.t0).toBe(2 * ROTATE_MS);
+    expect(out).toEqual([]);
+    b.advanceTo(3 * ROTATE_MS, out);
+    expect(b.rotating.size).toBe(0);
+    expect(b.bits[t]).toBe(rotCW(rotCW(rotCW(solution[t]))));
+    expect(out.map((e) => e.type)).toContain('rotateFinished');
+  });
+
+  it('returns the time of the win, and stops there', () => {
+    const b = solved();
+    const t = endTile();
+    for (let k = 0; k < 4; k++) b.tap(t, 10);
+    const out: BoardEvent[] = [];
+    expect(b.advanceTo(10_000, out)).toBe(10 + 4 * ROTATE_MS);
+    expect(out.at(-1)).toEqual({ type: 'won' });
+    expect(b.won).toBe(true);
+  });
+
+  it('never loops on a time that is not a number', () => {
+    const b = solved();
+    b.tap(endTile(), 0);
+    expect(b.advanceTo(Number.NaN)).toBeNull();
+  });
+});
