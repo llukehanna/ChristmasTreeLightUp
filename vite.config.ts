@@ -200,5 +200,6 @@ export default defineConfig({
       },
     },
   },
-  test: { include: ['tests/unit/**/*.test.ts', 'tests/worker/**/*.test.ts'], environment: 'node' },
+  // 30 s: the suite runs in parallel (CPU-heavy replays, a real local D1 per file), and `npm run deploy` gates on it.
+  test: { include: ['tests/unit/**/*.test.ts', 'tests/worker/**/*.test.ts'], environment: 'node', testTimeout: 30_000, hookTimeout: 30_000 },
 });

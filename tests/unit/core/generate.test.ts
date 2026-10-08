@@ -67,5 +67,5 @@ describe('generateSolution (original Game.Ji)', () => {
     }
 
     expect(violations).toEqual([]);
-  }, 30_000); // 1000 boards: allow time on slow machines
+  }); // 1000 boards: the suite-wide 30 s timeout covers slow machines
 });

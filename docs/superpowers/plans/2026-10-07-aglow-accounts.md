@@ -1041,6 +1041,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ### Task 2: D1 schema, Worker router upgrade and the integration harness
 
+> **Superseded (do not re-add):** the `games.ip_hash` column and `games_ip` index in the snippets below were replaced by the `starts` table in Task 4's fix round and then removed; the shipped schema has neither. Likewise `games_best` was added later (Task 5 fix round).
+
 The database, the structural D1 types, the shared HTTP helpers, and a router that matches regex routes (`:id` paths), refuses fake sign-in mode off localhost, and applies the same-origin + JSON check to every `/api/*` write. Plus Mapped's `getPlatformProxy` harness: a real local D1 per test file, migrations applied per run. The password admin still works at the end of this task (it goes in Task 6).
 
 **Files:**
@@ -2469,6 +2471,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ---
 
 ### Task 4: Games: start, finish and claim
+
+> **Superseded (do not re-add):** the snippets below count starts with `games.ip_hash` / `games_ip`. The Task 4 fix round moved the rate limit to the `starts` table, and `games.ip_hash` and `games_ip` were then removed. Read `worker/routes/games.ts` and `migrations/0001_init.sql` for the real code.
 
 `POST /api/games` (server seed and start stamp, claim token when signed out, 200 starts per IP hash per hour, lazy housekeeping), `POST /api/games/:id/finish` (parse, replay and judge; idempotent; 422 deletes the row) and `POST /api/games/claim` (8 per request). Also the rank and best-run queries the results need.
 

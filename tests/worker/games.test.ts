@@ -16,7 +16,7 @@ let env: AppEnv;
 beforeAll(async () => {
   ({ db, dispose } = await startDb());
   env = testEnv(db);
-}, 30_000);
+});
 afterAll(() => dispose());
 beforeEach(() => wipe(db));
 

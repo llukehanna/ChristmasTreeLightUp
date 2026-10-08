@@ -74,6 +74,7 @@ games(
 )
 INDEX games_board ON games(ms, finished_at) WHERE ranked = 1
 INDEX games_user ON games(user_id, finished_at DESC)
+INDEX games_best ON games(user_id, ms, finished_at) WHERE ranked = 1
 INDEX games_abandoned ON games(started_at) WHERE finished_at IS NULL
 starts(ip_hash TEXT NOT NULL, at INTEGER NOT NULL)  -- one row per start (IPv6 keyed by /64) for the 200/hour limit, so a 422's deleted game still counts; INDEX starts_ip(ip_hash, at), starts_at(at); each start prunes up to 50 rows older than an hour
 ```
