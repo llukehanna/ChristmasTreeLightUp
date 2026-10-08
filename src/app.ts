@@ -15,27 +15,27 @@ import { Sfx } from './audio/sfx';
 import { bindInput } from './input';
 import { Radio } from './radio/radio';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
+import { starCenter } from './render/effects';
 import { tileAt, tileCenter } from './render/layout';
 import { Renderer } from './render/renderer';
 import { SCENES, sceneForHour, type SceneId } from './render/scenes';
+import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
 import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
+import { loadStarHead, saveStarHead } from './store/star-head';
 import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
-import { el } from './ui/dom';
+import { el, isEditable } from './ui/dom';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
 import { accountStatsView, deviceStatsView, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
+import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
 
-/** Typing into a field never drives the game's keyboard shortcuts. */
-function isEditable(t: EventTarget | null): boolean {
-  return t instanceof HTMLElement && (t.isContentEditable || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement);
-}
 const INTRO_KEY = 'aglow.seenIntro';
 const INK: Record<SceneId, string> = { midnight: '#f3ead8', fireside: '#f4e6cf', frost: '#15261f' };
 
@@ -98,6 +98,8 @@ export class App {
   private accountStats: AccountStats | null = null;
   /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
   private statsSeq = 0;
+  /** The star-head egg: taps on the star and "hohoho" swap the topper (src/ui/star-egg.ts). */
+  private readonly egg: StarEgg;
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -143,6 +145,22 @@ export class App {
     // A 401 on any signed-in call means the session is gone: sign out locally (spec §5.4).
     setUnauthorizedHandler(() => this.session.set(null));
     this.session.subscribe(() => this.accountChanged());
+    this.egg = new StarEgg(
+      this.session,
+      {
+        topper: this.renderer.topper,
+        sfx: this.sfx,
+        toast: (text) => this.toast.show(text),
+        vibrate: (p) => {
+          if (this.settings.haptics) navigator.vibrate?.(p);
+        },
+        save: saveStarHead,
+        put: (on) => api.setStarHead(on),
+        // After a win the share image shows the topper: render it again once the flip and its flecks have settled.
+        flipped: () => setTimeout(() => this.refreshShare(), FLIP_MS / 2 + BURST_MS + 100),
+      },
+      loadStarHead(),
+    );
   }
 
   get board(): Board {
@@ -639,6 +657,11 @@ export class App {
       return;
     }
     const [wx, wy] = toWorld(this.camera, x, y);
+    // The star is not a tile: its taps go to the egg and never reach the board, the log or the clock.
+    if (onStar(this.renderer.layout, wx, wy)) {
+      this.egg.tap(now);
+      return;
+    }
     const i = tileAt(this.renderer.layout, GRID, wx, wy);
     if (i >= 0) this.tapTile(i, now);
   }
@@ -781,6 +804,11 @@ export class App {
       // the menu is open, or while focus is inside the radio panel; the desktop popover stays open while you play, so
       // with focus back on the game (or nowhere) P still pauses.
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.hasFocus || this.accounts.blocksKeys || isEditable(e.target)) return;
+      // "hohoho" swaps the topper, as five taps on the star do (not under the pause overlay, like the taps).
+      if (!this.paused && this.egg.key(e, performance.now())) {
+        this.sfx.unlock();
+        return;
+      }
       if (e.key === 'Escape' && this.paused) {
         e.preventDefault();
         this.resume();
@@ -858,6 +886,17 @@ export class App {
   tileScreenCenter(i: number): [number, number] {
     const [x, y] = tileCenter(this.renderer.layout, GRID, i);
     return toScreen(this.camera, x, y);
+  }
+
+  /** The star's centre on screen (the camera applied): where a finger taps it. */
+  starScreenCenter(): [number, number] {
+    const [x, y] = starCenter(this.renderer.layout);
+    return toScreen(this.camera, x, y);
+  }
+
+  /** The egg's state: the head is (or is landing) on top; a flip is under way. */
+  get starHead(): { head: boolean; flipping: boolean } {
+    return { head: this.egg.isOn, flipping: this.renderer.topper.busy(performance.now()) };
   }
 
   debugSolve(): void {
