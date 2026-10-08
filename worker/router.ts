@@ -28,6 +28,7 @@ export const ROUTES: readonly Route[] = [
   ['DELETE', /^\/api\/me$/, me.deleteMe],
   ['GET', /^\/api\/me\/games$/, me.myGames],
   ['GET', /^\/api\/me\/stats$/, me.myStats],
+  ['PUT', /^\/api\/me\/star-head$/, me.setStarHead],
   ['POST', /^\/api\/games$/, games.startGame],
   ['GET', /^\/api\/board$/, board.getBoard],
   ['POST', /^\/api\/games\/claim$/, games.claimGames],

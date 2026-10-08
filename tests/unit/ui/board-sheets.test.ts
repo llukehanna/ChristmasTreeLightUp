@@ -5,7 +5,7 @@ import { listView } from '../../../src/ui/board-sheets';
 
 const now = new Date(2026, 11, 3, 22, 0).getTime();
 const day = new Date(2026, 11, 1, 20, 0).getTime();
-const me = { name: 'Meridian', isAdmin: false };
+const me = { name: 'Meridian', isAdmin: false, starHead: false };
 const board: BoardResponse = {
   rows: [
     { rank: 1, name: 'Comet', ms: 48_200, finishedAt: day, mine: false },
@@ -60,7 +60,7 @@ it('signed out or without a name: a call to action instead of your row', () => {
   const out = render('board', { status: 'ready', data: board }, { status: 'loading' }, null, now);
   expect(out.querySelector('.acct-pin-cta')?.textContent).toContain('Sign in to see your name on the list');
   expect(out.querySelector('.acct-pin [data-act="signin"]')).not.toBeNull();
-  const nameless = render('board', { status: 'ready', data: board }, { status: 'loading' }, { name: null, isAdmin: false }, now);
+  const nameless = render('board', { status: 'ready', data: board }, { status: 'loading' }, { name: null, isAdmin: false, starHead: false }, now);
   expect(nameless.querySelector('.acct-pin [data-act="name"]')).not.toBeNull();
 });
 

@@ -1,4 +1,4 @@
-import type { AccountStats, MeResponse, MyGamesResponse, RecentGame, UnrankedReason } from '../../src/api/types.js';
+import type { AccountStats, MeResponse, MyGamesResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
 import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
@@ -27,6 +27,18 @@ export async function deleteMe(req: Request, env: AppEnv): Promise<Response> {
   await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
   resetBoardCache(); // the account's runs leave the board
   return json({}, { headers: { 'Set-Cookie': clearSessionCookie() } });
+}
+
+/**
+ * PUT /api/me/star-head { on } (2026-10-08): the tree's topper preference, the account's copy. A users column, so
+ * deleting the account takes it too. Nothing else on the server reads it.
+ */
+export async function setStarHead(req: Request, env: AppEnv): Promise<Response> {
+  const user = await requireUser(req, env);
+  const on = (await readJson(req)).on;
+  if (typeof on !== 'boolean') throw new HttpError(400, 'invalid', 'on must be true or false.');
+  await env.DB.prepare('UPDATE users SET star_head = ? WHERE id = ?').bind(on ? 1 : 0, user.id).run();
+  return json({ starHead: on } satisfies StarHeadResponse);
 }
 
 interface RecentRow {

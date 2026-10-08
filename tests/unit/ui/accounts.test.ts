@@ -13,7 +13,7 @@ import { Accounts } from '../../../src/ui/accounts';
 
 const stats = (solved: number): AccountStats => ({ userId: 1, solved, totalMs: solved * 60_000, averageMs: 60_000, bestMs: 50_000, streak: 1, longestStreak: 1, lastSolvedDay: '2026-10-08', imported: 0 });
 const games: MyGamesResponse = { best: null, inTop: 0, total: 0, games: [] };
-const me = { name: 'Meridian', isAdmin: false };
+const me = { name: 'Meridian', isAdmin: false, starHead: false };
 
 /** A promise the test settles by hand, to put answers in any order. */
 function deferred<T>(): { promise: Promise<T>; resolve(v: T): void; reject(e: unknown): void } {
@@ -80,7 +80,7 @@ it("an answer in flight when the session changes is dropped, never shown as the 
   accounts.openGames();
   await tick();
   expect(busy()).toBe(true);
-  session.set({ name: 'Comet', isAdmin: false }); // onSession resets the totals and bumps the guard
+  session.set({ name: 'Comet', isAdmin: false, starHead: false }); // onSession resets the totals and bumps the guard
   inFlight.resolve(stats(99));
   await tick();
   // Your games is back to loading after the change (nothing refetches it), and the dropped answer is nowhere on screen.

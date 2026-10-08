@@ -4,7 +4,7 @@ import type { FinishResult } from '../../../src/api/types';
 import { renderRibbon, ribbonModel } from '../../../src/ui/ribbon';
 
 const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: true, ...over });
-const me = { name: 'Comet', isAdmin: false };
+const me = { name: 'Comet', isAdmin: false, starHead: false };
 
 describe('ribbonModel', () => {
   it('ranked: the place, and a new best or your best', () => {
@@ -18,7 +18,7 @@ describe('ribbonModel', () => {
     expect(ribbonModel({ kind: 'done', result: anon }, undefined)).toEqual({ kind: 'save', rank: 5, of: 341, signedIn: false });
     expect(ribbonModel({ kind: 'done', result: anon }, me)).toEqual({ kind: 'saving' });
     // Signed in but the name card was put off: nothing is being claimed yet, so the ribbon still offers to save (no Google).
-    expect(ribbonModel({ kind: 'done', result: anon }, { name: null, isAdmin: false })).toEqual({ kind: 'save', rank: 5, of: 341, signedIn: true });
+    expect(ribbonModel({ kind: 'done', result: anon }, { name: null, isAdmin: false, starHead: false })).toEqual({ kind: 'save', rank: 5, of: 341, signedIn: true });
   });
 
   it('back from Google while /api/me is in flight: saving, not a flash of Save to leaderboard', () => {
