@@ -62,11 +62,10 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
     env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?)').bind(now - UNCLAIMED_KEEP_DAYS * DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM starts WHERE rowid IN (SELECT rowid FROM starts WHERE at < ? LIMIT ?)').bind(now - HOUR_MS, STARTS_PRUNE),
     env.DB.prepare('INSERT INTO starts (ip_hash, at) VALUES (?, ?)').bind(ipHash, now),
-    env.DB.prepare('INSERT INTO games (id, user_id, claim_hash, ip_hash, gen_version, seed, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(
+    env.DB.prepare('INSERT INTO games (id, user_id, claim_hash, gen_version, seed, started_at) VALUES (?, ?, ?, ?, ?, ?)').bind(
       id,
       user?.id ?? null,
       claimHash,
-      ipHash,
       GEN_VERSION,
       seed,
       now,

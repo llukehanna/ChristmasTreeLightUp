@@ -19,7 +19,7 @@ describe('migrations', () => {
 
   it('create the tables and the indexes the spec names', async () => {
     const names = (await db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'").all<{ name: string }>()).results.map((r) => r.name);
-    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_ip', 'games_abandoned', 'starts', 'starts_ip', 'starts_at']));
+    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_abandoned', 'starts', 'starts_ip', 'starts_at']));
   });
 
   it('games_board and games_abandoned are partial indexes', async () => {
@@ -33,8 +33,8 @@ describe('migrations', () => {
     if (!user) throw new Error('no user');
     await db.batch([
       db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES ('h', ?, 1, 2)").bind(user.id),
-      db.prepare("INSERT INTO games (id, user_id, ip_hash, gen_version, seed, started_at) VALUES ('owned-aaaaaaaaaaaaaa', ?, 'ip', 1, 1, 1)").bind(user.id),
-      db.prepare("INSERT INTO games (id, user_id, ip_hash, gen_version, seed, started_at) VALUES ('anon-bbbbbbbbbbbbbbbb', NULL, 'ip', 1, 1, 1)"),
+      db.prepare("INSERT INTO games (id, user_id, gen_version, seed, started_at) VALUES ('owned-aaaaaaaaaaaaaa', ?, 1, 1, 1)").bind(user.id),
+      db.prepare("INSERT INTO games (id, user_id, gen_version, seed, started_at) VALUES ('anon-bbbbbbbbbbbbbbbb', NULL, 1, 1, 1)"),
     ]);
     await db.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
     expect(await count('SELECT count(*) AS n FROM sessions')).toBe(0);

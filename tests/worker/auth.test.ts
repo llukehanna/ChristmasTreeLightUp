@@ -358,7 +358,7 @@ describe('deleting an account', () => {
     const env = testEnv(db);
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const user = await db.prepare('SELECT id FROM users').first<{ id: number }>();
-    await db.prepare("INSERT INTO games (id, user_id, ip_hash, gen_version, seed, started_at) VALUES ('owned-aaaaaaaaaaaaaa', ?, 'ip', 1, 1, 1)").bind(user?.id).run();
+    await db.prepare("INSERT INTO games (id, user_id, gen_version, seed, started_at) VALUES ('owned-aaaaaaaaaaaaaa', ?, 1, 1, 1)").bind(user?.id).run();
     const wrong = await call(env, 'DELETE', '/api/me', { cookie: ana, body: { confirm: 'nope' } });
     expect(wrong.status).toBe(400);
     expect((await body(wrong)).error).toBe('confirm');

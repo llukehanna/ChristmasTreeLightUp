@@ -22,7 +22,6 @@ CREATE TABLE games (
   id TEXT PRIMARY KEY,
   user_id INTEGER REFERENCES users (id) ON DELETE CASCADE,
   claim_hash TEXT,
-  ip_hash TEXT NOT NULL,
   gen_version INTEGER NOT NULL,
   seed INTEGER NOT NULL,
   started_at INTEGER NOT NULL,
@@ -36,7 +35,6 @@ CREATE TABLE games (
 );
 CREATE INDEX games_board ON games (ms, finished_at) WHERE ranked = 1;
 CREATE INDEX games_user ON games (user_id, finished_at DESC);
-CREATE INDEX games_ip ON games (ip_hash, started_at);
 CREATE INDEX games_abandoned ON games (started_at) WHERE finished_at IS NULL;
 
 -- One row per game start, for the start rate limit (200 per IP hash per hour). Kept apart from games so a start whose

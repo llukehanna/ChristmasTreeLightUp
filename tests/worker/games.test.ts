@@ -66,7 +66,7 @@ describe('starting a game', () => {
     expect(stored).toMatchObject({ user_id: null, gen_version: GEN_VERSION, seed: anon.seed, finished_at: null, ranked: 0 });
     expect(stored?.started_at).toBeGreaterThanOrEqual(before);
     expect(stored?.claim_hash).not.toBe(anon.claim); // only an HMAC of the claim
-    expect(String(stored?.ip_hash)).not.toContain('203.0.113.7'); // only an HMAC of the IP
+    expect(await startsHash()).not.toContain('203.0.113.7'); // only an HMAC of the IP
     const ana = await signIn(env, 'ana@example.com');
     expect((await start(ana)).claim).toBeNull();
   });
@@ -137,7 +137,7 @@ describe('starting a game', () => {
     const old = Date.now() - 100 * DAY;
     await db.batch(
       Array.from({ length: 60 }, (_, i) =>
-        db.prepare("INSERT INTO games (id, ip_hash, gen_version, seed, started_at, finished_at) VALUES (?, 'ip', 1, 1, ?, ?)").bind(`stale-${String(i).padStart(12, '0')}`, old, i % 2 ? old : null),
+        db.prepare("INSERT INTO games (id, gen_version, seed, started_at, finished_at) VALUES (?, 1, 1, ?, ?)").bind(`stale-${String(i).padStart(12, '0')}`, old, i % 2 ? old : null),
       ),
     );
     await start();
