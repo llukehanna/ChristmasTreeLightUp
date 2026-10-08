@@ -1,4 +1,4 @@
-import type { BoardResponse, BoardRow, MyGamesResponse, RecentGame, User } from '../api/types';
+import type { AccountStats, BoardResponse, BoardRow, MyGamesResponse, RecentGame, User } from '../api/types';
 import { esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
 import { G_LOGO, I } from './icons';
 import type { SheetView } from './sheet';
@@ -43,14 +43,30 @@ function unrankedLabel(reason: RecentGame['reason']): string {
 }
 
 function gameHtml(g: RecentGame, now: number): string {
-  const [cls, label] = g.isBest ? ['s-best', 'Personal best'] : g.ranked ? ['s-counted', 'Ranked'] : ['', unrankedLabel(g.reason)];
+  const [cls, label] = g.isBest
+    ? ['s-best', g.imported ? 'Personal best · Imported' : 'Personal best']
+    : g.imported
+      ? ['s-imported', 'Imported']
+      : g.ranked
+        ? ['s-counted', 'Ranked']
+        : ['', unrankedLabel(g.reason)];
   return `<li class="acct-game${g.ranked ? '' : ' un'}">
     <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}</span>
     <span class="acct-when">${esc(formatWhen(g.finishedAt, now))}</span>
     <span class="acct-status ${cls}">${label}</span></li>`;
 }
 
-function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, now: number): string {
+/** The account's totals (GET /api/me/stats), the same on every device; dashes until they arrive. */
+function totalsHtml(s: Loadable<AccountStats>): string {
+  const d = s.status === 'ready' ? s.data : null;
+  const cell = (value: string, label: string): string => `<div><b>${value}</b><span>${label}</span></div>`;
+  return `<div class="acct-totals">${cell(d ? Number(d.solved).toLocaleString('en-US') : '–', 'Solved')}${cell(
+    d && d.averageMs !== null ? formatMs(Number(d.averageMs)) : '–',
+    'Average',
+  )}${cell(d ? String(Number(d.streak)) : '–', 'Day streak')}${cell(d ? String(Number(d.longestStreak)) : '–', 'Longest')}</div>`;
+}
+
+function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, now: number, s: Loadable<AccountStats>): string {
   if (!user)
     return `<div class="acct-empty"><div class="acct-emb">${I.list}</div><h3>Keep every tree</h3>
       <p class="acct-lede">Sign in to keep your games and put your best time on the leaderboard.</p>
@@ -66,7 +82,7 @@ function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, 
   const list = d.games.length ? `<ul class="acct-games">${d.games.map((x) => gameHtml(x, now)).join('')}</ul>` : '<p class="acct-note">No games yet. Light a tree to see it here.</p>';
   const links = `<div class="acct-links"><p>Signed in with Google${user.name ? ` as <b>${esc(user.name)}</b>` : ''}</p>
       <div><button type="button" data-act="signout">Sign out</button><button type="button" class="danger" data-act="delete">Delete account</button><a href="/privacy">Privacy</a></div></div>`;
-  return `${stats}<h3 class="acct-h3">Recent games</h3>${list}${links}`;
+  return `${stats}${totalsHtml(s)}<h3 class="acct-h3">Recent games</h3>${list}${links}`;
 }
 
 const tabAttrs = (id: ListTab, tab: ListTab): string =>
@@ -91,7 +107,14 @@ function bindTabKeys(list: HTMLElement): void {
 }
 
 /** The leaderboard and Your games: one sheet, two tabs (spec §6, pick 2C). */
-export function listView(tab: ListTab, board: Loadable<BoardResponse>, games: Loadable<MyGamesResponse>, user: User | null | undefined, now: number): SheetView {
+export function listView(
+  tab: ListTab,
+  board: Loadable<BoardResponse>,
+  games: Loadable<MyGamesResponse>,
+  user: User | null | undefined,
+  now: number,
+  stats: Loadable<AccountStats> = { status: 'loading' },
+): SheetView {
   return {
     label: tab === 'board' ? 'Leaderboard' : 'Your games',
     card: false,
@@ -106,7 +129,7 @@ export function listView(tab: ListTab, board: Loadable<BoardResponse>, games: Lo
             <button ${tabAttrs('games', tab)} type="button" data-act="tab-games">Your games</button>
           </div>
         </header>
-        <div class="acct-body" id="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${tab === 'board' ? boardBody(board, now) : gamesBody(games, user, now)}</div>
+        <div class="acct-body" id="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${tab === 'board' ? boardBody(board, now) : gamesBody(games, user, now, stats)}</div>
         ${tab === 'board' ? `<footer class="acct-pin">${boardPin(board, user, now)}</footer>` : ''}`;
       const list = inner.querySelector<HTMLElement>('[role="tablist"]');
       if (list) bindTabKeys(list);

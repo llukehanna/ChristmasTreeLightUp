@@ -1,7 +1,7 @@
 import { api, ApiError } from '../api/client';
 import { cleanName, isReserved } from '../api/names';
 import type { Session, SessionState } from '../api/session';
-import type { BoardResponse, MyGamesResponse } from '../api/types';
+import type { AccountStats, BoardResponse, MyGamesResponse } from '../api/types';
 import { canSaveName, deleteView, nameView, paintName, signInView, type NameState, type NameStatus, type SignInOptions } from './account-cards';
 import { AccountMenu } from './account-menu';
 import { listView, type ListTab, type Loadable } from './board-sheets';
@@ -30,6 +30,7 @@ export class Accounts {
   private tab: ListTab = 'board';
   private board: Loadable<BoardResponse> = { status: 'loading' };
   private games: Loadable<MyGamesResponse> = { status: 'loading' };
+  private stats: Loadable<AccountStats> = { status: 'loading' };
   private name: NameState = { status: 'empty', value: '' };
   private nameTimer = 0;
   private nameSeq = 0;
@@ -102,11 +103,11 @@ export class Accounts {
   openGames(from?: HTMLElement | null): void {
     this.tab = 'games';
     this.sheet.open(this.listNow(), from);
-    void this.loadGames();
+    this.loadTab();
   }
 
   private listNow() {
-    return listView(this.tab, this.board, this.games, this.session.current, Date.now());
+    return listView(this.tab, this.board, this.games, this.session.current, Date.now(), this.stats);
   }
 
   /** Redraws the leaderboard or Your games when its data arrives, if that list is still on screen. */
@@ -134,6 +135,26 @@ export class Accounts {
     this.refreshList();
   }
 
+  /** Your games' totals: the account's stats (spec 2026-10-08 §6.3). */
+  private async loadStats(): Promise<void> {
+    if (!this.session.current) return;
+    try {
+      this.stats = { status: 'ready', data: await api.myStats() };
+    } catch {
+      if (this.stats.status !== 'ready') this.stats = { status: 'error' };
+    }
+    this.refreshList();
+  }
+
+  /** The open tab's data: the board, or your games and their totals. */
+  private loadTab(): void {
+    if (this.tab === 'board') void this.loadBoard();
+    else {
+      void this.loadGames();
+      void this.loadStats();
+    }
+  }
+
   /** The menu head: your rank and best, when the menu opens. */
   private async loadSummary(): Promise<void> {
     try {
@@ -148,6 +169,7 @@ export class Accounts {
   private onSession(user: SessionState): void {
     this.menu.render(user, null);
     this.games = { status: 'loading' };
+    this.stats = { status: 'loading' };
     this.refreshList();
     if (user && user.name === null && !this.sheet.isOpen && this.firstNameAsk()) this.openName();
   }
@@ -245,10 +267,10 @@ export class Accounts {
         this.tab = act === 'tab-board' ? 'board' : 'games';
         this.sheet.update(this.listNow());
         this.sheet.body.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
-        void (this.tab === 'board' ? this.loadBoard() : this.loadGames());
+        this.loadTab();
         break;
       case 'reload':
-        void (this.tab === 'board' ? this.loadBoard() : this.loadGames());
+        this.loadTab();
         break;
       case 'signin':
         this.openSignIn({}, el);
