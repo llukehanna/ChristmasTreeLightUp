@@ -22,6 +22,7 @@ import { clearGame, loadGame, saveGame, takeReturn, type LoadedGame, type Online
 import { loadSettings, saveSettings, type Settings } from './store/settings';
 import { loadStats, localDay, recordWin, saveStats } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
+import { Accounts } from './ui/accounts';
 import { el } from './ui/dom';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
@@ -73,6 +74,8 @@ export class App {
   private readonly results: Results;
   private readonly menu: Menu;
   private readonly radioPanel: RadioPanel;
+  /** The HUD account chip and menu, and the account sheets (spec 2026-10-07 §6). */
+  private readonly accounts: Accounts;
   /** The signed-in player (spec 2026-10-07): loaded at start, changed by sign-in, naming and sign-out. */
   readonly session = new Session();
   /** A board exists: the first tree waits for the server (1.5 s at most). */
@@ -92,7 +95,10 @@ export class App {
       onChange: (s) => this.applySettings(s),
       onNewTree: () => this.newGame(),
       needsConfirm: () => this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
-      onOpen: () => this.radioPanel.close(),
+      onOpen: () => {
+        this.radioPanel.close();
+        this.accounts.closeMenu();
+      },
     });
     this.radioPanel = new RadioPanel(
       this.radio,
@@ -100,8 +106,23 @@ export class App {
         get: () => this.settings.effectsVolume,
         set: (v) => this.applySettings({ ...this.settings, effectsVolume: v }),
       },
-      { onOpen: () => this.menu.close(), onPillChange: () => this.fitHud() },
+      {
+        onOpen: () => {
+          this.menu.close();
+          this.accounts.closeMenu();
+        },
+        onPillChange: () => this.fitHud(),
+      },
     );
+    this.accounts = new Accounts(this.session, {
+      pause: () => this.pause(false),
+      closeOthers: () => {
+        this.menu.close();
+        this.radioPanel.close();
+      },
+      fitHud: () => this.fitHud(),
+      toast: (text, ms) => this.toast.show(text, ms),
+    });
     // Game sounds duck the music (spec §5.1), alongside anything else already listening.
     const onSound = this.sfx.onSound;
     this.sfx.onSound = () => {
@@ -283,6 +304,7 @@ export class App {
   private presentWin(now: number, won: WonRun, sound: boolean): void {
     this.menu.close();
     this.radioPanel.close();
+    this.accounts.closeMenu();
     this.hideIntro();
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
@@ -416,6 +438,8 @@ export class App {
     requestAnimationFrame((t) => this.loop(t));
     const dt = Math.min(50, now - (this.lastFrame || now));
     this.lastFrame = now;
+    // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
+    if (this.accounts.sheetOpen && !this.paused && this.canPause(now)) this.pause(false);
     // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
     this.handle(this.run.frame(now), now);
     this.updateHud(now);
@@ -476,7 +500,7 @@ export class App {
       },
     });
     // Any HUD button can be the first gesture: unlock audio inside it (the music itself waits for the first tap).
-    for (const id of ['radio-pill', 'pause-btn', 'menu-btn']) el(id).addEventListener('click', () => this.sfx.unlock());
+    for (const id of ['radio-pill', 'pause-btn', 'menu-btn', 'account-chip']) el(id).addEventListener('click', () => this.sfx.unlock());
     el('zoom-reset').addEventListener('click', () => this.setCamera(IDENTITY));
     el('corner-new').addEventListener('click', () => this.newGame());
   }
@@ -488,6 +512,11 @@ export class App {
       this.menu.close();
       return;
     }
+    if (this.accounts.menuOpen) {
+      this.accounts.closeMenu();
+      return;
+    }
+    if (this.accounts.sheetOpen) return;
     // On desktop the game stays playable behind the radio popover (spec §5.3); the phone sheet closes like the menu.
     if (this.radioPanel.isOpen && this.phone.matches) {
       this.radioPanel.close();
@@ -546,18 +575,24 @@ export class App {
 
   /**
    * The radio pill takes the widest label (station · title · artist, station · title, station, short name, icon only)
-   * that leaves the wordmark clear, then the tagline is placed around the HUD's new width.
+   * that leaves the wordmark clear, first beside the account chip's full name, then beside its initial alone; then the
+   * tagline is placed around the HUD's new width.
    */
   private fitHud(): void {
     if (!this.laidOut) return;
     const pill = document.getElementById('radio-pill');
+    const chip = document.getElementById('account-chip');
     const hud = document.querySelector('.hud');
     const mark = document.querySelector('.wordmark');
     if (pill && hud && mark) {
       const markRight = mark.getBoundingClientRect().right;
-      for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
-        pill.dataset.fit = fit;
-        if (hud.getBoundingClientRect().left - markRight >= 16) break;
+      const clear = (): boolean => hud.getBoundingClientRect().left - markRight >= 16;
+      fit: for (const chipFit of ['full', 'icon']) {
+        if (chip) chip.dataset.fit = chipFit;
+        for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
+          pill.dataset.fit = fit;
+          if (clear()) break fit;
+        }
       }
     }
     this.placeIntro();
@@ -633,7 +668,7 @@ export class App {
       // The settings and radio dialogs handle their own Escape (and mark it handled). Keys never reach the game while
       // the menu is open, or while focus is inside the radio panel; the desktop popover stays open while you play, so
       // with focus back on the game (or nowhere) P still pauses.
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.hasFocus || isEditable(e.target)) return;
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.hasFocus || this.accounts.blocksKeys || isEditable(e.target)) return;
       if (e.key === 'Escape' && this.paused) {
         e.preventDefault();
         this.resume();
@@ -679,12 +714,13 @@ export class App {
       // The dialogs would otherwise sit on top of the pause overlay, inert.
       this.menu.close();
       this.radioPanel.close();
+      this.accounts.closeMenu();
     }
     this.paused = on;
     this.pausedDrawn = false;
     document.body.classList.toggle('paused', on);
     el('pause').hidden = !on;
-    for (const sel of ['.hud', '#menu', '#radio-panel']) {
+    for (const sel of ['.hud', '#menu', '#radio-panel', '#account-menu']) {
       const node = document.querySelector<HTMLElement>(sel);
       if (node) node.inert = on;
     }

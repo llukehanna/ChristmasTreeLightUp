@@ -46,3 +46,34 @@ export async function solveByTapping(page: Page, gapMs = 50): Promise<void> {
   }, gapMs);
   await expect.poll(() => page.evaluate(() => (window as unknown as W).__aglow.state().won)).toBe(true);
 }
+
+/** A unique Google account for this test: fake sign-in takes the aglow_fake_as cookie as the account. */
+export async function asPlayer(page: Page): Promise<{ email: string; name: string }> {
+  const tag = `${Date.now().toString(36).slice(-5)}${Math.floor(Math.random() * 1e4)}`;
+  const email = `p${tag}@example.com`;
+  await page.context().addCookies([{ name: 'aglow_fake_as', value: email, url: 'http://localhost:4173' }]);
+  return { email, name: `p${tag}` };
+}
+
+/** Signs in from the HUD chip; (fake) Google sends the browser back to the same page. */
+export async function signInFromChip(page: Page): Promise<void> {
+  await page.locator('#account-chip').click();
+  await page.getByRole('dialog', { name: 'Sign in' }).getByRole('link', { name: 'Continue with Google' }).click();
+  await page.waitForURL(/\/\?test$/);
+}
+
+/** The name card a new account gets once: types a free name and saves it. */
+export async function pickName(page: Page, name: string): Promise<void> {
+  const card = page.getByRole('dialog', { name: 'Pick a display name' });
+  await card.getByLabel('Display name').fill(name);
+  await expect(card.locator('.acct-check')).toHaveText(`“${name}” is available`);
+  await card.getByRole('button', { name: 'Save name' }).click();
+  await expect(card).toBeHidden();
+}
+
+/** A sheet over a game in progress pauses it; this resumes, as a player tapping the overlay would. */
+export async function resumeIfPaused(page: Page): Promise<void> {
+  const overlay = page.locator('#pause');
+  if (await overlay.isVisible()) await overlay.click();
+  await expect(overlay).toBeHidden();
+}
