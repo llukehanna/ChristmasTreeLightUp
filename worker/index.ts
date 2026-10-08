@@ -1,4 +1,5 @@
 import type { Bucket } from './lib/bucket.js';
+import type { Db } from './lib/db.js';
 import type { AppEnv, Ctx, RateLimitBinding } from './lib/env.js';
 import { handle } from './router.js';
 
@@ -8,6 +9,9 @@ export interface Env {
   MUSIC: R2Bucket;
   /** Public origin of the bucket (R2 custom domain), no trailing slash. */
   MUSIC_BASE_URL: string;
+  /** D1 database "aglow": users, sessions and games (migrations/). */
+  DB: D1Database;
+  AUTH_MODE?: string;
   /** Secret, set by Luke. */
   ADMIN_PASSWORD?: string;
   /** Secret, 256 random bits that nobody sees. */
@@ -19,6 +23,7 @@ export interface Env {
 // Type-level proofs that the runtime types satisfy the structural ones worker/lib and worker/routes are written against.
 type Assignable<T extends U, U> = T;
 export type BucketCheck = Assignable<R2Bucket, Bucket>;
+export type DbCheck = Assignable<D1Database, Db>;
 export type LimiterCheck = Assignable<RateLimit, RateLimitBinding>;
 export type CtxCheck = Assignable<ExecutionContext, Ctx>;
 export type EnvCheck = Assignable<Env, AppEnv>;

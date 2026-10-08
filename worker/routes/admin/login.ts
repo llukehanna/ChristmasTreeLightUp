@@ -1,5 +1,5 @@
 import type { AppEnv } from '../../lib/env.js';
-import { adminJson, notConfigured, readTextCapped } from '../../lib/http.js';
+import { json, notConfigured, readTextCapped } from '../../lib/http.js';
 import { GLOBAL_KEY, RateLimiter } from '../../lib/ratelimit.js';
 import { adminSecrets, createToken, passwordMatches, sessionCookie, sessionKey } from '../../lib/session.js';
 
@@ -15,7 +15,7 @@ export function resetLoginLimits(): void {
   everyone = new RateLimiter(100, WINDOW_MS);
 }
 
-const tooMany = (): Response => adminJson({ error: 'Too many attempts. Try again in a few minutes.' }, { status: 429 });
+const tooMany = (): Response => json({ error: 'Too many attempts. Try again in a few minutes.' }, { status: 429 });
 
 export async function POST(req: Request, env: AppEnv): Promise<Response> {
   const secrets = adminSecrets(env);
@@ -27,7 +27,7 @@ export async function POST(req: Request, env: AppEnv): Promise<Response> {
   if (!perIp.allow(ip, now) || !everyone.allow(GLOBAL_KEY, now)) return tooMany();
   if (env.LOGIN_LIMITER && !(await env.LOGIN_LIMITER.limit({ key: ip })).success) return tooMany();
   const text = await readTextCapped(req, MAX_BODY);
-  if (text === null) return adminJson({ error: 'Request too large' }, { status: 413 });
+  if (text === null) return json({ error: 'Request too large' }, { status: 413 });
   let password = '';
   try {
     const body: unknown = JSON.parse(text);
@@ -37,7 +37,7 @@ export async function POST(req: Request, env: AppEnv): Promise<Response> {
   } catch {
     // treated as an empty password
   }
-  if (!(await passwordMatches(password, secrets.password))) return adminJson({ error: 'Wrong password' }, { status: 401 });
+  if (!(await passwordMatches(password, secrets.password))) return json({ error: 'Wrong password' }, { status: 401 });
   const token = await createToken(await sessionKey(secrets.secret, secrets.password), Math.floor(now / 1000));
-  return adminJson({ ok: true }, { headers: { 'Set-Cookie': sessionCookie(token) } });
+  return json({ ok: true }, { headers: { 'Set-Cookie': sessionCookie(token) } });
 }

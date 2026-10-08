@@ -7,6 +7,7 @@ import { CURRENT } from '../../../worker/lib/stations-store';
 import { resetLoginLimits } from '../../../worker/routes/admin/login';
 import { handle } from '../../../worker/router';
 import { FakeBucket } from './fake-bucket';
+import { NO_DB } from './no-db';
 
 const SECRET = 'test-session-secret-not-real';
 const PASSWORD = 'let-it-snow';
@@ -34,7 +35,7 @@ const onlyB = () => [{ ...v3.stations[0], tracks: [v3.stations[0].tracks[1]] }];
 
 let bucket: FakeBucket;
 let pending: Promise<unknown>[];
-const env = (over: Partial<AppEnv> = {}): AppEnv => ({ MUSIC: bucket, MUSIC_BASE_URL: B, ADMIN_PASSWORD: PASSWORD, SESSION_SECRET: SECRET, ...over });
+const env = (over: Partial<AppEnv> = {}): AppEnv => ({ DB: NO_DB, MUSIC: bucket, MUSIC_BASE_URL: B, ADMIN_PASSWORD: PASSWORD, SESSION_SECRET: SECRET, ...over });
 const ctx = { waitUntil: (p: Promise<unknown>) => void pending.push(p) };
 const call = (req: Request, e: AppEnv = env()) => handle(req, e, ctx);
 const settle = () => Promise.all(pending);
@@ -47,7 +48,8 @@ interface ReqOpts {
 }
 function req(method: string, path: string, { headers = {}, body, origin }: ReqOpts = {}): Request {
   const o = origin === undefined ? (method === 'GET' ? null : SITE) : origin;
-  return new Request(`${SITE}${path}`, { method, headers: { ...(o === null ? {} : { origin: o }), ...headers }, body });
+  const type: Record<string, string> = method !== 'GET' && !path.startsWith('/api/admin/upload') ? { 'content-type': 'application/json' } : {};
+  return new Request(`${SITE}${path}`, { method, headers: { ...type, ...(o === null ? {} : { origin: o }), ...headers }, body });
 }
 const cookie = async (secret = SECRET, password = PASSWORD) =>
   `aglow_admin=${await createToken(await sessionKey(secret, password), Math.floor(Date.now() / 1000))}`;
@@ -81,7 +83,8 @@ describe('routing', () => {
       ['PUT', '/api/admin/upload?folder=tracks&station=christmas-jazz&name=a.mp3', 401],
     ];
     for (const [method, path, status] of table) {
-      const r = await call(req(method, path, { headers: { 'content-type': 'audio/mpeg' }, body: method === 'GET' ? undefined : '{}' }));
+      const headers: Record<string, string> = path.startsWith('/api/admin/upload') ? { 'content-type': 'audio/mpeg' } : {};
+      const r = await call(req(method, path, { headers, body: method === 'GET' ? undefined : '{}' }));
       expect(r.status, `${method} ${path}`).toBe(status);
       expect(r.headers.get('content-type'), `${method} ${path}`).toMatch(/^application\/json/);
     }
@@ -91,7 +94,7 @@ describe('routing', () => {
       const r = await call(req('GET', path));
       expect(r.status, path).toBe(404);
       expect(r.headers.get('cache-control'), path).toBe('no-store');
-      expect(await r.json(), path).toEqual({ error: 'Not found' });
+      expect(await r.json(), path).toEqual({ error: 'not_found', message: 'Not found' });
     }
   });
   it('answers 405, never cached and with Allow, for a known path with the wrong method', async () => {
@@ -180,6 +183,22 @@ describe('origin check', () => {
   it('does not apply to reads', async () => {
     expect((await call(req('GET', '/api/admin/stations', { headers: await authed() }))).status).toBe(200);
     expect((await call(req('GET', '/api/stations', { origin: 'https://evil.example' }))).status).toBe(200);
+  });
+});
+
+describe('write checks and fake mode', () => {
+  it('refuses a write that is not JSON anywhere but the raw-audio upload', async () => {
+    const r = await call(req('PUT', '/api/admin/stations', { headers: { ...(await authed()), 'content-type': 'text/plain' }, body: '{}' }));
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ error: 'forbidden', message: 'Cross-origin request refused' });
+    expect(stored()).toEqual(v3);
+  });
+  it('refuses every request with 500 misconfigured when fake sign-in is set on a non-local host', async () => {
+    const r = await call(req('GET', '/api/stations'), env({ AUTH_MODE: 'fake' }));
+    expect(r.status).toBe(500);
+    expect(await r.json()).toEqual({ error: 'misconfigured', message: 'Sign-in is misconfigured.' });
+    const local = await handle(new Request('http://localhost/api/stations'), env({ AUTH_MODE: 'fake' }), ctx);
+    expect(local.status).toBe(200);
   });
 });
 
