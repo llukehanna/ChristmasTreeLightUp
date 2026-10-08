@@ -46,4 +46,11 @@ describe('migrations', () => {
     await db.prepare("INSERT INTO users (google_sub, email, name, name_key, created_at) VALUES ('g-1', 'a@example.com', 'Comet', 'comet', 1)").run();
     await expect(db.prepare("INSERT INTO users (google_sub, email, name, name_key, created_at) VALUES ('g-2', 'b@example.com', 'COMET', 'comet', 1)").run()).rejects.toThrow(/UNIQUE/);
   });
+
+  it('games.source: play by default, import for imported runs, nothing else (migration 0002)', async () => {
+    await db.prepare("INSERT INTO games (id, gen_version, seed, started_at) VALUES ('played-aaaaaaaaaaaaa', 1, 1, 1)").run();
+    expect((await db.prepare("SELECT source FROM games WHERE id = 'played-aaaaaaaaaaaaa'").first<{ source: string }>())?.source).toBe('play');
+    await db.prepare("INSERT INTO games (id, gen_version, seed, started_at, source) VALUES ('import-aaaaaaaaaaaaa', 0, 0, 1, 'import')").run();
+    await expect(db.prepare("INSERT INTO games (id, gen_version, seed, started_at, source) VALUES ('bogus-aaaaaaaaaaaaaa', 0, 0, 1, 'bogus')").run()).rejects.toThrow(/CHECK/);
+  });
 });

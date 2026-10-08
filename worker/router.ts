@@ -3,6 +3,7 @@ import { checkWrite, errorResponse, HttpError, isLocalHost, json } from './lib/h
 import * as session from './routes/admin/session.js';
 import * as adminStations from './routes/admin/stations.js';
 import * as upload from './routes/admin/upload.js';
+import * as historyImport from './routes/admin/history.js';
 import * as auth from './routes/auth.js';
 import * as board from './routes/board.js';
 import * as games from './routes/games.js';
@@ -34,6 +35,7 @@ export const ROUTES: readonly Route[] = [
   ['GET', /^\/api\/admin\/stations$/, adminStations.GET],
   ['PUT', /^\/api\/admin\/stations$/, adminStations.PUT],
   ['PUT', /^\/api\/admin\/upload$/, upload.PUT],
+  ['POST', /^\/api\/admin\/import$/, historyImport.POST],
 ];
 
 /** The Worker's request handler (it only runs for /api/*; everything else is static assets). `routes` is for tests. */

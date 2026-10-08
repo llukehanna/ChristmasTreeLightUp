@@ -113,3 +113,14 @@ export interface ImportRequest {
   /** Date#getTimezoneOffset() at import time: UTC minus local, in minutes (420 in PDT). */
   tz: number;
 }
+
+/** POST /api/admin/import's answer. */
+export interface ImportResponse {
+  /** Runs inserted (0 when this importId was imported before). */
+  added: number;
+  already: boolean;
+  /** What the dates show: the request's streaks, or less when they didn't fit between 2026-09-29 and the last day. */
+  streak: number;
+  longestStreak: number;
+  clamped: boolean;
+}
