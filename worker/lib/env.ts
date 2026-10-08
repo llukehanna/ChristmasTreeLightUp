@@ -1,11 +1,6 @@
 import type { Bucket } from './bucket.js';
 import type { Db } from './db.js';
 
-/** The slice of a Workers rate-limit binding the login route uses. */
-export interface RateLimitBinding {
-  limit(options: { key: string }): Promise<{ success: boolean }>;
-}
-
 /** Bindings as the routes see them (structural; worker/index.ts proves the real Env satisfies this). */
 export interface AppEnv {
   MUSIC: Bucket;
@@ -22,9 +17,6 @@ export interface AppEnv {
   GOOGLE_CLIENT_SECRET?: string;
   /** Comma-separated, compared lower-cased: the radio admin's Google email(s). */
   ADMIN_EMAILS?: string;
-  ADMIN_PASSWORD?: string;
-  SESSION_SECRET?: string;
-  LOGIN_LIMITER?: RateLimitBinding;
 }
 
 /** The slice of ExecutionContext the routes use. */

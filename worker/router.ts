@@ -1,7 +1,5 @@
 import type { AppEnv, Ctx, Handler } from './lib/env.js';
 import { checkWrite, errorResponse, HttpError, isLocalHost, json } from './lib/http.js';
-import * as login from './routes/admin/login.js';
-import * as logout from './routes/admin/logout.js';
 import * as session from './routes/admin/session.js';
 import * as adminStations from './routes/admin/stations.js';
 import * as upload from './routes/admin/upload.js';
@@ -32,8 +30,6 @@ export const ROUTES: readonly Route[] = [
   ['GET', /^\/api\/board$/, board.getBoard],
   ['POST', /^\/api\/games\/claim$/, games.claimGames],
   ['POST', /^\/api\/games\/([A-Za-z0-9_-]{16,64})\/finish$/, games.finishGame],
-  ['POST', /^\/api\/admin\/login$/, login.POST],
-  ['POST', /^\/api\/admin\/logout$/, logout.POST],
   ['GET', /^\/api\/admin\/session$/, session.GET],
   ['GET', /^\/api\/admin\/stations$/, adminStations.GET],
   ['PUT', /^\/api\/admin\/stations$/, adminStations.PUT],

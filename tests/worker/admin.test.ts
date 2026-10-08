@@ -1,17 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isUrl, type StationsFile } from '../../../src/radio/schema';
-import type { AppEnv, RateLimitBinding } from '../../../worker/lib/env';
-import { resetPublicCache } from '../../../worker/lib/public-stations';
-import { createToken, sessionKey, verifyToken } from '../../../worker/lib/session';
-import { CURRENT } from '../../../worker/lib/stations-store';
-import { resetLoginLimits } from '../../../worker/routes/admin/login';
-import { handle, type Route } from '../../../worker/router';
-import { FakeBucket } from './fake-bucket';
-import { NO_DB } from './no-db';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isUrl, type StationsFile } from '../../src/radio/schema';
+import type { Db } from '../../worker/lib/db';
+import type { AppEnv } from '../../worker/lib/env';
+import { resetPublicCache } from '../../worker/lib/public-stations';
+import { CURRENT } from '../../worker/lib/stations-store';
+import { handle, type Route } from '../../worker/router';
+import { FakeBucket } from '../unit/worker/fake-bucket';
+import { signIn, startDb, testEnv, wipe } from './harness';
 
-const SECRET = 'test-session-secret-not-real';
-const PASSWORD = 'let-it-snow';
-const SITE = 'https://aglow.example';
+/** Fake sign-in only works on localhost. */
+const SITE = 'http://localhost';
+const ADMIN = 'admin@example.com';
 const B = 'https://aglow-music.example';
 const CONFLICT = 'Stations changed somewhere else. Reload to get the latest, then redo your change.';
 const MB = 1024 * 1024;
@@ -33,9 +32,17 @@ const v3: StationsFile = {
 };
 const onlyB = () => [{ ...v3.stations[0], tracks: [v3.stations[0].tracks[1]] }];
 
+let db: Db;
+let dispose: () => Promise<void>;
 let bucket: FakeBucket;
 let pending: Promise<unknown>[];
-const env = (over: Partial<AppEnv> = {}): AppEnv => ({ DB: NO_DB, MUSIC: bucket, MUSIC_BASE_URL: B, ADMIN_PASSWORD: PASSWORD, SESSION_SECRET: SECRET, ...over });
+let adminCookie = '';
+beforeAll(async () => {
+  ({ db, dispose } = await startDb());
+}, 30_000);
+afterAll(() => dispose());
+
+const env = (over: Partial<AppEnv> = {}): AppEnv => testEnv(db, { MUSIC: bucket, MUSIC_BASE_URL: B, ADMIN_EMAILS: ADMIN, ...over });
 const ctx = { waitUntil: (p: Promise<unknown>) => void pending.push(p) };
 const call = (req: Request, e: AppEnv = env()) => handle(req, e, ctx);
 const settle = () => Promise.all(pending);
@@ -51,20 +58,20 @@ function req(method: string, path: string, { headers = {}, body, origin }: ReqOp
   const type: Record<string, string> = method !== 'GET' && !path.startsWith('/api/admin/upload') ? { 'content-type': 'application/json' } : {};
   return new Request(`${SITE}${path}`, { method, headers: { ...type, ...(o === null ? {} : { origin: o }), ...headers }, body });
 }
-const cookie = async (secret = SECRET, password = PASSWORD) =>
-  `aglow_admin=${await createToken(await sessionKey(secret, password), Math.floor(Date.now() / 1000))}`;
-const authed = async (extra: Record<string, string> = {}) => ({ cookie: await cookie(), ...extra });
+/** The admin's session (fake Google sign-in as an ADMIN_EMAILS address). */
+const authed = async (extra: Record<string, string> = {}) => ({ cookie: adminCookie, ...extra });
 const putStations = async (body: unknown, opts: ReqOpts = {}) =>
   call(req('PUT', '/api/admin/stations', { ...opts, headers: { ...(await authed()), ...opts.headers }, body: typeof body === 'string' ? body : JSON.stringify(body) }));
 const stored = (): StationsFile => JSON.parse(bucket.text(CURRENT) ?? 'null') as StationsFile;
 
-beforeEach(() => {
+beforeEach(async () => {
+  await wipe(db);
   bucket = new FakeBucket();
   bucket.seed(CURRENT, JSON.stringify(v3), { contentType: 'application/json' });
   for (const k of ['tracks/christmas-jazz/a.mp3', 'tracks/christmas-jazz/b b.mp3', 'covers/christmas-jazz/c.png']) bucket.seed(k, 'media');
   pending = [];
   resetPublicCache();
-  resetLoginLimits();
+  adminCookie = await signIn(env(), ADMIN);
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -72,12 +79,10 @@ afterEach(() => {
 });
 
 describe('routing', () => {
-  it('serves every route in the table (unauthenticated callers get 401 from admin data routes)', async () => {
+  it('serves every admin route; signed-out callers get 401 JSON', async () => {
     const table: [string, string, number][] = [
       ['GET', '/api/stations', 200],
-      ['POST', '/api/admin/login', 401],
-      ['POST', '/api/admin/logout', 200],
-      ['GET', '/api/admin/session', 200],
+      ['GET', '/api/admin/session', 401],
       ['GET', '/api/admin/stations', 401],
       ['PUT', '/api/admin/stations', 401],
       ['PUT', '/api/admin/upload?folder=tracks&station=christmas-jazz&name=a.mp3', 401],
@@ -88,6 +93,9 @@ describe('routing', () => {
       expect(r.status, `${method} ${path}`).toBe(status);
       expect(r.headers.get('content-type'), `${method} ${path}`).toMatch(/^application\/json/);
     }
+  });
+  it('the password routes are gone', async () => {
+    for (const path of ['/api/admin/login', '/api/admin/logout']) expect((await call(req('POST', path, { body: '{}' }))).status, path).toBe(404);
   });
   it('answers 404 JSON, never cached, for unknown /api paths', async () => {
     for (const path of ['/api/nope', '/api/stations/', '/api/admin', '/api/admin/', '/api/admin/upload-token', '/api/__proto__', '/api/admin/constructor', '/']) {
@@ -101,8 +109,6 @@ describe('routing', () => {
     const cases: [string, string, string][] = [
       ['POST', '/api/stations', 'GET'],
       ['HEAD', '/api/stations', 'GET'],
-      ['GET', '/api/admin/login', 'POST'],
-      ['GET', '/api/admin/logout', 'POST'],
       ['POST', '/api/admin/session', 'GET'],
       ['DELETE', '/api/admin/stations', 'GET, PUT'],
       ['POST', '/api/admin/stations', 'GET, PUT'],
@@ -119,29 +125,31 @@ describe('routing', () => {
   it('turns an unexpected error into a 503, never a 500', async () => {
     const broken = new Proxy(env(), {
       get(target, p, receiver) {
-        if (p === 'ADMIN_PASSWORD') throw new Error('boom');
+        if (p === 'ADMIN_EMAILS') throw new Error('boom');
         return Reflect.get(target, p, receiver) as unknown;
       },
     });
-    const r = await call(req('GET', '/api/admin/session'), broken);
+    const r = await call(req('GET', '/api/admin/session', { headers: await authed() }), broken);
     expect(r.status).toBe(503);
     expect(r.headers.get('cache-control')).toBe('no-store');
   });
   it('logs the route, method and error class of an unexpected error, never its message, body, cookie or secrets', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
+      const secret = env().AUTH_SECRET ?? '';
       const broken = new Proxy(env(), {
         get(target, p, receiver) {
-          if (p === 'ADMIN_PASSWORD') throw new RangeError(`boom ${PASSWORD} ${SECRET}`);
+          if (p === 'ADMIN_EMAILS') throw new RangeError(`boom ${secret}`);
           return Reflect.get(target, p, receiver) as unknown;
         },
       });
-      const r = await call(req('PUT', '/api/admin/upload?folder=tracks&station=x&name=secret-name.mp3', { headers: { cookie: 'aglow_admin=abc.def' }, body: 'private body' }), broken);
+      const headers = await authed({ 'content-type': 'audio/mpeg' });
+      const r = await call(req('PUT', '/api/admin/upload?folder=tracks&station=x&name=secret-name.mp3', { headers, body: 'private body' }), broken);
       expect(r.status).toBe(503);
       expect(log).toHaveBeenCalledTimes(1);
       expect(log.mock.calls[0]).toEqual(['api', '/api/admin/upload', 'PUT', 'RangeError']);
       const logged = JSON.stringify(log.mock.calls);
-      for (const leak of ['boom', PASSWORD, SECRET, 'private body', 'abc.def', 'secret-name']) expect(logged).not.toContain(leak);
+      for (const leak of ['boom', secret, 'private body', adminCookie, 'secret-name']) expect(logged).not.toContain(leak);
       expect(JSON.stringify(await r.json())).not.toContain('boom');
 
       log.mockClear();
@@ -159,26 +167,23 @@ describe('routing', () => {
 });
 
 describe('origin check', () => {
-  const mutating: [string, string][] = [
-    ['POST', '/api/admin/login'],
-    ['POST', '/api/admin/logout'],
+  const writes: [string, string][] = [
     ['PUT', '/api/admin/stations'],
     ['PUT', '/api/admin/upload?folder=tracks&station=christmas-jazz&name=a.mp3'],
+    ['POST', '/api/auth/signout'],
+    ['DELETE', '/api/me'],
   ];
-  it('refuses admin POST/PUT without an Origin header, or from another origin, even with a session', async () => {
-    for (const [method, path] of mutating) {
-      for (const origin of [null, 'https://evil.example', 'null', 'http://aglow.example', 'https://aglow.example:444']) {
-        const r = await call(req(method, path, { origin, headers: await authed({ 'content-type': 'audio/mpeg', 'content-length': '2' }), body: '{}' }));
+  it('refuses writes without an Origin header, or from another origin, even with a session', async () => {
+    for (const [method, path] of writes) {
+      const type = path.startsWith('/api/admin/upload') ? 'audio/mpeg' : 'application/json';
+      for (const origin of [null, 'https://evil.example', 'null', 'https://localhost', 'http://localhost:444']) {
+        const r = await call(req(method, path, { origin, headers: await authed({ 'content-type': type, 'content-length': '2' }), body: '{}' }));
         expect(r.status, `${method} ${path} ${origin}`).toBe(403);
         expect(r.headers.get('cache-control')).toBe('no-store');
         expect(r.headers.get('set-cookie')).toBeNull();
       }
     }
     expect(stored()).toEqual(v3);
-  });
-  it('lets same-origin requests through', async () => {
-    const r = await call(req('POST', '/api/admin/login', { body: JSON.stringify({ password: PASSWORD }) }));
-    expect(r.status).toBe(200);
   });
   it('does not apply to reads', async () => {
     expect((await call(req('GET', '/api/admin/stations', { headers: await authed() }))).status).toBe(200);
@@ -194,22 +199,11 @@ describe('write checks and fake mode', () => {
     expect(stored()).toEqual(v3);
   });
   it('refuses every request with 500 misconfigured when fake sign-in is set on a non-local host', async () => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const r = await call(req('GET', '/api/stations'), env({ AUTH_MODE: 'fake' }));
+    const r = await handle(new Request('https://aglow.example/api/stations'), env(), ctx);
     expect(r.status).toBe(500);
     expect(await r.json()).toEqual({ error: 'misconfigured', message: 'Sign-in is misconfigured.' });
-    // Logged without any detail (no host, path, cookie or secret).
-    expect(logged.mock.calls).toEqual([['api', 'misconfigured']]);
-    for (const host of ['localhost', '127.0.0.1', '[::1]', 'localhost:8787']) {
-      const local = await handle(new Request(`http://${host}/api/stations`), env({ AUTH_MODE: 'fake' }), ctx);
-      expect(local.status, host).toBe(200);
-    }
-    for (const host of ['localhost.evil.example', '127.0.0.2', 'aglow.lukeghanna.com']) {
-      const remote = await handle(new Request(`http://${host}/api/stations`), env({ AUTH_MODE: 'fake' }), ctx);
-      expect(remote.status, host).toBe(500);
-    }
+    expect((await call(req('GET', '/api/stations'))).status).toBe(200);
   });
-
   it("passes a route's capture groups to its handler as raw, still URL-encoded params", async () => {
     let seen: readonly string[] = [];
     const routes: readonly Route[] = [['GET', /^\/api\/test\/([^/]+)\/x$/, (_r, _e, _c, params) => ((seen = params), new Response('ok'))]];
@@ -220,124 +214,46 @@ describe('write checks and fake mode', () => {
   });
 });
 
-describe('login', () => {
-  const post = (password: string, ip: string | null, e: AppEnv = env()) =>
-    call(req('POST', '/api/admin/login', { headers: { 'content-type': 'application/json', ...(ip ? { 'cf-connecting-ip': ip } : {}) }, body: JSON.stringify({ password }) }), e);
-  it('rejects a wrong password', async () => {
-    const r = await post('nope', '1.1.1.1');
-    expect(r.status).toBe(401);
-    expect(await r.json()).toEqual({ error: 'Wrong password' });
-    expect(r.headers.get('set-cookie')).toBeNull();
-    expect(r.headers.get('cache-control')).toBe('no-store');
-  });
-  it('sets a locked-down session cookie for the right password, holding a token that verifies', async () => {
-    const r = await post(PASSWORD, '2.2.2.2');
-    expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ ok: true });
-    const set = r.headers.get('set-cookie') ?? '';
-    expect(set).toMatch(/^aglow_admin=\d+\.[A-Za-z0-9_-]{43}; HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=604800$/);
-    expect(r.headers.get('cache-control')).toBe('no-store');
-    const token = /^aglow_admin=([^;]+)/.exec(set)?.[1];
-    expect(await verifyToken(token, await sessionKey(SECRET, PASSWORD), Math.floor(Date.now() / 1000))).toBe(true);
-  });
-  it('rate-limits after 10 attempts from one address (CF-Connecting-IP)', async () => {
-    for (let k = 0; k < 10; k++) await post('nope', '3.3.3.3');
-    const r = await post(PASSWORD, '3.3.3.3');
-    expect(r.status).toBe(429);
-    expect(r.headers.get('cache-control')).toBe('no-store');
-    expect((await post(PASSWORD, '3.3.3.4')).status).toBe(200);
-  });
-  it('keys on CF-Connecting-IP, so a forged X-Forwarded-For does not reset the count', async () => {
-    const forged = (k: number) =>
-      call(req('POST', '/api/admin/login', { headers: { 'cf-connecting-ip': '7.7.7.7', 'x-forwarded-for': `9.9.9.${k}` }, body: JSON.stringify({ password: 'nope' }) }));
-    for (let k = 0; k < 10; k++) await forged(k);
-    expect((await forged(99)).status).toBe(429);
-  });
-  it('counts callers without an address together as "unknown"', async () => {
-    for (let k = 0; k < 10; k++) await post('nope', null);
-    expect((await post(PASSWORD, null)).status).toBe(429);
-  });
-  it('also limits all callers together, so rotating addresses does not help', async () => {
-    for (let k = 0; k < 100; k++) await post('nope', `10.0.${Math.floor(k / 200)}.${k}`);
-    expect((await post(PASSWORD, '10.9.9.9')).status).toBe(429);
-  });
-  it('asks the LOGIN_LIMITER binding, keyed by IP, and answers 429 when it says no', async () => {
-    const limit = vi.fn(async ({ key }: { key: string }) => ({ success: key !== '8.8.8.8' }));
-    const LOGIN_LIMITER: RateLimitBinding = { limit };
-    expect((await post(PASSWORD, '8.8.8.8', env({ LOGIN_LIMITER }))).status).toBe(429);
-    expect(limit).toHaveBeenCalledWith({ key: '8.8.8.8' });
-    const ok = await post(PASSWORD, '8.8.4.4', env({ LOGIN_LIMITER }));
-    expect(ok.status).toBe(200);
-    expect(ok.headers.get('set-cookie')).not.toBeNull();
-  });
-  it('rejects an oversized body with 413, before parsing it', async () => {
-    const big = req('POST', '/api/admin/login', { headers: { 'cf-connecting-ip': '4.4.4.4' }, body: JSON.stringify({ password: 'x'.repeat(5000) }) });
-    const r = await call(big);
-    expect(r.status).toBe(413);
-    expect(r.headers.get('cache-control')).toBe('no-store');
-  });
-  it('treats malformed JSON and a missing password as a wrong password', async () => {
-    for (const body of ['{nope', 'null', '[]', '{}', '{"password":5}']) {
-      const r = await call(req('POST', '/api/admin/login', { headers: { 'cf-connecting-ip': '5.5.5.5' }, body }));
-      expect(r.status, body).toBe(401);
-    }
-  });
-  it('answers 503, never a login, when either secret is unset or blank', async () => {
-    for (const over of [{ ADMIN_PASSWORD: undefined }, { ADMIN_PASSWORD: '' }, { ADMIN_PASSWORD: '   ' }, { SESSION_SECRET: undefined }, { SESSION_SECRET: ' ' }]) {
-      const e = env(over);
-      const r = await post(e.ADMIN_PASSWORD ?? '', '6.6.6.6', e);
-      expect(r.status, JSON.stringify(over)).toBe(503);
-      expect(await r.json()).toEqual({ error: 'Admin is not configured' });
-      expect(r.headers.get('set-cookie')).toBeNull();
-      expect(r.headers.get('cache-control')).toBe('no-store');
-    }
-  });
-});
-
-describe('logout and session', () => {
-  it('logout clears the cookie', async () => {
-    const r = await call(req('POST', '/api/admin/logout'));
-    expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ ok: true });
-    expect(r.headers.get('set-cookie')).toMatch(/^aglow_admin=; .*Max-Age=0/);
-    expect(r.headers.get('cache-control')).toBe('no-store');
-  });
-  it('reports whether the caller is an admin', async () => {
-    expect(await (await call(req('GET', '/api/admin/session'))).json()).toEqual({ admin: false });
+describe('admin session', () => {
+  it('401 signed out, 403 for an account not in ADMIN_EMAILS, 200 for the admin', async () => {
+    const out = await call(req('GET', '/api/admin/session'));
+    expect(out.status).toBe(401);
+    expect(await out.json()).toEqual({ error: 'signed_out', message: 'Sign in first.' });
+    const other = await signIn(env(), 'someone@example.com');
+    const no = await call(req('GET', '/api/admin/session', { headers: { cookie: other } }));
+    expect(no.status).toBe(403);
+    expect(await no.json()).toEqual({ error: 'forbidden', message: 'This account is not the radio admin.' });
     const yes = await call(req('GET', '/api/admin/session', { headers: await authed() }));
-    expect(await yes.json()).toEqual({ admin: true });
+    expect(yes.status).toBe(200);
+    expect(await yes.json()).toEqual({ admin: true, name: null });
     expect(yes.headers.get('cache-control')).toBe('no-store');
-    const forged = await call(req('GET', '/api/admin/session', { headers: { cookie: await cookie('another secret') } }));
-    expect(await forged.json()).toEqual({ admin: false });
   });
-  it('says "not admin" rather than failing when either secret is unset', async () => {
+  it('matches ADMIN_EMAILS in any case, as a comma-separated list; nobody is the admin without it', async () => {
     const headers = await authed();
-    for (const over of [{ ADMIN_PASSWORD: undefined }, { SESSION_SECRET: '' }]) {
-      const r = await call(req('GET', '/api/admin/session', { headers }), env(over));
-      expect(r.status).toBe(200);
-      expect(await r.json()).toEqual({ admin: false });
-      expect(r.headers.get('cache-control')).toBe('no-store');
-    }
+    expect((await call(req('GET', '/api/admin/session', { headers }), env({ ADMIN_EMAILS: ' other@example.com , ADMIN@Example.com ' }))).status).toBe(200);
+    expect((await call(req('GET', '/api/admin/session', { headers }), env({ ADMIN_EMAILS: undefined }))).status).toBe(403);
+  });
+  it('answers 503 not_configured, never the editor, when AUTH_SECRET is unset', async () => {
+    const r = await call(req('GET', '/api/admin/stations', { headers: await authed() }), env({ AUTH_SECRET: undefined }));
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as { error: string }).error).toBe('not_configured');
   });
 });
 
 describe('admin stations', () => {
-  it('requires a session', async () => {
-    for (const r of [await call(req('GET', '/api/admin/stations')), await call(req('PUT', '/api/admin/stations', { body: JSON.stringify({ expectedVersion: 3, stations: [] }) }))]) {
-      expect(r.status).toBe(401);
-      expect(await r.json()).toEqual({ error: 'Not signed in' });
-      expect(r.headers.get('cache-control')).toBe('no-store');
-    }
-    expect(stored()).toEqual(v3);
-  });
-  it('answers 503 instead of failing when a secret is unset', async () => {
-    const headers = await authed();
-    for (const over of [{ ADMIN_PASSWORD: undefined }, { SESSION_SECRET: undefined }]) {
-      const get = await call(req('GET', '/api/admin/stations', { headers }), env(over));
-      expect(get.status).toBe(503);
-      expect(await get.json()).toEqual({ error: 'Admin is not configured' });
-      const put = await call(req('PUT', '/api/admin/stations', { headers, body: JSON.stringify({ expectedVersion: 3, stations: [] }) }), env(over));
-      expect(put.status).toBe(503);
+  it('requires the admin: 401 signed out, 403 for another account, and touches nothing', async () => {
+    const other = await signIn(env(), 'someone@example.com');
+    const cases: [Record<string, string>, number][] = [
+      [{}, 401],
+      [{ cookie: other }, 403],
+    ];
+    for (const [headers, status] of cases) {
+      const get = await call(req('GET', '/api/admin/stations', { headers }));
+      const put = await call(req('PUT', '/api/admin/stations', { headers, body: JSON.stringify({ expectedVersion: 3, stations: [] }) }));
+      for (const r of [get, put]) {
+        expect(r.status).toBe(status);
+        expect(r.headers.get('cache-control')).toBe('no-store');
+      }
     }
     expect(stored()).toEqual(v3);
   });
@@ -605,16 +521,12 @@ describe('uploads', () => {
     expect(r.status).toBe(503);
     expect(await r.json()).toEqual({ error: 'Upload failed. Try again.' });
   });
-  it('requires a session (401), and answers 503 when a secret is unset, without touching the bucket', async () => {
+  it('requires the admin (401 signed out or forged, 403 for another account) without touching the bucket', async () => {
     const put = vi.spyOn(bucket, 'put');
-    const anon = await up('folder=tracks&station=christmas-jazz&name=a.mp3', { headers: {} });
-    expect(anon.status).toBe(401);
-    expect(anon.headers.get('cache-control')).toBe('no-store');
-    const forged = await up('folder=tracks&station=christmas-jazz&name=a.mp3', { headers: { cookie: await cookie('another secret') } });
-    expect(forged.status).toBe(401);
-    const headers = await authed();
-    const r = await call(req('PUT', '/api/admin/upload?folder=tracks&station=christmas-jazz&name=a.mp3', { headers: { ...headers, 'content-type': 'audio/mpeg', 'content-length': '1' }, body: 'x' }), env({ SESSION_SECRET: undefined }));
-    expect(r.status).toBe(503);
+    const q = 'folder=tracks&station=christmas-jazz&name=a.mp3';
+    expect((await up(q, { headers: {} })).status).toBe(401);
+    expect((await up(q, { headers: { cookie: `__Host-aglow_session=${'x'.repeat(43)}` } })).status).toBe(401);
+    expect((await up(q, { headers: { cookie: await signIn(env(), 'someone@example.com') } })).status).toBe(403);
     expect(put).not.toHaveBeenCalled();
   });
   it('answers 503 when MUSIC_BASE_URL is not a usable https origin', async () => {

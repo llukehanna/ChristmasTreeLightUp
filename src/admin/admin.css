@@ -16,12 +16,12 @@ body {
   background: radial-gradient(60% 60% at 0% 100%, rgba(255, 120, 40, 0.18), transparent 70%), var(--bg);
 }
 button, input { font: inherit; color: inherit; }
-button, label.button {
+button, label.button, a.button {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: 1px solid var(--line); background: var(--panel);
-  border-radius: 10px; padding: 7px 13px; white-space: nowrap; color: var(--ink);
+  border-radius: 10px; padding: 7px 13px; white-space: nowrap; color: var(--ink); text-decoration: none;
 }
-button:hover, label.button:hover { border-color: rgba(255, 236, 210, 0.3); }
-button.primary { background: var(--ink); color: #140b06; border-color: transparent; font-weight: 600; }
+button:hover, label.button:hover, a.button:hover { border-color: rgba(255, 236, 210, 0.3); }
+button.primary, a.button.primary { background: var(--ink); color: #140b06; border-color: transparent; font-weight: 600; }
 button.danger { background: var(--danger); color: #1a0705; border-color: transparent; font-weight: 600; }
 button.danger-quiet { color: var(--danger); }
 button.small { padding: 4px 8px; border-radius: 8px; }
@@ -41,9 +41,9 @@ h1, h2 { font-weight: 600; margin: 0; }
 .note { margin: 0; }
 
 .card { max-width: 360px; margin: 16vh auto 0; display: flex; flex-direction: column; gap: 14px; padding: 28px; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); }
-.card button { align-self: flex-start; }
+.card button, .card a.button { align-self: flex-start; }
 .login h1 { margin: 6px 0 4px; font-size: 20px; }
-.login button.primary { align-self: stretch; justify-content: center; }
+.login .primary { align-self: stretch; justify-content: center; }
 @media (max-width: 420px) { .card { margin: 10vh 16px 0; } }
 
 header {

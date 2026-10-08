@@ -1,8 +1,9 @@
 import { parseStationsFile, type StationsFile } from '../../../src/radio/schema.js';
 import type { AppEnv, Ctx } from '../../lib/env.js';
-import { json, readTextCapped, requireAdmin } from '../../lib/http.js';
+import { json, readTextCapped } from '../../lib/http.js';
 import { resetPublicCache } from '../../lib/public-stations.js';
 import { deleteKeys, mediaBase, readStations, removedMediaKeys, writeStations } from '../../lib/stations-store.js';
+import { requireAdmin } from '../../lib/users.js';
 
 // A full list (20 stations x 500 tracks) fits well inside this.
 const MAX_BODY = 4 * 1024 * 1024;
@@ -15,8 +16,7 @@ const unreadable = (): Response => json({ error: 'Could not read the stations' }
 const sameFile = (a: StationsFile, b: StationsFile): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 export async function GET(req: Request, env: AppEnv): Promise<Response> {
-  const denied = await requireAdmin(req, env);
-  if (denied) return denied;
+  await requireAdmin(req, env);
   try {
     return json((await readStations(env.MUSIC)).file);
   } catch {
@@ -25,8 +25,7 @@ export async function GET(req: Request, env: AppEnv): Promise<Response> {
 }
 
 export async function PUT(req: Request, env: AppEnv, ctx: Ctx): Promise<Response> {
-  const denied = await requireAdmin(req, env);
-  if (denied) return denied;
+  await requireAdmin(req, env);
   const text = await readTextCapped(req, MAX_BODY);
   if (text === null) return json({ error: 'Request too large' }, { status: 413 });
   let body: { expectedVersion?: unknown; stations?: unknown };

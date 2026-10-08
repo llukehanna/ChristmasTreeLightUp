@@ -1,5 +1,3 @@
-import { adminSecrets, isAdmin } from './session.js';
-
 /** A failure with a status and a stable code; the router answers `{error: code, message}`. */
 export class HttpError extends Error {
   constructor(
@@ -26,13 +24,6 @@ export function redirect(location: string, cookies: readonly string[] = []): Res
 }
 
 export const notConfigured = (): Response => json({ error: 'Admin is not configured' }, { status: 503 });
-
-/** null when the caller has a valid session, otherwise the response to send (401, or 503 if a secret is unset). */
-export async function requireAdmin(req: Request, env: { ADMIN_PASSWORD?: string; SESSION_SECRET?: string }): Promise<Response | null> {
-  const secrets = adminSecrets(env);
-  if (!secrets) return notConfigured();
-  return (await isAdmin(req, secrets)) ? null : json({ error: 'Not signed in' }, { status: 401 });
-}
 
 /** Browsers send Origin on every write, so a state-changing request must carry one equal to its own origin. A missing header fails too. */
 export function sameOrigin(req: Request): boolean {

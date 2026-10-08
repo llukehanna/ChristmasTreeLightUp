@@ -1,7 +1,8 @@
 import { STATION_ID } from '../../../src/radio/schema.js';
 import type { AppEnv } from '../../lib/env.js';
-import { json, notConfigured, requireAdmin } from '../../lib/http.js';
+import { json, notConfigured } from '../../lib/http.js';
 import { mediaBase, mediaUrl } from '../../lib/stations-store.js';
+import { requireAdmin } from '../../lib/users.js';
 
 const ALLOWED: Readonly<Record<'tracks' | 'covers', readonly string[]>> = {
   tracks: ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg'],
@@ -22,8 +23,7 @@ function randomHex(bytes: number): string {
  * Streamed straight to R2 (never buffered) under `<folder>/<station>/<8 hex>-<name>`; answers `{url, key, size}`.
  */
 export async function PUT(req: Request, env: AppEnv): Promise<Response> {
-  const denied = await requireAdmin(req, env);
-  if (denied) return denied;
+  await requireAdmin(req, env);
   const base = mediaBase(env.MUSIC_BASE_URL);
   if (!base) return notConfigured();
 
