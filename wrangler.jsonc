@@ -4,7 +4,8 @@
   // (run_worker_first): every other path is served straight from the assets, so the game itself costs no Worker CPU
   // and doesn't count against the free plan's daily request limit. /admin is admin.html via the default html_handling.
   // Station data and uploaded media live in the R2 bucket bound as MUSIC; media is public at MUSIC_BASE_URL.
-  // Secrets (AUTH_SECRET, GOOGLE_CLIENT_SECRET) are never in this file: see .dev.vars.example.
+  // Secrets are never in this file: AUTH_SECRET, GOOGLE_CLIENT_SECRET and ADMIN_EMAILS (the radio admin's Google
+  // email(s), comma-separated, lower-case) are set with `wrangler secret put`. See .dev.vars.example and the README.
   "name": "aglow",
   "routes": [
     { "pattern": "aglow.lukeghanna.com", "custom_domain": true }
@@ -23,5 +24,11 @@
   ],
   // Workers Logs: the router logs the route and error class of any unexpected failure (never messages or secrets).
   "observability": { "enabled": true },
-  "vars": { "MUSIC_BASE_URL": "https://aglow-music.lukeghanna.com" }
+  "vars": {
+    "MUSIC_BASE_URL": "https://aglow-music.lukeghanna.com",
+    // Sign-in (spec 2026-10-07): "google" here; "fake" only on localhost (npm run serve:e2e and .dev.vars pass it).
+    "AUTH_MODE": "google",
+    // The Google Web client's id (public). A placeholder until rollout; npm run deploy refuses it.
+    "GOOGLE_CLIENT_ID": "REPLACE_WITH_GOOGLE_CLIENT_ID"
+  }
 }

@@ -1,11 +1,12 @@
 # Local values for `wrangler dev` (npm run dev:full). Copy to .dev.vars (git-ignored). Never commit values.
-# Production secrets are set with `wrangler secret put` during rollout, never written to a committed file.
+# Production secrets (AUTH_SECRET, GOOGLE_CLIENT_SECRET, ADMIN_EMAILS) are set with `wrangler secret put` during rollout,
+# never written to a committed file. GOOGLE_CLIENT_ID is a public var in wrangler.jsonc.
 
 # 256 random bits that nobody needs to read, e.g. the output of `openssl rand -hex 32`. Changing it signs everyone out.
 AUTH_SECRET=
 # fake: sign in as /api/auth/google?as=<email> (or the aglow_fake_as cookie) without Google. Localhost only.
 AUTH_MODE=fake
-# Who gets the radio admin locally.
+# Who gets the radio admin (comma-separated, lower-case). A Worker secret in production; any address here locally.
 ADMIN_EMAILS=admin@example.com
 # Only for a real-Google local check (AUTH_MODE=google on http://localhost:4173): the Web client's secret, pasted by Luke.
 GOOGLE_CLIENT_SECRET=

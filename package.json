@@ -15,7 +15,7 @@
     "serve:e2e": "rm -rf .wrangler/e2e && wrangler d1 migrations apply aglow --local --persist-to .wrangler/e2e && wrangler dev --port 4173 --local-upstream localhost:4173 --persist-to .wrangler/e2e --var AUTH_MODE:fake --var AUTH_SECRET:e2e-secret-not-real --var GOOGLE_CLIENT_SECRET:unused --var ADMIN_EMAILS:admin@example.com",
     "og": "node scripts/og.mjs",
     "icon": "node scripts/icon.mjs",
-    "deploy": "npm run typecheck && npm test && npm run build && wrangler deploy"
+    "deploy": "node scripts/deploy-check.ts && npm run typecheck && npm test && npm run build && wrangler d1 migrations apply aglow --remote && wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261005.1",

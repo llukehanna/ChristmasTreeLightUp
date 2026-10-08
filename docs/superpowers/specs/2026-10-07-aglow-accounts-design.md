@@ -1,7 +1,7 @@
 # Aglow: accounts and leaderboard
 
 **Date:** 2026-10-07
-**Status:** Draft for Luke's review
+**Status:** Approved and implemented; planned in docs/superpowers/plans/2026-10-07-aglow-accounts.md (see Revisions during implementation)
 **Builds on:** [Aglow design](2026-09-29-aglow-design.md) (§3 hosting, §6 game flow, §7 admin)
 **Reference implementation:** Mapped v2 (`/Users/luke/Claude Projects/Mapped`, spec `docs/superpowers/specs/2026-10-05-mapped-v2-accounts-design.md`). Reuse its code and lessons wherever this spec doesn't say otherwise.
 **Mockups:** throwaway worktree `.claude/worktrees/agent-aeaddf57b5d538524` (`mockups.html`; local only, never merged).
@@ -44,7 +44,7 @@ Players can sign in with Google, pick a display name, and post verified times to
 - **Secrets** (`wrangler secret put`):
   - `AUTH_SECRET`: 256 random bits, piped so no one sees it.
   - `GOOGLE_CLIENT_SECRET`: Luke pastes it himself from the Google console.
-- **Vars:** `GOOGLE_CLIENT_ID`, `AUTH_MODE` (`google`, or `fake` on localhost only) and `ADMIN_EMAILS` (comma-separated, lower-cased).
+- **Vars:** `GOOGLE_CLIENT_ID` and `AUTH_MODE` (`google`, or `fake` on localhost only). `ADMIN_EMAILS` (comma-separated, lower-cased) is a secret in production (see Revisions during implementation).
 - **Removed:**
   - `ADMIN_PASSWORD`, `SESSION_SECRET`, the `aglow_admin` cookie, `worker/lib/session.ts`'s password logic, the `LOGIN_LIMITER` binding, `POST /api/admin/login`, `POST /api/admin/logout` and the admin password screen.
   - After the deploy, Luke deletes the two old secrets with `wrangler secret delete`. Claude doesn't do it, because deleting is irreversible.
@@ -193,9 +193,9 @@ All sheets use the radio panel's dark-glass look (pick 2C). They pause the game,
    - redirect URI `http://localhost:4173/api/auth/google/callback` for real-Google local checks
    - **Luke** accepts any terms and publishes the app (production, not testing).
 3. Put `GOOGLE_CLIENT_ID` in `wrangler.jsonc`. **Luke** runs `npx wrangler secret put GOOGLE_CLIENT_SECRET` with the secret left on screen. Claude pipes a random `AUTH_SECRET`.
-4. Set `ADMIN_EMAILS`.
+4. Set `ADMIN_EMAILS` as a Worker secret (`wrangler secret put`).
 5. **Luke** runs `npm run deploy`.
-   - The deploy script gains `wrangler d1 migrations apply aglow --remote`, plus a guard that `GOOGLE_CLIENT_ID` isn't a placeholder.
+   - The deploy script gains `wrangler d1 migrations apply aglow --remote`, plus `scripts/deploy-check.ts`, a guard against the zero D1 `database_id`, a placeholder `GOOGLE_CLIENT_ID` and `AUTH_MODE` `fake`.
 6. **Smoke-test:**
    - `/api/me` → `{user:null}`;
    - a signed-out start and finish → `anonymous`;
@@ -233,3 +233,21 @@ All sheets use the radio panel's dark-glass look (pick 2C). They pause the game,
 ## 10. Rollout
 
 One branch (`worktree-accounts`), executed with subagent-driven development, reviewed per task plus a final whole-branch review. It's merged to `main` once green. Luke runs the deploy, and Claude smoke-tests (§7.6).
+
+## Revisions during implementation
+
+Where these differ from the sections above, these win.
+
+- **Headless replay and a BFS cap (§5.3).** Replaying a long log through the ordinary `Board` ran a lighting BFS per turn, about five times the Free plan's 10 ms CPU. `Board` has a headless mode for the Worker: turns, queues and the win are unchanged, but the tree is lit only when it could be whole. The replay also caps lighting passes at `MAX_REPLAY_BFS` (50, about ten times honest play); a log that needs more is unverified. A deterministic test counts passes, so the guard doesn't rest on timing.
+- **Reveal window.** The clock starts after the reveal (`REVEAL_MS`): pause time counts only between the reveal and the solve, and a tap logged earlier than the reveal minus 50 ms is rejected. The browser logs a post-reload `r` once the clock resumes. A tap ticks the board to the tap's time before it taps, in the browser and in the replay (a shared `advance` helper).
+- **`clock` reason (§5.3).** The reason `clock` covers two honest cases besides a skewed clock: an excess that fits within the logged pauses (for example a clock jump across a reload) and a finish that reached the server too late (more than 3 s after the solve, judged per send attempt). The results ribbon says "Saved, unranked: reached the server too late". A late finish is unranked rather than trusted, because trusting the delay would reopen the study-the-tree-before-starting hole the clock anchor closes.
+- **`starts` table and IPv6 (§2).** The 200/hour start limit counts a `starts(ip_hash, at)` row per start rather than `games`, so deleting a 422 run doesn't reset it. IPv6 addresses are keyed by their /64 prefix (IPv4-mapped ones as IPv4) before hashing. `games.ip_hash` is gone.
+- **Names.** `name_key` ignores spaces, `-` and `_` as well as case, so look-alikes collide (anti-impersonation, and the same rule as the reserved-name check). A name needs at least one letter or digit.
+- **Claims (§5.4).** A claim token is stored for any signed-out run, not only after it finishes `anonymous`; the server accepts it for finished games.
+- **`Run` class.** `src/core/run.ts` owns the board, clock and tap log, so the browser and the replay share one code path.
+- **Indexes.** `games_best` (user, ms, finished_at; ranked only) serves best-time lookups. Housekeeping deletes up to 25 abandoned and 25 unclaimed games per start (§2 said 50 per start).
+- **E2E.** Each Playwright test sends its own `CF-Connecting-IP` on same-origin `/api/*` calls, so the suite doesn't hit the start limit. Production is unaffected: Cloudflare overwrites that header.
+- **`ADMIN_EMAILS` is a Worker secret in production** (`wrangler secret put`), not a var in `wrangler.jsonc`, to keep the admin's email out of a possibly public repo. `.dev.vars` still carries it locally and `serve:e2e` passes it.
+- **Deploy guard.** `scripts/deploy-check.ts` refuses a zero or missing D1 `database_id`, a placeholder or missing `GOOGLE_CLIENT_ID` and `AUTH_MODE` `fake`; the committed `wrangler.jsonc` keeps placeholders until rollout.
+- **Privacy page** (`/privacy`) lists what is stored: the Google id and verified email (never shown to other players), the public display name, games with their tap and pause logs, a hashed session token (365 days, renewed) and a keyed hash of the IP per game start (the address itself is not saved; cleared as games are played). Retention figures are given as "about": unfinished games 1 day, unclaimed finished games 90 days, accounts and games until deleted, D1 backups up to 30 days, Cloudflare request logs up to 7 days. It also discloses Google Fonts, the Spotify and Apple Music embeds, and that Aglow itself has no ads, analytics or tracking cookies. Deleting an account removes it from the live database at once.
+- **No contact line.** The privacy page has no contact address (Luke's decision): deletion is self-serve from the account menu.

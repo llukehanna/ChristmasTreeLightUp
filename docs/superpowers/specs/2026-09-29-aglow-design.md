@@ -353,14 +353,10 @@ Luke asked for the UI to be more festive. The approved mockups are `docs/prototy
 
 ## 7. Admin
 
-Runs on the Cloudflare Worker with an R2 bucket (`aglow-music`, ruling P14); no Vercel and no database.
+Runs on the Cloudflare Worker with an R2 bucket (`aglow-music`, ruling P14); no Vercel; the accounts spec adds the D1 database `aglow`.
 
 - **`/admin`** is a separate Vite entry (`admin.html`) using the same design language, so it's usable on a phone. It sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `noindex`.
-- **Auth:**
-  - `POST /api/admin/login` compares against the `ADMIN_PASSWORD` secret using a constant-time comparison.
-  - It sets an HttpOnly, Secure, SameSite=Strict cookie holding an HMAC-signed session that lasts 7 days. The key is HMAC-SHA256 of the `SESSION_SECRET` secret with the password, so changing either signs everyone out.
-  - Login is rate limited (in-memory per IP and global, plus a Cloudflare ratelimit binding). Admin `POST`/`PUT` requests must carry a same-origin `Origin`.
-  - Secrets are `ADMIN_PASSWORD` (Luke's) and `SESSION_SECRET` (256 random bits), both set with `wrangler secret put`; never in the repo.
+- **Auth** (replaced by the accounts spec, `2026-10-07-aglow-accounts-design.md` §4): the admin signs in with Google. `/api/admin/*` needs a session whose verified email is in `ADMIN_EMAILS` (a Worker secret): 401 signed out, 403 for any other account. Every non-GET `/api/*` request must carry a same-origin `Origin` and JSON (raw-audio uploads excepted). The password login, `SESSION_SECRET` and the login rate limits are gone.
 - **Stations:** create, rename, set description, reorder and delete.
 - **Tracks:**
   - Uploads are streamed through `PUT /api/admin/upload` straight into R2 under `tracks/<station>/<8hex>-<name>` (covers under `covers/…`); only a valid session may upload. The allowed audio types are `audio/mpeg`, `audio/mp4`, `audio/x-m4a`, `audio/aac` and `audio/ogg`, up to 30MB. New files carry `Cache-Control: public, max-age=604800`.
