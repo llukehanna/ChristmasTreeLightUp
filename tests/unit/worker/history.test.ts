@@ -162,6 +162,19 @@ describe('fabricateHistory', () => {
     }
   });
 
+  it('the best has company: a few games come close to it, as in a real history', () => {
+    const gap = (solved: number, importId: string): number => {
+      const ms = fabricateHistory({ ...base, importId, solved, bestMs: 41_000, averageMs: 78_500 }).runs.map((x) => x.ms).sort((a, b) => a - b);
+      return ms[1] / ms[0] - 1;
+    };
+    for (const solved of [40, 300, 800]) {
+      const gaps = Array.from({ length: 30 }, (_, k) => gap(solved, `company${k}_abcdefghijklm`)).sort((a, b) => a - b);
+      // The median import has its runner-up within 15% of the best (8% from 300 games), and the least lucky within 40% (15%).
+      expect(gaps[15]).toBeLessThan(solved === 40 ? 0.15 : 0.08);
+      expect(gaps[29]).toBeLessThan(solved === 40 ? 0.4 : 0.15);
+    }
+  });
+
   it('games are played at plausible hours: none before 7 am in a typical import', () => {
     for (const x of fabricateHistory({ ...base, solved: 300, averageMs: 75_000 }).runs) {
       expect(new Date(x.finishedAt - 420 * 60_000).getUTCHours()).toBeGreaterThanOrEqual(7);

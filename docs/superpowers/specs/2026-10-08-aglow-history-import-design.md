@@ -42,7 +42,7 @@ Two parts:
 | `MAX_IMPORT_MS` | `3_600_000` | Highest importable best and average (60:00). |
 | `MAX_STREAK_DAYS` | `3650` | Highest importable streak. |
 
-Fabrication constants (`worker/lib/history.ts`): `TREND = 0.6`, `SIGMA = 0.5`, `BEST_FROM = 0.6`.
+Fabrication constants (`worker/lib/history.ts`): `TREND = 0.6`, `SIGMA = 0.5`, `LOW_SIGMA = 0.9`, `BEST_FROM = 0.6`.
 
 ## 2. Data model (`migrations/0002_history_import.sql`)
 
@@ -91,7 +91,7 @@ Validation, in this order; the first failure answers **400** `{error: "invalid",
 | `averageMs` when `solved = 1` | equals `bestSeconds × 1000` | `With one game, the average time is the best time.` |
 | `streak`, `longestStreak` | integers, `1 ≤ streak ≤ longestStreak ≤ 3650` | `Streaks are whole days from 1 to 3,650, and the longest is at least the current one.` |
 | `tz` | integer minutes, −840 … 840 (`Date#getTimezoneOffset`: UTC minus local, 420 in PDT) | `tz must be whole minutes from -840 to 840.` |
-| `lastSolvedDay` | a real `YYYY-MM-DD` date, `≥ 2026-09-29` and `≤` today in the `tz` zone (server clock) | `Last solved day must be a date from 2026-09-29 to today.` |
+| `lastSolvedDay` | a real `YYYY-MM-DD` date, `≥ 2026-09-29` and `≤` today in the `tz` zone (server clock); today only once `solved` finishes fit between its midnight and a second ago, 1 ms apart (the first `1 + solved` ms or so of the day are excluded) | `Last solved day must be a date from 2026-09-29 to today.` |
 
 Other statuses: 401 `signed_out`, 403 `forbidden` (not the admin, or a cross-site write), 400 `bad_json`, 413 `too_large`, 503.
 
@@ -169,7 +169,7 @@ Example (`last = 2026-10-07`, `streak 3`, `longest 5`, 40 games): streak Oct 5�
 
 - **The best's index** (chronological): `lo = floor(N × 0.6)`, `bestAt = lo + floor(rng() × (N − lo))`: the last 40% of games (index 0 when `N = 1`). Its time is exactly `B`.
 - **Excess** `E = T − N × B ≥ 0` (validation guarantees `A ≥ B`). **Floor** `f = E ≥ N − 1 ? 1 : 0`: when there is room, every other run is at least 1 ms slower, so the best is unique.
-- **Weights**, for each other index `i` in order: `pos = N > 1 ? i / (N − 1) : 0`; `z = sqrt(−2 ln(1 − rng())) × cos(2π rng())` (Box–Muller, first draw first); `w_i = (1 + TREND × (1 − pos)) × exp(SIGMA × z)`. The log-normal factor skews times right; the trend factor makes the first game about 1.6× the last in expected excess (the gentle improvement).
+- **Weights**, for each other index `i` in order: `pos = N > 1 ? i / (N − 1) : 0`; `z = sqrt(−2 ln(1 − rng())) × cos(2π rng())` (Box–Muller, first draw first); `w_i = (1 + TREND × (1 − pos)) × exp(σ × z)` with `σ = SIGMA` for `z ≥ 0` and `σ = LOW_SIGMA` for `z < 0`. The log-normal factor skews times right, and its wider lower half gives the best some company (the runner-up is typically 5–12% slower, instead of standing 20% clear); the trend factor makes the first game about 1.6× the last in expected excess (the gentle improvement).
 - **Times**: `ms_i = B + f + share_i`, with `share = split(E − f × (N − 1), w)`. So `min = B` exactly and `Σ ms = B + (N − 1)(B + f) + E − f(N − 1) = T` exactly. Shares carry arbitrary ms digits (sub-second realism).
 
 ### 4.4 Time of day
@@ -179,7 +179,7 @@ For each played day `d` with `k` games (the next `k` indexes), local midnight `M
 - **Session start** (ms after local midnight): `r = rng()`; window `[07:00, 09:30)` when `r < 0.15`, `[12:00, 14:00)` when `r < 0.40`, else `[18:30, 23:00)`; start `= from + floor(rng() × (to − from))`.
 - **Chain**: the first game ends at `start + ms`; each next game starts `4,000 + floor(rng() × 41,000)` ms after the previous finish (4–45 s for a new tree) and ends `ms` later.
 - **Limit**: `min(86400000 − 1, now − 1000 − M)`: the day's end, or a second ago on today.
-- **Clamp**: if the last finish passes the limit, the whole session shifts earlier by the overrun; then each finish is `max(shifted, j)` for the day's `j`-th game (0-based). Finishes therefore stay inside the local day, strictly increase, and never pass `now − 1000`. A session longer than the time available (thousands of slow games in one day, or an import in the first seconds of the last day) bunches up 1 ms apart from midnight: valid, just not pretty, and out of reach of real devices.
+- **Clamp**: if the last finish passes the limit, the whole session shifts earlier by the overrun; then each finish is `max(shifted, j)` for the day's `j`-th game (0-based). Finishes therefore stay inside the local day, strictly increase, and never pass `now − 1000`. A session longer than the time available (thousands of slow games in one day) bunches up 1 ms apart from midnight: valid, just not pretty, and out of reach of real devices.
 - `finishedAt = M + finish`; the row's `started_at = finishedAt − ms` (it may fall the evening before).
 
 ### 4.5 `split(total, weights)`
@@ -263,7 +263,7 @@ Plurals use the admin's `n run`/`n runs` style with `toLocaleString('en-US')` di
 - **Unit, pure (`tests/unit/worker/days.test.ts`, `tests/unit/worker/history.test.ts`):**
   - `dayNumber`/`dayText` round trip and rejects; `localDayOf`/`localMidnight` across offsets; `streaksOf` cases (alive today, alive yesterday, broken, longest elsewhere, empty).
   - `split`: exact sums, non-negative parts, large totals.
-  - `fabricateHistory` over a deterministic sweep of 600 valid inputs (sizes up to 2,000, offsets −840 … 840, streaks that fit and that don't): **min = best exactly**; **Σ ms = solved × averageMs exactly**; the best is unique when `E ≥ N − 1` and sits in the last 40%; **every local day within [2026-09-29, lastSolvedDay]**, the last day played, every finish ≤ `now − 1000`; finishes strictly increase; **`streaksOf` of the dates equals the reported streaks, which equal the requested ones whenever `clamped` is false** (and the sweep has more than 50 such cases); **deterministic** (deep equality; another `importId` differs).
+  - `fabricateHistory` over a deterministic sweep of 600 valid inputs (sizes up to 2,000, offsets −840 … 840, streaks that fit and that don't): **min = best exactly**; **Σ ms = solved × averageMs exactly**; when `E ≥ N − 1` the best is unique and sits in the last 40% (otherwise, as with an average equal to the best, it needn't be); the sweep varies `now` too, down to the first valid moment of local midnight; the runner-up is close to the best; `fabricateHistory` throws `RangeError` for input the route would refuse (last day too recent, average under the best, one game with another average); **every local day within [2026-09-29, lastSolvedDay]**, the last day played, every finish ≤ `now − 1000`; finishes strictly increase; **`streaksOf` of the dates equals the reported streaks, which equal the requested ones whenever `clamped` is false** (and the sweep has more than 50 such cases); **deterministic** (deep equality; another `importId` differs).
   - Explicit clamp examples (§4.2), the trend (first third slower than the last third), right skew (mean above median), plausible hours (none before 07:00 in a typical import), ids (stable, match the game id pattern).
   - `parseImportRequest`: a valid body; every row of §3.1's table refused with its message.
 - **Unit, browser:** admin helpers (`parseClock`, defaults, request building, the mark); `Results.setStats` and the two views (jsdom); Your games totals and the Imported pill; `api.myStats` URL.
