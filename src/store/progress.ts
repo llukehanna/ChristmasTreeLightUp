@@ -21,6 +21,8 @@ export interface WonRun {
   score: number;
   newBest: boolean;
   result: FinishResult | null;
+  /** The finish was (re)sent too long after the win for the server's clock to vouch for it: kept, unranked 'clock'. */
+  late?: boolean;
 }
 
 export interface GameSnapshot {
@@ -102,7 +104,14 @@ function isFinishResult(v: unknown): v is FinishResult {
 function isWon(v: unknown): v is WonRun {
   if (typeof v !== 'object' || v === null) return false;
   const w = v as Record<string, unknown>;
-  return Number.isInteger(w.seconds) && (w.seconds as number) >= 0 && Number.isInteger(w.score) && typeof w.newBest === 'boolean' && (w.result === null || isFinishResult(w.result));
+  return (
+    Number.isInteger(w.seconds) &&
+    (w.seconds as number) >= 0 &&
+    Number.isInteger(w.score) &&
+    typeof w.newBest === 'boolean' &&
+    (w.result === null || isFinishResult(w.result)) &&
+    (w.late === undefined || typeof w.late === 'boolean')
+  );
 }
 
 /** Validates a save against the mask: right sizes, legal orientations, a solution that lights every tile; v2 adds the run. */
