@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../worker/lib/db';
+import { readFileSync } from 'node:fs';
+import { getPlatformProxy } from 'wrangler';
+import { fileURLToPath } from 'node:url';
 import { startDb, statements, wipe } from './harness';
 
 let db: Db;
@@ -52,5 +55,24 @@ describe('migrations', () => {
     expect((await db.prepare("SELECT source FROM games WHERE id = 'played-aaaaaaaaaaaaa'").first<{ source: string }>())?.source).toBe('play');
     await db.prepare("INSERT INTO games (id, gen_version, seed, started_at, source) VALUES ('import-aaaaaaaaaaaaa', 0, 0, 1, 'import')").run();
     await expect(db.prepare("INSERT INTO games (id, gen_version, seed, started_at, source) VALUES ('bogus-aaaaaaaaaaaaaa', 0, 0, 1, 'bogus')").run()).rejects.toThrow(/CHECK/);
+  });
+
+  it('upgrading a database that already holds games (0001 → rows → 0002) makes those rows source play', async () => {
+    const proxy = await getPlatformProxy<{ DB: Db }>({ configPath: fileURLToPath(new URL('./wrangler.test.jsonc', import.meta.url)), persist: false });
+    try {
+      const old = proxy.env.DB;
+      const run = (file: string) => old.batch(statements(readFileSync(new URL(`../../migrations/${file}`, import.meta.url), 'utf8')).map((s) => old.prepare(s)));
+      await run('0001_init.sql');
+      await old.prepare("INSERT INTO games (id, gen_version, seed, started_at) VALUES ('before-aaaaaaaaaaaaaa', 1, 1, 1)").run();
+      await old.prepare("INSERT INTO games (id, gen_version, seed, started_at, finished_at, ms, ranked) VALUES ('before-bbbbbbbbbbbbbb', 1, 1, 1, 2, 1, 1)").run();
+      await run('0002_history_import.sql');
+      const rows = (await old.prepare('SELECT id, source FROM games ORDER BY id').all<{ id: string; source: string }>()).results;
+      expect(rows).toEqual([
+        { id: 'before-aaaaaaaaaaaaaa', source: 'play' },
+        { id: 'before-bbbbbbbbbbbbbb', source: 'play' },
+      ]);
+    } finally {
+      await proxy.dispose();
+    }
   });
 });
