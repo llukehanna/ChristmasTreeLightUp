@@ -37,6 +37,20 @@ describe('parseLog', () => {
 });
 
 describe('GameLog', () => {
+  it('says when it has had to drop an entry at the cap (that run cannot verify)', () => {
+    const log = new GameLog();
+    for (let k = 0; k < MAX_LOG_ENTRIES; k++) log.tap(k, GRID.ids[0]);
+    expect(log.overflowed).toBe(false);
+    log.pause(MAX_LOG_ENTRIES);
+    expect(log.overflowed).toBe(true);
+    expect(log.entries).toHaveLength(MAX_LOG_ENTRIES);
+    // A restored full log only overflows once something more is dropped.
+    const restored = new GameLog(log.entries);
+    expect(restored.overflowed).toBe(false);
+    restored.tap(MAX_LOG_ENTRIES, GRID.ids[1]);
+    expect(restored.overflowed).toBe(true);
+  });
+
   it('records taps, pauses and resumes: rounded times that never go backwards, no taps while paused', () => {
     const log = new GameLog();
     log.tap(10.4, 7);

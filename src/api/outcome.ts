@@ -8,6 +8,6 @@ export type RunOutcome =
   | { kind: 'saving' }
   /** The finish didn't reach the server, even after the retry. */
   | { kind: 'failed' }
-  /** The server couldn't replay the log (422) and dropped the game. */
+  /** The server couldn't replay the log (422) and dropped the game, or the log outgrew 5,000 entries and wasn't sent. */
   | { kind: 'unverified' }
   | { kind: 'done'; result: FinishResult };

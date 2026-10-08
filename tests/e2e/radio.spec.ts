@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { rotCW } from '../../src/core/dirs';
 import type { AglowProbe } from '../../src/debug';
 

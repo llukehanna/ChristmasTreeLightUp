@@ -1,4 +1,5 @@
-import { expect, test, type Page, type Request, type Route } from '@playwright/test';
+import type { Page, Request, Route } from '@playwright/test';
+import { expect, test } from './fixtures';
 import type { Station, StationsFile } from '../../src/radio/schema';
 
 // Every admin API call is routed (the local Worker's admin routes need a real admin session), so no real uploads happen in e2e.

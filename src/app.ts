@@ -268,12 +268,13 @@ export class App {
     this.stats = stats;
     saveStats(stats);
     this.won = { seconds, score, newBest, result: null };
-    if (this.online) {
+    if (this.online && !this.run.log.overflowed) {
       this.saveWon();
       void this.sendFinish();
     } else {
       clearGame();
-      this.setOutcome({ kind: 'offline' });
+      // Past 5,000 log entries the log no longer matches the game: the server would refuse it, so it isn't sent.
+      this.setOutcome({ kind: this.online ? 'unverified' : 'offline' });
     }
     this.presentWin(now, this.won, true);
   }
@@ -317,13 +318,14 @@ export class App {
     this.setOutcome({ kind: 'saving' });
     try {
       const result = await finishWithRetry(run.gameId, this.run.log.entries);
+      // Started signed out: the run (ranked once claimed, or not) waits on this browser to be claimed (90 days), even
+      // if a new tree has started meanwhile.
+      if (run.claim) addClaim({ id: run.gameId, claim: run.claim }, Date.now());
+      void this.claimAll();
       if (this.board !== game) return;
       won.result = result;
-      // Signed out: the run waits on this browser to be claimed (90 days).
-      if (result.reason === 'anonymous' && run.claim) addClaim({ id: run.gameId, claim: run.claim }, Date.now());
       this.saveWon();
       this.setOutcome({ kind: 'done', result });
-      void this.claimAll();
     } catch (e) {
       if (this.board !== game) return;
       // 422: the log didn't replay and the server dropped the game; 404: it was already gone.
