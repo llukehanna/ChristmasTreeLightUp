@@ -35,6 +35,8 @@ CREATE TABLE games (
 );
 CREATE INDEX games_board ON games (ms, finished_at) WHERE ranked = 1;
 CREATE INDEX games_user ON games (user_id, finished_at DESC);
+-- A player's best ranked run (bestOf) without sorting all their games.
+CREATE INDEX games_best ON games (user_id, ms, finished_at) WHERE ranked = 1;
 CREATE INDEX games_abandoned ON games (started_at) WHERE finished_at IS NULL;
 
 -- One row per game start, for the start rate limit (200 per IP hash per hour). Kept apart from games so a start whose

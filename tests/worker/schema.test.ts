@@ -6,7 +6,7 @@ let db: Db;
 let dispose: () => Promise<void>;
 beforeAll(async () => {
   ({ db, dispose } = await startDb());
-}, 30_000);
+});
 afterAll(() => dispose());
 beforeEach(() => wipe(db));
 
@@ -19,12 +19,13 @@ describe('migrations', () => {
 
   it('create the tables and the indexes the spec names', async () => {
     const names = (await db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'").all<{ name: string }>()).results.map((r) => r.name);
-    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_abandoned', 'starts', 'starts_ip', 'starts_at']));
+    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_best', 'games_abandoned', 'starts', 'starts_ip', 'starts_at']));
   });
 
-  it('games_board and games_abandoned are partial indexes', async () => {
+  it('games_board, games_best and games_abandoned are partial indexes', async () => {
     const sql = async (name: string) => (await db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?").bind(name).first<{ sql: string }>())?.sql ?? '';
     expect(await sql('games_board')).toMatch(/WHERE ranked = 1$/);
+    expect(await sql('games_best')).toMatch(/WHERE ranked = 1$/);
     expect(await sql('games_abandoned')).toMatch(/WHERE finished_at IS NULL$/);
   });
 

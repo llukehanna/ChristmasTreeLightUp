@@ -10,7 +10,7 @@ let db: Db;
 let dispose: () => Promise<void>;
 beforeAll(async () => {
   ({ db, dispose } = await startDb());
-}, 30_000);
+});
 afterAll(() => dispose());
 beforeEach(() => wipe(db));
 afterEach(() => {

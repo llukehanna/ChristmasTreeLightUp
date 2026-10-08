@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { BoardResponse, MyGamesResponse } from '../../src/api/types';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
-import { TOP_SQL } from '../../worker/lib/ranks';
+import { BEST_SQL, TOP_SQL } from '../../worker/lib/ranks';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
 let db: Db;
@@ -11,7 +11,7 @@ let env: AppEnv;
 beforeAll(async () => {
   ({ db, dispose } = await startDb());
   env = testEnv(db);
-}, 30_000);
+});
 afterAll(() => dispose());
 beforeEach(() => wipe(db));
 
@@ -98,6 +98,49 @@ describe('the leaderboard', () => {
 
   it('reads the top 50 through the board index', async () => {
     expect(JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${TOP_SQL}`).all()).results)).toContain('games_board');
+  });
+
+  it('finds your best run through games_best, with no sort', async () => {
+    const plan = JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${BEST_SQL}`).bind(1).all()).results);
+    expect(plan).toContain('games_best');
+    expect(plan).not.toContain('TEMP B-TREE');
+  });
+
+  it('a named player with no runs has nothing pinned', async () => {
+    await user('ana@example.com', 'Meridian');
+    await run(await user('bo@example.com', 'Comet'), 50_000, 1000);
+    const b = await board(await signIn(env, 'ana@example.com'));
+    expect(b.you).toBeNull();
+    expect(b.rows.some((r) => r.mine)).toBe(false);
+  });
+
+  it('a pinned best shares the rank of the run it ties', async () => {
+    const bo = await user('bo@example.com', 'Comet');
+    await db.batch(
+      Array.from({ length: 50 }, (_, k) =>
+        db
+          .prepare("INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, ranked) VALUES (?, ?, 1, 1, 0, ?, ?, 1)")
+          .bind(`fast-${String(k).padStart(16, '0')}`, bo, 1000 + k, 10_000 + k),
+      ),
+    );
+    // Two runs tie at (99_000, 5000) right after Bo's 50: both are 51st, and Ana's (outside the top 50) is the pinned one.
+    const ana = await user('ana@example.com', 'Meridian');
+    const cy = await user('cy@example.com', 'Nova');
+    await run(cy, 99_000, 5000);
+    await run(ana, 99_000, 5000);
+    const b = await board(await signIn(env, 'ana@example.com'));
+    expect(b.you).toMatchObject({ rank: 51, ms: 99_000, finishedAt: 5000, mine: true });
+    expect(b.total).toBe(52);
+  });
+
+  it('exposes no email or sign-in id, on the board or in Your games', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    await run(ana, 50_000, 1000);
+    const cookie = await signIn(env, 'ana@example.com');
+    for (const path of ['/api/board', '/api/me/games']) {
+      const text = await (await call(env, 'GET', path, { cookie })).text();
+      expect(text).not.toMatch(/email|"sub"|google_sub|example\.com|fake:/i);
+    }
   });
 });
 

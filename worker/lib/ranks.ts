@@ -5,8 +5,10 @@ const ON_BOARD = 'FROM games g JOIN users u ON u.id = g.user_id WHERE g.ranked =
 
 export const TOP = 50;
 
+const TOTAL_SQL = `SELECT count(*) AS n ${ON_BOARD}`;
+
 export async function boardTotal(db: Db): Promise<number> {
-  return (await db.prepare(`SELECT count(*) AS n ${ON_BOARD}`).first<{ n: number }>())?.n ?? 0;
+  return (await db.prepare(TOTAL_SQL).first<{ n: number }>())?.n ?? 0;
 }
 
 /** 1 + the board runs that beat (ms, finishedAt): faster, or as fast and finished earlier. */
@@ -24,9 +26,11 @@ export interface BestRun {
   finished_at: number;
 }
 
-/** The player's best ranked run: fastest, then earliest. */
+/** The player's best ranked run: fastest, then earliest. Reads games_best in order (no sort). */
+export const BEST_SQL = 'SELECT id, ms, finished_at FROM games WHERE user_id = ? AND ranked = 1 ORDER BY ms, finished_at LIMIT 1';
+
 export function bestOf(db: Db, userId: number): Promise<BestRun | null> {
-  return db.prepare('SELECT id, ms, finished_at FROM games WHERE user_id = ? AND ranked = 1 ORDER BY ms, finished_at LIMIT 1').bind(userId).first<BestRun>();
+  return db.prepare(BEST_SQL).bind(userId).first<BestRun>();
 }
 
 /** The top 50 runs: fastest, then earliest. Reads games_board (a partial index on ranked runs) in order. */
@@ -42,6 +46,12 @@ export interface TopRow {
 
 export async function topRuns(db: Db): Promise<TopRow[]> {
   return (await db.prepare(TOP_SQL).all<TopRow>()).results;
+}
+
+/** The top 50 and the board total in one batch: one round trip, and both read the same snapshot. */
+export async function topAndTotal(db: Db): Promise<{ top: TopRow[]; total: number }> {
+  const [top, total] = await db.batch([db.prepare(TOP_SQL), db.prepare(TOTAL_SQL)]);
+  return { top: top.results as TopRow[], total: (total.results[0] as { n: number } | undefined)?.n ?? 0 };
 }
 
 /** Ranks for rows in board order: a run tied with the one above (same ms and finish) shares its rank (spec §2's formula). */
