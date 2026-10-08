@@ -57,9 +57,17 @@ Players can sign in with Google, pick a display name and post server-verified ti
 3. Win a game signed out: the result is unranked ("anonymous"). Sign in with Google, pick a name and save: the run is claimed and shows on the board. `/admin` opens for the admin account and shows "Not authorized" for any other.
 4. Cascade check, with a throwaway Google account: sign in, claim a run, then delete the account from the account menu. Then `npx wrangler d1 execute aglow --remote --command "SELECT (SELECT count(*) FROM users WHERE email = '<test email>') AS users, (SELECT count(*) FROM games WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM users)) AS orphan_games, (SELECT count(*) FROM sessions WHERE user_id NOT IN (SELECT id FROM users)) AS orphan_sessions"` must show 0, 0, 0.
 
+### History import and account stats
+
+Spec: `docs/superpowers/specs/2026-10-08-aglow-history-import-design.md`.
+
+- **Account stats:** signed in, the results tag's Solved, Average and Day streak and the Your games totals come from `GET /api/me/stats` (every finished game on the account, imported ones included; streaks in the player's time zone), so they match on every device. Signed out or offline, the device's own `aglow.stats` shows, and it keeps recording either way.
+- **Import (admin only):** `/admin` → "Import this device's history" reads this browser's `aglow.stats`. Check the numbers (subtract games played on this device since accounts launched, as the card suggests); every field can be edited, and the card shows what it will create (runs, best, average, streaks) before you import. The Worker fabricates that many runs for your own account (`worker/lib/history.ts`: exactly the best, exactly the total, the streaks, dated from 2026-09-29) and stores them as ordinary ranked games with `source = 'import'`. Once per device: the browser keeps `aglow.historyImport`, and resending the same import adds nothing.
+- **Undo an import:** find your user id with `npx wrangler d1 execute aglow --remote --command "SELECT id, name FROM users WHERE email = '<your email>'"`, then `npx wrangler d1 execute aglow --remote --command "DELETE FROM games WHERE source = 'import' AND user_id = <id>"`. To import again from that browser, remove `aglow.historyImport` from its localStorage (DevTools, Application).
+
 ### Moderation
 
-- **List the board,** with what each run's log says about it: `npx wrangler d1 execute aglow --remote --command "SELECT g.id, u.id AS user_id, u.name, g.ms, g.paused_ms, g.pauses, json_array_length(g.log) AS entries FROM games g JOIN users u ON u.id = g.user_id WHERE g.ranked = 1 ORDER BY g.ms LIMIT 50"`.
+- **List the board,** with what each run's log says about it: `npx wrangler d1 execute aglow --remote --command "SELECT g.id, u.id AS user_id, u.name, g.ms, g.source, g.paused_ms, g.pauses, json_array_length(g.log) AS entries FROM games g JOIN users u ON u.id = g.user_id WHERE g.ranked = 1 ORDER BY g.ms LIMIT 50"`. Imported runs (`source = 'import'`) have no log.
 - **Remove a run** with the same command and `DELETE FROM games WHERE id = '<id>'`.
 - **Reset an offensive name** with `UPDATE users SET name = NULL, name_key = NULL WHERE id = <user_id>`: the player's runs leave the board and they are asked to pick a name again.
 - Changes made this way reach the board within about 20 seconds (each Worker isolate keeps the top 50 and the total that long).
@@ -67,3 +75,4 @@ Players can sign in with Google, pick a display name and post server-verified ti
 ### Watch in December
 
 - **D1 rows read** (Cloudflare dashboard, D1, `aglow`, Metrics; the Free plan allows 5 million a day). The board's top 50 and total are cached per isolate for 20 s (`worker/lib/board-cache.ts`), but each finish and claim still counts the runs ahead of it (`rankOf`, about 3 rows per place), and a pinned "Your best" does too. If reads climb toward the limit, cache more or keep a running count.
+- **D1 rows written:** a 2,000-run import writes about 8,000 rows (each run and its three index entries); the Free plan allows 100,000 a day.

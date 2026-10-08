@@ -1,4 +1,6 @@
+import type { AccountStats, ImportRequest, ImportResponse } from '../api/types.js';
 import type { Station, StationsFile } from '../radio/schema.js';
+import { localDay } from '../store/stats.js';
 import { safeUploadName } from './names.js';
 
 /** An admin API failure: the Worker's `{error}` text and the HTTP status (0 when the server could not be reached). */
@@ -50,6 +52,10 @@ export const api = {
   signOut: () => call<Record<string, never>>('POST', '/api/auth/signout', {}),
   load: () => call<StationsFile>('GET', '/api/admin/stations'),
   save: (expectedVersion: number, stations: Station[]) => call<{ version: number }>('PUT', '/api/admin/stations', { expectedVersion, stations }),
+  /** The signed-in account's stats (GET /api/me/stats): the history card's played and imported counts. */
+  stats: (now: Date) => call<AccountStats>('GET', `/api/me/stats?today=${localDay(now)}&tz=${now.getTimezoneOffset()}`),
+  /** POST /api/admin/import: this device's history becomes runs on the admin's own account. */
+  importHistory: (body: ImportRequest) => call<ImportResponse>('POST', '/api/admin/import', body),
   /**
    * Streams one file to R2 through the Worker (`PUT /api/admin/upload`), reporting progress 0–100.
    * XMLHttpRequest rather than fetch, because only it reports upload progress.

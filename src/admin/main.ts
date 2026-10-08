@@ -1,6 +1,8 @@
 import './admin.css';
 import { parseStation, type Station, type StationsFile, type Track } from '../radio/schema.js';
 import { ApiError, api, audioDuration, SIGN_IN_HREF } from './api.js';
+import { h } from './dom.js';
+import { historyCard } from './history-card.js';
 import { slugify } from './names.js';
 import { mustWarnBeforeLeaving } from './leave.js';
 import { fillMissingLengths, isMp3, mp3DurationOfBlob } from './lengths.js';
@@ -25,20 +27,6 @@ const STALL_MS = 120_000;
 const MAX_STATIONS = 20;
 const SESSION_EXPIRED = 'Your session expired. Sign in again.';
 const AUTH_FAILED = "Sign-in didn't finish. Try again.";
-
-type Props<K extends keyof HTMLElementTagNameMap> = Partial<Omit<HTMLElementTagNameMap[K], 'style' | 'children'>> & {
-  class?: string;
-  attrs?: Record<string, string>;
-};
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<K> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  const { class: cls, attrs, ...rest } = props;
-  if (cls) e.className = cls;
-  Object.assign(e, rest);
-  for (const [k, v] of Object.entries(attrs ?? {})) e.setAttribute(k, v);
-  e.append(...kids);
-  return e;
-}
 
 const fmt = (s: number): string => (s > 0 ? `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}` : '–');
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
@@ -88,6 +76,8 @@ const uploadsPanel = h(
   uploadList,
 );
 const rows = new Map<number, { row: HTMLElement; state: HTMLElement; retry: HTMLButtonElement }>();
+/** "Import this device's history": built on the first editor render, then kept (it holds its own state). */
+let historyPanel: HTMLElement | null = null;
 
 /** One track input and one cover input per station, created once and re-attached by every render. */
 const inputs = new Map<string, { tracks: HTMLInputElement; cover: HTMLInputElement }>();
@@ -548,7 +538,8 @@ function render(): void {
   tableHost = null;
   coverSlot = null;
   const s = current();
-  const main = h('main', {}, s ? stationEditor(s) : h('p', { class: 'empty', textContent: 'Create a station to start uploading music.' }), uploadsPanel);
+  historyPanel ??= historyCard({ authLost });
+  const main = h('main', {}, s ? stationEditor(s) : h('p', { class: 'empty', textContent: 'Create a station to start uploading music.' }), uploadsPanel, historyPanel);
   root.replaceChildren(header, msgBox, h('div', { class: 'layout' }, stationNav(), main));
   refreshHeader();
   refreshUploads();
