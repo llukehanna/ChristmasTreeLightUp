@@ -91,7 +91,7 @@ Validation, in this order; the first failure answers **400** `{error: "invalid",
 | `averageMs` when `solved = 1` | equals `bestSeconds × 1000` | `With one game, the average time is the best time.` |
 | `streak`, `longestStreak` | integers, `1 ≤ streak ≤ longestStreak ≤ 3650` | `Streaks are whole days from 1 to 3,650, and the longest is at least the current one.` |
 | `tz` | integer minutes, −840 … 840 (`Date#getTimezoneOffset`: UTC minus local, 420 in PDT) | `tz must be whole minutes from -840 to 840.` |
-| `lastSolvedDay` | a real `YYYY-MM-DD` date, `≥ 2026-09-29` and `≤` today in the `tz` zone (server clock); today only once `solved` finishes fit between its midnight and a second ago, 1 ms apart (the first `1 + solved` ms or so of the day are excluded) | `Last solved day must be a date from 2026-09-29 to today.` |
+| `lastSolvedDay` | a real `YYYY-MM-DD` date, `≥ 2026-09-29` and `≤` today in the `tz` zone (server clock); today only once `solved` finishes fit between its midnight and a second ago, 1 ms apart (the first `1000 + solved − 1` ms of the day, about 1–3 s, are excluded) | `Last solved day must be a date from 2026-09-29 to today.` |
 
 Other statuses: 401 `signed_out`, 403 `forbidden` (not the admin, or a cross-site write), 400 `bad_json`, 413 `too_large`, 503.
 
@@ -169,7 +169,7 @@ Example (`last = 2026-10-07`, `streak 3`, `longest 5`, 40 games): streak Oct 5�
 
 - **The best's index** (chronological): `lo = floor(N × 0.6)`, `bestAt = lo + floor(rng() × (N − lo))`: the last 40% of games (index 0 when `N = 1`). Its time is exactly `B`.
 - **Excess** `E = T − N × B ≥ 0` (validation guarantees `A ≥ B`). **Floor** `f = E ≥ N − 1 ? 1 : 0`: when there is room, every other run is at least 1 ms slower, so the best is unique.
-- **Weights**, for each other index `i` in order: `pos = N > 1 ? i / (N − 1) : 0`; `z = sqrt(−2 ln(1 − rng())) × cos(2π rng())` (Box–Muller, first draw first); `w_i = (1 + TREND × (1 − pos)) × exp(σ × z)` with `σ = SIGMA` for `z ≥ 0` and `σ = LOW_SIGMA` for `z < 0`. The log-normal factor skews times right, and its wider lower half gives the best some company (the runner-up is typically 5–12% slower, instead of standing 20% clear); the trend factor makes the first game about 1.6× the last in expected excess (the gentle improvement).
+- **Weights**, for each other index `i` in order: `pos = N > 1 ? i / (N − 1) : 0`; `z = sqrt(−2 ln(1 − rng())) × cos(2π rng())` (Box–Muller, first draw first); `w_i = (1 + TREND × (1 − pos)) × exp(σ × z)` with `σ = SIGMA` for `z ≥ 0` and `σ = LOW_SIGMA` for `z < 0`. The log-normal factor skews times right, and its wider lower half gives the best some company (the runner-up is typically 4–14% slower, depending on the game count, instead of standing 20% clear); the trend factor makes the first game about 1.6× the last in expected excess (the gentle improvement).
 - **Times**: `ms_i = B + f + share_i`, with `share = split(E − f × (N − 1), w)`. So `min = B` exactly and `Σ ms = B + (N − 1)(B + f) + E − f(N − 1) = T` exactly. Shares carry arbitrary ms digits (sub-second realism).
 
 ### 4.4 Time of day
