@@ -44,13 +44,20 @@ const stats = (cookie: string | undefined, q = 'today=2026-10-08&tz=420') => cal
 
 describe('GET /api/me/stats', () => {
   it('401 signed out; 400 without a real today and a whole-minute offset', async () => {
-    expect((await stats(undefined)).status).toBe(401);
+    const out = await stats(undefined);
+    expect(out.status).toBe(401);
+    expect(await out.json()).toMatchObject({ error: 'signed_out' });
     const cookie = await signIn(env, 'ana@example.com', 'Meridian');
-    for (const q of ['', 'today=2026-10-08', 'tz=420', 'today=2026-02-30&tz=420', 'today=10/08/2026&tz=420', 'today=2026-10-08&tz=1.5', 'today=2026-10-08&tz=900']) {
+    for (const q of ['', 'today=2026-10-08', 'tz=420', 'today=2026-02-30&tz=420', 'today=10/08/2026&tz=420', 'today=2026-10-08&tz=1.5', 'today=2026-10-08&tz=900', 'today=2026-10-08&tz=841', 'today=2026-10-08&tz=-841', 'today=2026-10-08&tz=0420']) {
       const res = await stats(cookie, q);
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: 'invalid', message: 'today must be YYYY-MM-DD and tz whole minutes from -840 to 840.' });
     }
+  });
+
+  it('accepts the offset limits, 840 and -840', async () => {
+    const cookie = await signIn(env, 'ana@example.com', 'Meridian');
+    for (const tz of [840, -840]) expect((await stats(cookie, `today=2026-10-08&tz=${tz}`)).status).toBe(200);
   });
 
   it('a new account: zeros and nulls', async () => {
@@ -96,6 +103,15 @@ describe('GET /api/me/stats', () => {
     expect(await (await stats(cookie, 'today=2026-10-08&tz=420')).json()).toMatchObject({ lastSolvedDay: '2026-10-08', streak: 1 });
     expect(await (await stats(cookie, 'today=2026-10-09&tz=0')).json()).toMatchObject({ lastSolvedDay: '2026-10-09', streak: 1 });
     expect(await (await stats(cookie, 'today=2026-10-09&tz=-600')).json()).toMatchObject({ lastSolvedDay: '2026-10-09' });
+  });
+
+  it('a finish exactly at local midnight belongs to the new day; one millisecond before, to the old', async () => {
+    const bo = await user('bo@example.com', 'Comet');
+    await game(bo, 50_000, Date.UTC(2026, 9, 9, 6, 59, 59, 999));
+    const cookie = await signIn(env, 'bo@example.com');
+    expect(await (await stats(cookie, 'today=2026-10-08&tz=420')).json()).toMatchObject({ lastSolvedDay: '2026-10-08' });
+    await game(bo, 51_000, Date.UTC(2026, 9, 9, 7, 0, 0, 0));
+    expect(await (await stats(cookie, 'today=2026-10-09&tz=420')).json()).toMatchObject({ lastSolvedDay: '2026-10-09', streak: 2, longestStreak: 2 });
   });
 });
 
