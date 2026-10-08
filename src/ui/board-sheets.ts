@@ -59,10 +59,10 @@ function gameHtml(g: RecentGame, now: number): string {
 /** The account's totals (GET /api/me/stats), the same on every device; dashes until they arrive. */
 function totalsHtml(s: Loadable<AccountStats>): string {
   const d = s.status === 'ready' ? s.data : null;
-  // A dash reads as "Solved: loading" (or "not available"), not as a bare symbol.
-  const gap = s.status === 'loading' ? 'loading' : 'not available';
+  // A dash alone is read as "en dash" or nothing: hide it and say so in words, hidden text after the label ("Solved: loading").
+  const gap = s.status === 'loading' ? ': loading' : ': not available';
   const cell = (value: string | null, label: string): string =>
-    `<div role="listitem"${value === null ? ` aria-label="${label}: ${gap}"` : ''}><b>${value ?? '–'}</b><span>${label}</span></div>`;
+    `<div role="listitem">${value === null ? '<b aria-hidden="true">–</b>' : `<b>${value}</b>`}<span>${label}</span>${value === null ? `<i class="acct-vh">${gap}</i>` : ''}</div>`;
   const row = `<div class="acct-totals" role="list" aria-label="Account totals"${s.status === 'loading' ? ' aria-busy="true"' : ''}>${cell(d ? count(d.solved) : null, 'Solved')}${cell(
     d && d.averageMs !== null ? formatMs(Number(d.averageMs)) : null,
     'Average',
