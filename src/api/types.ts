@@ -116,7 +116,12 @@ export interface ImportRequest {
   tz: number;
 }
 
-/** POST /api/admin/import's answer. */
+/**
+ * POST /api/admin/import's answer.
+ *
+ * When `already` is true, `streak`, `longestStreak` and `clamped` describe the request just sent, not the runs that
+ * were stored earlier (the route never reads them back): ignore them.
+ */
 export interface ImportResponse {
   /** Runs inserted (0 when this importId was imported before). */
   added: number;

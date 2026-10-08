@@ -67,9 +67,16 @@ export function importRequest(f: ImportFields, d: ImportDefaults, importId: stri
   return { importId, solved, bestSeconds: bestMs / 1000, averageMs, streak, longestStreak: longest, lastSolvedDay: lastDay, tz };
 }
 
+/** `m:ss.t`, plus the hundredths or thousandths when the ms has them: the preview never rounds off what will be sent. */
+export function exactMs(ms: number): string {
+  const rest = ms % 100;
+  if (rest === 0) return formatMs(ms);
+  return formatMs(ms - rest) + (rest % 10 === 0 ? String(rest / 10) : String(rest).padStart(2, '0'));
+}
+
 /** What the card tells the admin an import will create, from the request it would send. */
 export function importPreview(r: ImportRequest): string {
-  return `Will add ${plural(r.solved, 'run')}: best ${formatMs(r.bestSeconds * 1000)}, average ${formatMs(r.averageMs)}, streak ${plural(r.streak, 'day')}, longest streak ${plural(r.longestStreak, 'day')}, last played ${r.lastSolvedDay}.`;
+  return `Will add ${plural(r.solved, 'run')}: best ${formatMs(r.bestSeconds * 1000)}, average ${exactMs(r.averageMs)}, streak ${plural(r.streak, 'day')}, longest streak ${plural(r.longestStreak, 'day')}, last played ${r.lastSolvedDay}.`;
 }
 
 const MARK_KEY = 'aglow.historyImport';

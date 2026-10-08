@@ -40,9 +40,9 @@ export function historyCard(hooks: HistoryCardHooks): HTMLElement {
   const account = h('p', { class: 'note', textContent: 'Checking your account…' });
   const button = h('button', { class: 'primary', type: 'submit' });
   /** What the import will create, as the form stands; or what is wrong with it. Live, before anything is sent. */
-  const preview = h('p', { class: 'preview' });
-  const err = h('p', { class: 'err', attrs: { role: 'alert' } });
-  const status = h('p', { class: 'done', attrs: { role: 'status' } });
+  const preview = h('p', { class: 'preview', id: 'history-preview', attrs: { 'aria-live': 'polite', 'aria-atomic': 'true' } });
+  const err = h('p', { class: 'err', id: 'history-err', attrs: { role: 'alert' } });
+  const status = h('p', { class: 'done', id: 'history-status', attrs: { role: 'status' } });
   const form = h(
     'form',
     { class: 'history-form' },
@@ -61,6 +61,7 @@ export function historyCard(hooks: HistoryCardHooks): HTMLElement {
     err,
     status,
   );
+  for (const input of Object.values(inputs)) input.setAttribute('aria-describedby', preview.id);
   inputs.lastDay.min = HISTORY_FIRST_DAY;
   inputs.lastDay.max = localDay(new Date());
   section.append(account, form);
@@ -87,12 +88,23 @@ export function historyCard(hooks: HistoryCardHooks): HTMLElement {
   function paint(): void {
     const done = mark?.done === true;
     const checked = check(PREVIEW_ID);
-    for (const input of Object.values(inputs)) input.disabled = done || sending;
+    const active = document.activeElement;
+    const hadFocus = active instanceof HTMLElement && form.contains(active);
+    for (const input of Object.values(inputs)) {
+      input.disabled = done || sending;
+      if (done) input.removeAttribute('aria-describedby');
+    }
     preview.hidden = done;
     preview.classList.toggle('bad', typeof checked === 'string');
     preview.textContent = typeof checked === 'string' ? checked : importPreview(checked);
-    // A form that fails can't be sent: the preview already says why.
-    button.disabled = done || sending || typeof checked === 'string';
+    // A form that fails can't be sent: send() ignores it, and the preview says why. aria-disabled rather than disabled,
+    // so the button keeps keyboard focus when it goes inactive and its reason is read (aria-describedby).
+    const off = done || sending || typeof checked === 'string';
+    if (off) button.setAttribute('aria-disabled', 'true');
+    else button.removeAttribute('aria-disabled');
+    button.setAttribute('aria-describedby', done ? status.id : `${preview.id} ${err.id}`);
+    // Enter in a field submits, and the field then disables: keep the place on the button.
+    if (hadFocus && active instanceof HTMLInputElement && active.disabled) button.focus();
     button.textContent = done ? 'Imported' : sending ? 'Importing…' : `Import ${plural(runs(), 'run')}`;
     if (done && !status.textContent) status.textContent = `This device's history was imported${mark?.added ? ` (${plural(mark.added, 'run')})` : ''}.`;
   }
@@ -100,7 +112,7 @@ export function historyCard(hooks: HistoryCardHooks): HTMLElement {
   async function loadAccount(): Promise<void> {
     try {
       const s: AccountStats = await api.stats(new Date());
-      account.textContent = `Your account already has ${plural(s.solved - s.imported, 'played game')}${s.imported ? ` and ${plural(s.imported, 'imported run')}` : ''}. This device's total includes any games you played here since accounts launched: subtract them from Games solved so they aren't counted twice.`;
+      account.textContent = `Your account already has ${plural(s.solved - s.imported, 'played game')}${s.imported ? ` and ${plural(s.imported, 'imported run')}` : ''}. Its streak is ${plural(s.streak, 'day')}, longest ${plural(s.longestStreak, 'day')}. This device's total includes any games you played here since accounts launched: subtract them from Games solved so they aren't counted twice.`;
     } catch {
       // Only the import itself hands a 401 or 403 to the page: this line is a hint, never a reason to leave the editor.
       account.textContent = "Couldn't load your account's games. The import still works.";
@@ -112,7 +124,8 @@ export function historyCard(hooks: HistoryCardHooks): HTMLElement {
     err.textContent = '';
     if (typeof check(PREVIEW_ID) === 'string') return;
     // The id is saved before the request goes out: a resend after a lost answer can't add the runs twice.
-    const pending = pendingMark();
+    // Reuse this page's own mark first: a storage write that failed must not mint a second id on a resend.
+    const pending = mark ?? pendingMark();
     const body = check(pending.importId);
     if (typeof body === 'string') return;
     mark = pending;
@@ -122,7 +135,8 @@ export function historyCard(hooks: HistoryCardHooks): HTMLElement {
       const r = await api.importHistory(body);
       mark = markDone(pending, r.added);
       status.textContent = r.already ? "This device's history was already imported." : `Imported ${plural(r.added, 'run')} from this device.`;
-      if (r.clamped) status.textContent += ` The streaks didn't fit between Sep 29 and the last solved day, so they were placed as ${r.streak} and ${r.longestStreak} days.`;
+      // On "already", streak, longestStreak and clamped describe this request, not the runs stored: say nothing of them.
+      if (r.clamped && !r.already) status.textContent += ` The streaks didn't fit between Sep 29 and the last solved day, so they were placed as ${r.streak} and ${r.longestStreak} days.`;
       void loadAccount();
     } catch (e) {
       if (isAuthLost(e)) hooks.authLost(e);

@@ -585,3 +585,38 @@ test("the admin imports this device's history once", async ({ page, context }, t
   await expect(card.getByRole('button', { name: 'Imported' })).toBeDisabled();
   await expect(card.getByRole('status')).toHaveText("This device's history was imported (3 runs).");
 });
+
+// The card at phone width (the phone project only runs the account flows, so this sets the width itself). It imports
+// nothing: the grid of fields and the long preview line must fit 375 px, with the Import button in view.
+test("the import card fits a phone-width screen and its errors match the card's other errors", async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name === 'phone', 'sets its own width');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await context.addCookies([{ name: 'aglow_fake_as', value: 'admin@example.com', url: 'http://localhost:4173' }]);
+  await page.addInitScript(() => {
+    if (localStorage.getItem('aglow.stats')) return;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('aglow.stats', JSON.stringify({ v: 1, solved: 1500, totalSeconds: 1500 * 3100, bestSeconds: 3000, bestScore: -250000, streak: 12, longestStreak: 120, lastSolvedDay: today }));
+  });
+  await page.goto('/admin');
+  await page.getByRole('link', { name: 'Sign in with Google' }).click();
+  const card = page.getByRole('region', { name: "Import this device's history" });
+  const button = card.getByRole('button', { name: 'Import 1,500 runs' });
+  await expect(button).toBeVisible();
+  // A typed average keeps its hundredths in the longest preview line.
+  await card.getByLabel('Average time (m:ss.t)').fill('51:40.45');
+  await expect(card.locator('.preview')).toContainText('average 51:40.45,');
+  await button.scrollIntoViewIfNeeded();
+  await expect(button).toBeInViewport();
+  const box = await card.boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 375).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await card.locator('.preview').evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(true);
+
+  // The invalid-form message and the server-error line are one colour. The button stays focusable and says why it is off.
+  await card.getByLabel('Average time (m:ss.t)').fill('40:00.0');
+  const colour = (sel: string) => card.locator(sel).evaluate((n) => getComputedStyle(n).color);
+  expect(await colour('.preview.bad')).toBe(await colour('.err'));
+  await expect(button).toHaveAttribute('aria-disabled', 'true');
+  await expect(button).toHaveAccessibleDescription(/Average time can't be faster than the best time\./);
+});

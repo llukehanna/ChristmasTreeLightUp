@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { importDefaults, importPreview, importRequest, markDone, newImportId, parseClock, pendingMark, readMark, type ImportDefaults } from '../../../src/admin/history';
+import { exactMs, importDefaults, importPreview, importRequest, markDone, newImportId, parseClock, pendingMark, readMark, type ImportDefaults } from '../../../src/admin/history';
 import type { ImportRequest } from '../../../src/api/types';
 import { EMPTY_STATS, type Stats } from '../../../src/store/stats';
 
@@ -84,5 +84,15 @@ describe('importPreview', () => {
   it('speaks in the singular, and with thousands', () => {
     expect(importPreview(req({ solved: '1', streak: '1', longest: '1' }))).toBe('Will add 1 run: best 0:41.0, average 0:41.0, streak 1 day, longest streak 1 day, last played 2026-10-07.');
     expect(importPreview(req({ solved: '1500' }))).toContain('Will add 1,500 runs');
+  });
+  it('never truncates a typed average: hundredths and thousandths stay in the line', () => {
+    expect(importPreview(req({ average: '1:18.45' }))).toContain('average 1:18.45,');
+    expect(importPreview(req({ average: '1:18.456' }))).toContain('average 1:18.456,');
+    expect(importPreview(req({ average: '1:18.05' }))).toContain('average 1:18.05,');
+    expect(importPreview(req({ average: '1:18.5' }))).toContain('average 1:18.5,');
+    expect(importPreview(req({ average: '1:18' }))).toContain('average 1:18.0,');
+  });
+  it('exactMs keeps the tenths form for whole tenths and adds only the digits that exist', () => {
+    expect([0, 100, 78_500, 78_450, 78_456, 78_405, 78_401, 3_600_000].map(exactMs)).toEqual(['0:00.0', '0:00.1', '1:18.5', '1:18.45', '1:18.456', '1:18.405', '1:18.401', '60:00.0']);
   });
 });
