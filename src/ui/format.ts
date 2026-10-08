@@ -27,7 +27,11 @@ export function formatWhen(at: number, now: number): string {
   return `${day} · ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
 }
 
-export const plural = (n: number, word: string): string => `${n.toLocaleString('en-US')} ${n === 1 ? word : `${word}s`}`;
+/** "1 run", "1,340 runs". `n` is coerced, so a server value can only ever paint as a number. */
+export const plural = (n: number, word: string): string => {
+  const v = Number(n);
+  return `${v.toLocaleString('en-US')} ${v === 1 ? word : `${word}s`}`;
+};
 
 /** For text placed into HTML templates. */
 export const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

@@ -16,6 +16,9 @@ export interface AccountsHooks {
   toast(text: string, ms?: number): void;
 }
 
+/** Why a name isn't available, as the card shows it: anything unexpected from the server reads as taken. */
+const checkReason = (reason: unknown): NameStatus => (reason === 'invalid' || reason === 'reserved' ? reason : 'taken');
+
 /** The name card opens by itself once per browser session for an account without a name. */
 const NAME_ASKED = 'aglow.nameAsked';
 const CHECK_DELAY_MS = 400;
@@ -170,7 +173,7 @@ export class Accounts {
       this.paint({ status: 'checking', value });
       this.nameTimer = window.setTimeout(() => {
         api.checkName(name).then(
-          (r) => seq === this.nameSeq && this.paint({ status: r.available ? 'available' : (r.reason ?? 'taken'), value }),
+          (r) => seq === this.nameSeq && this.paint({ status: r.available === true ? 'available' : checkReason(r.reason), value }),
           () => seq === this.nameSeq && this.paint({ status: 'error', value }),
         );
       }, CHECK_DELAY_MS);

@@ -7,9 +7,10 @@ export type ListTab = 'board' | 'games';
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T };
 
 function rowHtml(r: BoardRow, now: number): string {
-  const top = r.rank <= 3 ? ` acct-top acct-top${r.rank}` : '';
+  const rank = Number(r.rank);
+  const top = rank <= 3 ? ` acct-top acct-top${rank}` : '';
   return `<li class="acct-row${top}${r.mine ? ' acct-me' : ''}"${r.mine ? ' aria-current="true"' : ''}>
-    <span class="acct-rank">${r.rank}</span>
+    <span class="acct-rank">${rank}</span>
     <span class="acct-name"><span class="acct-nm">${esc(r.name)}</span>${r.mine ? '<span class="acct-you">You</span>' : ''}</span>
     <span class="acct-lead" aria-hidden="true"></span>
     <span class="acct-time">${formatMs(r.ms)}</span>
@@ -28,14 +29,21 @@ function boardPin(b: Loadable<BoardResponse>, user: User | null | undefined, now
     return `<div class="acct-pin-cta"><span>Sign in to see your name on the list</span><button class="acct-google sm" type="button" data-act="signin">${G_LOGO}<span>Sign in</span></button></div>`;
   if (user.name === null) return '<div class="acct-pin-cta"><span>Pick a display name to join the board</span><button class="acct-text" type="button" data-act="name">Pick a name</button></div>';
   if (b.status !== 'ready') return '';
-  const you = b.data.you;
-  return you
-    ? `<ol class="acct-rows">${rowHtml(you, now)}</ol><p class="acct-pin-note">Your best · #${you.rank} of ${plural(b.data.total, 'run')}</p>`
-    : `<p class="acct-pin-note">${plural(b.data.total, 'ranked run')}</p>`;
+  const { you, total, rows } = b.data;
+  if (you) return `<ol class="acct-rows">${rowHtml(you, now)}</ol><p class="acct-pin-note">Your best · #${Number(you.rank)} of ${plural(total, 'run')}</p>`;
+  // Your best is in the list above (rows are in rank order): say where, rather than repeating the header's total.
+  const best = rows.find((r) => r.mine);
+  return best ? `<p class="acct-pin-note">Your best · #${Number(best.rank)} of ${plural(total, 'run')}</p>` : `<p class="acct-pin-note">${plural(total, 'ranked run')}</p>`;
+}
+
+/** "Unranked · paused too long"; a reason this browser doesn't know yet reads just "Unranked". */
+function unrankedLabel(reason: RecentGame['reason']): string {
+  const why = Object.hasOwn(UNRANKED_TEXT, reason ?? 'anonymous') ? UNRANKED_TEXT[reason ?? 'anonymous'] : null;
+  return why ? `Unranked · ${why}` : 'Unranked';
 }
 
 function gameHtml(g: RecentGame, now: number): string {
-  const [cls, label] = g.isBest ? ['s-best', 'Personal best'] : g.ranked ? ['s-counted', 'Ranked'] : ['', `Unranked · ${UNRANKED_TEXT[g.reason ?? 'anonymous']}`];
+  const [cls, label] = g.isBest ? ['s-best', 'Personal best'] : g.ranked ? ['s-counted', 'Ranked'] : ['', unrankedLabel(g.reason)];
   return `<li class="acct-game${g.ranked ? '' : ' un'}">
     <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}</span>
     <span class="acct-when">${esc(formatWhen(g.finishedAt, now))}</span>
@@ -53,8 +61,8 @@ function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, 
   const d = g.data;
   const stats = `<div class="acct-stats">
       <div><b>${d.best ? formatMs(d.best.ms) : '–'}</b><span>Your best</span></div>
-      <div><b>${d.best?.rank ? `#${d.best.rank}` : '–'}</b><span>of ${plural(d.total, 'run')}</span></div>
-      <div><b>${d.inTop}</b><span>In the top 50</span></div></div>`;
+      <div><b>${d.best?.rank ? `#${Number(d.best.rank)}` : '–'}</b><span>of ${plural(d.total, 'run')}</span></div>
+      <div><b>${Number(d.inTop)}</b><span>In the top 50</span></div></div>`;
   const list = d.games.length ? `<ul class="acct-games">${d.games.map((x) => gameHtml(x, now)).join('')}</ul>` : '<p class="acct-note">No games yet. Light a tree to see it here.</p>';
   const links = `<div class="acct-links"><p>Signed in with Google${user.name ? ` as <b>${esc(user.name)}</b>` : ''}</p>
       <div><button type="button" data-act="signout">Sign out</button><button type="button" class="danger" data-act="delete">Delete account</button><a href="/privacy">Privacy</a></div></div>`;

@@ -60,3 +60,21 @@ it('keeps P (pause) from reaching the game while open', () => {
   expect(seen).not.toHaveBeenCalled();
   document.removeEventListener('keydown', seen);
 });
+
+it('marks the body while open, so the pause overlay text hides behind it', () => {
+  const sheet = make();
+  sheet.open(view('A'));
+  expect(document.body.classList.contains('acct-sheet-open')).toBe(true);
+  sheet.close();
+  expect(document.body.classList.contains('acct-sheet-open')).toBe(false);
+});
+
+it('an update keeps keyboard focus on the same control, or on the dialog when it is gone', () => {
+  const sheet = make();
+  sheet.open(view('A'));
+  document.querySelector<HTMLElement>('[data-act="go"]')?.focus();
+  sheet.update(view('A'));
+  expect(document.activeElement).toBe(document.querySelector('[data-act="go"]'));
+  sheet.update({ label: 'B', card: true, render: (inner) => (inner.innerHTML = '<p>Loading</p>') });
+  expect(document.activeElement).toBe(dialog());
+});

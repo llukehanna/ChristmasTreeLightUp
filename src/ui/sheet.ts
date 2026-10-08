@@ -1,5 +1,17 @@
 import { bow, I } from './icons';
 
+/**
+ * A selector that finds `el` again after its container is re-rendered (its data-act, id or link target), or null.
+ * Re-renders replace the markup, so keyboard focus is carried over by this key rather than by the element.
+ */
+export function focusKey(el: Element | null): string | null {
+  if (!(el instanceof HTMLElement)) return null;
+  if (el.dataset.act) return `[data-act="${CSS.escape(el.dataset.act)}"]`;
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const href = el.getAttribute('href');
+  return href ? `a[href="${CSS.escape(href)}"]` : null;
+}
+
 /** One view in the account sheet: a list (leaderboard, Your games) or a small card (sign-in, name, delete). */
 export interface SheetView {
   /** The dialog's accessible name. */
@@ -74,6 +86,8 @@ export class Sheet {
     this.view = view;
     this.scrim.hidden = false;
     this.root.hidden = false;
+    // The pause overlay's "Paused · Tap to resume" would show through the glass; the scrim owns taps meanwhile.
+    document.body.classList.add('acct-sheet-open');
     this.refresh();
     const target = view.focus ? this.root.querySelector<HTMLElement>(view.focus) : null;
     (target ?? this.root).focus({ preventScroll: true });
@@ -90,6 +104,7 @@ export class Sheet {
     if (!this.isOpen) return;
     this.root.hidden = true;
     this.scrim.hidden = true;
+    document.body.classList.remove('acct-sheet-open');
     this.view = null;
     const o = this.opener;
     this.opener = null;
@@ -101,11 +116,16 @@ export class Sheet {
   private refresh(): void {
     const view = this.view;
     if (!view) return;
-    const hadFocus = this.root.contains(document.activeElement);
+    const active = document.activeElement;
+    const hadFocus = this.root.contains(active);
+    const key = this.inner.contains(active) ? focusKey(active) : null;
     this.root.className = `acct-sheet ${view.card ? 'acct-card' : 'acct-list'}`;
     this.root.setAttribute('aria-label', view.label);
     view.render(this.inner);
-    if (hadFocus && !this.root.contains(document.activeElement)) this.root.focus({ preventScroll: true });
+    if (!hadFocus || this.root.contains(document.activeElement)) return;
+    // New data (or another tab) re-rendered the sheet: focus goes back to the same control when it is still there.
+    const again = key ? this.inner.querySelector<HTMLElement>(key) : null;
+    (again ?? this.root).focus({ preventScroll: true });
   }
 
   /** Escape closes; Tab stays inside; P never reaches the game's pause key. Capture phase, so nothing else sees them. */

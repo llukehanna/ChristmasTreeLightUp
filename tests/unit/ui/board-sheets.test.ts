@@ -31,8 +31,22 @@ it('the leaderboard: rank, name, time and date; your rows marked; the total', ()
   expect(el.querySelectorAll('.acct-me')).toHaveLength(1);
   expect(el.querySelector('.acct-me .acct-you')?.textContent).toBe('You');
   expect(el.querySelector('.acct-sub')?.textContent).toBe('All-time · 340 ranked runs');
-  expect(el.querySelector('.acct-pin-note')?.textContent).toBe('340 ranked runs');
+  // Your best is in the list: the footer says where, rather than repeating the header's total.
+  expect(el.querySelector('.acct-pin-note')?.textContent).toBe('Your best · #2 of 340 runs');
   expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Leaderboard');
+});
+
+it('without a run of yours anywhere, the footer gives the total', () => {
+  const rows = board.rows.map((r) => ({ ...r, mine: false }));
+  const el = render('board', { status: 'ready', data: { ...board, rows } }, { status: 'loading' }, me, now);
+  expect(el.querySelector('.acct-pin-note')?.textContent).toBe('340 ranked runs');
+});
+
+it('server numbers only ever paint as numbers', () => {
+  const odd = { rows: [{ ...board.rows[0], rank: '1<b>' as unknown as number }], total: '340<i>' as unknown as number, you: null };
+  const el = render('board', { status: 'ready', data: odd }, { status: 'loading' }, me, now);
+  expect(el.innerHTML).not.toMatch(/<b>|<i>/);
+  expect(el.querySelector('.acct-sub')?.textContent).toBe('All-time · NaN ranked runs');
 });
 
 it('pins your best below the list when it is outside the top 50', () => {
@@ -78,6 +92,8 @@ it('your games: best, rank, top-50 count, then recent games with their status', 
   expect(el.querySelector('.acct-when')?.textContent).toBe('Today · 9:00 pm');
   expect(el.querySelector('[data-act="delete"]')).not.toBeNull();
   expect(el.querySelector('.acct-pin')).toBeNull();
+  const unknown = { ...games, games: [{ ...games.games[1], reason: 'cosmic_rays' as unknown as 'paused' }] };
+  expect(render('games', { status: 'loading' }, { status: 'ready', data: unknown }, me, now).querySelector('.acct-status')?.textContent).toBe('Unranked');
 });
 
 it('your games, signed out: an invitation to sign in', () => {

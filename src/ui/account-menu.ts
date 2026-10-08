@@ -1,6 +1,7 @@
 import type { SessionState } from '../api/session';
 import { esc, formatMs, initial } from './format';
 import { bow, I } from './icons';
+import { focusKey } from './sheet';
 
 /** The menu head's line under the name. */
 export interface MenuSummary {
@@ -90,22 +91,27 @@ export class AccountMenu {
       chip.removeAttribute('aria-haspopup');
       chip.removeAttribute('aria-expanded');
     } else {
-      const shown = user.name ?? 'Account';
-      const refocus = this.hasFocus;
-      chip.classList.add('me');
-      chip.innerHTML = `<span class="acct-av">${initial(shown)}</span><span class="acct-chip-l">${esc(shown)}</span>`;
-      chip.setAttribute('aria-label', `Account: ${shown}`);
+      const name = user.name;
+      // The summary can arrive after the menu opened: keyboard focus stays on the same item across the re-render.
+      const hadFocus = this.hasFocus;
+      const key = hadFocus ? focusKey(document.activeElement) : null;
+      // Before a name is picked: the person icon and "Account", never an "A" avatar.
+      chip.classList.toggle('me', name !== null);
+      chip.innerHTML = name !== null ? `<span class="acct-av">${initial(name)}</span><span class="acct-chip-l">${esc(name)}</span>` : `${I.person}<span class="acct-chip-l">Account</span>`;
+      chip.setAttribute('aria-label', name !== null ? `Account: ${name}` : 'Account');
       chip.setAttribute('aria-haspopup', 'dialog');
       chip.setAttribute('aria-expanded', String(!this.drop.hidden));
-      const sub = !summary ? '&nbsp;' : summary.best === null ? 'No ranked runs yet' : `${summary.rank === null ? '' : `#${summary.rank} all-time · `}best ${formatMs(summary.best)}`;
+      const rank = summary?.rank == null ? null : Number(summary.rank);
+      const best = summary?.best == null ? null : Number(summary.best);
+      const sub = !summary ? '&nbsp;' : best === null ? 'No ranked runs yet' : `${rank === null ? '' : `#${rank} all-time · `}best ${formatMs(best)}`;
       this.drop.innerHTML = `<span class="acct-band" aria-hidden="true"></span>${bow('acct-dbow')}
-        <div class="acct-drop-head"><span class="acct-av lg">${initial(shown)}</span><div><b>${esc(user.name ?? 'No name yet')}</b><small>${sub}</small></div></div>
-        ${user.name === null ? `<button class="acct-item" type="button" data-act="name"><span class="acct-dot">${I.pen}</span><span>Pick a display name</span></button>` : ''}
-        <button class="acct-item" type="button" data-act="board"><span class="acct-dot">${I.trophy}</span><span>Leaderboard</span>${summary?.rank ? `<span class="acct-r">#${summary.rank}</span>` : ''}</button>
+        <div class="acct-drop-head"><span class="acct-av lg${name === null ? ' anon' : ''}">${name !== null ? initial(name) : I.person}</span><div><b>${esc(name ?? 'No name yet')}</b><small>${sub}</small></div></div>
+        ${name === null ? `<button class="acct-item" type="button" data-act="name"><span class="acct-dot">${I.pen}</span><span>Pick a display name</span></button>` : ''}
+        <button class="acct-item" type="button" data-act="board"><span class="acct-dot">${I.trophy}</span><span>Leaderboard</span>${rank ? `<span class="acct-r">#${rank}</span>` : ''}</button>
         <button class="acct-item" type="button" data-act="games"><span class="acct-dot">${I.list}</span><span>Your games</span></button>
         ${user.isAdmin ? `<a class="acct-item" href="/admin"><span class="acct-dot">${I.radio}</span><span>Radio admin</span></a>` : ''}
         <div class="acct-drop-foot"><button type="button" data-act="signout">${I.out}Sign out</button><button type="button" class="danger" data-act="delete">Delete account</button><a href="/privacy">Privacy</a></div>`;
-      if (refocus) this.drop.querySelector<HTMLElement>('.acct-item')?.focus({ preventScroll: true });
+      if (hadFocus) (this.drop.querySelector<HTMLElement>(key ?? '.acct-item') ?? this.drop.querySelector<HTMLElement>('.acct-item'))?.focus({ preventScroll: true });
     }
     this.hooks.fit();
   }
