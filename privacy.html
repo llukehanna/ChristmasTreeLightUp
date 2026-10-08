@@ -42,31 +42,36 @@
 
       <h2>What is stored when you sign in</h2>
       <ul>
-        <li><b>Your Google account ID and email address.</b> Google shares these when you sign in (Aglow asks for nothing else). The ID keeps your account the same each time. The email must be verified by Google, and it is how the radio admin is recognised. Neither is ever shown to anyone.</li>
+        <li><b>Your Google account ID and email address.</b> Google shares these when you sign in (Aglow asks for nothing else). The ID keeps your account the same each time. The email must be verified by Google, and it is how the radio admin is recognised. Neither is ever shown to other players.</li>
         <li><b>Your display name.</b> The name you pick is shown on the leaderboard next to your times. It is the only thing about you that is public.</li>
         <li><b>Your games.</b> For each tree: when it started and finished, your time, whether it ranked, and the log of your taps and pauses, which the server replays to check the time.</li>
-        <li><b>A sign-in session.</b> A cookie keeps you signed in. Only a hashed copy of it is stored on the server.</li>
+        <li><b>A sign-in session.</b> A cookie keeps you signed in (plus a short-lived one during the Google sign-in round trip). Only a hashed copy of the session is stored on the server.</li>
       </ul>
 
       <h2>What is stored when you play signed out</h2>
       <ul>
         <li><b>Your finished games</b>, with no name attached, so you can still save them to the leaderboard by signing in on the same browser later.</li>
-        <li><b>A hashed copy of your IP address</b> each time a game starts, used only to limit how many games one network can start in an hour. The address itself is never stored, and these records are deleted after an hour.</li>
         <li><b>In your browser:</b> the game in progress, your settings and local stats, and the keys that let you save signed-out games after you sign in.</li>
       </ul>
+
+      <h2>When you start a game (signed in or not)</h2>
+      <p>Each time a game starts, a keyed hash of your IP address (for IPv6, of its network part) is stored with the time, only to limit how many games one network can start in an hour. Aglow does not save the address itself in its database. Records older than an hour are cleared out automatically as new games are played.</p>
 
       <h2>How long it is kept</h2>
       <ul>
         <li>Your account, name and games: until you delete your account.</li>
-        <li>Your session: a year, renewed while you keep playing, or until you sign out.</li>
-        <li>Games played signed out: 90 days unless you sign in and save them. Games never finished: one day.</li>
+        <li>Your session: 365 days, renewed while you keep playing, or until you sign out.</li>
+        <li>Games played signed out: about 90 days unless you sign in and save them. Games never finished: about one day. Start records: about an hour.</li>
       </ul>
+      <p>Cleanup runs as people play, so removal can lag slightly.</p>
 
       <h2>Who sees it</h2>
-      <p>Everyone can see the leaderboard: display names, times and dates. Nothing else is public. Aglow runs on Cloudflare, which stores this data. It is never sold or shared, and there are no ads, analytics or tracking cookies. The pages load their fonts from Google Fonts, which sees your IP address as any website you visit does.</p>
+      <p>Everyone can see the leaderboard: display names, times and dates. Nothing else is public. Aglow runs on Cloudflare, which stores this data. It is never sold or shared. Aglow itself has no ads, analytics or tracking cookies.</p>
+      <p>Cloudflare, which hosts Aglow, sees each request's IP address and keeps short-lived technical logs of requests to the site's API (address requested, time and result) for troubleshooting, for up to 7 days.</p>
+      <p>The pages load their fonts from Google Fonts, which sees your IP address as any website you visit does. If you choose a Spotify or Apple Music playlist in the radio, that player is loaded from Spotify or Apple, who see your IP address and may set their own cookies under their own policies. Aglow's own radio music is served from Cloudflare. Google's own privacy policy applies to your Google account.</p>
 
       <h2>Deleting it</h2>
-      <p>Sign in, open the menu under your name and choose <b>Delete account</b>. Your account, name, sessions and every saved game are deleted at once, for good.</p>
+      <p>Sign in, open the menu under your name and choose <b>Delete account</b>. Your account, name, sessions and every saved game are removed from the live database immediately; Cloudflare's database backups may keep copies for up to 30 days. Signed-out games saved in your browser stay until their 90 days are up; clear this site's data in your browser to remove them.</p>
 
       <p class="dim"><a href="/">Back to Aglow</a></p>
     </main>
