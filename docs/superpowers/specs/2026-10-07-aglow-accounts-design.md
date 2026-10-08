@@ -62,7 +62,6 @@ games(
   id TEXT PK,                       -- random, URL-safe
   user_id INTEGER REFERENCES users ON DELETE CASCADE,  -- null until claimed
   claim_hash TEXT,                  -- HMAC of the claim token, signed-out games only
-  ip_hash TEXT NOT NULL,            -- HMAC(AUTH_SECRET, ip), for the start rate limit only
   gen_version INTEGER NOT NULL,     -- generator/mask version, so later code changes never break stored replays
   seed INTEGER NOT NULL,
   started_at INTEGER NOT NULL,      -- server ms
@@ -75,7 +74,6 @@ games(
 )
 INDEX games_board ON games(ms, finished_at) WHERE ranked = 1
 INDEX games_user ON games(user_id, finished_at DESC)
-INDEX games_ip ON games(ip_hash, started_at)
 INDEX games_abandoned ON games(started_at) WHERE finished_at IS NULL
 starts(ip_hash TEXT NOT NULL, at INTEGER NOT NULL)  -- one row per start (IPv6 keyed by /64) for the 200/hour limit, so a 422's deleted game still counts; INDEX starts_ip(ip_hash, at), starts_at(at); each start prunes up to 50 rows older than an hour
 ```
