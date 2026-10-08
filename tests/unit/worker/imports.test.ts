@@ -50,6 +50,8 @@ describe('Worker imports', () => {
     expect(rel).toContain('worker/lib/session.ts');
     expect(rel).toContain('src/radio/schema.ts');
     expect(rel).toContain('src/radio/ids.ts');
+    expect(rel).toContain('src/core/judge.ts');
+    expect(rel).toContain('src/core/board.ts');
     expect(rel).not.toContain('src/radio/builtin.ts'); // it reaches the browser-only render modules
   });
   it('recognises what it should flag', () => {
