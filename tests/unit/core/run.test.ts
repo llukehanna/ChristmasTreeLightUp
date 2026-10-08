@@ -49,7 +49,7 @@ class Page {
     const end = this.perf + ms;
     while (this.nextFrame <= end) {
       this.step(this.nextFrame - this.perf);
-      this.run.frame(this.perf);
+      this.run.frame(this.perf, this.dateNow);
       this.nextFrame += frameMs;
     }
     this.step(end - this.perf);
@@ -58,6 +58,17 @@ class Page {
   /** Time passes with no frame at all (a stalled main thread). */
   stall(ms: number): void {
     this.step(ms);
+    this.nextFrame = Math.max(this.nextFrame, this.perf + 0.1);
+  }
+
+  /**
+   * The phone sleeps: the wall clock (and the server) move on `ms`, but performance.now() only `perfMs` (it stops while
+   * the device is suspended), and no frame runs.
+   */
+  sleep(ms: number, perfMs: number): void {
+    this.perf += perfMs;
+    this.epoch += ms;
+    this.realMs += ms;
     this.nextFrame = Math.max(this.nextFrame, this.perf + 0.1);
   }
 
@@ -70,7 +81,7 @@ class Page {
   /** App.tapTile, between frames: whether the tap went in (and was logged). */
   tap(i: number): boolean {
     const before = this.run.log.entries.length;
-    this.run.tap(i, this.perf);
+    this.run.tap(i, this.perf, this.dateNow);
     return this.run.log.entries.length > before;
   }
 
@@ -82,7 +93,7 @@ class Page {
   pauseFor(ms: number): void {
     this.run.pause(this.perf);
     this.wait(ms);
-    this.run.resume(this.perf);
+    this.run.resume(this.perf, this.dateNow);
   }
 
   /** A hidden tab (App's visibilitychange: pause(false) when it can pause, else markAway), back `ms` later, then the overlay tap. */
@@ -90,7 +101,7 @@ class Page {
     if (this.perf >= this.run.interactiveAt) this.run.pause(this.perf);
     else this.run.markAway(this.perf);
     this.stall(ms); // no frames while hidden
-    this.run.resume(this.perf);
+    this.run.resume(this.perf, this.dateNow);
   }
 
   /**
@@ -243,7 +254,7 @@ describe('Run: the browser logs taps exactly as the server replays them', () => 
     page.waitInteractive();
     page.run.pause(page.perf);
     page.wait(1000);
-    page.run.resume(page.perf);
+    page.run.resume(page.perf, page.dateNow);
     expect(page.tap(ids[2])).toBe(true);
     expect(page.run.log.entries.map((e) => e.a)).toEqual(['p', 'r', ids[2]]);
   });
@@ -274,6 +285,58 @@ describe('Run: the browser logs taps exactly as the server replays them', () => 
     const log = page.run.log.entries;
     expect(log.every((e, k) => k === 0 || e.t >= log[k - 1].t)).toBe(true);
     expect(page.verdict(0)).not.toBeNull();
+  });
+
+  it('a phone asleep during a pause: performance.now() stopped, so the resume moves the log on to the wall clock and the run ranks', () => {
+    const page = new Page(9, mulberry32(9));
+    page.waitInteractive();
+    const half = Math.floor(ids.length / 2);
+    for (const i of ids.slice(0, half)) page.solveTile(i, () => 60);
+    page.wait(400);
+    page.run.pause(page.perf); // the tab is hidden as the phone locks
+    page.sleep(60_000, 1000);
+    page.wait(700); // awake, the pause overlay up
+    page.run.resume(page.perf, page.dateNow);
+    for (const i of ids.slice(half)) page.solveTile(i, () => 60);
+    page.finish();
+    const v = page.verdict(); // the server saw the whole minute
+    expect(v?.reason).toBeNull();
+    expect(v?.pausedMs).toBeGreaterThan(60_500); // the whole minute asleep, plus the time awake before the resume
+    expect(Math.abs((v?.ms ?? 0) - page.run.elapsedMs(page.perf))).toBeLessThan(50);
+  });
+
+  it('a phone asleep during the reveal: the time away joins the log pause when the clock starts', () => {
+    const page = new Page(10, mulberry32(10));
+    page.wait(300);
+    page.run.markAway(page.perf); // hidden during the reveal
+    page.sleep(30_000, 200);
+    page.waitInteractive();
+    for (const i of ids) page.solveTile(i, () => 60);
+    page.finish();
+    const v = page.verdict();
+    expect(v?.reason).toBeNull();
+    expect(Math.abs((v?.ms ?? 0) - page.run.elapsedMs(page.perf))).toBeLessThan(50);
+  });
+
+  it('a resume with a turn still in flight keeps the log on performance.now(), so the browser and the replay still agree', () => {
+    const page = new Page(12, mulberry32(12));
+    page.waitInteractive();
+    const half = Math.floor(ids.length / 2);
+    for (const i of ids.slice(0, half)) page.solveTile(i, () => 60);
+    page.wait(400);
+    expect(page.tap(ids[half])).toBe(true);
+    page.run.pause(page.perf); // mid-turn
+    page.sleep(60_000, 10); // woke and resumed before the turn's end
+    page.run.resume(page.perf, page.dateNow);
+    expect(page.run.board.rotating.size).toBe(1);
+    page.wait(200);
+    for (const i of ids.slice(half)) page.solveTile(i, () => 60);
+    page.finish();
+    const headless = seededBoard(12, GEN_VERSION, true);
+    expect(headless && replay(headless, page.run.log.entries)).not.toBeNull();
+    expect(headless?.bits).toEqual(page.run.board.bits);
+    // That minute is missing from the log, as before: kept, unranked as clock.
+    expect(page.verdict()?.reason).toBe('clock');
   });
 
   it('the wall clock jumping forward across a reload: the extra time sits in the reload pause, so the run is kept as clock', () => {
