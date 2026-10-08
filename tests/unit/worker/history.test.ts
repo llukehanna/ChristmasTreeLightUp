@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { HISTORY_FIRST_DAY } from '../../../src/api/types';
+import { HISTORY_FIRST_DAY, MAX_IMPORT_MS, MAX_STREAK_DAYS } from '../../../src/api/types';
 import { mulberry32 } from '../../../src/core/rng';
-import { dayNumber, dayText, localDayOf, streaksOf } from '../../../worker/lib/days';
+import { dayNumber, dayText, localDayOf, localMidnight, streaksOf } from '../../../worker/lib/days';
 import { BEST_FROM, fabricateHistory, importRunId, parseImportRequest, split, type History, type HistoryInput } from '../../../worker/lib/history';
 import { GAME_ID } from '../../../worker/routes/games';
 
@@ -24,26 +24,37 @@ const base: HistoryInput = {
 const daysOf = (h: History, tz: number): number[] => [...new Set(h.runs.map((r) => localDayOf(r.finishedAt, tz)))].sort((a, b) => a - b);
 const mean = (a: readonly number[]): number => a.reduce((s, v) => s + v, 0) / a.length;
 
-/** 600 valid inputs from a fixed seed: sizes up to 2,000, offsets from -840 to 840, streaks that fit and that don't. */
+/**
+ * 600 valid inputs from a fixed seed: sizes up to 2,000, offsets from -840 to 840, streaks that fit and that don't, and
+ * the edges: an average equal to (or 1 ms over) the best, bests and averages up to an hour, streaks up to ten years, and
+ * a clock just after local midnight (the earliest the last day can be today) with the last day today.
+ */
 function sweep(): HistoryInput[] {
   const r = mulberry32(2026);
   const out: HistoryInput[] = [];
   for (let c = 0; c < 600; c++) {
     const tz = [420, 0, -330, 480, -600, 840, -840][c % 7];
-    const today = localDayOf(NOW, tz);
     const solved = c % 50 === 0 ? 2000 : 1 + Math.floor(r() * 60);
-    const bestMs = (5 + Math.floor(r() * 200)) * 1000;
-    const streak = 1 + Math.floor(r() * 12);
+    // Every 3rd case the clock is just after local midnight (every 6th, at the very first moment a last day of today is valid).
+    const now = c % 3 === 0 ? localMidnight(localDayOf(NOW, tz), tz) + 1000 + (solved - 1) + (c % 6 === 0 ? 0 : Math.floor(r() * 4000)) : NOW;
+    const today = localDayOf(now - 1000 - (solved - 1), tz);
+    const bestMs = (5 + Math.floor(r() * (c % 11 === 0 ? 3596 : 200))) * 1000;
+    let averageMs = bestMs + Math.floor(r() * 100_000);
+    if (c % 10 === 1) averageMs = bestMs;
+    else if (c % 10 === 2) averageMs = bestMs + 1;
+    else if (c % 13 === 0) averageMs = bestMs + Math.floor(r() * (MAX_IMPORT_MS - bestMs));
+    if (solved === 1) averageMs = bestMs;
+    const streak = 1 + Math.floor(r() * (c % 9 === 0 ? MAX_STREAK_DAYS : 12));
     out.push({
       importId: `case${String(c).padStart(4, '0')}_xxxxxxxxxxxx`,
       solved,
       bestMs,
-      averageMs: solved === 1 ? bestMs : bestMs + Math.floor(r() * 100_000),
+      averageMs: Math.min(averageMs, MAX_IMPORT_MS),
       streak,
-      longestStreak: streak + Math.floor(r() * 6),
-      lastDay: FIRST + Math.floor(r() * (today - FIRST + 1)),
+      longestStreak: Math.min(MAX_STREAK_DAYS, streak + Math.floor(r() * 6)),
+      lastDay: c % 6 === 0 ? today : FIRST + Math.floor(r() * (today - FIRST + 1)),
       tz,
-      now: NOW,
+      now,
     });
   }
   return out;
@@ -78,9 +89,16 @@ describe('fabricateHistory', () => {
   it('the best comes in the last 40%, and is the only run that fast whenever the average leaves room', () => {
     all.forEach((c, k) => {
       const ms = made[k].runs.map((x) => x.ms);
-      expect(ms.indexOf(c.bestMs)).toBeGreaterThanOrEqual(Math.floor(c.solved * BEST_FROM));
-      if (c.solved * (c.averageMs - c.bestMs) >= c.solved - 1) expect(ms.filter((m) => m === c.bestMs)).toHaveLength(1);
+      if (c.solved * (c.averageMs - c.bestMs) >= c.solved - 1) {
+        expect(ms.filter((m) => m === c.bestMs)).toHaveLength(1);
+        expect(ms.indexOf(c.bestMs)).toBeGreaterThanOrEqual(Math.floor(c.solved * BEST_FROM));
+      }
     });
+  });
+
+  it('an average equal to the best means every game is the best', () => {
+    const h = fabricateHistory({ ...base, bestMs: 41_000, averageMs: 41_000 });
+    expect(h.runs.map((x) => x.ms)).toEqual(Array(40).fill(41_000));
   });
 
   it('no date before 2026-09-29 or after lastSolvedDay (local); the last day is played; nothing later than a second ago', () => {
@@ -150,9 +168,26 @@ describe('fabricateHistory', () => {
     }
   });
 
+  it('the earliest the last day can be today is when all its finishes fit before a second ago', () => {
+    const today = dayNumber('2026-10-08') as number;
+    const midnight = localMidnight(today, 420);
+    for (const solved of [1, 40, 2000]) {
+      const now = midnight + 1000 + (solved - 1);
+      const h = fabricateHistory({ ...base, solved, averageMs: solved === 1 ? base.bestMs : 78_500, lastDay: today, now });
+      expect(h.runs.at(-1)?.finishedAt).toBeLessThanOrEqual(now - 1000);
+      expect(daysOf(h, 420).at(-1)).toBe(today);
+    }
+  });
+
   it('refuses inputs the route never passes', () => {
+    const today = dayNumber('2026-10-08') as number;
+    const midnight = localMidnight(today, 420);
     expect(() => fabricateHistory({ ...base, lastDay: FIRST - 1 })).toThrow(RangeError);
     expect(() => fabricateHistory({ ...base, solved: 0 })).toThrow(RangeError);
+    expect(() => fabricateHistory({ ...base, lastDay: today + 1 })).toThrow(RangeError); // after today
+    expect(() => fabricateHistory({ ...base, lastDay: today, now: midnight + 1000 + 38 })).toThrow(RangeError); // 40 games don't fit before a second ago
+    expect(() => fabricateHistory({ ...base, averageMs: 40_999 })).toThrow(RangeError); // faster on average than the best
+    expect(() => fabricateHistory({ ...base, solved: 1, averageMs: 42_000 })).toThrow(RangeError); // one game: average = best
   });
 });
 
@@ -165,29 +200,55 @@ describe('parseImportRequest', () => {
     expect(typeof parseImportRequest({ ...ok, lastSolvedDay: '2026-10-08' }, NOW)).toBe('object'); // today, in California
   });
 
+  it('accepts today from the first moment all its finishes fit before a second ago, and not before', () => {
+    const midnight = localMidnight(dayNumber('2026-10-08') as number, 420);
+    expect(typeof parseImportRequest({ ...ok, lastSolvedDay: '2026-10-08' }, midnight + 1000 + 39)).toBe('object');
+    expect(parseImportRequest({ ...ok, lastSolvedDay: '2026-10-08' }, midnight + 500)).toBe(LAST_DAY);
+    expect(parseImportRequest({ ...ok, lastSolvedDay: '2026-10-08' }, midnight + 1000 + 38)).toBe(LAST_DAY);
+    expect(typeof parseImportRequest({ ...ok, lastSolvedDay: '2026-10-07' }, midnight + 500)).toBe('object'); // yesterday is always fine
+  });
+
+  const ID = 'importId must be 16–32 letters, digits, - or _.';
+  const SOLVED = 'Games solved must be a whole number from 1 to 2,000.';
+  const BEST = 'Best time must be from 0:05 to 60:00, in whole seconds.';
+  const AVERAGE = 'Average time must be at least the best time and at most 60:00.';
+  const ONE = 'With one game, the average time is the best time.';
+  const STREAKS = 'Streaks are whole days from 1 to 3,650, and the longest is at least the current one.';
+  const TZ = 'tz must be whole minutes from -840 to 840.';
+  const LAST_DAY = 'Last solved day must be a date from 2026-09-29 to today.';
+
   it.each([
-    [{ importId: 'short' }, 'importId'],
-    [{ importId: 'has spaces in it here!!' }, 'importId'],
-    [{ solved: 0 }, 'Games solved'],
-    [{ solved: 2001 }, 'Games solved'],
-    [{ solved: 2.5 }, 'Games solved'],
-    [{ bestSeconds: 4 }, 'Best time'],
-    [{ bestSeconds: 3601 }, 'Best time'],
-    [{ bestSeconds: '41' }, 'Best time'],
-    [{ averageMs: 40_999 }, 'Average time'],
-    [{ averageMs: 3_600_001 }, 'Average time'],
-    [{ solved: 1, averageMs: 42_000 }, 'one game'],
-    [{ streak: 0 }, 'Streaks'],
-    [{ streak: 6, longestStreak: 5 }, 'Streaks'],
-    [{ longestStreak: 3651 }, 'Streaks'],
-    [{ tz: 841 }, 'tz'],
-    [{ tz: '420' }, 'tz'],
-    [{ lastSolvedDay: '2026-09-28' }, 'Last solved day'],
-    [{ lastSolvedDay: '2026-10-09' }, 'Last solved day'], // tomorrow in California
-    [{ lastSolvedDay: '2026-02-30' }, 'Last solved day'],
-  ])('refuses %o', (over, field) => {
-    const r = parseImportRequest({ ...ok, ...over }, NOW);
-    expect(typeof r).toBe('string');
-    expect(r).toContain(field);
+    [{ importId: 'short' }, ID],
+    [{ importId: 'has spaces in it here!!' }, ID],
+    [{ importId: 'AbCdEfGhIjKlMnOpQrStUv\n' }, ID],
+    [{ importId: 42 }, ID],
+    [{ solved: 0 }, SOLVED],
+    [{ solved: 2001 }, SOLVED],
+    [{ solved: 2.5 }, SOLVED],
+    [{ solved: null }, SOLVED],
+    [{ solved: '40' }, SOLVED],
+    [{ bestSeconds: 4 }, BEST],
+    [{ bestSeconds: 3601 }, BEST],
+    [{ bestSeconds: '41' }, BEST],
+    [{ averageMs: 40_999 }, AVERAGE],
+    [{ averageMs: 3_600_001 }, AVERAGE],
+    [{ averageMs: 78_500.5 }, AVERAGE],
+    [{ solved: 1, averageMs: 42_000 }, ONE],
+    [{ streak: 0 }, STREAKS],
+    [{ streak: '3' }, STREAKS],
+    [{ streak: 6, longestStreak: 5 }, STREAKS],
+    [{ longestStreak: 3651 }, STREAKS],
+    [{ longestStreak: undefined }, STREAKS], // missing
+    [{ tz: 841 }, TZ],
+    [{ tz: '420' }, TZ],
+    [{ tz: 420.5 }, TZ],
+    [{ lastSolvedDay: '2026-09-28' }, LAST_DAY],
+    [{ lastSolvedDay: '2026-10-09' }, LAST_DAY], // tomorrow in California
+    [{ lastSolvedDay: '2026-02-30' }, LAST_DAY],
+    [{ lastSolvedDay: '2026-10-07T00:00' }, LAST_DAY],
+    [{ solved: 0, tz: 9999 }, SOLVED], // several faults: the first in the spec's order
+    [{ bestSeconds: 4, streak: 0, lastSolvedDay: 'x' }, BEST],
+  ])('refuses %o with exactly its message', (over, message) => {
+    expect(parseImportRequest({ ...ok, ...over }, NOW)).toBe(message);
   });
 });
