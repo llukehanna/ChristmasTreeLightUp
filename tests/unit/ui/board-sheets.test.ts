@@ -123,17 +123,22 @@ it('your games totals: a list with labels; loading, failed and empty read as wor
   const ready = totals({ status: 'ready', data: { solved: 1234, totalMs: 0, averageMs: null, bestMs: null, streak: 1000, longestStreak: 1000, lastSolvedDay: null, imported: 0 } });
   expect(ready?.getAttribute('role')).toBe('list');
   expect(ready?.getAttribute('aria-label')).toBe('Account totals');
-  expect([...(ready?.querySelectorAll('[role="listitem"]') ?? [])].map((n) => n.getAttribute('aria-label'))).toEqual([null, 'Average: not available', null, null]);
+  // Hidden words, not an aria-label on the listitem (several screen readers skip a label on that role).
+  expect([...(ready?.querySelectorAll('[role="listitem"]') ?? [])].map((n) => n.querySelector('.acct-vh')?.textContent ?? null)).toEqual([null, ': not available', null, null]);
+  expect(ready?.querySelector('[role="listitem"]:nth-child(2) b')?.getAttribute('aria-hidden')).toBe('true');
+  expect(ready?.querySelector('[role="listitem"] b')?.hasAttribute('aria-hidden')).toBe(false);
+  expect(ready?.querySelector('[aria-label]:not(.acct-totals)')).toBeNull();
   // One number format for 1,000 and up, as on the results tag.
   expect(texts(ready as HTMLElement, 'b')).toEqual(['1,234', '–', '1,000', '1,000']);
   // Loading: busy, and each dash says so.
   const loading = totals();
   expect(loading?.getAttribute('aria-busy')).toBe('true');
-  expect(loading?.querySelector('[role="listitem"]')?.getAttribute('aria-label')).toBe('Solved: loading');
+  expect(loading?.querySelector('[role="listitem"]')?.textContent).toBe('–Solved: loading');
+  expect(loading?.querySelector('[role="listitem"] b')?.getAttribute('aria-hidden')).toBe('true');
   // Failed: dashes that say "not available", and a visible note.
   const failed = render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now, { status: 'error' });
   expect(failed.querySelector('.acct-totals')?.hasAttribute('aria-busy')).toBe(false);
-  expect(failed.querySelector('.acct-totals [role="listitem"]')?.getAttribute('aria-label')).toBe('Solved: not available');
+  expect(failed.querySelector('.acct-totals [role="listitem"]')?.textContent).toBe('–Solved: not available');
   expect(failed.querySelector('.acct-totals-err')?.textContent).toBe("Couldn't load your totals.");
   expect(texts(failed, '.acct-totals b')).toEqual(['–', '–', '–', '–']);
   expect(totals({ status: 'loading' })?.nextElementSibling?.classList.contains('acct-totals-err')).toBe(false);
