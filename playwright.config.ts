@@ -2,13 +2,15 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  timeout: 30_000,
-  use: { baseURL: 'http://localhost:4173' },
+  timeout: 60_000,
+  use: { baseURL: 'http://localhost:4173', trace: 'retain-on-failure' },
+  // The real Worker (wrangler dev) over the production build, a fresh local D1 and R2, and fake sign-in (localhost only).
   webServer: {
-    command: 'npm run build && npm run preview -- --port 4173 --strictPort',
+    command: 'npm run build && npm run serve:e2e',
     url: 'http://localhost:4173',
-    reuseExistingServer: true,
-    timeout: 120_000,
+    // Never reuse a stale server: the tests need a fresh local D1 and the current build.
+    reuseExistingServer: false,
+    timeout: 180_000,
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{ name: 'desktop', use: { ...devices['Desktop Chrome'] } }],
 });
