@@ -157,7 +157,7 @@ export class App {
       this.moved = true;
       this.toast.show(`Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`, 2600);
       // A reload counts as a pause (spec §5.2): the log resumes when the clock does, after the reveal.
-      this.run.markReload(now);
+      this.run.markAway(now);
       // Saved during the final turn: the restored board is already solved, so finish the win properly.
       if (this.board.lighting.count === GRID.ids.length) this.handle(this.board.settleWin(), now);
     } else {
@@ -597,15 +597,19 @@ export class App {
       if (!document.hidden || !this.live) return;
       const now = performance.now();
       if (this.canPause(now)) this.pause(false);
-      // During the reveal the clock hasn't started: nothing to pause, but a restored game is still saved.
-      else if (this.winAt === null && this.moved) this.save(now);
+      else if (this.winAt === null && !this.starting) {
+        // During the reveal the clock hasn't started: the log notes the time away (it resumes with the clock), and a
+        // restored game is still saved.
+        this.run.markAway(now);
+        if (this.moved) this.save(now);
+      }
     });
     addEventListener('pagehide', () => {
       if (!this.live || this.starting || this.winAt !== null) return;
       const now = performance.now();
       // A reload counts as a pause (spec §5.2): the log says so, and a page back from the back-forward cache shows the pause overlay.
       if (this.canPause(now)) this.pause(false);
-      else this.run.markReload(now);
+      else this.run.markAway(now);
       if (this.moved) this.save(now);
     });
     const overlay = el('pause');

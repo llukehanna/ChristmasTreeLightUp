@@ -94,10 +94,10 @@ export class Run {
   }
 
   /**
-   * The page is going away (or just came back from a reload) while the clock isn't running: a reload counts as a pause
-   * (spec §5.2), so the log pauses here and resumes when the clock does, after the reveal.
+   * The page is hidden, going away, or just came back from a reload while the clock can't be paused (the reveal): a
+   * reload counts as a pause (spec §5.2), so the log pauses here and resumes when the clock does, after the reveal.
    */
-  markReload(now: number): void {
+  markAway(now: number): void {
     if (!this.board.won) this.log.pause(this.logNow(now));
   }
 
