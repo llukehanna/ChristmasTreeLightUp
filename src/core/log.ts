@@ -49,11 +49,12 @@ export function endsPaused(log: readonly LogEntry[]): boolean {
 /**
  * The browser's recorder. Times come from the caller (log ms), so it stays pure. Taps while paused are never logged
  * (the server would refuse them), a pause or resume only when the state changes, and times never go backwards.
- * Past MAX_LOG_ENTRIES nothing more is kept (such a run can't verify).
+ * Past MAX_LOG_ENTRIES nothing more is kept, and `overflowed` says so: such a run can't verify, so it isn't sent.
  */
 export class GameLog {
   readonly entries: LogEntry[];
   private pausedNow: boolean;
+  private dropped = false;
 
   constructor(entries: readonly LogEntry[] = []) {
     this.entries = [...entries];
@@ -62,6 +63,11 @@ export class GameLog {
 
   get paused(): boolean {
     return this.pausedNow;
+  }
+
+  /** An entry was dropped at the cap: the log no longer matches the game. */
+  get overflowed(): boolean {
+    return this.dropped;
   }
 
   tap(t: number, tile: number): void {
@@ -81,7 +87,10 @@ export class GameLog {
   }
 
   private push(t: number, a: LogAction): void {
-    if (this.entries.length >= MAX_LOG_ENTRIES) return;
+    if (this.entries.length >= MAX_LOG_ENTRIES) {
+      this.dropped = true;
+      return;
+    }
     const last = this.entries.length ? this.entries[this.entries.length - 1].t : 0;
     this.entries.push({ t: Math.min(MAX_LOG_MS, Math.max(last, Math.round(t))), a });
   }
