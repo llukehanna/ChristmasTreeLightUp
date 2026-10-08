@@ -25,7 +25,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, timeoutMs = TIMEOUT_MS): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, timeoutMs = TIMEOUT_MS, cache: RequestCache = 'no-store'): Promise<T> {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), timeoutMs);
   try {
@@ -33,7 +33,7 @@ async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?
       method,
       signal: abort.signal,
       credentials: 'same-origin',
-      cache: 'no-store',
+      cache,
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -52,16 +52,35 @@ async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?
   }
 }
 
+/**
+ * The board is the one response the browser may keep (`private, max-age=15`, `Vary: Cookie`): opening it again soon
+ * costs no request. After this page changes it (a finish, a claim, a name, signing out or deleting the account), the
+ * next board is revalidated, so your new run is never hidden by the browser's copy.
+ */
+let boardStale = false;
+async function changesBoard<T>(p: Promise<T>): Promise<T> {
+  const r = await p;
+  boardStale = true;
+  return r;
+}
+async function board(): Promise<BoardResponse> {
+  const revalidate = boardStale;
+  const r = await request<BoardResponse>('GET', '/api/board', undefined, TIMEOUT_MS, revalidate ? 'no-cache' : 'default');
+  if (revalidate) boardStale = false;
+  return r;
+}
+
+/** Everything but the board is never cached: writes, and reads that are yours alone. */
 export const api = {
   me: () => request<MeResponse>('GET', '/api/me'),
   checkName: (n: string) => request<NameCheck>('GET', `/api/auth/name?n=${encodeURIComponent(n)}`),
-  setName: (name: string) => request<{ user: User }>('POST', '/api/auth/name', { name }),
-  signOut: () => request<Record<string, never>>('POST', '/api/auth/signout', {}),
-  deleteAccount: (confirm: string) => request<Record<string, never>>('DELETE', '/api/me', { confirm }),
+  setName: (name: string) => changesBoard(request<{ user: User }>('POST', '/api/auth/name', { name })),
+  signOut: () => changesBoard(request<Record<string, never>>('POST', '/api/auth/signout', {})),
+  deleteAccount: (confirm: string) => changesBoard(request<Record<string, never>>('DELETE', '/api/me', { confirm })),
   start: () => request<StartResponse>('POST', '/api/games', {}, START_TIMEOUT_MS),
-  finish: (id: string, log: readonly LogEntry[]) => request<FinishResult>('POST', `/api/games/${encodeURIComponent(id)}/finish`, { log }),
-  claim: (claims: readonly { id: string; claim: string }[]) => request<ClaimResponse>('POST', '/api/games/claim', { claims }),
-  board: () => request<BoardResponse>('GET', '/api/board'),
+  finish: (id: string, log: readonly LogEntry[]) => changesBoard(request<FinishResult>('POST', `/api/games/${encodeURIComponent(id)}/finish`, { log })),
+  claim: (claims: readonly { id: string; claim: string }[]) => changesBoard(request<ClaimResponse>('POST', '/api/games/claim', { claims })),
+  board,
   myGames: () => request<MyGamesResponse>('GET', '/api/me/games'),
 };
 

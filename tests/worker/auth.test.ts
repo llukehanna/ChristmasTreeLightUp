@@ -271,6 +271,15 @@ describe('sessions', () => {
     expect((await body(res)).error).toBe('not_configured');
   });
 
+  it("the README's AUTH_SECRET smoke check: a well-formed token that matches no session is {user:null} when set, 503 when not", async () => {
+    const cookie = '__Host-aglow_session=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    expect(cookie.split('=')[1]).toHaveLength(43);
+    const set = await call(testEnv(db), 'GET', '/api/me', { cookie });
+    expect([set.status, await body(set)]).toEqual([200, { user: null }]);
+    const missing = await call(testEnv(db, { AUTH_SECRET: undefined }), 'GET', '/api/me', { cookie });
+    expect([missing.status, (await body(missing)).error]).toEqual([503, 'not_configured']);
+  });
+
   it('writes need same-origin JSON; unknown paths are 404 and wrong methods 405', async () => {
     const env = testEnv(db);
     expect((await call(env, 'POST', '/api/auth/signout', { origin: 'https://evil.example' })).status).toBe(403);

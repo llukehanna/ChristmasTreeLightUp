@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getPlatformProxy } from 'wrangler';
+import { resetBoardCache } from '../../worker/lib/board-cache';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { handle } from '../../worker/router';
@@ -32,7 +33,9 @@ export async function startDb(): Promise<{ db: Db; dispose: () => Promise<void> 
   return { db, dispose: proxy.dispose };
 }
 
+/** Empties the tables, and the isolate's cached board with them. */
 export async function wipe(db: Db): Promise<void> {
+  resetBoardCache();
   await db.batch(['games', 'sessions', 'users', 'starts'].map((t) => db.prepare(`DELETE FROM ${t}`)));
 }
 

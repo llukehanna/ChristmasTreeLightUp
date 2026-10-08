@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { ClaimResponse, FinishResult, StartResponse } from '../../src/api/types';
+import type { BoardResponse, ClaimResponse, FinishResult, StartResponse } from '../../src/api/types';
 import { REVEAL_MS } from '../../src/core/clock';
 import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
@@ -280,5 +280,37 @@ describe('claiming games', () => {
     expect(results).toHaveLength(8);
     expect(results.every((r) => r.ranked && r.total === 8)).toBe(true);
     expect(statements).toBeLessThanOrEqual(30);
+  });
+});
+
+describe('the cached board follows changes made in this isolate', () => {
+  const board = async (): Promise<BoardResponse> => json<BoardResponse>(await call(env, 'GET', '/api/board'));
+
+  it('a ranked finish shows at once, and its result counts it in the cached total', async () => {
+    await play(await signIn(env, 'bo@example.com', 'Comet'));
+    expect((await board()).total).toBe(1); // cached
+    const { result } = await play(await signIn(env, 'ana@example.com', 'Meridian'));
+    expect(result.total).toBe(2);
+    const b = await board();
+    expect(b.total).toBe(2);
+    expect(b.rows.map((r) => r.name).sort()).toEqual(['Comet', 'Meridian']);
+  });
+
+  it('a claim shows at once', async () => {
+    const anon = await play();
+    expect((await board()).total).toBe(0);
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    await claim(ana, [{ id: anon.game.id, claim: anon.game.claim }]);
+    expect((await board()).rows.map((r) => r.name)).toEqual(['Meridian']);
+  });
+
+  it('picking a name brings your ranked runs on at once; deleting the account takes them off', async () => {
+    const ana = await signIn(env, 'ana@example.com');
+    await play(ana);
+    expect((await board()).total).toBe(0);
+    expect((await call(env, 'POST', '/api/auth/name', { cookie: ana, body: { name: 'Meridian' } })).ok).toBe(true);
+    expect((await board()).total).toBe(1);
+    expect((await call(env, 'DELETE', '/api/me', { cookie: ana, body: { confirm: 'Meridian' } })).ok).toBe(true);
+    expect(await board()).toEqual({ rows: [], total: 0, you: null });
   });
 });

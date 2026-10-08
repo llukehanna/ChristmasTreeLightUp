@@ -6,7 +6,8 @@ import { GEN_VERSION } from '../../src/core/seeded.js';
 import { hmac, randomSeed, randomToken } from '../lib/crypto.js';
 import type { AppEnv, Ctx } from '../lib/env.js';
 import { clientIp, HttpError, json, rateKey, readJson } from '../lib/http.js';
-import { bestOf, boardTotal, rankOf } from '../lib/ranks.js';
+import { boardGrew, cachedTotal } from '../lib/board-cache.js';
+import { bestOf, rankOf } from '../lib/ranks.js';
 import { authSecret, currentUser, requireUser } from '../lib/users.js';
 
 const HOUR_MS = 3_600_000;
@@ -38,6 +39,8 @@ type FinishedGame = GameRow & { finished_at: number; ms: number };
 const SELECT_GAME =
   'SELECT g.id, g.user_id, g.claim_hash, g.gen_version, g.seed, g.started_at, g.finished_at, g.ms, g.ranked, g.unranked_reason, (u.name IS NOT NULL) AS named FROM games g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?';
 const finished = (g: GameRow): g is FinishedGame => g.finished_at !== null && g.ms !== null;
+/** Ranked and owned by a named player: on the leaderboard. */
+const onBoard = (g: GameRow): boolean => g.ranked === 1 && g.named === 1;
 const notFound = () => new HttpError(404, 'not_found', "That game isn't on record.");
 
 /** POST /api/games {} */
@@ -77,26 +80,27 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
 /**
  * What the browser shows for finished games, all owned by `userId` (or all signed out, null). The board total and the
  * owner's best are the same for every one, so they are read once: a full claim stays well inside D1's query budget.
+ * The total is the isolate's copy (BOARD_TTL_MS): runs finished in other isolates within that window may be missing
+ * from "#r of total", never this request's own (boardGrew counts them first). Ranks and the best are live.
  */
 async function resultsOf(env: AppEnv, userId: number | null, games: readonly FinishedGame[]): Promise<FinishResult[]> {
   if (games.length === 0) return [];
   const placed = (g: FinishedGame) => g.ranked === 1 || g.unranked_reason === 'anonymous';
   const [total, best, ranks] = await Promise.all([
-    boardTotal(env.DB),
+    cachedTotal(env.DB),
     userId === null ? Promise.resolve(null) : bestOf(env.DB, userId),
     Promise.all(games.map((g) => (placed(g) ? rankOf(env.DB, g.ms, g.finished_at) : Promise.resolve(null)))),
   ]);
   return games.map((g, k) => {
     const rank = ranks[k];
     // A run with a place that isn't on the board yet (signed out, or no name) would join it: "#r of total + 1".
-    const onBoard = g.ranked === 1 && g.named === 1;
     return {
       id: g.id,
       ranked: g.ranked === 1,
       reason: g.unranked_reason,
       ms: g.ms,
       rank,
-      total: rank !== null && !onBoard ? total + 1 : total,
+      total: rank !== null && !onBoard(g) ? total + 1 : total,
       best: best?.ms ?? null,
       newBest: g.ranked === 1 && best?.id === g.id,
     };
@@ -134,7 +138,9 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
     if (now && finished(now)) return json(await resultOf(env, now));
     throw notFound();
   }
-  return json(await resultOf(env, { ...game, finished_at: receivedAt, ms: verdict.ms, ranked, unranked_reason: reason }));
+  const done: FinishedGame = { ...game, finished_at: receivedAt, ms: verdict.ms, ranked, unranked_reason: reason };
+  boardGrew(onBoard(done) ? 1 : 0);
+  return json(await resultOf(env, done));
 }
 
 /** POST /api/games/claim { claims: [{ id, claim }] }: finished signed-out games join the account, 8 at a time. */
@@ -164,6 +170,7 @@ export async function claimGames(req: Request, env: AppEnv): Promise<Response> {
       .run();
     if (res.meta.changes > 0) claimed.push(owned);
   }
+  boardGrew(claimed.filter(onBoard).length);
   // Results after every claim, so best and newBest reflect the whole batch.
   const results = await resultsOf(env, user.id, claimed);
   return json({ results } satisfies ClaimResponse);

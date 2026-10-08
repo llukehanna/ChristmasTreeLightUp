@@ -44,6 +44,32 @@ describe('api client', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it('the board may come from the browser cache (private, max-age=15); writes and per-player reads never do', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    await api.board(); // a first look (nothing written yet in this module's life may still revalidate; see below)
+    await api.board();
+    expect(fetch.mock.calls[1][1].cache).toBe('default');
+    await api.me();
+    await api.myGames();
+    await api.finish('g', []);
+    await api.claim([]);
+    await api.checkName('Comet');
+    expect(fetch.mock.calls.slice(2).map((c) => c[1].cache)).toEqual(['no-store', 'no-store', 'no-store', 'no-store', 'no-store']);
+  });
+
+  it('after a write (a finish, a claim, a name, signing out), the next board is revalidated, then cached again', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    for (const write of [() => api.finish('g', []), () => api.claim([]), () => api.setName('Comet'), () => api.signOut(), () => api.deleteAccount('Comet')]) {
+      fetch.mockClear();
+      await write();
+      await api.board();
+      await api.board();
+      expect(fetch.mock.calls.map((c) => c[1].cache)).toEqual(['no-store', 'no-cache', 'default']);
+    }
+  });
+
   it('links to sign-in with a return path', () => {
     expect(signInHref('/?x=1')).toBe('/api/auth/google?return=%2F%3Fx%3D1');
   });
