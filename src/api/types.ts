@@ -1,6 +1,6 @@
 import type { UnrankedReason } from '../core/judge';
 
-/** JSON shapes shared by the Worker and the browser (spec 2026-10-07 §3). Types only, plus one constant. */
+/** JSON shapes shared by the Worker and the browser (specs 2026-10-07 §3, 2026-10-08 §3), plus a few shared constants. */
 export type { UnrankedReason };
 
 /** Most claims one POST /api/games/claim handles; the browser sends them in batches of this many. */
@@ -84,4 +84,32 @@ export interface MyGamesResponse {
   total: number;
   /** The last 30 finished games, newest first. */
   games: RecentGame[];
+}
+
+/** History import (spec 2026-10-08): the game's first day. No imported run is dated before it. */
+export const HISTORY_FIRST_DAY = '2026-09-29';
+/** Most runs one import may add. */
+export const MAX_IMPORT_RUNS = 2000;
+/** An imported best is whole seconds and at least this (the judge's ranked floor is 5 s). */
+export const MIN_IMPORT_BEST_SECONDS = 5;
+/** An imported best or average is at most an hour. */
+export const MAX_IMPORT_MS = 3_600_000;
+/** An imported streak is at most ten years of days. */
+export const MAX_STREAK_DAYS = 3650;
+
+/** POST /api/admin/import: this device's stats, as the admin confirmed or edited them. */
+export interface ImportRequest {
+  /** Made by the browser before the first send and reused on every resend (16–32 of A–Z a–z 0–9 _ -). */
+  importId: string;
+  solved: number;
+  /** Whole seconds, as the device keeps its best. */
+  bestSeconds: number;
+  /** Exact ms: the total is solved × averageMs. */
+  averageMs: number;
+  streak: number;
+  longestStreak: number;
+  /** The device's local YYYY-MM-DD. */
+  lastSolvedDay: string;
+  /** Date#getTimezoneOffset() at import time: UTC minus local, in minutes (420 in PDT). */
+  tz: number;
 }
