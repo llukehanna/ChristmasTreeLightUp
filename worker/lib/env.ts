@@ -15,6 +15,13 @@ export interface AppEnv {
   DB: Db;
   /** "google" (default) or "fake" (localhost only: sign in as ?as=<email> without Google). */
   AUTH_MODE?: string;
+  /** Secret: 256 random bits keying session, claim and IP hashes. */
+  AUTH_SECRET?: string;
+  GOOGLE_CLIENT_ID?: string;
+  /** Secret, pasted by Luke from the Google console. */
+  GOOGLE_CLIENT_SECRET?: string;
+  /** Comma-separated, compared lower-cased: the radio admin's Google email(s). */
+  ADMIN_EMAILS?: string;
   ADMIN_PASSWORD?: string;
   SESSION_SECRET?: string;
   LOGIN_LIMITER?: RateLimitBinding;

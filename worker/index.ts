@@ -12,6 +12,13 @@ export interface Env {
   /** D1 database "aglow": users, sessions and games (migrations/). */
   DB: D1Database;
   AUTH_MODE?: string;
+  /** Secret: 256 random bits keying session, claim and IP hashes. */
+  AUTH_SECRET?: string;
+  GOOGLE_CLIENT_ID?: string;
+  /** Secret, pasted by Luke from the Google console. */
+  GOOGLE_CLIENT_SECRET?: string;
+  /** Comma-separated, compared lower-cased: the radio admin's Google email(s). */
+  ADMIN_EMAILS?: string;
   /** Secret, set by Luke. */
   ADMIN_PASSWORD?: string;
   /** Secret, 256 random bits that nobody sees. */
