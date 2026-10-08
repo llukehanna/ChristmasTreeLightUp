@@ -106,7 +106,7 @@ it('your games: the account totals, and imported runs say so', () => {
       { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: true },
     ],
   };
-  const stats: AccountStats = { solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 81_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-12-03', imported: 300 };
+  const stats: AccountStats = { userId: 1, solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 81_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-12-03', imported: 300 };
   const el = render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now, { status: 'ready', data: stats });
   expect(texts(el, '.acct-totals b')).toEqual(['312', '1:18.4', '4', '7']);
   expect(texts(el, '.acct-totals span')).toEqual(['Solved', 'Average', 'Day streak', 'Longest']);
@@ -120,7 +120,7 @@ it('your games: the account totals, and imported runs say so', () => {
 it('your games totals: a list with labels; loading, failed and empty read as words, not bare dashes', () => {
   const games: MyGamesResponse = { best: null, inTop: 0, total: 0, games: [] };
   const totals = (stats?: Parameters<typeof listView>[5]) => render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now, stats).querySelector('.acct-totals');
-  const ready = totals({ status: 'ready', data: { solved: 1234, totalMs: 0, averageMs: null, bestMs: null, streak: 1000, longestStreak: 1000, lastSolvedDay: null, imported: 0 } });
+  const ready = totals({ status: 'ready', data: { userId: 1, solved: 1234, totalMs: 0, averageMs: null, bestMs: null, streak: 1000, longestStreak: 1000, lastSolvedDay: null, imported: 0 } });
   expect(ready?.getAttribute('role')).toBe('list');
   expect(ready?.getAttribute('aria-label')).toBe('Account totals');
   // Hidden words, not an aria-label on the listitem (several screen readers skip a label on that role).

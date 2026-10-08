@@ -101,6 +101,7 @@ export async function myStats(req: Request, env: AppEnv): Promise<Response> {
   }
   const last = list.at(-1);
   return json({
+    userId: user.id,
     solved,
     totalMs,
     averageMs: solved ? Math.round(totalMs / solved) : null,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, expect, it } from 'vitest';
-import { EMPTY_STATS, loadStats, saveStats } from '../../../src/store/stats';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { EMPTY_STATS, loadStats, saveStats, statsBaseline } from '../../../src/store/stats';
 
 beforeEach(() => localStorage.clear());
 
@@ -47,4 +47,38 @@ it('round-trips valid stats through localStorage', () => {
   };
   saveStats(valid);
   expect(loadStats()).toEqual(valid);
+});
+
+it('statsBaseline: the device solved count at the first signed-in view for an account, kept after that', () => {
+  expect(statsBaseline(7, 8)).toBe(8);
+  expect(JSON.parse(localStorage.getItem('aglow.statsBaseline') as string)).toEqual({ userId: 7, solved: 8 });
+  // The device keeps recording; the baseline stays.
+  expect(statsBaseline(7, 20)).toBe(8);
+});
+
+it('statsBaseline: a different account signing in replaces it', () => {
+  expect(statsBaseline(7, 8)).toBe(8);
+  expect(statsBaseline(9, 12)).toBe(12);
+  expect(JSON.parse(localStorage.getItem('aglow.statsBaseline') as string)).toEqual({ userId: 9, solved: 12 });
+  expect(statsBaseline(7, 15)).toBe(15); // back to the first one: it is a new first view
+});
+
+it('statsBaseline: a corrupt value is replaced', () => {
+  localStorage.setItem('aglow.statsBaseline', '{"userId":"x","solved":-1}');
+  expect(statsBaseline(7, 5)).toBe(5);
+  localStorage.setItem('aglow.statsBaseline', 'not json');
+  expect(statsBaseline(7, 6)).toBe(6);
+});
+
+it('statsBaseline: null when storage cannot be written or read, so the caller shows the account', () => {
+  const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError');
+  });
+  expect(statsBaseline(7, 8)).toBeNull();
+  set.mockRestore();
+  const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new DOMException('denied', 'SecurityError');
+  });
+  expect(statsBaseline(7, 8)).toBeNull();
+  get.mockRestore();
 });

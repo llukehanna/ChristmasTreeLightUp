@@ -65,5 +65,43 @@ function isStats(v: unknown): v is Stats {
   );
 }
 
+const BASELINE_KEY = 'aglow.statsBaseline';
+
+/** What this device had solved when it first showed a signed-in results tag for `userId` (spec 2026-10-08 §6.2). */
+interface Baseline {
+  userId: number;
+  solved: number;
+}
+
+const isBaseline = (v: unknown): v is Baseline => {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const whole = (x: unknown) => Number.isInteger(x) && (x as number) >= 0;
+  return whole(o.userId) && whole(o.solved);
+};
+
+/**
+ * The device's solved count at its first signed-in evaluation for this account, kept in localStorage as
+ * `{userId, solved}`. A different account signing in replaces it. null when storage can't be read or written: the
+ * caller then shows the account's numbers.
+ */
+export function statsBaseline(userId: number, deviceSolved: number): number | null {
+  try {
+    const raw = localStorage.getItem(BASELINE_KEY); // not readJSON: a failed read must be seen too
+    let kept: unknown = null;
+    try {
+      kept = raw === null ? null : JSON.parse(raw);
+    } catch {
+      // corrupt: replaced below
+    }
+    if (isBaseline(kept) && kept.userId === userId) return kept.solved;
+    const fresh: Baseline = { userId, solved: deviceSolved };
+    localStorage.setItem(BASELINE_KEY, JSON.stringify(fresh)); // not writeJSON: a failed write must be seen
+    return deviceSolved;
+  } catch {
+    return null;
+  }
+}
+
 export const loadStats = (): Stats => readJSON(KEY, isStats) ?? { ...EMPTY_STATS };
 export const saveStats = (s: Stats): void => writeJSON(KEY, s);
