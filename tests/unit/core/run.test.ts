@@ -275,4 +275,16 @@ describe('Run: the browser logs taps exactly as the server replays them', () => 
     expect(log.every((e, k) => k === 0 || e.t >= log[k - 1].t)).toBe(true);
     expect(page.verdict(0)).not.toBeNull();
   });
+
+  it('the wall clock jumping forward across a reload: the extra time sits in the reload pause, so the run is kept as clock', () => {
+    const page = new Page(8, mulberry32(8));
+    page.waitInteractive();
+    const half = Math.floor(ids.length / 2);
+    for (const i of ids.slice(0, half)) page.solveTile(i, () => 60);
+    page.reload(1000, 60_000);
+    page.waitInteractive();
+    for (const i of ids.slice(half)) page.solveTile(i, () => 60);
+    page.finish();
+    expect(page.verdict()?.reason).toBe('clock');
+  });
 });

@@ -52,6 +52,12 @@ describe('judge', () => {
     expect(judged(honest(), -CLOCK_TOLERANCE_MS - 1)).toBeNull();
   });
 
+  it('clock (kept, unranked) when the extra time the log claims fits inside its pauses: a wall clock that jumped during a reload', () => {
+    const paused = withPause(honest(), 10, 5000);
+    expect(judged(paused, -CLOCK_TOLERANCE_MS - 5000)).toMatchObject({ reason: 'clock', pausedMs: 5000 });
+    expect(judged(paused, -CLOCK_TOLERANCE_MS - 5001)).toBeNull();
+  });
+
   it('paused: more than 10 minutes of pauses, or more than 20 pauses', () => {
     expect(judged(withPause(honest(), 10, MAX_PAUSED_MS))?.reason).toBeNull();
     expect(judged(withPause(honest(), 10, MAX_PAUSED_MS + 1))?.reason).toBe('paused');

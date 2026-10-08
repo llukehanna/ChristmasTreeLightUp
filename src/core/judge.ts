@@ -39,13 +39,15 @@ export function judge({ seed, genVersion, log, serverElapsedMs }: JudgeInput): V
   const run = board && replay(board, parsed);
   if (!run) return null;
   const span = run.solvedAt;
-  // More time in the log than passed on the server is impossible for an honest client.
-  if (span - serverElapsedMs > CLOCK_TOLERANCE_MS) return null;
+  // More time in the log than passed on the server is impossible for an honest client, unless the extra time is
+  // inside its pauses: a wall clock that jumped while the page was reloading. That run is kept, unranked ('clock').
+  const claimed = span - serverElapsedMs - CLOCK_TOLERANCE_MS;
+  if (claimed > run.pausedMs) return null;
   const ms = Math.max(0, span - run.pausedMs - REVEAL_MS);
   const gaps = run.tapTimes.slice(1).map((t, k) => t - run.tapTimes[k]);
   const fast = gaps.filter((g) => g < FAST_GAP_MS).length;
   const reason =
-    serverElapsedMs - span > CLOCK_TOLERANCE_MS
+    claimed > 0 || serverElapsedMs - span > CLOCK_TOLERANCE_MS
       ? 'clock'
       : run.pausedMs > MAX_PAUSED_MS || run.pauses > MAX_PAUSES
         ? 'paused'
