@@ -40,7 +40,9 @@ it('does not ask for ADMIN_EMAILS (a secret in production)', () => {
   expect(deployConfigProblems('{}').join('\n')).not.toMatch(/ADMIN_EMAILS/);
 });
 
-it('the committed wrangler.jsonc never deploys fake sign-in (placeholders may remain until rollout)', () => {
-  const problems = deployConfigProblems(readFileSync(new URL('../../wrangler.jsonc', import.meta.url), 'utf8'));
-  expect(problems.filter((p) => p.includes('AUTH_MODE'))).toEqual([]);
+it('the committed wrangler.jsonc passes: the real database id and Google client id, and Google sign-in', () => {
+  const config = readFileSync(new URL('../../wrangler.jsonc', import.meta.url), 'utf8');
+  expect(deployConfigProblems(config)).toEqual([]);
+  expect(config).toContain('"database_id": "bcbc2e3a-2618-49f5-bc13-c922bac44585"');
+  expect(config).toContain('"GOOGLE_CLIENT_ID": "100766354067-le88hcdj6tgaud7890cjevag6c8okts5.apps.googleusercontent.com"');
 });
