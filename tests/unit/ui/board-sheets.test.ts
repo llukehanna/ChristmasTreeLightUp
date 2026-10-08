@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it } from 'vitest';
-import type { BoardResponse, MyGamesResponse } from '../../../src/api/types';
+import type { AccountStats, BoardResponse, MyGamesResponse } from '../../../src/api/types';
 import { listView } from '../../../src/ui/board-sheets';
 
 const now = new Date(2026, 11, 3, 22, 0).getTime();
@@ -94,6 +94,27 @@ it('your games: best, rank, top-50 count, then recent games with their status', 
   expect(el.querySelector('.acct-pin')).toBeNull();
   const unknown = { ...games, games: [{ ...games.games[1], reason: 'cosmic_rays' as unknown as 'paused' }] };
   expect(render('games', { status: 'loading' }, { status: 'ready', data: unknown }, me, now).querySelector('.acct-status')?.textContent).toBe('Unranked');
+});
+
+it('your games: the account totals, and imported runs say so', () => {
+  const games: MyGamesResponse = {
+    best: { ms: 81_000, rank: 12, finishedAt: day },
+    inTop: 0,
+    total: 340,
+    games: [
+      { id: 'a', ms: 94_200, finishedAt: day, ranked: true, reason: null, isBest: false, imported: true },
+      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: true },
+    ],
+  };
+  const stats: AccountStats = { solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 81_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-12-03', imported: 300 };
+  const el = render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now, { status: 'ready', data: stats });
+  expect(texts(el, '.acct-totals b')).toEqual(['312', '1:18.4', '4', '7']);
+  expect(texts(el, '.acct-totals span')).toEqual(['Solved', 'Average', 'Day streak', 'Longest']);
+  expect(texts(el, '.acct-status')).toEqual(['Imported', 'Personal best · Imported']);
+  // The first row is unchanged.
+  expect(texts(el, '.acct-stats b')).toEqual(['1:21.0', '#12', '0']);
+  // Not loaded yet: dashes.
+  expect(texts(render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now), '.acct-totals b')).toEqual(['–', '–', '–', '–']);
 });
 
 it('your games, signed out: an invitation to sign in', () => {

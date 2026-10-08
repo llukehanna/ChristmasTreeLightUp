@@ -365,6 +365,38 @@ test('two runs by the same player both appear in Your games', async ({ page }) =
   expect(((await mine.json()) as { games: unknown[] }).games).toHaveLength(2);
 });
 
+test("signed in, the results tag and Your games show the account's stats, not this device's", async ({ page }) => {
+  const player = await asPlayer(page);
+  // This device has a history of its own: 7 solved and a 10-day streak up to yesterday.
+  await page.addInitScript(() => {
+    if (localStorage.getItem('aglow.stats')) return;
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('aglow.stats', JSON.stringify({ v: 1, solved: 7, totalSeconds: 700, bestSeconds: 60, bestScore: 44000, streak: 10, longestStreak: 10, lastSolvedDay: yesterday }));
+  });
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
+  // The account's numbers (this one game), not the device's (8 solved, an 11-day streak).
+  await expect(results.locator('#r-solved')).toHaveText('1');
+  await expect(results.locator('#r-streak')).toHaveText('1');
+  // The device still records its own.
+  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.stats') ?? '{}') as { solved?: number }).solved)).toBe(8);
+
+  await page.locator('#account-chip').click();
+  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+  await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
+  const games = page.getByRole('dialog', { name: 'Your games' });
+  await expect(games.locator('.acct-totals span')).toHaveText(['Solved', 'Average', 'Day streak', 'Longest']);
+  await expect(games.locator('.acct-totals b').first()).toHaveText('1');
+});
+
 test('the settings menu links to the privacy page', async ({ page }) => {
   await ready(page);
   await page.locator('#menu-btn').click();

@@ -27,7 +27,7 @@ import { Accounts } from './ui/accounts';
 import { el } from './ui/dom';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
-import { Results } from './ui/results';
+import { accountStatsView, deviceStatsView, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
 import { Toast } from './ui/toast';
@@ -94,6 +94,10 @@ export class App {
   private claimState: 'stuck' | 'gone' | null = null;
   /** Back from Google for this run (the return marker matched): "Saving…" while /api/me is in flight. */
   private returning = false;
+  /** The account's Solved, Average and Day streak for the solved tree on the tag (spec 2026-10-08 §6.2); null: the device's. */
+  private accountStats: StatsView | null = null;
+  /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
+  private statsSeq = 0;
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -205,6 +209,8 @@ export class App {
     this.won = null;
     this.claimState = null;
     this.returning = false;
+    this.accountStats = null;
+    this.statsSeq++;
     this.setOutcome(null);
     this.vis = new VisualState(GRID.w * GRID.h);
     this.winAt = null;
@@ -325,7 +331,7 @@ export class App {
     setTimeout(() => {
       if (this.board !== game || this.starting) return;
       this.prepareShare();
-      this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats });
+      this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: this.accountStats ?? deviceStatsView(this.stats) });
     }, delay + 1500);
   }
 
@@ -337,8 +343,10 @@ export class App {
     this.won = won;
     this.returning = returning;
     this.presentWin(now, won, false);
-    if (won.result) this.setOutcome({ kind: 'done', result: won.result });
-    else void this.sendFinish();
+    if (won.result) {
+      this.setOutcome({ kind: 'done', result: won.result });
+      void this.syncStats();
+    } else void this.sendFinish();
   }
 
   /** Sends the finished run (retrying once), then keeps and shows the server's answer. */
@@ -371,6 +379,7 @@ export class App {
       won.result = result;
       this.saveWon();
       this.setOutcome({ kind: 'done', result });
+      void this.syncStats();
     } catch (e) {
       if (this.board !== game) return;
       // 422: the log didn't replay and the server dropped the game; 404: it was already gone.
@@ -444,12 +453,35 @@ export class App {
     this.won.result = r;
     this.saveWon();
     this.setOutcome({ kind: 'done', result: r });
+    void this.syncStats();
   }
 
   /** Who is playing changed (sign-in, a new name, sign-out): claim what waits here, and redraw the run's outcome. */
   accountChanged(): void {
     void this.claimAll();
     this.setOutcome(this.outcome);
+    void this.syncStats();
+  }
+
+  /**
+   * The results tag's Solved, Average and Day streak: the account's when signed in (the same on every device), this
+   * device's while they load, offline, or signed out. The device keeps recording its own either way.
+   */
+  private async syncStats(): Promise<void> {
+    const seq = ++this.statsSeq;
+    if (!this.won || !this.session.current) {
+      this.accountStats = null;
+      this.results.setStats(deviceStatsView(this.stats));
+      return;
+    }
+    try {
+      const a = await api.myStats();
+      if (seq !== this.statsSeq) return;
+      this.accountStats = accountStatsView(a);
+      this.results.setStats(this.accountStats);
+    } catch {
+      // offline, or signed out meanwhile: the device's numbers stay
+    }
   }
 
   /** The run's outcome on the results tag (pick 3B): drawn now, so it is there when the tag appears. */
