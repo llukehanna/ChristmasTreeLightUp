@@ -37,7 +37,34 @@ export async function wipe(db: Db): Promise<void> {
 }
 
 export function testEnv(db: Db, over: Partial<AppEnv> = {}): AppEnv {
-  return { DB: db, MUSIC: new FakeBucket(), MUSIC_BASE_URL: 'https://aglow-music.example', AUTH_MODE: 'fake', ...over };
+  return {
+    DB: db,
+    MUSIC: new FakeBucket(),
+    MUSIC_BASE_URL: 'https://aglow-music.example',
+    AUTH_MODE: 'fake',
+    AUTH_SECRET: 'test-auth-secret-not-real',
+    GOOGLE_CLIENT_ID: 'client-123',
+    GOOGLE_CLIENT_SECRET: 'test-client-secret-not-real',
+    ADMIN_EMAILS: 'admin@example.com',
+    ...over,
+  };
+}
+
+/** Signs in through fake mode (the whole redirect dance) and optionally picks a name. Returns "__Host-aglow_session=…". */
+export async function signIn(env: AppEnv, email: string, name?: string): Promise<string> {
+  const start = await call(env, 'GET', `/api/auth/google?return=/&as=${encodeURIComponent(email)}`);
+  const to = new URL(start.headers.get('Location') ?? '');
+  const back = await call(env, 'GET', to.pathname + to.search, { cookie: cookiesFrom(start) });
+  const session = back.headers
+    .getSetCookie()
+    .find((c) => c.startsWith('__Host-aglow_session='))
+    ?.split(';')[0];
+  if (!session) throw new Error(`fake sign-in failed for ${email}`);
+  if (name) {
+    const res = await call(env, 'POST', '/api/auth/name', { cookie: session, body: { name } });
+    if (!res.ok) throw new Error(`could not name ${email}: ${res.status}`);
+  }
+  return session;
 }
 
 export interface CallOptions {

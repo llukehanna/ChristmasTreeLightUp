@@ -5,6 +5,8 @@ import * as logout from './routes/admin/logout.js';
 import * as session from './routes/admin/session.js';
 import * as adminStations from './routes/admin/stations.js';
 import * as upload from './routes/admin/upload.js';
+import * as auth from './routes/auth.js';
+import * as me from './routes/me.js';
 import * as stations from './routes/stations.js';
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -13,6 +15,13 @@ type Route = readonly [method: Method, pattern: RegExp, handler: Handler];
 /** Every /api route. Patterns are anchored; their capture groups become the handler's params. */
 export const ROUTES: readonly Route[] = [
   ['GET', /^\/api\/stations$/, stations.GET],
+  ['GET', /^\/api\/auth\/google$/, auth.googleStart],
+  ['GET', /^\/api\/auth\/google\/callback$/, auth.googleCallback],
+  ['GET', /^\/api\/auth\/name$/, auth.nameAvailable],
+  ['POST', /^\/api\/auth\/name$/, auth.setName],
+  ['POST', /^\/api\/auth\/signout$/, auth.signOut],
+  ['GET', /^\/api\/me$/, me.getMe],
+  ['DELETE', /^\/api\/me$/, me.deleteMe],
   ['POST', /^\/api\/admin\/login$/, login.POST],
   ['POST', /^\/api\/admin\/logout$/, logout.POST],
   ['GET', /^\/api\/admin\/session$/, session.GET],
