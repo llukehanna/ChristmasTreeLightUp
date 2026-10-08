@@ -376,7 +376,7 @@ async function seedDeviceHistory(page: Page): Promise<void> {
   });
 }
 
-test("signed in with a bigger device history, the tag keeps the device's numbers and Your games shows the account's", async ({ page }) => {
+test("signed in with a history on this device, the tag and Your games add it to the account's numbers", async ({ page }) => {
   const player = await asPlayer(page);
   await seedDeviceHistory(page);
   await ready(page);
@@ -387,11 +387,12 @@ test("signed in with a bigger device history, the tag keeps the device's numbers
   await solveByTapping(page);
   const results = page.locator('#results');
   await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
-  // The device had 8 at its first signed-in view and the account holds 1 (this game): the tag shows the device's three
-  // numbers instead of dropping them on sign-in. Your games still totals the account.
-  await expect(results.locator('#r-solved')).toHaveText('8');
+  // The device had 8 at its first signed-in view (its 7 and this win); the account holds this one game. Nothing drops
+  // on sign-in: Solved is 8 + 1 (this win is in both, which is accepted) and the device's live 11-day streak shows.
+  await expect(results.locator('#r-solved')).toHaveText('9');
   await expect(results.locator('#r-streak')).toHaveText('11');
-  expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.statsBaseline') ?? '{}') as { solved?: number }).solved)).toBe(8);
+  const baseline = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('aglow.statsBaseline') ?? '{}') as Record<string, { solved: number }>).map((b) => b.solved));
+  expect(baseline).toEqual([8]);
   // The device still records its own.
   expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.stats') ?? '{}') as { solved?: number }).solved)).toBe(8);
 
@@ -400,20 +401,18 @@ test("signed in with a bigger device history, the tag keeps the device's numbers
   await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
   const games = page.getByRole('dialog', { name: 'Your games' });
   await expect(games.locator('.acct-totals span')).toHaveText(['Solved', 'Average', 'Day streak', 'Longest']);
-  await expect(games.locator('.acct-totals b').first()).toHaveText('1');
+  // The same additive numbers; the recent-games list below is still the account's own (one game).
+  await expect(games.locator('.acct-totals b')).toHaveText(['9', /^\d+:\d{2}\.\d$/, '11', '11']);
+  await expect(games.locator('.acct-game')).toHaveCount(1);
   // The four columns fit the sheet at this width (375 px on the phone project).
   const fits = await games.locator('.acct-body').evaluate((n) => n.scrollWidth <= n.clientWidth);
   expect(fits).toBe(true);
 });
 
-test("signed in with as many games on the account as the device had at first sign-in, the tag shows the account's numbers", async ({ page }) => {
+test("an account that imported its history shows its own numbers, with no device baseline", async ({ page }) => {
   const player = await asPlayer(page);
   await seedDeviceHistory(page);
-  // A baseline left by another account on this browser is replaced, not obeyed.
-  await page.addInitScript(() => {
-    if (!localStorage.getItem('aglow.statsBaseline')) localStorage.setItem('aglow.statsBaseline', JSON.stringify({ userId: 1, solved: 999 }));
-  });
-  // The account holds 312 games (as after an import or play on other devices); the device has 8 after this win.
+  // The account holds 312 games, 300 of them imported (the admin's case): the device's history is in them already.
   await page.route(
     (url) => url.pathname === '/api/me/stats',
     (route) =>
@@ -433,10 +432,39 @@ test("signed in with as many games on the account as the device had at first sig
   await expect(results.locator('#r-solved')).toHaveText('312');
   await expect(results.locator('#r-avg')).toHaveText('1:18');
   await expect(results.locator('#r-streak')).toHaveText('4');
-  expect(await page.evaluate(() => localStorage.getItem('aglow.statsBaseline'))).toBe(JSON.stringify({ userId: 4242, solved: 8 }));
+  expect(await page.evaluate(() => localStorage.getItem('aglow.statsBaseline'))).toBeNull();
 });
 
-test("signed in but the stats can't be read:the tag keeps this device's numbers, and Your games says so", async ({ page }) => {
+test("a baseline is kept per account and never overwritten, so another account's stays put", async ({ page }) => {
+  const player = await asPlayer(page);
+  await seedDeviceHistory(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('aglow.statsBaseline')) localStorage.setItem('aglow.statsBaseline', JSON.stringify({ '1': { solved: 999, totalSeconds: 5, at: 1 } }));
+  });
+  // 312 played games on the account, none imported, from another device.
+  await page.route(
+    (url) => url.pathname === '/api/me/stats',
+    (route) =>
+      route.fulfill({
+        json: { userId: 4242, solved: 312, totalMs: 312 * 100_000, averageMs: 100_000, bestMs: 41_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-10-08', imported: 0 },
+        headers: { 'Cache-Control': 'no-store' },
+      }),
+  );
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
+  await expect(results.locator('#r-solved')).toHaveText('320'); // 312 + the device's 8
+  await expect(results.locator('#r-streak')).toHaveText('11'); // the device's live streak beats the account's 4
+  const kept = await page.evaluate(() => Object.fromEntries(Object.entries(JSON.parse(localStorage.getItem('aglow.statsBaseline') ?? '{}') as Record<string, { solved: number }>).map(([k, v]) => [k, v.solved])));
+  expect(kept).toEqual({ '1': 999, '4242': 8 });
+});
+
+test("signed in but the stats can't be read: the tag keeps this device's numbers, and Your games says so", async ({ page }) => {
   const player = await asPlayer(page);
   await seedDeviceHistory(page);
   await page.route(

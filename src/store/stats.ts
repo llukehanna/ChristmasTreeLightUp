@@ -1,3 +1,4 @@
+import type { AccountStats } from '../api/types';
 import { readJSON, writeJSON } from './storage';
 
 export interface Stats {
@@ -66,41 +67,78 @@ function isStats(v: unknown): v is Stats {
 }
 
 const BASELINE_KEY = 'aglow.statsBaseline';
+const BASELINE_MAX = 10;
 
-/** What this device had solved when it first showed a signed-in results tag for `userId` (spec 2026-10-08 §6.2). */
-interface Baseline {
-  userId: number;
+/** What this device had recorded when it first showed a signed-in view for an account (spec 2026-10-08 §6.2). */
+export interface Baseline {
   solved: number;
+  totalSeconds: number;
+  /** When it was captured: the oldest entry goes first past BASELINE_MAX. */
+  at?: number;
 }
 
+type BaselineMap = Record<string, Baseline>;
+
+const whole = (x: unknown): boolean => Number.isInteger(x) && (x as number) >= 0;
 const isBaseline = (v: unknown): v is Baseline => {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
-  const whole = (x: unknown) => Number.isInteger(x) && (x as number) >= 0;
-  return whole(o.userId) && whole(o.solved);
+  return whole(o.solved) && whole(o.totalSeconds) && (o.at === undefined || whole(o.at));
 };
+const isBaselineMap = (v: unknown): v is BaselineMap => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every(isBaseline);
 
 /**
- * The device's solved count at its first signed-in evaluation for this account, kept in localStorage as
- * `{userId, solved}`. A different account signing in replaces it. null when storage can't be read or written: the
- * caller then shows the account's numbers.
+ * This device's baseline for an account: its `{solved, totalSeconds}` at the first signed-in evaluation, kept in
+ * localStorage as `{[userId]: {...}}` (at most BASELINE_MAX accounts). An existing entry is never overwritten, so
+ * signing in as another account and back keeps the first one. null when storage can't be read or written.
  */
-export function statsBaseline(userId: number, deviceSolved: number): number | null {
+export function statsBaseline(userId: number, device: Stats, now = Date.now()): Baseline | null {
   try {
     const raw = localStorage.getItem(BASELINE_KEY); // not readJSON: a failed read must be seen too
-    let kept: unknown = null;
+    let kept: BaselineMap = {};
     try {
-      kept = raw === null ? null : JSON.parse(raw);
+      const v: unknown = raw === null ? null : JSON.parse(raw);
+      if (isBaselineMap(v)) kept = v; // anything else is corrupt: started over
     } catch {
-      // corrupt: replaced below
+      // corrupt: started over
     }
-    if (isBaseline(kept) && kept.userId === userId) return kept.solved;
-    const fresh: Baseline = { userId, solved: deviceSolved };
-    localStorage.setItem(BASELINE_KEY, JSON.stringify(fresh)); // not writeJSON: a failed write must be seen
-    return deviceSolved;
+    const mine = kept[String(userId)];
+    if (mine) return mine;
+    const fresh: Baseline = { solved: device.solved, totalSeconds: device.totalSeconds, at: now };
+    const entries = Object.entries({ ...kept, [String(userId)]: fresh });
+    entries.sort((x, y) => (y[1].at ?? 0) - (x[1].at ?? 0)); // newest first
+    localStorage.setItem(BASELINE_KEY, JSON.stringify(Object.fromEntries(entries.slice(0, BASELINE_MAX)))); // not writeJSON: a failed write must be seen
+    return fresh;
   } catch {
     return null;
   }
+}
+
+/** The device's day streak as the player would call it: stored, but alive only if the last solved day is today or yesterday. */
+export const aliveStreak = (s: Stats, today: string): number => (s.lastSolvedDay === today || s.lastSolvedDay === previousDay(today) ? s.streak : 0);
+
+/**
+ * The account's numbers as shown to the player (spec 2026-10-08 §6.2). A player with a history on this device from
+ * before accounts would otherwise see it vanish on signing in, so their device's first signed-in totals are added:
+ * Solved = account + baseline; Average over both; Day streak = the larger of the device's live streak and the
+ * account's; Longest = the larger of the two longests. No baseline for an account that has imported (its history came
+ * in as runs) or when storage fails: the account's own numbers. A few signed-out wins claimed at first sign-in are
+ * counted in both, which is accepted.
+ */
+export function shownAccountStats(account: AccountStats, device: Stats, today: string): AccountStats {
+  if (account.imported > 0) return account;
+  const base = statsBaseline(account.userId, device);
+  if (!base) return account;
+  const solved = account.solved + base.solved;
+  const totalMs = account.totalMs + base.totalSeconds * 1000;
+  return {
+    ...account,
+    solved,
+    totalMs,
+    averageMs: solved ? Math.round(totalMs / solved) : null,
+    streak: Math.max(aliveStreak(device, today), account.streak),
+    longestStreak: Math.max(device.longestStreak, account.longestStreak),
+  };
 }
 
 export const loadStats = (): Stats => readJSON(KEY, isStats) ?? { ...EMPTY_STATS };

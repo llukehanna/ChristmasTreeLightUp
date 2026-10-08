@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
-import { EMPTY_STATS, loadStats, saveStats, statsBaseline } from '../../../src/store/stats';
+import type { AccountStats } from '../../../src/api/types';
+import { EMPTY_STATS, aliveStreak, loadStats, saveStats, shownAccountStats, statsBaseline, type Stats } from '../../../src/store/stats';
 
 beforeEach(() => localStorage.clear());
 
@@ -49,36 +50,84 @@ it('round-trips valid stats through localStorage', () => {
   expect(loadStats()).toEqual(valid);
 });
 
-it('statsBaseline: the device solved count at the first signed-in view for an account, kept after that', () => {
-  expect(statsBaseline(7, 8)).toBe(8);
-  expect(JSON.parse(localStorage.getItem('aglow.statsBaseline') as string)).toEqual({ userId: 7, solved: 8 });
+const device: Stats = { v: 1, solved: 87, totalSeconds: 8700, bestSeconds: 40, bestScore: 40000, streak: 5, longestStreak: 9, lastSolvedDay: '2026-10-07' };
+const account: AccountStats = { userId: 7, solved: 3, totalMs: 300_000, averageMs: 100_000, bestMs: 50_000, streak: 2, longestStreak: 2, lastSolvedDay: '2026-10-08', imported: 0 };
+const stored = (): unknown => JSON.parse(localStorage.getItem('aglow.statsBaseline') as string);
+
+it('statsBaseline: the device solved count and seconds at the first signed-in view, kept after that', () => {
+  expect(statsBaseline(7, device)).toMatchObject({ solved: 87, totalSeconds: 8700 });
+  expect(stored()).toMatchObject({ '7': { solved: 87, totalSeconds: 8700 } });
   // The device keeps recording; the baseline stays.
-  expect(statsBaseline(7, 20)).toBe(8);
+  expect(statsBaseline(7, { ...device, solved: 120, totalSeconds: 12000 })).toMatchObject({ solved: 87, totalSeconds: 8700 });
 });
 
-it('statsBaseline: a different account signing in replaces it', () => {
-  expect(statsBaseline(7, 8)).toBe(8);
-  expect(statsBaseline(9, 12)).toBe(12);
-  expect(JSON.parse(localStorage.getItem('aglow.statsBaseline') as string)).toEqual({ userId: 9, solved: 12 });
-  expect(statsBaseline(7, 15)).toBe(15); // back to the first one: it is a new first view
+it('statsBaseline: another account gets its own entry and never overwrites the first (A, B, A)', () => {
+  statsBaseline(7, device, 1);
+  statsBaseline(9, { ...device, solved: 100, totalSeconds: 9000 }, 2);
+  expect(statsBaseline(7, { ...device, solved: 150, totalSeconds: 15000 }, 3)).toMatchObject({ solved: 87 });
+  expect(stored()).toMatchObject({ '7': { solved: 87 }, '9': { solved: 100 } });
 });
 
-it('statsBaseline: a corrupt value is replaced', () => {
-  localStorage.setItem('aglow.statsBaseline', '{"userId":"x","solved":-1}');
-  expect(statsBaseline(7, 5)).toBe(5);
+it('statsBaseline: keeps at most 10 accounts, dropping the oldest', () => {
+  for (let id = 1; id <= 11; id++) statsBaseline(id, { ...device, solved: id }, id);
+  const kept = Object.keys(stored() as object).map(Number).sort((a, b) => a - b);
+  expect(kept).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+});
+
+it('statsBaseline: a corrupt or old-format value is started over', () => {
+  localStorage.setItem('aglow.statsBaseline', '{"userId":7,"solved":8}');
+  expect(statsBaseline(7, device)).toMatchObject({ solved: 87 });
   localStorage.setItem('aglow.statsBaseline', 'not json');
-  expect(statsBaseline(7, 6)).toBe(6);
+  expect(statsBaseline(8, device)).toMatchObject({ solved: 87 });
+  expect(Object.keys(stored() as object)).toEqual(['8']);
 });
 
-it('statsBaseline: null when storage cannot be written or read, so the caller shows the account', () => {
+it('statsBaseline: null when storage cannot be written or read, so the account shows alone', () => {
   const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
     throw new DOMException('full', 'QuotaExceededError');
   });
-  expect(statsBaseline(7, 8)).toBeNull();
+  expect(statsBaseline(7, device)).toBeNull();
+  expect(shownAccountStats(account, device, '2026-10-08')).toEqual(account);
   set.mockRestore();
   const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
     throw new DOMException('denied', 'SecurityError');
   });
-  expect(statsBaseline(7, 8)).toBeNull();
+  expect(statsBaseline(7, device)).toBeNull();
+  expect(shownAccountStats(account, device, '2026-10-08')).toEqual(account);
   get.mockRestore();
+});
+
+it("shownAccountStats: the account's numbers plus the device's baseline, so nothing drops on signing in", () => {
+  const shown = shownAccountStats(account, device, '2026-10-08');
+  expect(shown.solved).toBe(90); // 3 + 87
+  expect(shown.totalMs).toBe(300_000 + 8_700_000);
+  expect(shown.averageMs).toBe(100_000); // (300 + 8700) s over 90 games
+  expect(shown.streak).toBe(5); // the device's, alive (last solved yesterday)
+  expect(shown.longestStreak).toBe(9);
+  expect(shown).toMatchObject({ userId: 7, bestMs: 50_000, imported: 0 });
+  // Later: the account grows, the baseline is fixed.
+  const later = shownAccountStats({ ...account, solved: 13, totalMs: 1_300_000, streak: 12, longestStreak: 12 }, { ...device, solved: 97 }, '2026-10-20');
+  expect(later.solved).toBe(100); // 13 + 87
+  expect(later.streak).toBe(12);
+  expect(later.longestStreak).toBe(12);
+});
+
+it("shownAccountStats: the device's streak counts only while alive (last solved today or yesterday)", () => {
+  expect(shownAccountStats(account, { ...device, lastSolvedDay: '2026-10-08' }, '2026-10-08').streak).toBe(5);
+  expect(shownAccountStats(account, { ...device, lastSolvedDay: '2026-10-07' }, '2026-10-08').streak).toBe(5);
+  localStorage.clear();
+  expect(shownAccountStats(account, { ...device, lastSolvedDay: '2026-10-05' }, '2026-10-08').streak).toBe(2); // the account's
+  expect(aliveStreak({ ...device, lastSolvedDay: null }, '2026-10-08')).toBe(0);
+});
+
+it('shownAccountStats: no baseline for an account that has imported, and nothing stored', () => {
+  const imported = { ...account, solved: 300, imported: 297 };
+  expect(shownAccountStats(imported, device, '2026-10-08')).toEqual(imported);
+  expect(localStorage.getItem('aglow.statsBaseline')).toBeNull();
+});
+
+it('shownAccountStats: a device with nothing recorded changes nothing; zero games gives no average', () => {
+  expect(shownAccountStats(account, EMPTY_STATS, '2026-10-08')).toEqual(account);
+  localStorage.clear();
+  expect(shownAccountStats({ ...account, solved: 0, totalMs: 0, averageMs: null, streak: 0, longestStreak: 0 }, EMPTY_STATS, '2026-10-08').averageMs).toBeNull();
 });

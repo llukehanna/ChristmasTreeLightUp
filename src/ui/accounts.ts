@@ -5,6 +5,7 @@ import type { AccountStats, BoardResponse, MyGamesResponse } from '../api/types'
 import { canSaveName, deleteView, nameView, paintName, signInView, type NameState, type NameStatus, type SignInOptions } from './account-cards';
 import { AccountMenu } from './account-menu';
 import { listView, type ListTab, type Loadable } from './board-sheets';
+import { loadStats as loadDeviceStats, localDay, shownAccountStats } from '../store/stats';
 import { Sheet } from './sheet';
 
 export interface AccountsHooks {
@@ -142,7 +143,7 @@ export class Accounts {
     if (!this.session.current) return;
     const seq = ++this.statsSeq;
     try {
-      const data = await api.myStats();
+      const data = shownAccountStats(await api.myStats(), loadDeviceStats(), localDay(new Date()));
       if (seq !== this.statsSeq) return;
       this.stats = { status: 'ready', data };
     } catch {
