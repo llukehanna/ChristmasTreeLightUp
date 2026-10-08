@@ -77,6 +77,11 @@ export class StarEgg {
   private on: boolean;
   private readonly taps = new StarTaps();
   private readonly word = new TypedWord('hohoho');
+  /** A turn to the head is waiting for the sticker: another toggle meanwhile is ignored. */
+  private turning = false;
+  /** The account's copy, latest-wins: the value still to send (null: none), and whether a PUT is out. */
+  private unsent: boolean | null = null;
+  private sending = false;
 
   constructor(
     private readonly session: SessionLike,
@@ -85,7 +90,14 @@ export class StarEgg {
   ) {
     this.on = starHeadFor(local, session.current);
     h.topper.set(this.on);
-    if (this.on) void h.topper.load();
+    if (this.on) {
+      // A stored head whose sticker can't load: the star, quietly, for this visit (the preference itself stays).
+      void h.topper.load().then((ok) => {
+        if (ok || !this.on || this.turning) return;
+        this.on = false;
+        h.topper.set(false);
+      });
+    }
     session.subscribe((s) => this.onSession(s));
   }
 
@@ -113,39 +125,87 @@ export class StarEgg {
     return true;
   }
 
+  private time(): number {
+    return this.h.now?.() ?? performance.now();
+  }
+
+  /**
+   * The player's toggle. Back to the star at once; to the head only once the sticker can be drawn (a local file: a
+   * moment at most). If it can't be had, nothing happens at all: no flip, no jingle, no toast, the star stays.
+   */
   private toggle(now: number): void {
-    const on = !this.on;
+    if (this.turning) return;
+    if (this.on) {
+      this.apply(false, now, true);
+      return;
+    }
+    this.turning = true;
+    void this.h.topper.load().then((ok) => {
+      this.turning = false;
+      if (ok && !this.on) this.apply(true, this.time(), true);
+    });
+  }
+
+  /** Puts `on` in place: the view, this browser, and (`loud`: the player did it) the account, the jingle and the toast. */
+  private apply(on: boolean, now: number, loud: boolean): void {
     this.on = on;
     this.h.save(on);
-    const user = this.session.current;
-    if (user) {
-      // The session's copy follows, so setting the same user again later can't undo it. A failed PUT keeps the local
-      // state, quietly: the next toggle or sign-in resyncs.
-      (user as User).starHead = on;
-      this.h.put(on).catch(() => undefined);
-    }
-    this.show(on, now, true);
+    this.h.topper.flip(on, now);
+    this.h.flipped?.();
+    if (!loud) return;
+    this.send(on);
+    this.h.sfx.jingle(on);
     this.h.toast(on ? 'Ho ho ho.' : 'Back to the star.');
     this.h.vibrate([10, 50, 18]);
   }
 
-  /** Load or sign-in: the account's value wins, and becomes this browser's too. Signing out keeps the browser's. */
-  private onSession(s: SessionState): void {
-    if (!s || s.starHead === this.on) return;
-    this.on = s.starHead;
-    this.h.save(this.on);
-    this.show(this.on, this.h.now?.() ?? performance.now(), false);
+  /**
+   * Signed in: the account's copy, in the background. One PUT at a time, and only the latest value goes next, so a
+   * slow answer can never leave the account on an older toggle. A failed PUT keeps the local state, quietly: the next
+   * toggle or sign-in resyncs.
+   */
+  private send(on: boolean): void {
+    const user = this.session.current;
+    if (!user) return;
+    // The session's copy follows, so setting the same user again later can't undo it.
+    (user as User).starHead = on;
+    this.unsent = on;
+    if (!this.sending) void this.flush();
   }
 
-  /** Flips to `on`: to the head once the sticker can be drawn (a local file: a moment at most). `loud`: the player did it. */
-  private show(on: boolean, now: number, loud: boolean): void {
-    const go = (at: number) => {
-      if (this.on !== on) return; // toggled back meanwhile
-      this.h.topper.flip(on, at);
-      if (loud) this.h.sfx.jingle(on);
-      this.h.flipped?.();
-    };
-    if (!on) go(now);
-    else void this.h.topper.load().then(() => go(this.h.now?.() ?? performance.now()));
+  private async flush(): Promise<void> {
+    this.sending = true;
+    while (this.unsent !== null) {
+      const on = this.unsent;
+      this.unsent = null;
+      try {
+        await this.h.put(on);
+      } catch {
+        // offline, or signed out meanwhile
+      }
+    }
+    this.sending = false;
+  }
+
+  /**
+   * Load or sign-in: the account's value wins, and becomes this browser's too, with a quiet flip. Signing out keeps the
+   * browser's. While one of our PUTs is out, the answer may predate it: ours is the newer word, and the session's copy
+   * is brought in line instead.
+   */
+  private onSession(s: SessionState): void {
+    if (!s) return;
+    if (this.sending || this.unsent !== null) {
+      (s as User).starHead = this.on;
+      return;
+    }
+    if (s.starHead === this.on) return;
+    if (!s.starHead) {
+      this.apply(false, this.time(), false);
+      return;
+    }
+    void this.h.topper.load().then((ok) => {
+      // Still what the account says, and the player hasn't turned it meanwhile.
+      if (ok && !this.on && this.session.current?.starHead === true) this.apply(true, this.time(), false);
+    });
   }
 }

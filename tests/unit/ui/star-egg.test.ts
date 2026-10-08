@@ -94,8 +94,9 @@ describe('StarEgg', () => {
   let saved: boolean[];
   let puts: boolean[];
   let put: (on: boolean) => Promise<unknown>;
+  let loads: boolean;
   const hooks = () => {
-    const topper = { isHead: false, load: vi.fn(async () => true), set: vi.fn(), flip: vi.fn(), tap: vi.fn() };
+    const topper = { load: vi.fn(async () => loads), set: vi.fn(), flip: vi.fn(), tap: vi.fn() };
     const sfx = { starTap: vi.fn(), jingle: vi.fn() };
     const toast = vi.fn();
     const h: EggHooks = {
@@ -116,24 +117,47 @@ describe('StarEgg', () => {
   const fiveTaps = (egg: StarEgg) => {
     for (let k = 0; k < 5; k++) egg.tap((now += 200));
   };
+  /** A PUT the test answers by hand. */
+  const held = () => {
+    const pending: (() => void)[] = [];
+    put = () => new Promise<unknown>((resolve) => pending.push(() => resolve({})));
+    return { answer: async () => (pending.shift()?.(), await flush()), get open() { return pending.length; } };
+  };
 
   beforeEach(() => {
     now = 0;
     saved = [];
     puts = [];
+    loads = true;
     put = async () => ({ starHead: true });
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('starts from the browser value, loading the sticker only when it is on', () => {
+  it('starts from the browser value, loading the sticker only when it is on', async () => {
     const off = hooks();
     new StarEgg(new Session(), off.h, false);
     expect(off.topper.set).toHaveBeenCalledWith(false);
     expect(off.topper.load).not.toHaveBeenCalled();
     const on = hooks();
-    expect(new StarEgg(new Session(), on.h, true).isOn).toBe(true);
+    const egg = new StarEgg(new Session(), on.h, true);
+    expect(egg.isOn).toBe(true);
     expect(on.topper.set).toHaveBeenCalledWith(true);
     expect(on.topper.load).toHaveBeenCalled();
+    await flush();
+    expect(egg.isOn).toBe(true);
+  });
+
+  it('a stored head whose sticker fails to load shows the star, quietly, keeping the preference for next time', async () => {
+    loads = false;
+    const { h, topper, toast, sfx } = hooks();
+    const egg = new StarEgg(new Session(), h, true);
+    await flush();
+    expect(egg.isOn).toBe(false);
+    expect(topper.set).toHaveBeenLastCalledWith(false);
+    expect(topper.flip).not.toHaveBeenCalled();
+    expect(saved).toEqual([]);
+    expect(toast).not.toHaveBeenCalled();
+    expect(sfx.jingle).not.toHaveBeenCalled();
   });
 
   it('taps 1–4 wobble and tick (rising), starting the sticker loading; the fifth flips with the jingle and the toast', async () => {
@@ -145,20 +169,40 @@ describe('StarEgg', () => {
     expect(topper.load).toHaveBeenCalled();
     expect(topper.flip).not.toHaveBeenCalled();
     egg.tap((now += 200));
+    await flush();
     expect(egg.isOn).toBe(true);
     expect(saved).toEqual([true]);
     expect(toast).toHaveBeenCalledWith('Ho ho ho.');
-    await flush();
     expect(topper.flip).toHaveBeenCalledWith(true, now);
     expect(sfx.jingle).toHaveBeenCalledWith(true);
-    // Five more bring it back.
+    // Five more bring it back, at once.
     fiveTaps(egg);
     expect(egg.isOn).toBe(false);
     expect(saved).toEqual([true, false]);
     expect(toast).toHaveBeenLastCalledWith('Back to the star.');
-    await flush();
     expect(topper.flip).toHaveBeenLastCalledWith(false, now);
     expect(sfx.jingle).toHaveBeenLastCalledWith(false);
+  });
+
+  it('if the sticker fails to load, the fifth tap does nothing at all: no toggle, flip, jingle, toast or PUT', async () => {
+    loads = false;
+    const { h, topper, sfx, toast } = hooks();
+    const session = new Session();
+    session.set(user(false));
+    const egg = new StarEgg(session, h, false);
+    fiveTaps(egg);
+    await flush();
+    expect(egg.isOn).toBe(false);
+    expect(saved).toEqual([]);
+    expect(puts).toEqual([]);
+    expect(topper.flip).not.toHaveBeenCalled();
+    expect(sfx.jingle).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    // Once it can load, five more taps work.
+    loads = true;
+    fiveTaps(egg);
+    await flush();
+    expect(egg.isOn).toBe(true);
   });
 
   it('typing hohoho toggles too', async () => {
@@ -166,15 +210,17 @@ describe('StarEgg', () => {
     const egg = new StarEgg(new Session(), h, false);
     const results = [...'hohoho'].map((c) => egg.key({ key: c, target: document.body, ctrlKey: false, metaKey: false, altKey: false, repeat: false }, (now += 100)));
     expect(results.at(-1)).toBe(true);
-    expect(egg.isOn).toBe(true);
     await flush();
+    expect(egg.isOn).toBe(true);
     expect(topper.flip).toHaveBeenCalledWith(true, now);
   });
 
-  it('signed out: nothing is sent', () => {
+  it('signed out: nothing is sent', async () => {
     const { h } = hooks();
     const egg = new StarEgg(new Session(), h, false);
     fiveTaps(egg);
+    await flush();
+    expect(egg.isOn).toBe(true);
     expect(puts).toEqual([]);
   });
 
@@ -187,9 +233,8 @@ describe('StarEgg', () => {
       throw new Error('offline');
     };
     fiveTaps(egg);
-    expect(puts).toEqual([true]);
-    expect(egg.isOn).toBe(true);
     await flush();
+    expect(puts).toEqual([true]);
     expect(egg.isOn).toBe(true);
     expect(saved).toEqual([true]);
     expect(toast).toHaveBeenCalledTimes(1); // "Ho ho ho." only: nothing about the failure
@@ -198,27 +243,94 @@ describe('StarEgg', () => {
     expect(egg.isOn).toBe(true);
   });
 
+  it('PUTs go one at a time, latest-wins: quick toggles never leave the account on an older value', async () => {
+    const { h } = hooks();
+    const session = new Session();
+    session.set(user(false));
+    const egg = new StarEgg(session, h, false);
+    const net = held();
+    fiveTaps(egg); // on
+    await flush();
+    expect(puts).toEqual([true]);
+    fiveTaps(egg); // off
+    fiveTaps(egg); // on
+    await flush();
+    fiveTaps(egg); // off: the last word
+    expect(egg.isOn).toBe(false);
+    expect(net.open).toBe(1); // never two at once
+    expect(puts).toEqual([true]);
+    await net.answer();
+    // The in-between values were coalesced: only the latest goes next.
+    expect(puts).toEqual([true, false]);
+    await net.answer();
+    expect(net.open).toBe(0);
+    expect(puts.at(-1)).toBe(egg.isOn);
+  });
+
+  it('an account answer that arrives while a PUT is out never overwrites the view', async () => {
+    const { h, topper } = hooks();
+    const session = new Session();
+    session.set(user(false));
+    const egg = new StarEgg(session, h, false);
+    const net = held();
+    fiveTaps(egg);
+    await flush();
+    expect(egg.isOn).toBe(true);
+    const flips = topper.flip.mock.calls.length;
+    // /api/me (or the name answer), issued before the PUT landed: still says the star.
+    const stale = user(false);
+    session.set(stale);
+    await flush();
+    expect(egg.isOn).toBe(true);
+    expect(saved).toEqual([true]);
+    expect(topper.flip.mock.calls.length).toBe(flips);
+    expect(stale.starHead).toBe(true); // brought in line, so setting it again later is harmless
+    await net.answer();
+    session.set(stale);
+    expect(egg.isOn).toBe(true);
+  });
+
   it("on load or sign-in the account's value wins and is written to the browser, flipping quietly", async () => {
     const { h, topper, sfx, toast } = hooks();
     const session = new Session();
     const egg = new StarEgg(session, h, false);
     session.set(user(true));
+    await flush();
     expect(egg.isOn).toBe(true);
     expect(saved).toEqual([true]);
-    await flush();
     expect(topper.flip).toHaveBeenCalledWith(true, now);
     expect(sfx.jingle).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
+    expect(puts).toEqual([]); // the account's own value is never sent back
     // The same value again changes nothing.
     session.set(user(true));
+    await flush();
     expect(saved).toEqual([true]);
+    // And back to the star when the account says so (another device turned it off).
+    session.set(user(false));
+    expect(egg.isOn).toBe(false);
+    expect(saved).toEqual([true, false]);
   });
 
-  it('signing out keeps the browser value', () => {
+  it("the account's head, when the sticker can't load: the star stays, quietly", async () => {
+    loads = false;
+    const { h, topper, toast } = hooks();
+    const session = new Session();
+    const egg = new StarEgg(session, h, false);
+    session.set(user(true));
+    await flush();
+    expect(egg.isOn).toBe(false);
+    expect(topper.flip).not.toHaveBeenCalled();
+    expect(saved).toEqual([]);
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('signing out keeps the browser value', async () => {
     const { h } = hooks();
     const session = new Session();
     const egg = new StarEgg(session, h, false);
     session.set(user(true));
+    await flush();
     session.set(null);
     expect(egg.isOn).toBe(true);
     expect(saved).toEqual([true]);

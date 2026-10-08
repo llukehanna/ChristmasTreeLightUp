@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { starCenter } from '../../../src/render/effects';
-import { computeLayout, tileAt } from '../../../src/render/layout';
+import { IDENTITY, panBy, toScreen, toWorld, zoomAt } from '../../../src/render/camera';
+import { Y, computeLayout, tileAt } from '../../../src/render/layout';
 import { GRID } from '../../../src/core/mask';
 import { FADE_MS, FLIP_MS, SWAY_DEG, WOBBLE_MS, crossfade, flipPose, headLight, idleSway, onStar, tapStrength, wobble } from '../../../src/render/topper';
 
@@ -105,6 +106,20 @@ describe('the star hit area', () => {
     expect(onStar(L, cx, cy - 0.89 * L.s)).toBe(true);
     expect(onStar(L, cx + 0.95 * L.s, cy)).toBe(false);
     expect(onStar(L, cx, cy + 0.95 * L.s)).toBe(false);
+  });
+
+  it('follows the pinch-zoom camera: a finger on the star on screen, zoomed and panned, is on the star in the world', () => {
+    for (const cam of [zoomAt(IDENTITY, 2.4, cx + 40, cy + 30), panBy(zoomAt(IDENTITY, 3, 900, 500), -120, 80), zoomAt(IDENTITY, 1.6, 100, 700)]) {
+      const [sx, sy] = toScreen(cam, cx, cy);
+      expect(onStar(L, ...toWorld(cam, sx, sy))).toBe(true);
+      // The circle scales with the zoom: 0.85 tiles off on screen-at-zoom is still on it, 0.95 is not.
+      expect(onStar(L, ...toWorld(cam, sx + 0.85 * L.s * cam.scale, sy))).toBe(true);
+      expect(onStar(L, ...toWorld(cam, sx, sy - 0.95 * L.s * cam.scale))).toBe(false);
+      // And a tile tap just below it (row 0's centre) is a tile, not the star.
+      const [tx, ty] = toWorld(cam, ...toScreen(cam, cx, Y(L, 0.5)));
+      expect(onStar(L, tx, ty)).toBe(false);
+      expect(tileAt(L, GRID, tx, ty)).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it('never overlaps a tile: anything on the star is not on the board', () => {

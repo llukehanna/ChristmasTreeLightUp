@@ -16,6 +16,8 @@ export interface AglowProbe {
   newTree(): void;
   /** The star-head egg: the star's centre on screen, whether the head is on top, and whether a flip is under way. */
   star(): { center: [number, number]; head: boolean; flipping: boolean };
+  /** The game clock in ms (0 until the reveal ends), and the ms since the reveal ended (0 before): the clock is never ahead of it. */
+  clock(): { ms: number; sinceReveal: number };
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
@@ -58,6 +60,7 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
     },
     newTree: () => app.newGame(),
     star: () => ({ center: app.starScreenCenter(), ...app.starHead }),
+    clock: () => (app.started ? { ms: app.clockMs, sinceReveal: Math.max(0, performance.now() - app.interactiveAt) } : { ms: 0, sinceReveal: 0 }),
   };
   (window as Window & { __aglow?: AglowProbe }).__aglow = probe;
 }

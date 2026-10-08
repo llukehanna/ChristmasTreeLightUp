@@ -1,5 +1,5 @@
-import { drawStarBody, easeOutBack, foil, ignitePop, starCenter, type StarState } from './effects';
-import type { Layout } from './layout';
+import { drawStarBody, easeOutBack, foil, ignitePop, STAR_V, type StarState } from './effects';
+import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
 
 /**
@@ -61,12 +61,19 @@ export interface FlipPose {
   toss: number;
 }
 
-/** The coin flip `t` ms in (eased: slow off the mark, fastest edge-on), or null outside it. */
-export function flipPose(t: number): FlipPose | null {
+/**
+ * The coin flip `t` ms in (eased: slow off the mark, fastest edge-on), or null outside it. Written into `out` (the
+ * topper passes its own, so a frame allocates nothing).
+ */
+export function flipPose(t: number, out: FlipPose = { scaleX: 1, newFace: false, edge: 0, toss: 0 }): FlipPose | null {
   if (!(t >= 0 && t < FLIP_MS)) return null;
   const k = t / FLIP_MS;
   const e = easeInOutCubic(k);
-  return { scaleX: Math.abs(Math.cos(Math.PI * e)), newFace: e >= 0.5, edge: Math.abs(Math.sin(Math.PI * e)), toss: Math.sin(Math.PI * k) };
+  out.scaleX = Math.abs(Math.cos(Math.PI * e));
+  out.newFace = e >= 0.5;
+  out.edge = Math.abs(Math.sin(Math.PI * e));
+  out.toss = Math.sin(Math.PI * k);
+  return out;
 }
 
 /** Reduced motion: the new face's opacity `t` ms into the crossfade, or null outside it. */
@@ -77,28 +84,40 @@ export function crossfade(t: number): number | null {
 /** Taps 1–4 nudge harder each time, building to the fifth. */
 export const tapStrength = (n: number): number => 0.55 + 0.15 * (Math.min(4, Math.max(1, n)) - 1);
 
-const REST = { angle: 0, scale: 1 } as const;
-
-/** A tap's wobble `t` ms after it: a damped rotation spring (one and a half swings) with a small boop of scale. */
-export function wobble(t: number, strength: number): { angle: number; scale: number } {
-  if (!(t >= 0 && t < WOBBLE_MS)) return REST;
-  const k = t / WOBBLE_MS;
-  const env = (1 - k) ** 2;
-  return { angle: strength * 0.21 * env * Math.sin(3 * Math.PI * k), scale: 1 + strength * 0.09 * (1 - k) * Math.sin(Math.PI * Math.min(1, k * 2)) };
+export interface Wobble {
+  angle: number;
+  scale: number;
 }
 
-const STILL = { angle: 0, bob: 0 } as const;
+/** A tap's wobble `t` ms after it: a damped rotation spring (one and a half swings) with a small boop of scale. */
+export function wobble(t: number, strength: number, out: Wobble = { angle: 0, scale: 1 }): Wobble {
+  if (!(t >= 0 && t < WOBBLE_MS)) {
+    out.angle = 0;
+    out.scale = 1;
+    return out;
+  }
+  const k = t / WOBBLE_MS;
+  const env = (1 - k) ** 2;
+  out.angle = strength * 0.21 * env * Math.sin(3 * Math.PI * k);
+  out.scale = 1 + strength * 0.09 * (1 - k) * Math.sin(Math.PI * Math.min(1, k * 2));
+  return out;
+}
+
+export interface Sway {
+  angle: number;
+  bob: number;
+}
 
 /**
  * After the win the head sways (±4°, about the chin) and bobs (±2% of its height), slowly and out of step, easing in
  * once the ignite's pop has settled. Never under reduced motion.
  */
-export function idleSway(now: number, winAt: number | null, reduced: boolean): { angle: number; bob: number } {
-  if (winAt === null || reduced) return STILL;
-  const t = now - winAt - 900;
-  if (t <= 0) return STILL;
-  const env = smooth(clamp01(t / 1600));
-  return { angle: env * ((SWAY_DEG * Math.PI) / 180) * Math.sin((TAU * t) / 3800), bob: env * 0.02 * Math.sin((TAU * t) / 2700 + 1.1) };
+export function idleSway(now: number, winAt: number | null, reduced: boolean, out: Sway = { angle: 0, bob: 0 }): Sway {
+  const t = winAt === null || reduced ? 0 : now - winAt - 900;
+  const env = t > 0 ? smooth(clamp01(t / 1600)) : 0;
+  out.angle = env && env * ((SWAY_DEG * Math.PI) / 180) * Math.sin((TAU * t) / 3800);
+  out.bob = env && env * 0.02 * Math.sin((TAU * t) / 2700 + 1.1);
+  return out;
 }
 
 /**
@@ -112,8 +131,7 @@ export function headLight(st: StarState, won: boolean, litFrac: number, flash: n
 
 /** A point in world CSS px is on the star (the tap target), never on a tile (the star sits above row 0). */
 export function onStar(L: Layout, x: number, y: number): boolean {
-  const [cx, cy] = starCenter(L);
-  return Math.hypot(x - cx, y - cy) <= STAR_HIT * L.s;
+  return Math.hypot(x - X(L, 0), y - Y(L, STAR_V)) <= STAR_HIT * L.s;
 }
 
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -203,6 +221,26 @@ interface Mote {
 const DRAG = 2.4;
 const GRAVITY = 5;
 
+/** Where the topper is in one frame (see Topper.place). */
+interface Pose {
+  /** What it was worked out for: one pose serves both passes of a frame. */
+  now: number;
+  L: Layout | null;
+  reduced: boolean;
+  won: boolean;
+  on: number;
+  cx: number;
+  cy: number;
+  k: number;
+  angle: number;
+  /** The flip, or null outside one (and always under reduced motion). */
+  flip: FlipPose | null;
+  /** Reduced motion: the new face's opacity in the crossfade, or -1 outside it. */
+  fade: number;
+  /** The face showing (outside a crossfade): the old one until the flip's midpoint. */
+  head: boolean;
+}
+
 export class Topper {
   /** The face at rest (where a flip lands). */
   private head = false;
@@ -212,29 +250,49 @@ export class Topper {
   private tapAt = Number.NEGATIVE_INFINITY;
   private tapPower = 0;
   private burstAt = Number.NEGATIVE_INFINITY;
+  /** The last frame was drawn under reduced motion (a flip then starts from the face the crossfade shows). */
+  private reduced = false;
+  /** The sticker has just loaded: a paused stage needs one more frame to show it. */
+  private dirty = false;
   private readonly motes: Mote[] = Array.from({ length: BURST_FLECKS + BURST_SPARKLES }, (_, k) => ({
     x0: 0, y0: 0, vx: 0, vy: 0, size: 0, spin: 0, tumble: 0, ph: 0, tone: 0, life: 1, sparkle: k >= BURST_FLECKS,
   }));
   private img: HTMLImageElement | null = null;
   private loading: Promise<boolean> | null = null;
-  private faceKey = '';
+  /** Building the sticker's canvases failed (no 2D context, say): the star stands in for good. */
+  private broken = false;
+  private litH = 0;
+  private litDay = false;
   private lit: HTMLCanvasElement | null = null;
   private dim: HTMLCanvasElement | null = null;
-  private auraKey = '';
+  private auraH = 0;
+  private auraGlow = '';
   private auraCanvas: HTMLCanvasElement | null = null;
+  // Reused every frame, so drawing allocates nothing.
+  private readonly p: Pose = { now: Number.NaN, L: null, reduced: false, won: false, on: 0, cx: 0, cy: 0, k: 1, angle: 0, flip: null, fade: -1, head: false };
+  private readonly flipOut: FlipPose = { scaleX: 1, newFace: false, edge: 0, toss: 0 };
+  private readonly tapWob: Wobble = { angle: 0, scale: 1 };
+  private readonly landWob: Wobble = { angle: 0, scale: 1 };
+  private readonly sway: Sway = { angle: 0, bob: 0 };
 
   /** The face at rest: true once the head is (or is landing) on top. */
   get isHead(): boolean {
     return this.head;
   }
 
+  /** The sticker can be drawn. */
   get ready(): boolean {
-    return this.img !== null;
+    return this.img !== null && !this.broken;
   }
 
   /** A flip or crossfade is under way. */
   busy(now: number): boolean {
     return now - this.flipAt < FLIP_MS;
+  }
+
+  /** Something on top is still moving (a flip, its burst, a tap's glint) or has just loaded: worth a frame even while paused. */
+  needsFrame(now: number): boolean {
+    return this.dirty || now - this.flipAt < FLIP_MS + BURST_MS || now - this.tapAt < TAP_FLASH_MS;
   }
 
   /** Loads the sticker once, lazily (only when the egg is on, or taps start toward it). Resolves false if it can't. */
@@ -243,19 +301,22 @@ export class Topper {
       const img = new Image();
       img.decoding = 'async';
       this.loading = new Promise<boolean>((resolve) => {
-        img.onload = () => {
-          this.img = img;
-          this.faceKey = '';
-          resolve(true);
-        };
-        img.onerror = () => {
+        const fail = () => {
           this.loading = null; // a later toggle tries again
           resolve(false);
         };
+        img.onload = () => {
+          if (!img.naturalWidth || !img.naturalHeight) return fail();
+          this.img = img;
+          this.litH = this.auraH = 0;
+          this.dirty = true;
+          resolve(true);
+        };
+        img.onerror = fail;
       });
       img.src = HEAD_SRC;
     }
-    return this.loading;
+    return this.loading.then((ok) => ok && !this.broken);
   }
 
   /** Puts a face on top at once (the stored preference at start). */
@@ -267,10 +328,18 @@ export class Topper {
   /** Flips to `head` from whatever shows now, throwing off a burst of gold at the midpoint. */
   flip(head: boolean, now: number): void {
     const t = now - this.flipAt;
-    const pose = flipPose(t);
-    this.from = pose ? (pose.newFace ? this.head : this.from) : this.head;
+    let showing = this.head;
+    if (this.reduced) {
+      const fade = crossfade(t);
+      if (fade !== null && fade < 0.5) showing = this.from;
+    } else {
+      const pose = flipPose(t, this.flipOut);
+      if (pose && !pose.newFace) showing = this.from;
+    }
+    this.from = showing;
     this.head = head;
     this.flipAt = now;
+    this.p.now = Number.NaN;
     this.spawnBurst(now + FLIP_MS / 2);
   }
 
@@ -278,6 +347,7 @@ export class Topper {
   tap(now: number, n: number): void {
     this.tapAt = now;
     this.tapPower = tapStrength(n);
+    this.p.now = Number.NaN;
   }
 
   /** 0..1: how brightly a tap or a flip lights the topper just now. */
@@ -296,30 +366,38 @@ export class Topper {
     return 0.55 * this.flash(now);
   }
 
-  /** Where the topper is this frame: its centre (tossed by a flip), its scale (the win's pop, a tap's boop, the toss), the wobble. */
-  private place(L: Layout, st: StarState, won: boolean, now: number, reduced: boolean) {
+  /**
+   * Where the topper is this frame: its centre (tossed by a flip), its scale (the win's pop, a tap's boop, the toss),
+   * the wobble. Worked out once per frame and shared by both passes.
+   */
+  private place(L: Layout, st: StarState, won: boolean, now: number, reduced: boolean): Pose {
+    const p = this.p;
+    if (p.now === now && p.L === L && p.reduced === reduced && p.won === won && p.on === st.on) return p;
+    this.reduced = reduced;
     const tf = now - this.flipAt;
-    const flip = reduced ? null : flipPose(tf);
+    const flip = reduced ? null : flipPose(tf, this.flipOut);
     const fade = reduced ? crossfade(tf) : null;
     let angle = 0;
     let boop = 1;
     if (!reduced) {
-      const w = wobble(now - this.tapAt, this.tapPower);
-      const land = wobble(tf - FLIP_MS, LAND);
+      const w = wobble(now - this.tapAt, this.tapPower, this.tapWob);
+      const land = wobble(tf - FLIP_MS, LAND, this.landWob);
       angle = w.angle + land.angle;
       boop = w.scale * land.scale;
     }
-    const [cx, cy] = starCenter(L);
-    return {
-      cx,
-      cy: cy - (flip ? TOSS * L.s * flip.toss : 0),
-      k: ignitePop(st, won) * boop * (flip ? 1 + GROW * flip.toss : 1),
-      angle,
-      flip,
-      fade,
-      /** The face showing (outside a crossfade): the old one until the flip's midpoint. */
-      head: flip && !flip.newFace ? this.from : this.head,
-    };
+    p.now = now;
+    p.L = L;
+    p.reduced = reduced;
+    p.won = won;
+    p.on = st.on;
+    p.cx = X(L, 0);
+    p.cy = Y(L, STAR_V) - (flip ? TOSS * L.s * flip.toss : 0);
+    p.k = ignitePop(st, won) * boop * (flip ? 1 + GROW * flip.toss : 1);
+    p.angle = angle;
+    p.flip = flip;
+    p.fade = fade ?? -1;
+    p.head = flip && !flip.newFace ? this.from : this.head;
+    return p;
   }
 
   /**
@@ -330,19 +408,21 @@ export class Topper {
     const p = this.place(L, st, won, now, reduced);
     const flash = this.flash(now);
     const light = headLight(st, won, litFrac, flash);
+    this.dirty = false;
     c.save();
     c.translate(p.cx, p.cy);
     c.scale(p.k, p.k);
-    if (p.fade !== null) {
+    if (p.fade >= 0) {
       this.face(c, L, sc, st, light, flash, now, winAt, reduced, px, this.from, 1 - p.fade, 0, 1);
       this.face(c, L, sc, st, light, flash, now, winAt, reduced, px, this.head, p.fade, 0, 1);
     } else {
-      this.face(c, L, sc, st, light, flash, now, winAt, reduced, px, p.head, 1, p.angle, p.flip ? p.flip.scaleX : 1);
-      if (p.flip && p.flip.scaleX < RIM_FROM) this.rim(c, L.s, p.head && this.img !== null, p.flip.scaleX);
+      const sx = p.flip ? p.flip.scaleX : 1;
+      this.face(c, L, sc, st, light, flash, now, winAt, reduced, px, p.head, 1, p.angle, sx);
+      if (p.flip && sx < RIM_FROM) this.rim(c, L.s, p.head && this.ready, sx);
     }
     c.restore();
     // From where the topper was at the flip's midpoint (tossed up), not following it back down.
-    if (!reduced) this.drawBurst(c, L.s, p.cx, starCenter(L)[1] - TOSS * L.s, now);
+    if (!reduced) this.drawBurst(c, L.s, p.cx, Y(L, STAR_V) - TOSS * L.s, now);
   }
 
   /**
@@ -350,16 +430,16 @@ export class Topper {
    * a halo hugging the sticker, as bright as the head is lit. The star needs none: its own glow is drawStarGlow's.
    */
   drawGlow(g: CanvasRenderingContext2D, L: Layout, sc: Scene, st: StarState, won: boolean, litFrac: number, now: number, winAt: number | null, reduced: boolean, px: number): void {
-    if (!this.img || (!this.head && !this.from)) return;
+    if (!this.ready || (!this.head && !this.from)) return;
     const p = this.place(L, st, won, now, reduced);
-    let alpha = p.fade !== null ? (this.head ? p.fade : 0) + (this.from ? 1 - p.fade : 0) : p.head ? 1 : 0;
+    let alpha = p.fade >= 0 ? (this.head ? p.fade : 0) + (this.from ? 1 - p.fade : 0) : p.head ? 1 : 0;
     alpha *= AURA * headLight(st, won, litFrac, this.flash(now));
     const aura = alpha > 0.01 ? this.aura(HEAD_H * L.s * px, sc) : null;
     if (!aura) return;
     g.save();
     g.translate(p.cx, p.cy);
     g.scale(p.k, p.k);
-    const top = this.orient(g, L.s, p.fade !== null ? 0 : p.angle, p.flip ? p.flip.scaleX : 1, now, winAt, reduced);
+    const top = this.orient(g, L.s, p.fade >= 0 ? 0 : p.angle, p.flip ? p.flip.scaleX : 1, now, winAt, reduced);
     const h = HEAD_H * L.s;
     const w = (h * aura.width) / aura.height;
     g.globalAlpha = alpha;
@@ -369,7 +449,7 @@ export class Topper {
 
   /** Turns `c` about the chin (the wobble and the idle sway) and squeezes it for the flip; returns the sticker's top, bobbing. */
   private orient(c: CanvasRenderingContext2D, s: number, angle: number, sx: number, now: number, winAt: number | null, reduced: boolean): number {
-    const sway = idleSway(now, winAt, reduced);
+    const sway = idleSway(now, winAt, reduced, this.sway);
     const pivot = HEAD_PIVOT * s;
     c.translate(0, pivot);
     c.rotate(angle + sway.angle);
@@ -385,13 +465,13 @@ export class Topper {
   ): void {
     if (alpha <= 0) return;
     const s = L.s;
-    const faces = head ? this.faces(HEAD_H * s * px, sc.light === 'day') : null;
     // The stored head at start, still decoding: nothing for those few frames, rather than a star that pops into a head.
-    if (head && !faces && this.loading) return;
+    if (head && !this.img && this.loading) return;
+    const sticker = head && this.faces(HEAD_H * s * px, sc.light === 'day');
     c.save();
     c.globalAlpha = alpha;
-    if (!faces) {
-      // The star (or the head's stand-in until the sticker has loaded).
+    if (!sticker || !this.lit || !this.dim) {
+      // The star (or the head's stand-in when the sticker can't be had).
       c.rotate(angle);
       c.scale(sx, 1);
       drawStarBody(c, s, sc, Math.max(st.on, 0.85 * flash));
@@ -400,13 +480,13 @@ export class Topper {
     }
     const top = this.orient(c, s, angle, sx, now, winAt, reduced);
     const h = HEAD_H * s;
-    const w = (h * faces.lit.width) / faces.lit.height;
+    const w = (h * this.lit.width) / this.lit.height;
     c.imageSmoothingEnabled = true;
     c.imageSmoothingQuality = 'high';
-    if (light < 1) c.drawImage(faces.dim, -w / 2, top, w, h);
+    if (light < 1) c.drawImage(this.dim, -w / 2, top, w, h);
     if (light > 0) {
       c.globalAlpha = alpha * light;
-      c.drawImage(faces.lit, -w / 2, top, w, h);
+      c.drawImage(this.lit, -w / 2, top, w, h);
     }
     c.restore();
   }
@@ -432,30 +512,39 @@ export class Topper {
     c.restore();
   }
 
-  /** The sticker lit and dimmed at `size` device px tall (capped at its own resolution), rebuilt only when that changes. */
-  private faces(size: number, day: boolean): { lit: HTMLCanvasElement; dim: HTMLCanvasElement } | null {
+  /**
+   * The sticker lit and dimmed (this.lit, this.dim) at `size` device px tall, capped at its own resolution, rebuilt
+   * only when that size or the scene's light changes. False when it can't be had: the star stands in.
+   */
+  private faces(size: number, day: boolean): boolean {
     const img = this.img;
-    if (!img || !img.naturalHeight) return null;
+    if (!img || this.broken) return false;
     const h = cacheHeight(img, size);
-    const key = `${h}:${day}`;
-    if (key !== this.faceKey || !this.lit || !this.dim) {
+    if (h === this.litH && day === this.litDay && this.lit && this.dim) return true;
+    try {
+      const lit = resample(img, cacheWidth(img, h), h);
+      const dim = dimmed(lit, day);
       if (this.lit) this.lit.width = this.lit.height = 0;
       if (this.dim) this.dim.width = this.dim.height = 0;
-      this.lit = resample(img, cacheWidth(img, h), h);
-      this.dim = dimmed(this.lit, day);
-      this.faceKey = key;
+      this.lit = lit;
+      this.dim = dim;
+      this.litH = h;
+      this.litDay = day;
+      return true;
+    } catch {
+      // No 2D context for the cache (memory pressure, an old browser): never try again every frame.
+      this.broken = true;
+      return false;
     }
-    return { lit: this.lit, dim: this.dim };
   }
 
   /** The sticker's silhouette in the scene's glow colour, at the glow layer's size (its own cache: that layer is half-res). */
   private aura(size: number, sc: Scene): HTMLCanvasElement | null {
     const img = this.img;
-    if (!img || !img.naturalHeight) return null;
+    if (!img || this.broken) return null;
     const h = cacheHeight(img, size);
-    const key = `${h}:${sc.glow}`;
-    if (key !== this.auraKey || !this.auraCanvas) {
-      if (this.auraCanvas) this.auraCanvas.width = this.auraCanvas.height = 0;
+    if (h === this.auraH && sc.glow === this.auraGlow && this.auraCanvas) return this.auraCanvas;
+    try {
       const c = resample(img, cacheWidth(img, h), h);
       const x = c.getContext('2d');
       if (x) {
@@ -463,10 +552,15 @@ export class Topper {
         x.fillStyle = sc.glow;
         x.fillRect(0, 0, c.width, c.height);
       }
+      if (this.auraCanvas) this.auraCanvas.width = this.auraCanvas.height = 0;
       this.auraCanvas = c;
-      this.auraKey = key;
+      this.auraH = h;
+      this.auraGlow = sc.glow;
+      return c;
+    } catch {
+      this.broken = true;
+      return null;
     }
-    return this.auraCanvas;
   }
 
   private spawnBurst(at: number): void {

@@ -573,9 +573,11 @@ export class App {
     // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
     this.handle(this.run.frame(now, Date.now()), now);
     this.updateHud(now);
-    // While paused the stage is blurred behind the overlay: draw one frame, then idle until resume.
+    // While paused the stage is blurred behind the overlay: draw one frame, then idle until resume. The topper is the
+    // exception: a flip that lands under the overlay (the account's choice arriving) or a sticker that finishes
+    // loading keeps drawing until it has settled, so the paused frame shows it.
     if (this.paused) {
-      if (this.pausedDrawn) return;
+      if (this.pausedDrawn && !this.renderer.topper.needsFrame(now)) return;
       this.pausedDrawn = true;
     } else this.pausedDrawn = false;
     // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow.
@@ -916,6 +918,10 @@ export class App {
   }
   get runOutcome(): RunOutcome | null {
     return this.outcome;
+  }
+  /** The game clock's reading now (0 until the reveal ends and it starts). */
+  get clockMs(): number {
+    return this.run ? this.clock.elapsedMs(performance.now()) : 0;
   }
   get logLength(): number {
     return this.run?.log.entries.length ?? 0;
