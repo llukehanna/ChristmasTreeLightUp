@@ -4,7 +4,8 @@ import { dayText, localDayOf } from '../../worker/lib/days';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { importRunId } from '../../worker/lib/history';
-import { call, signIn, startDb, testEnv, wipe } from './harness';
+import { handle } from '../../worker/router';
+import { call, ORIGIN, signIn, startDb, testEnv, wipe } from './harness';
 
 let db: Db;
 let dispose: () => Promise<void>;
@@ -79,9 +80,22 @@ describe('POST /api/admin/import', () => {
     expect(await imported()).toEqual([]);
   });
 
+  it('refuses a non-JSON content type (403), invalid JSON (400 bad_json) and an oversized body (413), adding nothing', async () => {
+    const admin = await signIn(env, ADMIN, 'Tinsel');
+    const post = (type: string, text: string) =>
+      handle(new Request(`${ORIGIN}/api/admin/import`, { method: 'POST', headers: { Cookie: admin, Origin: ORIGIN, 'Content-Type': type, 'CF-Connecting-IP': '203.0.113.7' }, body: text }), env, { waitUntil: () => undefined });
+    expect((await post('text/plain', JSON.stringify(body()))).status).toBe(403);
+    const broken = await post('application/json', '{"importId":');
+    expect(broken.status).toBe(400);
+    expect(await broken.json()).toMatchObject({ error: 'bad_json' });
+    expect((await post('application/json', JSON.stringify({ ...body(), pad: 'x'.repeat(300_000) }))).status).toBe(413);
+    expect(await imported()).toEqual([]);
+  });
+
   it('adds the runs as ordinary ranked games of the admin’s own account', async () => {
     const admin = await signIn(env, ADMIN, 'Tinsel');
-    const res = await importAs(admin);
+    // The body cannot choose the owner or the source: extra fields are ignored.
+    const res = await importAs(admin, { ...body(), userId: 999, user_id: 999, source: 'play', ranked: 0 });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ added: 12, already: false, streak: 2, longestStreak: 3, clamped: false } satisfies ImportResponse);
     const me = await db.prepare('SELECT id FROM users WHERE email = ?').bind(ADMIN).first<{ id: number }>();
@@ -139,6 +153,8 @@ describe('POST /api/admin/import', () => {
     const res = await importAs(admin, body({ solved: 2000, averageMs: 90_000 }), testEnv(spy));
     expect(await res.json()).toMatchObject({ added: 2000, already: false });
     expect(prepared.filter((q) => q.trimStart().startsWith('INSERT'))).toHaveLength(1);
+    // D1 allows 50 queries a request: session lookup, the run-0 check and the one INSERT, and nothing per run.
+    expect(prepared.length).toBeLessThanOrEqual(3);
     expect(await imported()).toHaveLength(2000);
   });
 });
