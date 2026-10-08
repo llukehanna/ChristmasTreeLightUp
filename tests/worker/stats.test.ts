@@ -115,6 +115,33 @@ describe('GET /api/me/stats', () => {
   });
 });
 
+describe('GET /api/me/stats cost', () => {
+  it('reads about two rows per game (the index entry and the row), not three', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    for (let i = 0; i < 60; i++) await game(ana, 60_000 + i, noonPdt(i % 6), { source: i % 4 === 0 ? 'import' : 'play' });
+    const cookie = await signIn(env, 'ana@example.com');
+    const read: number[] = [];
+    const counting: AppEnv = {
+      ...env,
+      DB: {
+        prepare: (q: string) => db.prepare(q),
+        batch: async (s) => {
+          const out = await db.batch(s);
+          for (const r of out) read.push((r.meta as unknown as { rows_read: number }).rows_read);
+          return out;
+        },
+      },
+    };
+    const res = await call(counting, 'GET', '/api/me/stats?today=2026-10-08&tz=420', { cookie });
+    expect(await res.json()).toMatchObject({ solved: 60, imported: 15 });
+    // The batch: the per-day statement, then BEST_SQL (a handful of rows through games_best).
+    expect(read).toHaveLength(2);
+    expect(read[0]).toBeGreaterThanOrEqual(60);
+    expect(read[0]).toBeLessThanOrEqual(2 * 60 + 2);
+    expect(read[1]).toBeLessThanOrEqual(3);
+  });
+});
+
 describe('GET /api/me/games', () => {
   it('marks imported runs', async () => {
     const ana = await user('ana@example.com', 'Meridian');

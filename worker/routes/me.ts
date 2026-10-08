@@ -71,7 +71,8 @@ const TZ = /^-?\d{1,3}$/;
 
 /**
  * GET /api/me/stats?today=YYYY-MM-DD&tz=<minutes> (spec 2026-10-08 §3.2): the account's stats, the same on every
- * device. One batch: totals, the distinct local days of finishes (for the streaks), and the best ranked run.
+ * device. One batch of two statements: the totals folded into a GROUP BY local day (the days give the streaks), and
+ * the best ranked run. Rows read are about two per finished game (the games_user index entry and the row).
  */
 export async function myStats(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
@@ -80,17 +81,24 @@ export async function myStats(req: Request, env: AppEnv): Promise<Response> {
   const tzText = q.get('tz') ?? '';
   const tz = TZ.test(tzText) ? Number(tzText) : Number.NaN;
   if (today === null || !isTzOffset(tz)) throw new HttpError(400, 'invalid', 'today must be YYYY-MM-DD and tz whole minutes from -840 to 840.');
-  const [totals, days, best] = await env.DB.batch([
-    env.DB.prepare("SELECT count(*) AS solved, coalesce(sum(ms), 0) AS total, coalesce(sum(source = 'import'), 0) AS imported FROM games WHERE user_id = ? AND finished_at IS NOT NULL").bind(user.id),
+  const [daily, best] = await env.DB.batch([
     // A finish's local day, in days since 1970-01-01; the CAST keeps the division whole whatever type D1 binds the offset as.
-    env.DB.prepare('SELECT DISTINCT (finished_at - CAST(?2 AS INTEGER)) / 86400000 AS day FROM games WHERE user_id = ?1 AND finished_at IS NOT NULL ORDER BY day').bind(user.id, tz * 60_000),
+    env.DB.prepare(
+      "SELECT (finished_at - CAST(?2 AS INTEGER)) / 86400000 AS day, count(*) AS n, sum(ms) AS total, sum(source = 'import') AS imported FROM games WHERE user_id = ?1 AND finished_at IS NOT NULL GROUP BY day ORDER BY day",
+    ).bind(user.id, tz * 60_000),
     env.DB.prepare(BEST_SQL).bind(user.id),
   ]);
-  const t = totals.results[0] as { solved: number; total: number; imported: number } | undefined;
-  const list = (days.results as { day: number }[]).map((r) => r.day);
+  const rows = daily.results as { day: number; n: number; total: number; imported: number }[];
+  const list = rows.map((r) => r.day);
   const { streak, longestStreak } = streaksOf(list, today);
-  const solved = t?.solved ?? 0;
-  const totalMs = t?.total ?? 0;
+  let solved = 0;
+  let totalMs = 0;
+  let imported = 0;
+  for (const r of rows) {
+    solved += r.n;
+    totalMs += r.total;
+    imported += r.imported;
+  }
   const last = list.at(-1);
   return json({
     solved,
@@ -100,6 +108,6 @@ export async function myStats(req: Request, env: AppEnv): Promise<Response> {
     streak,
     longestStreak,
     lastSolvedDay: last === undefined ? null : dayText(last),
-    imported: t?.imported ?? 0,
+    imported,
   } satisfies AccountStats);
 }
