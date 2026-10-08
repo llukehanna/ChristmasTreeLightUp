@@ -1,5 +1,5 @@
 import { ApiError, api, finishWithRetry, setUnauthorizedHandler } from './api/client';
-import { addClaim, claimBatches, readClaims, removeClaims } from './api/claims';
+import { addClaim, claimBatches, coalesced, readClaims, removeClaims } from './api/claims';
 import type { RunOutcome } from './api/outcome';
 import { Session } from './api/session';
 import type { ClaimResponse, FinishResult } from './api/types';
@@ -88,7 +88,8 @@ export class App {
   /** The solved tree's results-tag data while its run still matters. */
   private won: WonRun | null = null;
   private outcome: RunOutcome | null = null;
-  private claiming = false;
+  /** claimOnce, one at a time: a call while one runs (a new run's claim was just stored) goes again right after it. */
+  private readonly claimAll = coalesced(() => this.claimOnce());
   /** This run's claim after naming: it failed ('stuck', Retry), or the server didn't take it ('gone'). */
   private claimState: 'stuck' | 'gone' | null = null;
   /** Back from Google for this run (the return marker matched): "Saving…" while /api/me is in flight. */
@@ -390,9 +391,8 @@ export class App {
    * the results tag says how its claim went: a failed request offers Retry; a claim the server didn't take (claimed in
    * another tab, or gone) can't be retried, and says the run is saved to Your games.
    */
-  private async claimAll(): Promise<void> {
-    if (this.claiming || !this.session.current?.name) return;
-    this.claiming = true;
+  private async claimOnce(): Promise<void> {
+    if (!this.session.current?.name) return;
     const current = this.won && this.online ? this.online.gameId : null;
     const stillHere = (): boolean => current !== null && this.online?.gameId === current;
     // The server has answered for this run's claim (taken, or not taken).
@@ -415,7 +415,6 @@ export class App {
         }
       }
     } finally {
-      this.claiming = false;
       // Ended without an answer for this run's claim (its batch or an earlier one failed, or another tab already took
       // the claim out of storage): never leave "Saving…" up. Retry if the claim is still here to send, else the run
       // is in Your games.
