@@ -12,5 +12,9 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 180_000,
   },
-  projects: [{ name: 'desktop', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
+    // The account flows again at phone size: the chip shows an initial and the sheets are bottom sheets.
+    { name: 'phone', use: { ...devices['Pixel 7'] }, testMatch: /accounts\.spec\.ts/ },
+  ],
 });
