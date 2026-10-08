@@ -19,6 +19,14 @@ export const accountStatsView = (a: AccountStats): StatsView => ({
   streak: a.streak,
 });
 
+/**
+ * The numbers for the tag (spec 2026-10-08 §6.2). Signed in, the account's, except while this device has solved more
+ * games than the account holds: then all three come from the device, so a player's numbers don't drop on signing in.
+ * No account stats (signed out, loading, offline): the device's.
+ */
+export const statsViewFor = (device: Stats, account: AccountStats | null): StatsView =>
+  account && device.solved <= account.solved ? accountStatsView(account) : deviceStatsView(device);
+
 export interface ResultsData {
   seconds: number;
   score: number;

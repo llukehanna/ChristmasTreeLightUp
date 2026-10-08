@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AccountStats } from '../../../src/api/types';
 import { EMPTY_STATS, type Stats } from '../../../src/store/stats';
-import { accountStatsView, deviceStatsView, Results } from '../../../src/ui/results';
+import { accountStatsView, deviceStatsView, Results, statsViewFor } from '../../../src/ui/results';
 
 const device: Stats = { v: 1, solved: 8, totalSeconds: 800, bestSeconds: 60, bestScore: 44000, streak: 11, longestStreak: 11, lastSolvedDay: '2026-10-08' };
 const account: AccountStats = { solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 41_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-10-08', imported: 300 };
@@ -21,6 +21,20 @@ it("the views: this device's numbers, or the account's", () => {
   expect(deviceStatsView(EMPTY_STATS)).toEqual({ solved: 0, averageSeconds: 0, streak: 0 });
   expect(accountStatsView(account)).toEqual({ solved: 312, averageSeconds: 78, streak: 4 });
   expect(accountStatsView({ ...account, solved: 0, totalMs: 0, averageMs: null, streak: 0 })).toEqual({ solved: 0, averageSeconds: 0, streak: 0 });
+});
+
+it("statsViewFor: the device's numbers while it has solved more than the account; otherwise the account's", () => {
+  // A pre-accounts player signs in: 8 solved here, 1 on the account. All three numbers come from the device.
+  const young: AccountStats = { ...account, solved: 1, totalMs: 40_000, averageMs: 40_000, streak: 1 };
+  expect(statsViewFor(device, young)).toEqual({ solved: 8, averageSeconds: 100, streak: 11 });
+  // Equal counts: the account's (not "greater than"), and so is anything above.
+  expect(statsViewFor(device, { ...young, solved: 8 })).toEqual({ solved: 8, averageSeconds: 40, streak: 1 });
+  expect(statsViewFor(device, account)).toEqual({ solved: 312, averageSeconds: 78, streak: 4 });
+  // No account numbers (signed out, loading, offline): the device's, whatever the counts.
+  expect(statsViewFor(device, null)).toEqual({ solved: 8, averageSeconds: 100, streak: 11 });
+  expect(statsViewFor(EMPTY_STATS, null)).toEqual({ solved: 0, averageSeconds: 0, streak: 0 });
+  // A new account with nothing yet (0 solved) never beats an empty device.
+  expect(statsViewFor(EMPTY_STATS, { ...account, solved: 0, totalMs: 0, averageMs: null, streak: 0 })).toEqual({ solved: 0, averageSeconds: 0, streak: 0 });
 });
 
 it('the tag paints the view it is given; setStats repaints the three numbers, shown or hidden; the badge stays the device’s', () => {
