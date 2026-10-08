@@ -85,10 +85,11 @@ class Page {
     this.run.resume(this.perf);
   }
 
-  /** A hidden tab (App's visibilitychange: pause(false) when it can pause), back `ms` later, then the overlay tap. */
+  /** A hidden tab (App's visibilitychange: pause(false) when it can pause, else markAway), back `ms` later, then the overlay tap. */
   hideTab(ms: number): void {
     if (this.perf >= this.run.interactiveAt) this.run.pause(this.perf);
-    this.wait(ms);
+    else this.run.markAway(this.perf);
+    this.stall(ms); // no frames while hidden
     this.run.resume(this.perf);
   }
 
@@ -98,7 +99,7 @@ class Page {
    */
   reload(awayMs: number, clockJumpMs = 0): void {
     if (this.perf >= this.run.interactiveAt) this.run.pause(this.perf);
-    else this.run.markReload(this.perf);
+    else this.run.markAway(this.perf);
     saveGame(this.run.board, this.run.elapsedMs(this.perf), { startEpoch: this.run.startEpoch, online: null, log: this.run.log.entries, won: null });
     this.epoch += awayMs + clockJumpMs;
     this.realMs += awayMs;
@@ -107,7 +108,7 @@ class Page {
     const saved = loadGame(GRID);
     if (!saved) throw new Error('no save');
     this.run = new Run(new Board(GRID, saved.state), { now: this.perf, epochNow: this.dateNow, startEpoch: saved.startEpoch, elapsedMs: saved.elapsedMs, log: saved.log });
-    this.run.markReload(this.perf);
+    this.run.markAway(this.perf);
   }
 
   /** Taps tile i until it settles on its solution, `gap()` ms apart. */
@@ -159,6 +160,19 @@ describe('Run: the browser logs taps exactly as the server replays them', () => 
       // The server's ranked time is the clock the player watched (to a frame or two).
       expect(Math.abs((v?.ms ?? 0) - clockMs), `seed ${seed}`).toBeLessThan(50);
     }
+  });
+
+  it('a tab hidden during the reveal: the time away is a pause in the log too, so the ranked time is the clock', () => {
+    const rng = mulberry32(11);
+    const page = new Page(11, rng);
+    page.wait(300);
+    page.hideTab(20_000);
+    page.waitInteractive();
+    for (const i of ids) page.solveTile(i, () => 70);
+    page.finish();
+    const v = page.verdict();
+    expect(v?.reason).toBeNull();
+    expect(Math.abs((v?.ms ?? 0) - page.run.elapsedMs(page.perf))).toBeLessThan(50);
   });
 
   it('turn boundaries: taps landing within a fraction of a ms of a turn finishing, full queues and late frames still verify', () => {
