@@ -88,6 +88,8 @@ export class Board {
   lighting: Lighting;
   readonly rotating = new Map<number, Rotation>();
   won = false;
+  /** Headless only: full lighting passes run since the board was made (replay caps them). */
+  bfsRuns = 0;
   /** Headless only: adjacent tile pairs whose links meet. */
   private matched = 0;
   private dark: Lighting | null = null;
@@ -205,6 +207,7 @@ export class Board {
       this.lighting = this.dark;
       return [];
     }
+    if (this.headless) this.bfsRuns++;
     const prev = this.lighting;
     const next = computeLighting(this.grid, this.bits);
     this.lighting = next;
