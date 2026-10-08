@@ -129,6 +129,9 @@ body.intro-low .intro { top: calc(var(--garland-bottom) + 8px); font-size: 20px;
 .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
 input[type='range'] { width: 100%; accent-color: var(--accent); }
 .menu input[type='range'], .menu input[type='checkbox'] { accent-color: #e2b25a; }
+.menu .privacy-link { align-self: center; font-size: 11.5px; color: #eccb86; opacity: 0.75; text-decoration: underline; text-underline-offset: 3px; }
+.menu .privacy-link:hover { opacity: 1; }
+.menu .privacy-link:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; border-radius: 3px; }
 .menu .newtree {
   all: unset; cursor: pointer; text-align: center; padding: 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
   background: linear-gradient(180deg, #d23a3f, #8e1622); color: #fff1dc;

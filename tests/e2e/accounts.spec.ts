@@ -327,8 +327,8 @@ test('a finish whose automatic retry lands past the clock tolerance says "reache
   await page.route('**/api/games/*/finish', async (route) => {
     if (!first) return route.fallback();
     first = false;
-    // The first attempt fails after 2.5 s; the retry 0.8 s later is over the 3 s tolerance.
-    await new Promise((r) => setTimeout(r, 2500));
+    // The first attempt fails after 4 s, so the retry (0.8 s later) lands well over the 3 s tolerance.
+    await new Promise((r) => setTimeout(r, 4000));
     await route.abort();
   });
   await ready(page);
@@ -337,7 +337,7 @@ test('a finish whose automatic retry lands past the clock tolerance says "reache
   await expect(page.locator('#results .rib-line')).toHaveText('Saved, unranked: reached the server too late', { timeout: 20_000 });
 });
 
-test('two runs by the same player both appear on the board', async ({ page }) => {
+test('two runs by the same player both appear in Your games', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
   await signInFromChip(page);
@@ -351,13 +351,23 @@ test('two runs by the same player both appear on the board', async ({ page }) =>
   }
   await page.locator('#account-chip').click();
   await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
-  await expect(page.getByRole('dialog', { name: 'Leaderboard' }).locator('.acct-row.acct-me')).toHaveCount(2);
+  // Your games, not the shared top 50: other tests' players can push these two runs off the board.
+  await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
+  await expect(page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game')).toHaveCount(2);
+  const mine = await page.request.get('/api/me/games');
+  expect(((await mine.json()) as { games: unknown[] }).games).toHaveLength(2);
+});
+
+test('the settings menu links to the privacy page', async ({ page }) => {
+  await ready(page);
+  await page.locator('#menu-btn').click();
+  await expect(page.getByRole('dialog', { name: 'Settings' }).getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
 });
 
 test('the privacy page says what is stored, why, for how long, and how to delete it', async ({ page }) => {
   await page.goto('/privacy');
   await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
-  for (const text of ['Google account ID and email address', 'display name', 'log of your taps and pauses', 'hashed copy of your IP address', '90 days', 'Delete account']) {
+  for (const text of ['Google account ID and email address', 'display name', 'log of your taps and pauses', 'keyed hash of your IP address', '90 days', '365 days', 'up to 7 days', 'up to 30 days', 'Spotify or Apple', 'Delete account']) {
     await expect(page.locator('main')).toContainText(text);
   }
   // Phone width included: no sideways scroll.

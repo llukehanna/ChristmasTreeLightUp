@@ -346,19 +346,22 @@ export class App {
     const won = this.won;
     if (!run || !won) return;
     const game = this.board;
+    // This run's log and start, held now: a new tree during the retry wait must not change what is measured.
+    const entries = this.run.log.entries;
+    const startEpoch = this.run.startEpoch;
     // Sent (or resent, after a reload or a Retry) past the judge's clock tolerance: the server keeps the run but can't
     // time it ('clock'). Remembered with the run, so the tag can say why after a reload or sign-in.
     // Checked ahead of every attempt, the automatic retry included: it can be the one that lands past the tolerance.
     const markLate = (): void => {
-      const last = this.run.log.entries.at(-1);
-      if (!won.late && Date.now() - (this.run.startEpoch + (last?.t ?? 0)) > CLOCK_TOLERANCE_MS) {
+      const last = entries.at(-1);
+      if (!won.late && Date.now() - (startEpoch + (last?.t ?? 0)) > CLOCK_TOLERANCE_MS) {
         won.late = true;
         this.saveWon();
       }
     };
     this.setOutcome({ kind: 'saving' });
     try {
-      const result = await finishWithRetry(run.gameId, this.run.log.entries, undefined, markLate);
+      const result = await finishWithRetry(run.gameId, entries, undefined, markLate);
       // Started signed out: the run (ranked once claimed, or not) waits on this browser to be claimed (90 days), even
       // if a new tree has started meanwhile.
       if (run.claim) addClaim({ id: run.gameId, claim: run.claim }, Date.now());

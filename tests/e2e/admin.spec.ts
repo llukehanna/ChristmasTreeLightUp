@@ -515,3 +515,18 @@ test('phone width: no horizontal page scroll', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
   expect((await page.locator('header').boundingBox())?.y).toBe(0);
 });
+
+// The real Worker, nothing routed: fake Google, then the real requireAdmin (200 for the admin, 403 for anyone else).
+test('the admin signs in with (fake) Google and gets the editor; another account is not authorized', async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name === 'phone', 'desktop only');
+  const as = (email: string) => context.addCookies([{ name: 'aglow_fake_as', value: email, url: 'http://localhost:4173' }]);
+  await as('admin@example.com');
+  await page.goto('/admin');
+  await page.getByRole('link', { name: 'Sign in with Google' }).click();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('heading', { name: 'Radio admin' })).toBeVisible();
+  await as('someone@example.com');
+  await page.getByRole('link', { name: 'Sign in with Google' }).click();
+  await expect(page.getByRole('heading', { name: 'Not authorized' })).toBeVisible();
+});
