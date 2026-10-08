@@ -18,7 +18,7 @@ import { tileAt, tileCenter } from './render/layout';
 import { Renderer } from './render/renderer';
 import { SCENES, sceneForHour, type SceneId } from './render/scenes';
 import { VisualState } from './render/visual-state';
-import { clearGame, loadGame, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
+import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
 import { loadStats, localDay, recordWin, saveStats } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
@@ -27,6 +27,7 @@ import { el } from './ui/dom';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
 import { Results } from './ui/results';
+import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
 import { Toast } from './ui/toast';
 
@@ -396,9 +397,26 @@ export class App {
     this.setOutcome(this.outcome);
   }
 
-  /** The run's outcome on the results tag. */
+  /** The run's outcome on the results tag (pick 3B): drawn now, so it is there when the tag appears. */
   private setOutcome(o: RunOutcome | null): void {
     this.outcome = o;
+    renderRibbon(el('results'), o && ribbonModel(o, this.session.current), {
+      board: () => this.accounts.openBoard(),
+      save: () => this.saveRun(),
+      retry: () => this.retryFinish(),
+    });
+  }
+
+  /**
+   * "Save to leaderboard": the sign-in card; after Google, the page comes back to this results tag (boot() restores the
+   * won run). Signed in without a name (the name card was put off), the name card: naming claims the run.
+   */
+  private saveRun(): void {
+    const run = this.online;
+    if (!run) return;
+    const from = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (this.session.current) this.accounts.openName(from);
+    else this.accounts.openSignIn({ pendingMs: this.won?.result?.ms ?? null, beforeLeave: () => markReturn(run.gameId) }, from);
   }
 
   private keepWatching(): void {

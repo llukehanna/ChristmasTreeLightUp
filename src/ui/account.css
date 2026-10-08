@@ -279,3 +279,78 @@ body[data-scene='frost'] .acct-scrim { background: radial-gradient(120% 90% at 5
 @media (prefers-reduced-motion: reduce) {
   .acct-sheet, .acct-drop, .acct-scrim { animation: none !important; }
 }
+
+/* =====================================================================
+   Results tag (pick 3B): rosette badge, ranking line and the save ribbon
+   ===================================================================== */
+.results.rib-ranked .badge { display: none; }
+.results .rib-line { margin-top: 8px; font-size: 12.5px; color: #7a4a22; }
+.results .rib-line b { font-weight: 600; color: #7d1420; font-variant-numeric: tabular-nums; }
+.results .rib-retry { all: unset; cursor: pointer; font-weight: 600; color: #8e1622; text-decoration: underline; text-underline-offset: 3px; }
+.results .rib-ros {
+  all: unset; position: absolute; z-index: 2; top: 30px; right: 20px; width: 78px; height: 78px; cursor: pointer; transform: rotate(9deg);
+  filter: drop-shadow(0 4px 5px rgba(90, 30, 10, 0.35)); transition: transform 0.2s;
+}
+.results .rib-ros:hover:not(:disabled) { transform: rotate(4deg) scale(1.04); }
+.results .rib-ros:disabled { cursor: default; }
+.results .rib-ros > * { position: absolute; }
+.results .rib-ros .tail { width: 20px; height: 40px; top: 50px; background: linear-gradient(180deg, #c8323b, #8e1622); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.3); }
+.results .rib-ros .tail.l { left: 17px; transform: rotate(14deg); }
+.results .rib-ros .tail.r { right: 17px; transform: rotate(-14deg); }
+.results .rib-ros-pleat { inset: 0; border-radius: 50%; background: repeating-conic-gradient(#d63c45 0 6deg, #8e1622 6deg 12deg); box-shadow: inset 0 0 0 1px rgba(255, 200, 180, 0.25); }
+.results .rib-ros-ring { inset: 7px; border-radius: 50%; background: repeating-conic-gradient(#f6dc98 0 4deg, #c9962f 4deg 8deg); box-shadow: 0 1px 2px rgba(60, 10, 10, 0.4); }
+.results .rib-ros-face {
+  inset: 13px; border-radius: 50%; display: grid; place-content: center; text-align: center; color: #6e0f1b;
+  background: radial-gradient(circle at 36% 26%, #fffaf0, #f6e3b4 45%, #e0b866 100%);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 250, 230, 0.7), inset 0 -3px 5px rgba(120, 70, 20, 0.35), 0 0 0 1.5px #a8742a;
+}
+.results .rib-ros-face b { font: italic 400 23px/0.9 'Instrument Serif', serif; }
+.results .rib-ros-face small { display: block; margin-top: 2px; font-size: 7.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75; }
+.results .rib-ros-banner {
+  left: 50%; bottom: -12px; transform: translateX(-50%) rotate(-9deg); white-space: nowrap; padding: 3px 10px; font-size: 8.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  color: #4a2208; background: linear-gradient(180deg, #fbe4a6, #d6a24a 60%, #b9822f); box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.7), 0 2px 4px rgba(60, 20, 0, 0.35);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 50%, 100% 100%, 0 100%, 6px 50%);
+}
+.results .rib-ros.best .rib-ros-pleat { background: repeating-conic-gradient(#f6dc98 0 6deg, #c9962f 6deg 12deg); }
+.results .rib-ros.best .rib-ros-ring { background: repeating-conic-gradient(#d63c45 0 4deg, #8e1622 4deg 8deg); }
+.results .rib-ros.best .rib-ros-face { color: #fff3de; background: radial-gradient(circle at 36% 26%, #ff8a80, #c8323b 45%, #7e101c 100%); box-shadow: inset 0 0 0 1.5px rgba(255, 200, 180, 0.4), inset 0 -3px 5px rgba(60, 0, 6, 0.4), 0 0 0 1.5px #f3d492; }
+.results .rib-ros.best .tail { background: linear-gradient(180deg, #f6dc98, #b9822f); }
+.results .rib-ros.un { filter: drop-shadow(0 3px 4px rgba(90, 60, 30, 0.25)) saturate(0.2); opacity: 0.85; }
+.results .rib-ros.un .rib-ros-face b { font-style: normal; }
+/* "Unranked" is the longest word a face carries: set tighter, so it stays inside the face. */
+.results .rib-ros.un .rib-ros-face small { font-size: 6.5px; letter-spacing: 0.05em; }
+.results .rib-ribbon {
+  all: unset; box-sizing: border-box; cursor: pointer; position: relative; display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: calc(100% + 72px); height: 44px; margin: -6px -36px 14px; padding: 0 44px; color: #fff3de; font-size: 13.5px; font-weight: 600; letter-spacing: 0.02em;
+  background: linear-gradient(180deg, #e04a53 0%, #b01e2c 45%, #82101d 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.45), inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 50%, 100% 100%, 0 100%, 16px 50%);
+  filter: drop-shadow(0 4px 6px rgba(120, 20, 30, 0.3)); text-shadow: 0 1px 1px rgba(60, 0, 6, 0.4);
+}
+.results .rib-ribbon::before { content: ''; position: absolute; left: 22px; right: 22px; top: 4px; bottom: 4px; border-top: 1px dashed rgba(255, 220, 170, 0.5); border-bottom: 1px dashed rgba(255, 220, 170, 0.5); pointer-events: none; }
+.results .rib-ribbon .acct-g { padding: 3px; background: #fff; border-radius: 50%; width: 22px; height: 22px; box-sizing: border-box; }
+.results .rib-ribbon:hover { background: linear-gradient(180deg, #ea5560 0%, #bd2433 45%, #8e1622 100%); }
+.results .rib-retry:focus-visible { outline: 2px solid #8e1622; outline-offset: 3px; }
+/* The ribbon's notched ends clip an outline away, so its focus ring is the stitching, drawn solid and bright. */
+.results .rib-ribbon:focus-visible { outline: none; }
+.results .rib-ribbon:focus-visible::before { border-top: 2px solid #fff3de; border-bottom: 2px solid #fff3de; top: 3px; bottom: 3px; }
+/* The rosette is round: so is its focus ring. */
+.results .rib-ros:focus-visible { outline: none; }
+.results .rib-ros:focus-visible .rib-ros-pleat { box-shadow: inset 0 0 0 1px rgba(255, 200, 180, 0.25), 0 0 0 2px #fff3de, 0 0 0 4px #8e1622; }
+.results .rib-ros-face.long b { font-size: 17px; }
+@media (max-width: 600px) {
+  .results .rib-ros { width: 64px; height: 64px; top: 30px; right: 12px; }
+  .results .rib-ros .tail { top: 40px; width: 17px; height: 34px; }
+  .results .rib-ros .tail.l { left: 13px; }
+  .results .rib-ros .tail.r { right: 13px; }
+  .results .rib-ros-ring { inset: 6px; }
+  .results .rib-ros-face { inset: 11px; }
+  .results .rib-ros-face b { font-size: 19px; }
+  .results .rib-ros-face small { font-size: 6.5px; }
+  .results .rib-ros-face.long b { font-size: 14px; }
+  .results .rib-ros.un .rib-ros-face small { font-size: 5.5px; letter-spacing: 0.04em; }
+  .results .rib-ribbon { width: calc(100% + 60px); margin-left: -30px; margin-right: -30px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .results .rib-ros { transition: none; }
+}

@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { asPlayer, pickName, ready, resumeIfPaused, signInFromChip } from './helpers';
+import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -149,9 +149,15 @@ test('the admin sees Radio admin in the account menu; a player does not', async 
   await page.context().addCookies([{ name: 'aglow_fake_as', value: 'admin@example.com', url: 'http://localhost:4173' }]);
   await ready(page);
   await signInFromChip(page);
-  // The admin may have picked a name in another test; without one, the name card opens first.
-  await expect(page.locator('#account-chip')).toHaveAccessibleName(/^Account/);
-  if (await page.getByRole('dialog', { name: 'Pick a display name' }).isVisible()) await page.keyboard.press('Escape');
+  // The admin may have picked a name in another test; without one ("Account" alone), the name card opens with the chip.
+  const chip = page.locator('#account-chip');
+  await expect(chip).toHaveAccessibleName(/^Account/);
+  const nameCard = page.getByRole('dialog', { name: 'Pick a display name' });
+  if ((await chip.getAttribute('aria-label')) === 'Account') {
+    await nameCard.waitFor();
+    await page.keyboard.press('Escape');
+  }
+  await expect(nameCard).toBeHidden();
   await resumeIfPaused(page);
   await page.locator('#account-chip').click();
   const menu = page.getByRole('dialog', { name: 'Account' });
@@ -171,4 +177,77 @@ test('the admin sees Radio admin in the account menu; a player does not', async 
   await page.locator('#account-chip').click();
   await expect(menu.getByRole('button', { name: 'Your games' })).toBeVisible();
   await expect(menu.getByRole('link', { name: 'Radio admin' })).toHaveCount(0);
+});
+
+test('play signed out, Save to leaderboard: sign in, pick a name, and the run is on the board', async ({ page }) => {
+  const player = await asPlayer(page);
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await expect(results.locator('.rib-line')).toHaveText(/^Would place #\d+ of [\d,]+ runs?$/);
+  // The tag itself reads as before.
+  await expect(results.locator('#r-time')).toHaveText(/^Lit in \d+:\d\d$/);
+  await expect(results.locator('#r-score')).toHaveText(/^Score [\d,]+$/);
+  await results.getByRole('button', { name: 'Save to leaderboard' }).click();
+  const card = page.getByRole('dialog', { name: 'Sign in' });
+  await expect(card).toContainText(/Your \d+:\d\d\.\d is waiting on this device\./);
+  await card.getByRole('link', { name: 'Continue with Google' }).click();
+  // Back from (fake) Google on the same results tag, asked for a name; naming claims the run.
+  await page.waitForURL(/\/\?test$/);
+  await pickName(page, player.name);
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · New personal best!$/, { timeout: 15_000 });
+  await expect(results.locator('.rib-ribbon')).toHaveCount(0);
+  await results.getByRole('button', { name: /^Rank \d+ of \d+: open the leaderboard$/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Leaderboard' }).locator('.acct-row.acct-me')).toContainText(player.name);
+});
+
+test('paused more than 20 times: the tag says "Unranked: paused too long" under a grey rosette', async ({ page }) => {
+  await ready(page);
+  const id = await onlineTree(page);
+  await expect(page.locator('#pause-btn')).toBeVisible();
+  for (let i = 0; i < 21; i++) {
+    await page.keyboard.press('p');
+    await expect(page.locator('#pause')).toBeVisible();
+    await page.keyboard.press('p');
+    await expect(page.locator('#pause')).toBeHidden();
+  }
+  await solveByTapping(page);
+  await expect.poll(() => game(page), { timeout: 15_000 }).toMatchObject({ id, outcome: 'done', reason: 'paused', ranked: false });
+  const results = page.locator('#results');
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await expect(results.locator('.rib-line')).toHaveText('Unranked: paused too long');
+  await expect(results.getByRole('button', { name: 'Unranked' })).toBeDisabled();
+  await expect(results.locator('.rib-ribbon')).toHaveCount(0);
+});
+
+test("a finish that never reaches the server: Couldn't save this run, and a late Retry saves it, unranked (clock)", async ({ page }) => {
+  let down = true;
+  await page.route('**/api/games/*/finish', (route) => (down ? route.abort() : route.fallback()));
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await expect(results.locator('.rib-line')).toHaveText("Couldn't save this run. Retry", { timeout: 15_000 });
+  down = false;
+  // A finish arriving over 3 s after the win is kept but unranked, by design (the judge's clock tolerance): wait past
+  // it, so the verdict is always the same.
+  await page.waitForTimeout(3500);
+  await results.getByRole('button', { name: 'Retry' }).click();
+  await expect(results.locator('.rib-line')).toHaveText("Unranked: couldn't verify the clock");
+  await expect.poll(() => game(page)).toMatchObject({ outcome: 'done', reason: 'clock', ranked: false });
+  await expect(results.getByRole('button', { name: 'Unranked' })).toBeDisabled();
+});
+
+test('a tree the server never started: "Unranked: offline" on the tag', async ({ page }) => {
+  await page.route('**/api/games', (route) => route.abort());
+  await ready(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await expect(results.locator('.rib-line')).toHaveText('Unranked: offline');
+  await expect(results.locator('.rib-ribbon')).toHaveCount(0);
 });
