@@ -17,6 +17,8 @@ export function safeReturn(value: string | null): string {
   try {
     const url = new URL(value, 'http://x');
     if (url.origin !== 'http://x') return '/';
+    // A sign-in started from a failed one's page mustn't come back to the failure toast.
+    if (url.searchParams.has('auth')) url.searchParams.delete('auth');
     const result = url.pathname + url.search + url.hash;
     if (result.startsWith('//') || result.startsWith('/\\')) return '/';
     return result;
@@ -44,7 +46,10 @@ export async function googleStart(req: Request, env: AppEnv): Promise<Response> 
     return redirect(`${callback}?code=${encodeURIComponent(`fake:${as}`)}&state=${state}`, [flow]);
   }
   const clientId = env.GOOGLE_CLIENT_ID?.trim();
-  if (!clientId) throw new HttpError(503, 'not_configured', 'Sign-in is not configured.');
+  if (!clientId) {
+    notConfigured();
+    throw new HttpError(503, 'not_configured', 'Sign-in is not configured.');
+  }
   const google = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   google.search = new URLSearchParams({
     client_id: clientId,
@@ -83,7 +88,10 @@ export function checkIdToken(idToken: string, clientId: string, now: number): Id
 async function exchange(env: AppEnv, code: string, verifier: string, redirectUri: string): Promise<Identity | null> {
   const clientId = env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    notConfigured();
+    return null;
+  }
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -97,6 +105,9 @@ async function exchange(env: AppEnv, code: string, verifier: string, redirectUri
     return null;
   }
 }
+
+/** Visible in Workers Logs: which kind of problem, never a value. */
+const notConfigured = (): void => console.error('api', 'auth', 'not_configured');
 
 function fakeIdentity(code: string): Identity | null {
   if (!code.startsWith('fake:')) return null;
@@ -118,11 +129,26 @@ export async function googleCallback(req: Request, env: AppEnv): Promise<Respons
   const failed = () => redirect(withParam(back, 'auth', 'failed'), [clear]);
   const code = url.searchParams.get('code');
   const secret = env.AUTH_SECRET?.trim();
-  if (!state || !verifier || !code || url.searchParams.get('state') !== state || !secret) return failed();
+  if (!secret) {
+    notConfigured();
+    return failed();
+  }
+  if (!state || !verifier || !code || url.searchParams.get('state') !== state) return failed();
 
   const identity = env.AUTH_MODE === 'fake' ? fakeIdentity(code) : await exchange(env, code, verifier, `${url.origin}/api/auth/google/callback`);
   if (!identity) return failed();
 
+  try {
+    return redirect(back, [clear, sessionCookie(await signInAs(req, env, secret, identity))]);
+  } catch (e) {
+    // Like the router's log: the error's class only, never its message (it could carry request data).
+    console.error('api', 'auth', 'callback', e instanceof Error ? e.name : 'error');
+    return failed();
+  }
+}
+
+/** The account write: upsert the user by Google sub, then in one batch add a session, prune expired ones and revoke this browser's last one. Returns the new session token. */
+async function signInAs(req: Request, env: AppEnv, secret: string, identity: Identity): Promise<string> {
   const now = Date.now();
   const user = await env.DB.prepare(
     'INSERT INTO users (google_sub, email, created_at) VALUES (?, ?, ?) ON CONFLICT (google_sub) DO UPDATE SET email = excluded.email RETURNING id',
@@ -144,7 +170,7 @@ export async function googleCallback(req: Request, env: AppEnv): Promise<Respons
   // Signing in revokes the session this browser already had.
   if (old) statements.push(env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sessionHash(secret, old)));
   await env.DB.batch(statements);
-  return redirect(back, [clear, sessionCookie(token)]);
+  return token;
 }
 
 /** GET /api/auth/name?n= */

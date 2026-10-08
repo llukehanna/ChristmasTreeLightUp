@@ -174,6 +174,7 @@ All sheets use the radio panel's dark-glass look (pick 2C). They pause the game,
 - **Name card**, shown once after the first sign-in:
   - Mapped's rule: 3–20 letters, digits, spaces, `-` or `_`.
   - A debounced availability check (taken, available, invalid), plus a reserved list (e.g. `admin`, `aglow`, `santa`).
+  - Uniqueness ignores case, spaces, `-` and `_` (`name_key`, the same normalisation as the reserved list), so "Tinsel Tom", "Tinsel_Tom" and "tinsel-tom" collide: one can't impersonate another.
 - **Leaderboard sheet:** the top 50 runs as rank, name, time `m:ss.t` and date. Your rows are highlighted, and your best run is pinned below the list if it's outside the top 50. The total number of ranked runs is shown.
 - **Your games sheet:** best time and its rank, the number of runs in the top 50, and recent games with ranked or unranked status.
 - **Results tag ribbon (3B):**
