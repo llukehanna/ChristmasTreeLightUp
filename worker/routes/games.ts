@@ -5,7 +5,7 @@ import { GRID } from '../../src/core/mask.js';
 import { GEN_VERSION } from '../../src/core/seeded.js';
 import { hmac, randomSeed, randomToken } from '../lib/crypto.js';
 import type { AppEnv, Ctx } from '../lib/env.js';
-import { clientIp, HttpError, json, readJson } from '../lib/http.js';
+import { clientIp, HttpError, json, rateKey, readJson } from '../lib/http.js';
 import { bestOf, boardTotal, rankOf } from '../lib/ranks.js';
 import { authSecret, currentUser, requireUser } from '../lib/users.js';
 
@@ -16,6 +16,8 @@ export const STARTS_PER_HOUR = 200;
 export const UNCLAIMED_KEEP_DAYS = 90;
 /** Each start clears at most this many stale games of each kind: up to 50 in all (spec §2). */
 const STALE_BATCH = 25;
+/** Each start prunes at most this many start records older than an hour. */
+const STARTS_PRUNE = 50;
 export const GAME_ID = /^[A-Za-z0-9_-]{16,64}$/;
 
 interface GameRow {
@@ -29,9 +31,12 @@ interface GameRow {
   ms: number | null;
   ranked: number;
   unranked_reason: UnrankedReason | null;
+  /** 1 when the owner has a name, so a ranked run is on the board. */
+  named: number;
 }
 type FinishedGame = GameRow & { finished_at: number; ms: number };
-const COLUMNS = 'id, user_id, claim_hash, gen_version, seed, started_at, finished_at, ms, ranked, unranked_reason';
+const SELECT_GAME =
+  'SELECT g.id, g.user_id, g.claim_hash, g.gen_version, g.seed, g.started_at, g.finished_at, g.ms, g.ranked, g.unranked_reason, (u.name IS NOT NULL) AS named FROM games g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?';
 const finished = (g: GameRow): g is FinishedGame => g.finished_at !== null && g.ms !== null;
 const notFound = () => new HttpError(404, 'not_found', "That game isn't on record.");
 
@@ -39,8 +44,9 @@ const notFound = () => new HttpError(404, 'not_found', "That game isn't on recor
 export async function startGame(req: Request, env: AppEnv): Promise<Response> {
   const secret = authSecret(env);
   await readJson(req);
-  const ipHash = await hmac(secret, `ip:${clientIp(req)}`);
-  const recent = await env.DB.prepare('SELECT count(*) AS n FROM games WHERE ip_hash = ? AND started_at > ?').bind(ipHash, Date.now() - HOUR_MS).first<{ n: number }>();
+  const ipHash = await hmac(secret, `ip:${rateKey(clientIp(req))}`);
+  // Counted in their own table, so a start whose game a 422 deleted still counts.
+  const recent = await env.DB.prepare('SELECT count(*) AS n FROM starts WHERE ip_hash = ? AND at > ?').bind(ipHash, Date.now() - HOUR_MS).first<{ n: number }>();
   if ((recent?.n ?? 0) >= STARTS_PER_HOUR) throw new HttpError(429, 'rate_limited', 'Too many games from here. Try again in a bit.');
 
   const user = await currentUser(req, env);
@@ -54,6 +60,8 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
     // Lazy housekeeping (no cron): abandoned games after a day, unclaimed finished games after 90 days.
     env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE finished_at IS NULL AND started_at < ? LIMIT ?)').bind(now - DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?)').bind(now - UNCLAIMED_KEEP_DAYS * DAY_MS, STALE_BATCH),
+    env.DB.prepare('DELETE FROM starts WHERE rowid IN (SELECT rowid FROM starts WHERE at < ? LIMIT ?)').bind(now - HOUR_MS, STARTS_PRUNE),
+    env.DB.prepare('INSERT INTO starts (ip_hash, at) VALUES (?, ?)').bind(ipHash, now),
     env.DB.prepare('INSERT INTO games (id, user_id, claim_hash, ip_hash, gen_version, seed, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(
       id,
       user?.id ?? null,
@@ -67,22 +75,42 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
   return json({ id, seed, genVersion: GEN_VERSION, claim } satisfies StartResponse);
 }
 
-/** What the browser shows for a finished game. */
-async function resultOf(env: AppEnv, g: FinishedGame): Promise<FinishResult> {
-  const placed = g.ranked === 1 || g.unranked_reason === 'anonymous';
-  const [total, rank, best] = await Promise.all([
+/**
+ * What the browser shows for finished games, all owned by `userId` (or all signed out, null). The board total and the
+ * owner's best are the same for every one, so they are read once: a full claim stays well inside D1's query budget.
+ */
+async function resultsOf(env: AppEnv, userId: number | null, games: readonly FinishedGame[]): Promise<FinishResult[]> {
+  if (games.length === 0) return [];
+  const placed = (g: FinishedGame) => g.ranked === 1 || g.unranked_reason === 'anonymous';
+  const [total, best, ranks] = await Promise.all([
     boardTotal(env.DB),
-    placed ? rankOf(env.DB, g.ms, g.finished_at) : Promise.resolve(null),
-    g.user_id === null ? Promise.resolve(null) : bestOf(env.DB, g.user_id),
+    userId === null ? Promise.resolve(null) : bestOf(env.DB, userId),
+    Promise.all(games.map((g) => (placed(g) ? rankOf(env.DB, g.ms, g.finished_at) : Promise.resolve(null)))),
   ]);
-  return { id: g.id, ranked: g.ranked === 1, reason: g.unranked_reason, ms: g.ms, rank, total, best: best?.ms ?? null, newBest: g.ranked === 1 && best?.id === g.id };
+  return games.map((g, k) => {
+    const rank = ranks[k];
+    // A run with a place that isn't on the board yet (signed out, or no name) would join it: "#r of total + 1".
+    const onBoard = g.ranked === 1 && g.named === 1;
+    return {
+      id: g.id,
+      ranked: g.ranked === 1,
+      reason: g.unranked_reason,
+      ms: g.ms,
+      rank,
+      total: rank !== null && !onBoard ? total + 1 : total,
+      best: best?.ms ?? null,
+      newBest: g.ranked === 1 && best?.id === g.id,
+    };
+  });
 }
+
+const resultOf = async (env: AppEnv, g: FinishedGame): Promise<FinishResult> => (await resultsOf(env, g.user_id, [g]))[0];
 
 /** POST /api/games/:id/finish { log } */
 export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: readonly string[]): Promise<Response> {
   const receivedAt = Date.now();
   const body = await readJson(req);
-  const game = await env.DB.prepare(`SELECT ${COLUMNS} FROM games WHERE id = ?`).bind(id).first<GameRow>();
+  const game = await env.DB.prepare(SELECT_GAME).bind(id).first<GameRow>();
   if (!game) throw notFound();
   // A retry after a lost response: answer what was saved (the id is a bearer secret).
   if (finished(game)) return json(await resultOf(env, game));
@@ -103,7 +131,7 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
     .run();
   if (saved.meta.changes === 0) {
     // Lost a race with another finish of the same game: answer what that one saved.
-    const now = await env.DB.prepare(`SELECT ${COLUMNS} FROM games WHERE id = ?`).bind(id).first<GameRow>();
+    const now = await env.DB.prepare(SELECT_GAME).bind(id).first<GameRow>();
     if (now && finished(now)) return json(await resultOf(env, now));
     throw notFound();
   }
@@ -121,16 +149,23 @@ export async function claimGames(req: Request, env: AppEnv): Promise<Response> {
     if (typeof c !== 'object' || c === null) continue;
     const { id, claim } = c as Record<string, unknown>;
     if (typeof id !== 'string' || typeof claim !== 'string' || !GAME_ID.test(id)) continue;
-    const game = await env.DB.prepare(`SELECT ${COLUMNS} FROM games WHERE id = ? AND user_id IS NULL`).bind(id).first<GameRow>();
+    const game = await env.DB.prepare(`${SELECT_GAME} AND g.user_id IS NULL`).bind(id).first<GameRow>();
     if (!game || !finished(game) || game.claim_hash === null || game.claim_hash !== (await hmac(secret, `claim:${claim}`))) continue;
     const ranks = game.unranked_reason === 'anonymous';
-    const owned: FinishedGame = { ...game, user_id: user.id, claim_hash: null, ranked: ranks ? 1 : game.ranked, unranked_reason: ranks ? null : game.unranked_reason };
+    const owned: FinishedGame = {
+      ...game,
+      user_id: user.id,
+      claim_hash: null,
+      ranked: ranks ? 1 : game.ranked,
+      unranked_reason: ranks ? null : game.unranked_reason,
+      named: user.name === null ? 0 : 1,
+    };
     const res = await env.DB.prepare('UPDATE games SET user_id = ?, claim_hash = NULL, ranked = ?, unranked_reason = ? WHERE id = ? AND user_id IS NULL')
       .bind(user.id, owned.ranked, owned.unranked_reason, id)
       .run();
     if (res.meta.changes > 0) claimed.push(owned);
   }
   // Results after every claim, so best and newBest reflect the whole batch.
-  const results = await Promise.all(claimed.map((g) => resultOf(env, g)));
+  const results = await resultsOf(env, user.id, claimed);
   return json({ results } satisfies ClaimResponse);
 }

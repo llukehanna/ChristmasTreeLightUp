@@ -38,3 +38,13 @@ CREATE INDEX games_board ON games (ms, finished_at) WHERE ranked = 1;
 CREATE INDEX games_user ON games (user_id, finished_at DESC);
 CREATE INDEX games_ip ON games (ip_hash, started_at);
 CREATE INDEX games_abandoned ON games (started_at) WHERE finished_at IS NULL;
+
+-- One row per game start, for the start rate limit (200 per IP hash per hour). Kept apart from games so a start whose
+-- game a 422 deleted still counts. Rows older than an hour are pruned, a few at a time, on each start.
+CREATE TABLE starts (
+  ip_hash TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX starts_ip ON starts (ip_hash, at);
+-- The prune finds old rows by time alone; without this it would read every start, every start.
+CREATE INDEX starts_at ON starts (at);

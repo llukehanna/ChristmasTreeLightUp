@@ -19,7 +19,7 @@ describe('migrations', () => {
 
   it('create the tables and the indexes the spec names', async () => {
     const names = (await db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'").all<{ name: string }>()).results.map((r) => r.name);
-    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_ip', 'games_abandoned']));
+    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_ip', 'games_abandoned', 'starts', 'starts_ip', 'starts_at']));
   });
 
   it('games_board and games_abandoned are partial indexes', async () => {

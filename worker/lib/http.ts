@@ -109,5 +109,44 @@ export const cookie = (name: string, value: string, maxAgeSec: number): string =
 /** Set by Cloudflare's edge; a client cannot forge it the way it can X-Forwarded-For. */
 export const clientIp = (req: Request): string => req.headers.get('cf-connecting-ip')?.trim() || 'unknown';
 
+const HEXTET = /^[0-9a-f]{1,4}$/;
+
+/** "a.b.c.d" as two hextets, or null. */
+function v4Hextets(text: string): string[] | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  const b = m?.slice(1).map(Number);
+  if (!b || b.some((x) => x > 255)) return null;
+  return [((b[0] << 8) | b[1]).toString(16), ((b[2] << 8) | b[3]).toString(16)];
+}
+
+/**
+ * What the start rate limit counts by: an IPv4 address as it is; an IPv6 address by its /64 (a home or a host usually
+ * holds a whole /64), written one way however the address was spelled. Anything unparseable stays as it is
+ * (lower-cased), so it only ever limits itself.
+ */
+export function rateKey(ip: string): string {
+  const text = ip.trim().toLowerCase();
+  if (!text.includes(':')) return text;
+  const halves = text.replace(/^\[(.*)\]$/, '$1').replace(/%.*$/, '').split('::');
+  if (halves.length > 2) return text;
+  const groups = halves.map((h) => (h === '' ? [] : h.split(':')));
+  const tail = groups[groups.length - 1];
+  if (tail.length && tail[tail.length - 1].includes('.')) {
+    const v4 = v4Hextets(tail[tail.length - 1]);
+    if (!v4) return text;
+    tail.splice(tail.length - 1, 1, ...v4);
+  }
+  const given = groups.flat();
+  if (!given.every((g) => HEXTET.test(g))) return text;
+  if (groups.length === 2 ? given.length > 7 : given.length !== 8) return text;
+  const full = (groups.length === 2 ? [...groups[0], ...Array<string>(8 - given.length).fill('0'), ...groups[1]] : given).map((g) => parseInt(g, 16));
+  // ::ffff:a.b.c.d is an IPv4 client: key it as one, not as the single /64 every such address shares.
+  if (full.slice(0, 5).every((g) => g === 0) && full[5] === 0xffff) return [full[6] >> 8, full[6] & 255, full[7] >> 8, full[7] & 255].join('.');
+  return `${full
+    .slice(0, 4)
+    .map((g) => g.toString(16))
+    .join(':')}::/64`;
+}
+
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 export const isLocalHost = (req: Request): boolean => LOCAL_HOSTS.has(new URL(req.url).hostname);

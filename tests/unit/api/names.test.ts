@@ -4,7 +4,8 @@ import { cleanName, isReserved, nameKey } from '../../../src/api/names';
 it('cleanName keeps 3–20 letters, digits, spaces, - and _, trimmed, with no double spaces', () => {
   expect(cleanName('  Tinsel Tom ')).toBe('Tinsel Tom');
   expect(cleanName('lat_long-2')).toBe('lat_long-2');
-  for (const bad of ['ab', 'x'.repeat(21), 'a  b', 'émile', 'ana!', 'Luke H.', 42, null]) expect(cleanName(bad), String(bad)).toBeNull();
+  expect(cleanName('--7')).toBe('--7'); // one letter or digit is enough
+  for (const bad of ['ab', 'x'.repeat(21), 'a  b', 'émile', 'ana!', 'Luke H.', '---', '_ _', ' - _ - ', 42, null]) expect(cleanName(bad), String(bad)).toBeNull();
 });
 
 it('reserves admin, aglow, santa and friends whatever the case or separators', () => {

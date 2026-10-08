@@ -33,7 +33,7 @@ export async function startDb(): Promise<{ db: Db; dispose: () => Promise<void> 
 }
 
 export async function wipe(db: Db): Promise<void> {
-  await db.batch(['games', 'sessions', 'users'].map((t) => db.prepare(`DELETE FROM ${t}`)));
+  await db.batch(['games', 'sessions', 'users', 'starts'].map((t) => db.prepare(`DELETE FROM ${t}`)));
 }
 
 export function testEnv(db: Db, over: Partial<AppEnv> = {}): AppEnv {
