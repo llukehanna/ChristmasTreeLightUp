@@ -32,8 +32,11 @@ export class Run {
   readonly startEpoch: number;
   readonly revealAt: number;
   readonly interactiveAt: number;
-  /** Integer: board time + logOffset = log time. */
-  private readonly logOffset: number;
+  /**
+   * Integer: board time + logOffset = log time. It only grows, and only at a resume with no turn in flight (see
+   * resumeIfDue), so the browser's board and the replay's never disagree about when a turn ends.
+   */
+  private logOffset: number;
   private pausedNow = false;
 
   constructor(board: Board, s: RunStart) {
@@ -60,19 +63,22 @@ export class Run {
     return this.clock.elapsedMs(now);
   }
 
-  /** Each frame: the clock starts (or resumes) once the reveal is over, and turns due by `now` finish. */
-  frame(now: number): BoardEvent[] {
-    this.resumeIfDue(now);
-    return this.won(this.advance(now), now);
+  /**
+   * Each frame: the clock starts (or resumes) once the reveal is over, and turns due by `now` finish. `epochNow` is
+   * Date.now() at the same instant (see resumeIfDue); every entry point that can resume the clock takes it.
+   */
+  frame(now: number, epochNow?: number): BoardEvent[] {
+    const resumed = this.resumeIfDue(now, epochNow);
+    return this.won([...resumed, ...this.advance(now)], now);
   }
 
   /** A tap on tile `i`: refused while paused, before the reveal ends or after the win. Logged only if the board takes it. */
-  tap(i: number, now: number): BoardEvent[] {
+  tap(i: number, now: number, epochNow?: number): BoardEvent[] {
     if (this.pausedNow || now < this.interactiveAt || this.board.won) return [];
-    this.resumeIfDue(now);
+    const resumed = this.resumeIfDue(now, epochNow);
     const t = Math.max(this.logNow(now), this.lastLogT());
     const bt = t - this.logOffset;
-    const events = this.advance(bt);
+    const events = [...resumed, ...this.advance(bt)];
     if (this.board.won) return this.won(events, now);
     const tapped = this.board.tap(i, bt);
     if (tapped.length) this.log.tap(t, i);
@@ -87,10 +93,10 @@ export class Run {
     this.log.pause(this.logNow(now));
   }
 
-  /** Back from a pause: the clock (and the log) resume now, or when the reveal ends. */
-  resume(now: number): void {
+  /** Back from a pause: the clock (and the log) resume now, or when the reveal ends. Returns turns that finished meanwhile. */
+  resume(now: number, epochNow?: number): BoardEvent[] {
     this.pausedNow = false;
-    this.resumeIfDue(now);
+    return this.won(this.resumeIfDue(now, epochNow), now);
   }
 
   /**
@@ -114,10 +120,25 @@ export class Run {
     return events;
   }
 
-  private resumeIfDue(now: number): void {
-    if (this.pausedNow || this.board.won || this.clock.running || now < this.interactiveAt) return;
+  /**
+   * The clock resumes (and the log's 'r') once nothing holds it: not paused, past the reveal, not won.
+   *
+   * performance.now() stops while a phone sleeps, so a pause that spans a sleep would log less time away than really
+   * passed, and the server would call the run 'clock'. So first the turns due by now finish (as the replay will do at
+   * the 'r'); then, if none is still in flight, log time catches up with the wall clock (`epochNow`), exactly as a
+   * reload's would: the extra time lands inside this pause, which the server trusts and caps. With a turn in flight
+   * the offset stays, so that turn ends at the same log time here and in the replay.
+   */
+  private resumeIfDue(now: number, epochNow?: number): BoardEvent[] {
+    if (this.pausedNow || this.board.won || this.clock.running || now < this.interactiveAt) return [];
+    const events = this.advance(Math.max(this.logNow(now), this.lastLogT()) - this.logOffset);
+    if (this.board.won) return events;
+    if (epochNow !== undefined && this.board.rotating.size === 0) {
+      this.logOffset = Math.max(this.logOffset, Math.round(epochNow - this.startEpoch - now));
+    }
     this.clock.resume(now);
     this.log.resume(Math.max(this.logNow(now), this.lastLogT()));
+    return events;
   }
 
   private lastLogT(): number {

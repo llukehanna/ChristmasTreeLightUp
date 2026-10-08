@@ -516,7 +516,7 @@ export class App {
     // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
     if (this.accounts.sheetOpen && !this.paused && this.canPause(now)) this.pause(false);
     // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
-    this.handle(this.run.frame(now), now);
+    this.handle(this.run.frame(now, Date.now()), now);
     this.updateHud(now);
     // While paused the stage is blurred behind the overlay: draw one frame, then idle until resume.
     if (this.paused) {
@@ -612,7 +612,7 @@ export class App {
     this.hideIntro();
     // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
     this.radio.firstGesture();
-    this.handle(this.run.tap(i, now), now);
+    this.handle(this.run.tap(i, now, Date.now()), now);
   }
 
   private setCamera(c: Camera): void {
@@ -778,7 +778,9 @@ export class App {
     const hadFocus = document.activeElement === el('pause');
     this.setPaused(false);
     // The clock (and the log) resume right away, so a tap before the next frame is never logged inside the pause.
-    this.run.resume(performance.now());
+    // Date.now() lets the log catch up with time a sleeping phone hid from performance.now() (Run.resumeIfDue).
+    const now = performance.now();
+    this.handle(this.run.resume(now, Date.now()), now);
     const btn = el('pause-btn');
     if (hadFocus && !btn.hidden) btn.focus({ preventScroll: true });
   }
