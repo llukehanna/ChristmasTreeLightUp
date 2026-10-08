@@ -100,7 +100,7 @@ describe('Google sign-in', () => {
     expect(await db.prepare('SELECT google_sub, email, name FROM users').first()).toEqual({ google_sub: 'g-1', email: 'ana@example.com', name: null });
     // Only an HMAC of the token is stored.
     expect((await db.prepare('SELECT token_hash FROM sessions').first<{ token_hash: string }>())?.token_hash).not.toBe(sessionOf(back).split('=')[1]);
-    expect(await me(sessionOf(back), env)).toEqual({ user: { name: null, isAdmin: false } });
+    expect(await me(sessionOf(back), env)).toEqual({ user: { name: null, isAdmin: false, starHead: false } });
   });
 
   it('fails back to the page with ?auth=failed: wrong state, refused or bad token, unverified email, a cancel, no flow cookie', async () => {
@@ -190,7 +190,7 @@ describe('Google sign-in', () => {
     await signIn(env, 'ana@example.com', 'Meridian');
     await db.prepare("UPDATE users SET google_sub = 'fake:new@example.com'").run();
     const again = await signIn(env, 'new@example.com');
-    expect(await me(again)).toEqual({ user: { name: 'Meridian', isAdmin: false } });
+    expect(await me(again)).toEqual({ user: { name: 'Meridian', isAdmin: false, starHead: false } });
     expect(await db.prepare('SELECT email FROM users').first()).toEqual({ email: 'new@example.com' });
     expect(await count('users')).toBe(1);
   });
@@ -259,8 +259,8 @@ describe('sessions', () => {
   it('isAdmin follows ADMIN_EMAILS (comma-separated, any case, spaces ignored)', async () => {
     const env = testEnv(db, { ADMIN_EMAILS: ' other@example.com , ANA@example.com ' });
     const s = await signIn(env, 'ana@example.com');
-    expect(await me(s, env)).toEqual({ user: { name: null, isAdmin: true } });
-    expect(await me(s, testEnv(db, { ADMIN_EMAILS: undefined }))).toEqual({ user: { name: null, isAdmin: false } });
+    expect(await me(s, env)).toEqual({ user: { name: null, isAdmin: true, starHead: false } });
+    expect(await me(s, testEnv(db, { ADMIN_EMAILS: undefined }))).toEqual({ user: { name: null, isAdmin: false, starHead: false } });
   });
 
   it('without AUTH_SECRET: signed-out calls still work, a session cookie gets 503 not_configured', async () => {
@@ -308,7 +308,7 @@ describe('names', () => {
     expect(taken.status).toBe(409);
     expect(await body(taken)).toEqual({ error: 'taken', message: 'That name is taken.' });
     const ok = await call(env, 'POST', '/api/auth/name', { cookie: ana, body: { name: ' Tinsel Tom ' } });
-    expect(await body(ok)).toEqual({ user: { name: 'Tinsel Tom', isAdmin: false } });
+    expect(await body(ok)).toEqual({ user: { name: 'Tinsel Tom', isAdmin: false, starHead: false } });
     const again = await call(env, 'POST', '/api/auth/name', { cookie: ana, body: { name: 'Other Name' } });
     expect(again.status).toBe(409);
     expect((await body(again)).error).toBe('has_name');

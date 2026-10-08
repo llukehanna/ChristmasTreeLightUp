@@ -58,7 +58,7 @@ describe('the sign-in card', () => {
 describe('the delete card', () => {
   it('enables Delete once the name is typed (any case); an account without a name types its email', () => {
     const inner = document.createElement('div');
-    deleteView({ name: 'Comet', isAdmin: false }).render(inner);
+    deleteView({ name: 'Comet', isAdmin: false, starHead: false }).render(inner);
     const input = inner.querySelector<HTMLInputElement>('#acct-confirm');
     const go = inner.querySelector<HTMLButtonElement>('[data-act="confirm-delete"]');
     expect(inner.querySelector('label')?.textContent).toBe('Type your name, Comet, to confirm');
@@ -67,7 +67,7 @@ describe('the delete card', () => {
     input.value = ' comet ';
     input.dispatchEvent(new Event('input'));
     expect(go?.disabled).toBe(false);
-    expect(confirmMatches({ name: null, isAdmin: false }, 'ana@example.com')).toBe(true);
-    expect(confirmMatches({ name: null, isAdmin: false }, 'ana')).toBe(false);
+    expect(confirmMatches({ name: null, isAdmin: false, starHead: false }, 'ana@example.com')).toBe(true);
+    expect(confirmMatches({ name: null, isAdmin: false, starHead: false }, 'ana')).toBe(false);
   });
 });

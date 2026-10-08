@@ -40,7 +40,7 @@ it('signed out, the chip reads Sign in and opens the sign-in card, not the menu'
 });
 
 it('signed in: the name (escaped) and initial, and a menu with the leaderboard, your games, sign out, delete and privacy', () => {
-  menu.render({ name: '<Comet>', isAdmin: false });
+  menu.render({ name: '<Comet>', isAdmin: false, starHead: false });
   expect(menu.chip.getAttribute('aria-label')).toBe('Account: <Comet>');
   expect(menu.chip.querySelector('.acct-chip-l')?.textContent).toBe('<Comet>');
   expect(menu.chip.querySelector('.acct-av')?.textContent).toBe('<');
@@ -50,7 +50,7 @@ it('signed in: the name (escaped) and initial, and a menu with the leaderboard, 
 });
 
 it('no name yet: the person icon and "Account" (no initial), a menu that offers a name; an admin also gets Radio admin', () => {
-  menu.render({ name: null, isAdmin: true });
+  menu.render({ name: null, isAdmin: true, starHead: false });
   expect(menu.chip.getAttribute('aria-label')).toBe('Account');
   expect(menu.chip.querySelector('svg')).not.toBeNull();
   expect(menu.chip.querySelector('.acct-av')).toBeNull();
@@ -61,15 +61,15 @@ it('no name yet: the person icon and "Account" (no initial), a menu that offers 
 });
 
 it('the head line: rank and best once loaded, or no ranked runs yet', () => {
-  menu.render({ name: 'Comet', isAdmin: false }, { rank: 12, best: 81_049 });
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 12, best: 81_049 });
   expect(drop().querySelector('small')?.textContent).toBe('#12 all-time · best 1:21.0');
   expect(drop().querySelector('.acct-r')?.textContent).toBe('#12');
-  menu.render({ name: 'Comet', isAdmin: false }, { rank: null, best: null });
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: null, best: null });
   expect(drop().querySelector('small')?.textContent).toBe('No ranked runs yet');
 });
 
 it('opens from the chip (telling the app), routes items, and closes on Escape back to the chip', () => {
-  menu.render({ name: 'Comet', isAdmin: false });
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
   menu.chip.click();
   expect(hooks.open).toHaveBeenCalledTimes(1);
   expect(menu.isOpen).toBe(true);
@@ -85,18 +85,18 @@ it('opens from the chip (telling the app), routes items, and closes on Escape ba
 });
 
 it('keeps keyboard focus on the same item when the summary arrives and the menu re-renders', () => {
-  menu.render({ name: 'Comet', isAdmin: false });
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
   menu.open();
   drop().querySelector<HTMLElement>('[data-act="games"]')?.focus();
-  menu.render({ name: 'Comet', isAdmin: false }, { rank: 3, best: 50_000 });
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 3, best: 50_000 });
   expect(document.activeElement).toBe(drop().querySelector('[data-act="games"]'));
   drop().querySelector<HTMLElement>('a[href="/privacy"]')?.focus();
-  menu.render({ name: 'Comet', isAdmin: false }, { rank: 2, best: 49_000 });
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 2, best: 49_000 });
   expect(document.activeElement).toBe(drop().querySelector('a[href="/privacy"]'));
 });
 
 it('signing out closes an open menu', () => {
-  menu.render({ name: 'Comet', isAdmin: false });
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
   menu.open();
   menu.render(null);
   expect(menu.isOpen).toBe(false);

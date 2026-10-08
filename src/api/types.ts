@@ -10,10 +10,17 @@ export interface User {
   /** null until the player picks one. */
   name: string | null;
   isAdmin: boolean;
+  /** The tree's topper preference: on load and sign-in the account's value wins over this browser's. */
+  starHead: boolean;
 }
 
 export interface MeResponse {
   user: User | null;
+}
+
+/** PUT /api/me/star-head { on }'s answer. */
+export interface StarHeadResponse {
+  starHead: boolean;
 }
 
 export interface NameCheck {

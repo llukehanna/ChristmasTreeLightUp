@@ -15,6 +15,8 @@ export interface SessionUser {
   /** Lower-cased; verified by Google at sign-in. Never shown publicly. */
   email: string;
   expiresAt: number;
+  /** The tree's topper preference (migration 0003). */
+  starHead: boolean;
   /** The cookie's token, to set the cookie again on renewal. */
   token: string;
   tokenHash: string;
@@ -37,11 +39,11 @@ export async function currentUser(req: Request, env: AppEnv): Promise<SessionUse
   if (!token || !TOKEN.test(token)) return null;
   const tokenHash = await sessionHash(authSecret(env), token);
   const row = await env.DB.prepare(
-    'SELECT u.id, u.name, u.email, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?',
+    'SELECT u.id, u.name, u.email, u.star_head, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?',
   )
     .bind(tokenHash, Date.now())
-    .first<{ id: number; name: string | null; email: string; expires_at: number }>();
-  return row && { id: row.id, name: row.name, email: row.email, expiresAt: row.expires_at, token, tokenHash };
+    .first<{ id: number; name: string | null; email: string; star_head: number; expires_at: number }>();
+  return row && { id: row.id, name: row.name, email: row.email, starHead: row.star_head === 1, expiresAt: row.expires_at, token, tokenHash };
 }
 
 export async function requireUser(req: Request, env: AppEnv): Promise<SessionUser> {
@@ -69,4 +71,8 @@ export async function requireAdmin(req: Request, env: AppEnv): Promise<SessionUs
 }
 
 /** What the browser may know about the signed-in player (never the email). */
-export const publicUser = (env: AppEnv, u: { name: string | null; email: string }): User => ({ name: u.name, isAdmin: isAdmin(env, u.email) });
+export const publicUser = (env: AppEnv, u: { name: string | null; email: string; starHead: boolean }): User => ({
+  name: u.name,
+  isAdmin: isAdmin(env, u.email),
+  starHead: u.starHead,
+});
