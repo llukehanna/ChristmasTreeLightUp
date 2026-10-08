@@ -11,7 +11,7 @@ export function cleanName(raw: unknown): string | null {
   return /^[A-Za-z0-9 _-]{3,20}$/.test(name) && !name.includes('  ') ? name : null;
 }
 
-/** Names are unique case-insensitively. */
-export const nameKey = (name: string): string => name.toLowerCase();
+/** Names are unique ignoring case, spaces, "-" and "_", so "Tinsel Tom", "Tinsel_Tom" and "tinsel-tom" can't all exist. */
+export const nameKey = (name: string): string => name.toLowerCase().replace(/[ _-]/g, '');
 
-export const isReserved = (name: string): boolean => RESERVED_NAMES.includes(name.toLowerCase().replace(/[ _-]/g, ''));
+export const isReserved = (name: string): boolean => RESERVED_NAMES.includes(nameKey(name));

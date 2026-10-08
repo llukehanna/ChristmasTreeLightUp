@@ -12,3 +12,8 @@ it('reserves admin, aglow, santa and friends whatever the case or separators', (
   for (const n of ['Santa Fan', 'Comet', 'Aglowing']) expect(isReserved(n), n).toBe(false);
   expect(nameKey('Comet')).toBe('comet');
 });
+
+it('nameKey ignores case, spaces, - and _, so look-alike names collide', () => {
+  for (const n of ['Tinsel Tom', 'Tinsel_Tom', 'tinsel-tom', 'TINSELTOM', 'tin sel_tom']) expect(nameKey(n), n).toBe('tinseltom');
+  expect(nameKey('Tinsel Tim')).not.toBe(nameKey('Tinsel Tom'));
+});
