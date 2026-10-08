@@ -42,3 +42,30 @@ export function claimBatches(claims: readonly StoredClaim[], size = MAX_CLAIMS_P
   for (let i = 0; i < claims.length; i += size) out.push(claims.slice(i, i + size).map(({ id, claim }) => ({ id, claim })));
   return out;
 }
+
+/**
+ * Runs `task` one at a time. A call while it runs isn't dropped: it marks one more run, which starts as soon as the
+ * current one ends (however many calls came meanwhile). App.claimAll uses it so a claim stored while a claim request
+ * is in flight (a new run finished) still goes out.
+ */
+export function coalesced(task: () => Promise<void>): () => Promise<void> {
+  let running = false;
+  let again = false;
+  const run = async (): Promise<void> => {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    try {
+      await task();
+    } finally {
+      running = false;
+      if (again) {
+        again = false;
+        run().catch(() => undefined);
+      }
+    }
+  };
+  return run;
+}

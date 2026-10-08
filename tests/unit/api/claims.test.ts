@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest';
-import { addClaim, CLAIM_TTL_MS, claimBatches, MAX_STORED_CLAIMS, readClaims, removeClaims } from '../../../src/api/claims';
+import { addClaim, CLAIM_TTL_MS, claimBatches, coalesced, MAX_STORED_CLAIMS, readClaims, removeClaims } from '../../../src/api/claims';
 
 beforeEach(() => localStorage.clear());
 
@@ -40,4 +40,48 @@ it('sends 8 claims per request, without the timestamps', () => {
   const batches = claimBatches(claims);
   expect(batches.map((b) => b.length)).toEqual([8, 8, 1]);
   expect(batches[0][0]).toEqual({ id: 'g0', claim: 'x' });
+});
+
+it("a claim stored while a claim run is in flight isn't skipped: one more run follows (App.claimAll)", async () => {
+  const sent: string[][] = [];
+  const replies: (() => void)[] = [];
+  // The server answers when the test says so.
+  const claimRequest = (batch: { id: string }[]) =>
+    new Promise<void>((resolve) => {
+      sent.push(batch.map((c) => c.id));
+      replies.push(resolve);
+    });
+  let runs = 0;
+  const claimAll = coalesced(async () => {
+    runs++;
+    for (const batch of claimBatches(readClaims(5000))) {
+      await claimRequest(batch);
+      removeClaims(batch.map((c) => c.id));
+    }
+  });
+  addClaim({ id: 'a', claim: 'x' }, 1000);
+  const first = claimAll();
+  addClaim({ id: 'b', claim: 'y' }, 2000); // a new run finishes meanwhile
+  void claimAll();
+  void claimAll(); // several calls in flight fold into one more run
+  expect(sent).toEqual([['a']]);
+  replies[0]();
+  await first;
+  await Promise.resolve();
+  expect(sent).toEqual([['a'], ['b']]);
+  replies[1]();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(runs).toBe(2);
+  expect(readClaims(5000)).toEqual([]);
+});
+
+it('a coalesced task that fails still lets the next call run', async () => {
+  let calls = 0;
+  const task = coalesced(async () => {
+    calls++;
+    throw new Error('offline');
+  });
+  await expect(task()).rejects.toThrow('offline');
+  await expect(task()).rejects.toThrow('offline');
+  expect(calls).toBe(2);
 });
