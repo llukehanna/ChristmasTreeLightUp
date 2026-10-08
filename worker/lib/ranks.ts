@@ -28,3 +28,28 @@ export interface BestRun {
 export function bestOf(db: Db, userId: number): Promise<BestRun | null> {
   return db.prepare('SELECT id, ms, finished_at FROM games WHERE user_id = ? AND ranked = 1 ORDER BY ms, finished_at LIMIT 1').bind(userId).first<BestRun>();
 }
+
+/** The top 50 runs: fastest, then earliest. Reads games_board (a partial index on ranked runs) in order. */
+export const TOP_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at ${ON_BOARD} ORDER BY g.ms, g.finished_at, g.id LIMIT ${TOP}`;
+
+export interface TopRow {
+  id: string;
+  user_id: number;
+  name: string;
+  ms: number;
+  finished_at: number;
+}
+
+export async function topRuns(db: Db): Promise<TopRow[]> {
+  return (await db.prepare(TOP_SQL).all<TopRow>()).results;
+}
+
+/** Ranks for rows in board order: a run tied with the one above (same ms and finish) shares its rank (spec §2's formula). */
+export function rankRows(rows: readonly { ms: number; finished_at: number }[]): number[] {
+  const ranks: number[] = [];
+  rows.forEach((r, i) => {
+    const prev = rows[i - 1];
+    ranks.push(prev && prev.ms === r.ms && prev.finished_at === r.finished_at ? ranks[i - 1] : i + 1);
+  });
+  return ranks;
+}

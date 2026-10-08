@@ -1,6 +1,7 @@
-import type { MeResponse } from '../../src/api/types.js';
+import type { MeResponse, MyGamesResponse, RecentGame, UnrankedReason } from '../../src/api/types.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
+import { bestOf, boardTotal, rankOf, topRuns, type TopRow } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
 
 const DAY_MS = 86_400_000;
@@ -23,4 +24,40 @@ export async function deleteMe(req: Request, env: AppEnv): Promise<Response> {
   if (norm((await readJson(req)).confirm) !== norm(user.name ?? user.email)) throw new HttpError(400, 'confirm', 'Type it exactly as shown to confirm.');
   await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
   return json({}, { headers: { 'Set-Cookie': clearSessionCookie() } });
+}
+
+interface RecentRow {
+  id: string;
+  ms: number;
+  finished_at: number;
+  ranked: number;
+  unranked_reason: UnrankedReason | null;
+}
+
+/** GET /api/me/games: your best and its rank, how many of the top 50 are yours, and your last 30 games. */
+export async function myGames(req: Request, env: AppEnv): Promise<Response> {
+  const user = await requireUser(req, env);
+  const [best, recent, top, total] = await Promise.all([
+    bestOf(env.DB, user.id),
+    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
+      .bind(user.id)
+      .all<RecentRow>(),
+    user.name ? topRuns(env.DB) : Promise.resolve<TopRow[]>([]),
+    boardTotal(env.DB),
+  ]);
+  const rank = best && user.name ? await rankOf(env.DB, best.ms, best.finished_at) : null;
+  const games: RecentGame[] = recent.results.map((g) => ({
+    id: g.id,
+    ms: g.ms,
+    finishedAt: g.finished_at,
+    ranked: g.ranked === 1,
+    reason: g.unranked_reason,
+    isBest: g.id === best?.id,
+  }));
+  return json({
+    best: best && { ms: best.ms, rank, finishedAt: best.finished_at },
+    inTop: top.filter((r) => r.user_id === user.id).length,
+    total,
+    games,
+  } satisfies MyGamesResponse);
 }

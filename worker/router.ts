@@ -6,6 +6,7 @@ import * as session from './routes/admin/session.js';
 import * as adminStations from './routes/admin/stations.js';
 import * as upload from './routes/admin/upload.js';
 import * as auth from './routes/auth.js';
+import * as board from './routes/board.js';
 import * as games from './routes/games.js';
 import * as me from './routes/me.js';
 import * as stations from './routes/stations.js';
@@ -26,7 +27,9 @@ export const ROUTES: readonly Route[] = [
   ['POST', /^\/api\/auth\/signout$/, auth.signOut],
   ['GET', /^\/api\/me$/, me.getMe],
   ['DELETE', /^\/api\/me$/, me.deleteMe],
+  ['GET', /^\/api\/me\/games$/, me.myGames],
   ['POST', /^\/api\/games$/, games.startGame],
+  ['GET', /^\/api\/board$/, board.getBoard],
   ['POST', /^\/api\/games\/claim$/, games.claimGames],
   ['POST', /^\/api\/games\/([A-Za-z0-9_-]{16,64})\/finish$/, games.finishGame],
   ['POST', /^\/api\/admin\/login$/, login.POST],
