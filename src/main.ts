@@ -1,5 +1,6 @@
 import './styles.css';
 import './ui/radio.css';
+import './ui/account.css';
 import { App } from './app';
 import { installDebugHook } from './debug';
 
