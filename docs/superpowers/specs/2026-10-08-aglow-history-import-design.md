@@ -22,7 +22,7 @@ Two parts:
 | Storage | Normal `games` rows, `source = 'import'` (new column), ranked, no log. They rank like any run. Replay and judge never see them. |
 | Undo | `DELETE FROM games WHERE source = 'import' AND user_id = <id>` (README). |
 | Account stats | Every finished game (imported included) counts for solved and average; best is the best ranked run (the board's "your best"); streaks come from distinct local days of finishes, in the client's time zone. |
-| Where they show | Signed in: the results tag's Solved, Average and Day streak, and a new totals row in Your games. Signed out, offline or loading: the device's stats, as today. The device keeps recording `aglow.stats` either way. |
+| Where they show | Signed in: the results tag's Solved, Average and Day streak (the account's, unless this device has solved more games than the account: then the device's, §6.2), and a new totals row in Your games. Signed out, offline or loading: the device's stats, as today. The device keeps recording `aglow.stats` either way. |
 
 ## Non-goals
 
@@ -101,7 +101,7 @@ Response **200** (`ImportResponse`):
 { "added": 40, "already": false, "streak": 3, "longestStreak": 5, "clamped": false }
 ```
 
-- `added`: rows inserted. `already`: `added === 0` (this `importId` was imported before). `streak` / `longestStreak`: what the dates show after clamping (§4.2); `clamped`: either differs from the request.
+- `added`: rows inserted. `already`: `added === 0` (this `importId` was imported before). `streak` / `longestStreak`: what the dates show after clamping (§4.2); `clamped`: either differs from the request. **On `already`, `streak`, `longestStreak` and `clamped` describe the request just sent, not the runs stored earlier: the client ignores them** (it appends the clamped sentence only when `!already`).
 - Steps: `requireAdmin` → read and validate → fabricate (pure) → `SELECT 1 FROM games WHERE id = <run 0's id>` → if absent, **one** statement inserts every run from a JSON array bound as `?2` → `resetBoardCache()` (the isolate's top 50 and total).
 
 ```sql
@@ -132,9 +132,9 @@ Response **200** (`AccountStats`), `Cache-Control: no-store`:
 ```
 
 - `solved`: finished games of the user (any ranked state, any source). `totalMs`: the sum of their `ms`. `averageMs`: `round(totalMs / solved)`, null when `solved = 0`. `bestMs`: the best ranked run (`BEST_SQL`, the board's "your best"), null when none. `imported`: finished games with `source = 'import'`.
-- Days: a finish's local day is `floor((finished_at − tz × 60000) / 86400000)` (days since 1970-01-01). The query returns the distinct days in order (`CAST(?2 AS INTEGER)` keeps the division integral whatever type D1 binds a JS number as).
+- Days: a finish's local day is `floor((finished_at − tz × 60000) / 86400000)` (days since 1970-01-01). One `GROUP BY` query returns, per local day in order, the count, the sum of `ms` and the count of imported games; the Worker sums them for `solved`, `totalMs` and `imported` and takes the days for the streaks (`CAST(?2 AS INTEGER)` keeps the division integral whatever type D1 binds a JS number as).
 - `streak`: the run of consecutive days ending at the last played day, if that day is `today` or `today − 1`; otherwise 0. `longestStreak`: the longest run. `lastSolvedDay`: the last played day as `YYYY-MM-DD`, null when none.
-- One D1 batch of three statements: totals, distinct days, best. Rows read ≈ the user's finished games (through `games_user`); CPU is a loop over distinct days.
+- One D1 batch of two statements: the per-day totals (above) and the best (`BEST_SQL`, unchanged). Rows read are about **two per finished game** on the account (the `games_user` index entry and the row; measured 4,000 for 2,000 games, pinned by a test), per call; CPU is a loop over the days. (The first version used three statements, totals plus distinct days plus best, and read about three per game.)
 
 ### 3.3 `GET /api/me/games` (changed)
 
@@ -192,7 +192,7 @@ Whole, non-negative parts in proportion to positive `weights`, summing to `total
 
 ### 4.7 Cost
 
-About 1 ms of CPU for 2,000 runs (measured in Node), plus about 0.5 ms to stringify them: inside the Free plan's 10 ms. D1 writes about 8,000 rows for 2,000 runs (the row and three index entries each) of the Free plan's 100,000 a day.
+About 1 ms of CPU for 2,000 runs (measured in Node), plus about 0.5 ms to stringify them: inside the Free plan's 10 ms. D1 writes about 10,000 rows for 2,000 runs (about 5 per run: the table row, its primary-key autoindex and the `games_board`, `games_user` and `games_best` entries; measured) of the Free plan's 100,000 a day. Reads: see §9 for what imported runs cost every rank computation behind them.
 
 ## 5. Day helpers (`worker/lib/days.ts`, pure)
 
@@ -210,11 +210,12 @@ About 1 ms of CPU for 2,000 runs (measured in Node), plus about 0.5 ms to string
 A card below the upload queue on the editor screen (`src/admin/history-card.ts`, pure helpers in `src/admin/history.ts`), built once and kept across renders.
 
 - **Defaults** from `loadStats()` (`aglow.stats`): Games solved = `solved`; Best time = `bestSeconds` as `m:ss`; Average time = `round(totalSeconds × 1000 / solved)` ms shown as `m:ss.t` (`formatMs`); Current streak = `max(1, streak)`; Longest streak = `max(1, longestStreak, streak)`; Last solved day = `lastSolvedDay` (a date input, min `2026-09-29`, max local today). No solved game, best or last day → the card says there is nothing to import.
-- **Played games**: on build, `GET /api/me/stats` → "Your account already has {played} played games[ and {imported} imported runs]." (`played = solved − imported`) plus the double-counting hint (§7).
+- **Played games**: on build, `GET /api/me/stats` → "Your account already has {played} played games[ and {imported} imported runs]. Its streak is {n} day(s), longest {n} day(s)." (`played = solved − imported`; the streaks are the account's, so a second device is entered with them in view, since devices merge their days) plus the double-counting hint (§7).
 - **Average**: if its text is untouched, the exact default ms is sent (so the total matches the device's to the ms); a typed average is parsed (`m:ss` or `m:ss.t`, up to 3 decimals). With 1 game, the average sent is the best.
 - **Client validation** mirrors §3.1 (messages in §7); nothing is sent while it fails.
-- **Preview** (added in Task 5): under the fields, live as they are edited, one line says what the import will create: "Will add {n} run(s): best {m:ss.t}, average {m:ss.t}, streak {n} day(s), longest streak {n} day(s), last played {YYYY-MM-DD}." While the form fails validation, the line shows the client message instead (§7) and the button is disabled. It hides once the device is imported.
-- **Import mark** (`localStorage['aglow.historyImport'] = {v: 1, importId, done, added}`): the id (16 random bytes, base64url, 22 characters) is created and saved just before the first send; a resend reuses it. Success saves `done: true` and `added`; the card then shows the result, disables the fields and shows the button as "Imported". A later visit reads the mark and stays disabled. (If storage is blocked, the id lives as long as the page; the played/imported line still shows what the account holds.)
+- **Preview** (added in Task 5): under the fields, live as they are edited, one line says what the import will create: "Will add {n} run(s): best {m:ss.t}, average {m:ss.t}, streak {n} day(s), longest streak {n} day(s), last played {YYYY-MM-DD}." A typed average is never rounded in the line: whole tenths read `m:ss.t`, and hundredths or thousandths are kept (`1:18.45`). While the form fails validation, the line shows the client message instead (§7), in the same colour as the card's other errors, and Import is inactive. It hides once the device is imported.
+- **Accessibility:** the preview is `aria-live="polite"`; the fields and the button have `aria-describedby` pointing at it (and the error line), and once imported the button points at the result. Import is `aria-disabled` rather than `disabled` (so it stays focusable, its reason is read, and it keeps keyboard focus when it goes inactive after a click); `send()` ignores it while invalid, sending or done. If Enter in a field submits and that field then disables, focus moves to the button.
+- **Import mark** (`localStorage['aglow.historyImport'] = {v: 1, importId, done, added}`): the id (16 random bytes, base64url, 22 characters) is created and saved just before the first send; a resend reuses it (the page keeps the mark in memory too, so a storage write that failed cannot mint a second id). Success saves `done: true` and `added`; the card then shows the result, disables the fields and shows the button as "Imported". A later visit reads the mark and stays disabled. (If storage is blocked, the id lives as long as the page; the played/imported line still shows what the account holds.)
 - A 401/403 from the import → the page's existing `authLost` (sign-in or Not authorized card). A failed stats call only changes the account line (§7), never the page.
 - Same-origin JSON through the admin's `call()`.
 
@@ -222,13 +223,14 @@ A card below the upload queue on the editor screen (`src/admin/history-card.ts`,
 
 - `Results.show` takes the numbers to paint as a `StatsView {solved, averageSeconds, streak}`; `Results.setStats(view)` repaints the three numbers at any time (even while hidden).
 - `deviceStatsView(stats)` = device numbers (as today); `accountStatsView(a)` = `{solved, averageSeconds: round(averageMs / 1000) (0 if null), streak}`.
-- The App's `syncStats()` runs after a finish is answered, after this run's claim, and whenever the account changes (sign-in, name, sign-out), and after a restored win. Signed out (or no solved tree): the device view. Signed in: `GET /api/me/stats` (today and offset from the browser), then the account view, if no newer call or new tree came first (a sequence number; `beginGame` bumps it and clears the account view). A failed call leaves the device's numbers.
-- `presentWin` shows the account view when it has already arrived, else the device view.
+- **Which view (ruling m-7, final review):** `statsViewFor(device, account)`. Signed in, with the account's stats in hand: **while the device's `solved` is greater than the account's `solved`, all three numbers come from the device; otherwise (equal or fewer) from the account.** No account stats (signed out, loading, failed): the device's. This keeps a player with a pre-accounts history from seeing Solved and Day streak drop to what the account holds since 2026-10-08 on signing in; it hands over to the account as soon as the account has solved as many games as the device (for example after an import, or games played elsewhere). A player who plays only on this one device keeps the device view while it records every game in both places (the device's count stays ahead by their pre-accounts total). Your games' totals row is always the account's.
+- The App's `syncStats()` runs after a finish is answered, after this run's claim, and whenever the account changes (sign-in, name, sign-out), and after a restored win. Signed out (or no solved tree): the device view. Signed in: `GET /api/me/stats` (today and offset from the browser), then `statsViewFor(device, account)` (the rule above), if no newer call or new tree came first (a sequence number; `beginGame` bumps it and clears the account view). A failed call leaves the device's numbers.
+- `presentWin` shows `statsViewFor(device, account)` with the account's stats when they have already arrived, else the device view.
 - The badge ("New best" / "Best m:ss") is unchanged.
 
 ### 6.3 Your games (`src/ui/board-sheets.ts`, `src/ui/accounts.ts`)
 
-- A totals row under the existing best/rank/top-50 row: Solved, Average (`formatMs`), Day streak, Longest; "–" while loading or on error. `listView` gains an optional sixth parameter `stats: Loadable<AccountStats>`.
+- A totals row under the existing best/rank/top-50 row: Solved, Average (`formatMs`), Day streak, Longest; "–" while loading or on error. A dash cell hides its dash from assistive technology (`aria-hidden`) and carries visually hidden text after its label (": loading", ": not available"), so it reads "Solved: loading" rather than a bare symbol (an `aria-label` on a `listitem` is not reliably read). `listView` gains an optional sixth parameter `stats: Loadable<AccountStats>`.
 - `Accounts` loads `api.myStats()` alongside `api.myGames()` whenever Your games opens or reloads; the session changing resets it.
 - An imported game's status pill reads "Imported" ("Personal best · Imported" when it is the best).
 
@@ -242,7 +244,7 @@ A card below the upload queue on the editor screen (`src/admin/history-card.ts`,
 | --- | --- |
 | Admin card title | Import this device's history |
 | Admin card lede | Adds this browser's saved games to your account as runs, so they count on the leaderboard and in your stats. Do it once per device. |
-| Admin, account line | Your account already has {played} played game(s)[ and {imported} imported run(s)]. This device's total includes any games you played here since accounts launched: subtract them from Games solved so they aren't counted twice. |
+| Admin, account line | Your account already has {played} played game(s)[ and {imported} imported run(s)]. Its streak is {n} day(s), longest {n} day(s). This device's total includes any games you played here since accounts launched: subtract them from Games solved so they aren't counted twice. |
 | Admin, account line while loading | Checking your account… |
 | Admin, account line on failure | Couldn't load your account's games. The import still works. |
 | Admin, nothing to import | This browser has no saved games to import. |
@@ -271,13 +273,18 @@ Plurals use the admin's `n run`/`n runs` style with `toLocaleString('en-US')` di
 - **Worker integration (`getPlatformProxy` + real local D1):** migration 0002 (`source` default and CHECK); import 401/403/cross-site 403/400; a 12-run import's rows (every column as §2), min and sum; idempotency (same id, other numbers → `already`); the board shows the runs at once after a primed cache; a finish on an imported id changes nothing; a 2,000-run import is one INSERT statement; `GET /api/me/stats` 401/400, zeros, counting rules, tz day boundaries, streak alive/broken; `GET /api/me/games` `imported`.
 - **E2E (Playwright on `wrangler dev`, fake Google, nothing routed):**
   - Admin (desktop): seed `aglow.stats` (3 games, best 50:00, average 51:40, streaks 1 and 2, last day today: slow on purpose so the shared e2e board's top runs don't change), sign in as `admin@example.com`, check the prefilled fields, import, see "Imported 3 runs from this device.", confirm through `/api/me/stats` and `/api/me/games`, reload: still imported and disabled.
-  - Accounts (desktop and phone): a device with history of its own (7 solved, a 10-day streak ending yesterday) signs in, names, wins: the results tag shows the account's 1 solved and 1-day streak, not the device's 8 and 11; Your games' totals show 1 solved.
+  - Accounts (desktop and phone): a device with history of its own (7 solved, a 10-day streak ending yesterday) signs in, names, wins: the results tag keeps the device's 8 solved and 11-day streak (the device has more games than the account's 1), and Your games' totals show the account's 1 solved. A second test fulfils `/api/me/stats` with 312 solved: the tag shows the account's 312, 1:18 and 4.
 
 ## 9. Rollout and undo
 
 - Same process as accounts: this spec, the plan, subagent-driven development with per-task review and a final review; Luke runs `npm run deploy`, which applies migration 0002 remotely (`wrangler d1 migrations apply aglow --remote`) before deploying.
 - Then Luke opens `/admin` on each of his devices, checks the numbers (subtracting games played there since 2026-10-08, as the account line suggests), and imports once per device.
-- Undo: `npx wrangler d1 execute aglow --remote --command "DELETE FROM games WHERE source = 'import' AND user_id = <id>"` (the id from `SELECT id, name FROM users WHERE email = '<email>'`), then remove `aglow.historyImport` from that browser's localStorage to allow importing again.
+- Undo, all devices: `npx wrangler d1 execute aglow --remote --command "DELETE FROM games WHERE source = 'import' AND user_id = <id>"` (the id from `SELECT id, name FROM users WHERE email = '<email>'`), then remove `aglow.historyImport` from that browser's localStorage to allow importing again.
+- Undo, one device: `DELETE FROM games WHERE id GLOB 'imp_<importId>_*'`, with the `importId` from that browser's localStorage key `aglow.historyImport` (GLOB, because `_` is a LIKE wildcard), then remove the key.
+- Several devices merge their days: the account's streaks are computed from all the imported days together and can be longer than any device's. The card's account line shows the account's current and longest streak (§6.1).
+- Always deploy with `npm run deploy` (it applies migration 0002 first). Rolling the Worker back is schema-safe: the old code never names `source` and its inserts list their columns.
+- After the first real import, read the `POST /api/admin/import` CPU time in Workers Logs (Free plan: 10 ms; estimate 1 to 2.5 ms for 2,000 runs).
+- Cost of imported runs on the rest of the app (measured, local D1): `rankOf` reads 2 rows per run ahead (so each imported run adds 2 rows to every finish, claim, pinned "Your best" and Your games open behind it), the board total 2 rows per board run per isolate refresh (20 s), `/api/me/stats` about 2 rows per account game per call, and an import writes about 5 rows per run. Keep the total imported in the hundreds unless the D1 dashboard shows room (README, "Watch in December").
 
 ## Rulings on ambiguities in the design
 
@@ -290,6 +297,6 @@ Plurals use the admin's `n run`/`n runs` style with `toLocaleString('en-US')` di
 7. **Played-games count** comes from `GET /api/me/stats` (`solved − imported`) rather than a new endpoint.
 8. **Session clock and today.** Imported finishes never pass `now − 1000`, so an import whose last day is today never dates a run in the future.
 9. **Your games stats** are a second totals row (four cells) rather than replacing best/rank/top-50.
-10. **The results badge** stays device-based; only Solved, Average and Day streak switch to the account.
+10. **The results badge** stays device-based; only Solved, Average and Day streak can come from the account, and then only by the rule in §6.2 (the device's numbers while it has solved more games than the account).
 11. **One offset** per import (no DST): the window is about ten days, all inside PDT for Luke.
 12. **Unnamed admin:** imported runs are ranked but, like any unnamed account's runs, join the board only once a name is picked.
