@@ -1,5 +1,6 @@
 import { REVEAL_MS } from './clock';
-import type { LogEntry } from './log';
+import { parseLog, type LogEntry } from './log';
+import { GRID } from './mask';
 import { replay } from './replay';
 import { seededBoard } from './seeded';
 
@@ -32,8 +33,10 @@ export interface JudgeInput {
 
 /** The server's verdict on a finished run (spec §5.3), or null when the log is unverifiable (422, and the game is deleted). */
 export function judge({ seed, genVersion, log, serverElapsedMs }: JudgeInput): Verdict | null {
-  const board = seededBoard(seed, genVersion, true);
-  const run = board && replay(board, log);
+  if (!Number.isFinite(serverElapsedMs) || serverElapsedMs < 0) return null;
+  const parsed = parseLog(log, GRID); // callers parse already; replay relies on it, so check again
+  const board = parsed && seededBoard(seed, genVersion, true);
+  const run = board && replay(board, parsed);
   if (!run) return null;
   const span = run.solvedAt;
   // More time in the log than passed on the server is impossible for an honest client.
