@@ -146,7 +146,7 @@ On a win, the client sends `POST /api/games/:id/finish {log}`, retrying once aft
 3. **Replay:** rebuild the board from `seed`/`genVersion`, then apply each tap with `Board.tap(i, t)` and `tick(t)`. The tree must be solved exactly at the last tap's settle, with no taps inside a pause and no taps after the solve. If any of that fails: **422 `unverified`, and the game row is deleted** (Mapped's revision 1).
 4. **Clock anchor:** compare the log's span (from local start to the solve) with `serverElapsed = finished_at − started_at`. `serverElapsed` is normally a little longer, because it includes both network legs.
    - `serverElapsed − span > CLOCK_TOLERANCE_MS` (3000ms) → `clock` (unranked). Time the log doesn't account for, such as studying the board before the log starts, can't shorten a ranked run.
-   - `span − serverElapsed > CLOCK_TOLERANCE_MS` is impossible → 422 `unverified`, as in step 3.
+   - `span − serverElapsed > CLOCK_TOLERANCE_MS` is impossible → 422 `unverified`, as in step 3; except when that excess fits inside the log's pause time (a wall clock that jumped across a reload) → `clock` (unranked, the row is kept).
 5. **Ranked time:** `ms` = span − reported pause time − `REVEAL_MS`, which is when the clock starts (§6 of the base spec).
 6. **Ranking rules:**
    - Total pause above 10 min, or more than 20 pauses → `paused`.
