@@ -16,9 +16,19 @@ export interface AglowProbe {
   newTree(): void;
 }
 
-/** Test hook for Playwright. Only installed when the URL contains ?test. */
-export function installDebugHook(app: App): void {
-  if (!new URLSearchParams(location.search).has('test')) return;
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * The hook hands out the solution and taps that go into the real log (a ready-made bot), so it exists only for ?test
+ * on this machine: Playwright (:4173), scripts/og.mjs (:4174) and local previews. Never on a public host.
+ */
+export function testHookAllowed(loc: Pick<Location, 'search' | 'hostname'>): boolean {
+  return new URLSearchParams(loc.search).has('test') && LOCAL_HOSTS.has(loc.hostname);
+}
+
+/** Test hook for Playwright. Only installed for ?test on a local host. */
+export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostname'> = location): void {
+  if (!testHookAllowed(loc)) return;
   const probe: AglowProbe = {
     state: () =>
       app.started
