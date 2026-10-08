@@ -6,7 +6,7 @@ import { drawBulb, drawBulbGlint, drawBulbHalo } from './bulbs';
 import type { Camera } from './camera';
 import {
   Confetti, Current, Embers, SPARKS, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
-  drawHover, drawSourceCore, drawSourceGlow, drawStar, drawStarGlow, easeSnap, starState,
+  drawHover, drawSourceCore, drawSourceGlow, drawStarGlow, easeSnap, starState,
 } from './effects';
 import { Garland } from './garland';
 import { tileGeometry } from './geometry';
@@ -15,6 +15,7 @@ import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
 import { drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
 import { Presents } from './presents';
+import { Topper } from './topper';
 import { QualityGovernor } from './quality';
 import { SCENES, type Scene } from './scenes';
 import { TILE_FILL_MS, type VisualState } from './visual-state';
@@ -74,6 +75,8 @@ export class Renderer {
   private readonly confetti = new Confetti();
   readonly garland = new Garland();
   private readonly presents = new Presents();
+  /** The star on top, or the star-head egg's sticker (src/render/topper.ts). */
+  readonly topper = new Topper();
   /** Fraction of tiles whose light has visibly arrived (last frame). */
   private visFrac = 0;
   /** Set by the first resize: until then a scene change has nothing to repaint. */
@@ -232,7 +235,12 @@ export class Renderer {
     drawGroundPool(g, L, sc, litFrac + (f.ambient ?? 0) * 0.5);
     const st = starState(now, f.winAt, litFrac, f.reducedMotion);
     st.glow *= 1 + (f.ambient ?? 0) * 0.3;
+    // A tap on the star, or the topper's flip, flares the halo for a moment (not the topper's own brightness).
+    const kick = this.topper.glowKick(now);
+    st.glow += kick;
     drawStarGlow(g, L, sc, st, won);
+    st.glow -= kick;
+    this.topper.drawGlow(g, L, sc, st, won, litFrac, now, f.winAt, f.reducedMotion, dpr * GLOW_SCALE * cam.scale);
     this.current.draw(g, board, L, s * SPARKS.glowR, SPARKS.glowA, now);
     // Garland progress follows the light as it visibly arrives, not the logical count (spec §4.8).
     this.visFrac = visLit / GRID.ids.length;
@@ -288,7 +296,7 @@ export class Renderer {
     if (!f.reducedMotion) drawFlashRings(ctx, vis, L, now);
     drawSourceCore(ctx, L, sc);
     this.current.draw(ctx, board, L, s * SPARKS.coreR, SPARKS.coreA, now);
-    drawStar(ctx, L, sc, st, won);
+    this.topper.draw(ctx, L, sc, st, won, litFrac, now, f.winAt, f.reducedMotion, dpr * cam.scale);
 
     // 6. Lit garland glass, foreground snow, then win confetti (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
