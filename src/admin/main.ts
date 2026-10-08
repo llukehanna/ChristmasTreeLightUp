@@ -24,6 +24,7 @@ const MAX_UPLOAD = 30 * 1024 * 1024;
 const STALL_MS = 120_000;
 const MAX_STATIONS = 20;
 const SESSION_EXPIRED = 'Your session expired. Sign in again.';
+const AUTH_FAILED = "Sign-in didn't finish. Try again.";
 
 type Props<K extends keyof HTMLElementTagNameMap> = Partial<Omit<HTMLElementTagNameMap[K], 'style' | 'children'>> & {
   class?: string;
@@ -135,24 +136,43 @@ function touch(): void {
 
 // ---------- session (the admin's Google account, spec 2026-10-07 §4) ----------
 
+/** "Use another account" was clicked: a 403 from a call made before it is old news, not a reason to say Not authorized again. */
+let signedOut = false;
+
 /** A 401 or 403 from any admin call: the sign-in or not-authorized card, keeping everything in memory. */
 function authLost(e: ApiError): void {
   queue.pause();
-  if (e.status === 403) renderDenied();
-  else if (screen !== 'signin') renderSignIn(SESSION_EXPIRED);
+  if (e.status === 403) {
+    if (!signedOut && screen !== 'denied') renderDenied();
+  } else if (screen !== 'signin') renderSignIn(SESSION_EXPIRED);
 }
 const isAuthLost = (e: unknown): e is ApiError => e instanceof ApiError && (e.status === 401 || e.status === 403);
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** Back from a sign-in that didn't finish (the Worker's `?auth=failed`): said once, and dropped from the address. */
+function takeAuthFailed(): boolean {
+  const url = new URL(location.href);
+  if (!url.searchParams.has('auth')) return false;
+  const failed = url.searchParams.get('auth') === 'failed';
+  url.searchParams.delete('auth');
+  history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+  return failed;
+}
+
 async function boot(): Promise<void> {
+  const failed = takeAuthFailed();
   try {
     await api.session();
+    signedOut = false;
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) renderSignIn();
+    if (e instanceof ApiError && e.status === 401) renderSignIn(failed ? AUTH_FAILED : '');
     else if (e instanceof ApiError && e.status === 403) renderDenied();
     else renderFatal(errText(e));
+    if (failed && screen !== 'signin') toast(AUTH_FAILED);
     return;
   }
+  // Still signed in from before (another account's sign-in didn't finish): say so, and carry on.
+  if (failed) toast(AUTH_FAILED);
   await loadAndRender();
 }
 
@@ -219,6 +239,7 @@ function renderDenied(): void {
 }
 
 async function afterLogin(): Promise<void> {
+  signedOut = false;
   // Signing in again after an expired session keeps unsaved edits and finished uploads: never load() over them.
   if (loaded && (dirty() || queue.busy)) {
     render();
@@ -231,6 +252,7 @@ async function afterLogin(): Promise<void> {
 }
 
 async function signOut(): Promise<void> {
+  signedOut = true;
   try {
     await api.signOut();
   } catch {
