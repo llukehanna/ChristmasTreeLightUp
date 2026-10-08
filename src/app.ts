@@ -348,14 +348,17 @@ export class App {
     const game = this.board;
     // Sent (or resent, after a reload or a Retry) past the judge's clock tolerance: the server keeps the run but can't
     // time it ('clock'). Remembered with the run, so the tag can say why after a reload or sign-in.
-    const last = this.run.log.entries.at(-1);
-    if (!won.late && Date.now() - (this.run.startEpoch + (last?.t ?? 0)) > CLOCK_TOLERANCE_MS) {
-      won.late = true;
-      this.saveWon();
-    }
+    // Checked ahead of every attempt, the automatic retry included: it can be the one that lands past the tolerance.
+    const markLate = (): void => {
+      const last = this.run.log.entries.at(-1);
+      if (!won.late && Date.now() - (this.run.startEpoch + (last?.t ?? 0)) > CLOCK_TOLERANCE_MS) {
+        won.late = true;
+        this.saveWon();
+      }
+    };
     this.setOutcome({ kind: 'saving' });
     try {
-      const result = await finishWithRetry(run.gameId, this.run.log.entries);
+      const result = await finishWithRetry(run.gameId, this.run.log.entries, undefined, markLate);
       // Started signed out: the run (ranked once claimed, or not) waits on this browser to be claimed (90 days), even
       // if a new tree has started meanwhile.
       if (run.claim) addClaim({ id: run.gameId, claim: run.claim }, Date.now());
@@ -389,6 +392,8 @@ export class App {
     this.claiming = true;
     const current = this.won && this.online ? this.online.gameId : null;
     const stillHere = (): boolean => current !== null && this.online?.gameId === current;
+    // The server has answered for this run's claim (taken, or not taken).
+    let answered = false;
     try {
       for (const batch of claimBatches(readClaims(Date.now()))) {
         const mine = current !== null && batch.some((c) => c.id === current);
@@ -397,15 +402,24 @@ export class App {
         try {
           res = await api.claim(batch);
         } catch {
-          if (mine && stillHere()) this.setClaimState('stuck');
           return; // keep them for next time
         }
         removeClaims(batch.map((c) => c.id));
         for (const r of res.results) this.onClaimed(r);
-        if (mine && stillHere() && !res.results.some((r) => r.id === current)) this.setClaimState('gone');
+        if (mine) {
+          answered = true;
+          if (stillHere() && !res.results.some((r) => r.id === current)) this.setClaimState('gone');
+        }
       }
     } finally {
       this.claiming = false;
+      // Ended without an answer for this run's claim (its batch or an earlier one failed, or another tab already took
+      // the claim out of storage): never leave "Saving…" up. Retry if the claim is still here to send, else the run
+      // is in Your games.
+      const o = this.outcome;
+      if (current !== null && !answered && stillHere() && o?.kind === 'done' && !o.result.ranked && o.result.reason === 'anonymous' && this.claimState === null) {
+        this.setClaimState(readClaims(Date.now()).some((c) => c.id === current) ? 'stuck' : 'gone');
+      }
     }
   }
 

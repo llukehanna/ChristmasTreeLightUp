@@ -335,7 +335,7 @@ body[data-scene='frost'] .acct-scrim { background: radial-gradient(120% 90% at 5
 .results .rib-ribbon .acct-g { padding: 3px; background: #fff; border-radius: 50%; width: 22px; height: 22px; box-sizing: border-box; }
 .results .rib-ribbon:hover { background: linear-gradient(180deg, #ea5560 0%, #bd2433 45%, #8e1622 100%); }
 /* Its padding already clears the text: no offset, so the ring never sits on the full stop before it. */
-.results .rib-retry:focus-visible { outline: 2px solid #8e1622; outline-offset: 0; border-radius: 3px; }
+.results .rib-retry:focus-visible { outline: 2px solid #8e1622; outline-offset: 2px; border-radius: 3px; }
 /* The ribbon's notched ends clip an outline away, so its focus ring is the stitching, drawn solid and bright. */
 .results .rib-ribbon:focus-visible { outline: none; }
 .results .rib-ribbon:focus-visible::before { border-top: 2px solid #fff3de; border-bottom: 2px solid #fff3de; top: 3px; bottom: 3px; }

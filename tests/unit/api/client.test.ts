@@ -64,6 +64,15 @@ describe('finishWithRetry', () => {
     expect(waits).toEqual([FINISH_RETRY_MS, FINISH_RETRY_MS]);
   });
 
+  it('calls beforeSend ahead of each attempt, the automatic retry included', async () => {
+    const calls: string[] = [];
+    const fetch = vi.fn().mockImplementationOnce(async () => Promise.reject(new TypeError('offline'))).mockImplementationOnce(async () => Response.json(result));
+    vi.stubGlobal('fetch', fetch);
+    const wait = async (): Promise<void> => void calls.push('wait');
+    await finishWithRetry('g', [], wait, () => void calls.push('send'));
+    expect(calls).toEqual(['send', 'wait', 'send']);
+  });
+
   it('never retries an answer (422 unverified), and gives up after a second failure', async () => {
     const refused = vi.fn(async () => Response.json({ error: 'unverified', message: "This run couldn't be verified." }, { status: 422 }));
     vi.stubGlobal('fetch', refused);

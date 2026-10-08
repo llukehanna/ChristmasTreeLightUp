@@ -70,13 +70,23 @@ export const signInHref = (returnPath: string): string => `/api/auth/google?retu
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Sends a finish, and once more after FINISH_RETRY_MS on a network error or a 5xx. An answer (4xx) is final. */
-export async function finishWithRetry(id: string, log: readonly LogEntry[], wait: (ms: number) => Promise<void> = sleep): Promise<FinishResult> {
+/**
+ * Sends a finish, and once more after FINISH_RETRY_MS on a network error or a 5xx. An answer (4xx) is final.
+ * `beforeSend` runs just ahead of each attempt (the retry too), so the caller can note how late that attempt is.
+ */
+export async function finishWithRetry(
+  id: string,
+  log: readonly LogEntry[],
+  wait: (ms: number) => Promise<void> = sleep,
+  beforeSend: () => void = () => undefined,
+): Promise<FinishResult> {
   try {
+    beforeSend();
     return await api.finish(id, log);
   } catch (e) {
     if (e instanceof ApiError && e.status > 0 && e.status < 500) throw e;
     await wait(FINISH_RETRY_MS);
+    beforeSend();
     return api.finish(id, log);
   }
 }
