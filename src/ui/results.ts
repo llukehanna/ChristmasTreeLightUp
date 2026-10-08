@@ -19,15 +19,6 @@ export const accountStatsView = (a: AccountStats): StatsView => ({
   streak: a.streak,
 });
 
-/**
- * The numbers for the tag (spec 2026-10-08 §6.2). Signed in, the account's, except while the account has solved fewer
- * games than this device had at its first signed-in view for the account (`baseline`): then all three come from the
- * device, so a pre-accounts player's numbers don't drop on signing in. No account stats (signed out, loading, offline):
- * the device's. No baseline (null: storage failed): the account's.
- */
-export const statsViewFor = (device: Stats, account: AccountStats | null, baseline: number | null): StatsView =>
-  account && (baseline === null || account.solved >= baseline) ? accountStatsView(account) : deviceStatsView(device);
-
 export interface ResultsData {
   seconds: number;
   score: number;
