@@ -1,6 +1,6 @@
 import type { LogEntry } from '../core/log';
 import { localDay } from '../store/stats';
-import type { AccountStats, BoardResponse, ClaimResponse, FinishResult, MeResponse, MyGamesResponse, NameCheck, StartResponse, User } from './types';
+import type { AccountStats, BoardResponse, ClaimResponse, FinishResult, MeResponse, MyGamesResponse, NameCheck, StarHeadResponse, StartResponse, User } from './types';
 
 /** An API failure: the HTTP status (0 when the server couldn't be reached), the Worker's error code and message. */
 export class ApiError extends Error {
@@ -26,7 +26,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown, timeoutMs = TIMEOUT_MS, cache: RequestCache = 'no-store'): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, timeoutMs = TIMEOUT_MS, cache: RequestCache = 'no-store'): Promise<T> {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), timeoutMs);
   try {
@@ -83,6 +83,8 @@ export const api = {
   claim: (claims: readonly { id: string; claim: string }[]) => changesBoard(request<ClaimResponse>('POST', '/api/games/claim', { claims })),
   board,
   myGames: () => request<MyGamesResponse>('GET', '/api/me/games'),
+  /** The account's copy of the tree's topper preference (the star-head egg). */
+  setStarHead: (on: boolean) => request<StarHeadResponse>('PUT', '/api/me/star-head', { on }),
   /** The account's stats in this browser's day and zone (spec 2026-10-08 §3.2). */
   myStats: (now: Date = new Date()) => request<AccountStats>('GET', `/api/me/stats?today=${localDay(now)}&tz=${now.getTimezoneOffset()}`),
 };

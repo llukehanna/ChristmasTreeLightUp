@@ -14,6 +14,8 @@ export interface AglowProbe {
   /** The server game behind the tree, what became of its run, and the log's length. */
   game(): { id: string | null; outcome: RunOutcome['kind'] | null; reason: string | null; ranked: boolean | null; log: number };
   newTree(): void;
+  /** The star-head egg: the star's centre on screen, whether the head is on top, and whether a flip is under way. */
+  star(): { center: [number, number]; head: boolean; flipping: boolean };
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
@@ -55,6 +57,7 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
       return { id: app.gameId, outcome: o?.kind ?? null, reason: result?.reason ?? null, ranked: result ? result.ranked : null, log: app.logLength };
     },
     newTree: () => app.newGame(),
+    star: () => ({ center: app.starScreenCenter(), ...app.starHead }),
   };
   (window as Window & { __aglow?: AglowProbe }).__aglow = probe;
 }
