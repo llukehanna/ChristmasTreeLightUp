@@ -78,23 +78,34 @@ export class Board {
   readonly solution: readonly number[];
   readonly colors: readonly number[];
   readonly rotateMs: number;
+  /**
+   * The Worker's replay board (spec 2026-10-07 §5.3): turns, queues and the win are exactly the real board's, but the
+   * tree is only lit (a BFS) when it could be whole: nothing turning, the root wired to the source, and at least as
+   * many matched links as a spanning tree needs. Between those checks `lighting` stays dark and no lighting events fire.
+   */
+  readonly headless: boolean;
   bits: number[];
   lighting: Lighting;
   readonly rotating = new Map<number, Rotation>();
   won = false;
+  /** Headless only: adjacent tile pairs whose links meet. */
+  private matched = 0;
+  private dark: Lighting | null = null;
 
-  constructor(grid: Grid, state: BoardState, rotateMs = ROTATE_MS) {
+  constructor(grid: Grid, state: BoardState, rotateMs = ROTATE_MS, headless = false) {
     this.grid = grid;
     this.solution = [...state.solution];
     this.colors = [...state.colors];
     this.bits = [...state.bits];
     this.rotateMs = rotateMs;
+    this.headless = headless;
     this.lighting = computeLighting(grid, this.bits);
+    if (headless) this.recount();
   }
 
-  static random(grid: Grid, rng: Rng): Board {
+  static random(grid: Grid, rng: Rng, headless = false): Board {
     const solution = generateSolution(grid, rng);
-    return new Board(grid, { solution, bits: scramble(grid, solution, rng), colors: randomColors(grid, rng) });
+    return new Board(grid, { solution, bits: scramble(grid, solution, rng), colors: randomColors(grid, rng) }, ROTATE_MS, headless);
   }
 
   /** A click/tap on tile `i`. Mid-turn taps are buffered; taps after the win are ignored. */
@@ -108,7 +119,7 @@ export class Board {
     }
     const from = this.bits[i];
     this.rotating.set(i, { from, to: rotCW(from), t0: now, queued: 0 });
-    this.bits[i] = 0; // original: Lb = 0 while turning, so the tile and everything downstream go dark
+    this.setBits(i, 0); // original: Lb = 0 while turning, so the tile and everything downstream go dark
     return [{ type: 'rotateStarted', tile: i }, ...this.relight()];
   }
 
@@ -121,7 +132,7 @@ export class Board {
       if (r.queued > 0) {
         this.rotating.set(i, { from: r.to, to: rotCW(r.to), t0: r.t0 + this.rotateMs, queued: r.queued - 1 });
       } else {
-        this.bits[i] = r.to;
+        this.setBits(i, r.to);
         this.rotating.delete(i);
         events.push({ type: 'rotateFinished', tile: i });
         finished = true;
@@ -162,10 +173,38 @@ export class Board {
   debugSolve(): BoardEvent[] {
     this.rotating.clear();
     this.bits = [...this.solution];
+    if (this.headless) this.recount();
     return [...this.relight(), ...this.checkWin()];
   }
 
+  private setBits(i: number, b: number): void {
+    if (this.headless) this.matched += this.linksMatched(i, b) - this.linksMatched(i, this.bits[i]);
+    this.bits[i] = b;
+  }
+
+  /** How many of the links in `b` (tile i's shape) meet a link of the neighbouring tile. */
+  private linksMatched(i: number, b: number): number {
+    let n = 0;
+    for (const d of DIRS) {
+      if (!(b & d)) continue;
+      const j = neighbor(this.grid, i, d);
+      if (j >= 0 && this.bits[j] & OPPOSITE[d]) n++;
+    }
+    return n;
+  }
+
+  private recount(): void {
+    let twice = 0;
+    for (const i of this.grid.ids) twice += this.linksMatched(i, this.bits[i]);
+    this.matched = twice / 2;
+  }
+
   private relight(): BoardEvent[] {
+    if (this.headless && (this.rotating.size > 0 || !(this.bits[this.grid.root] & D) || this.matched < this.grid.ids.length - 1)) {
+      this.dark ??= computeLighting(this.grid, new Array<number>(this.bits.length).fill(0));
+      this.lighting = this.dark;
+      return [];
+    }
     const prev = this.lighting;
     const next = computeLighting(this.grid, this.bits);
     this.lighting = next;

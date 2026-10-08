@@ -1,5 +1,5 @@
 import { Board, type BoardEvent } from './core/board';
-import { GameClock } from './core/clock';
+import { GameClock, REVEAL_MS } from './core/clock';
 import { GRID } from './core/mask';
 import { formatTime, scoreFor, wholeSeconds } from './core/score';
 import { Sfx } from './audio/sfx';
@@ -20,8 +20,6 @@ import { RadioPanel } from './ui/radio-panel';
 import { Results } from './ui/results';
 import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
 import { Toast } from './ui/toast';
-
-export const REVEAL_MS = 900;
 
 /** Typing into a field never drives the game's keyboard shortcuts. */
 function isEditable(t: EventTarget | null): boolean {

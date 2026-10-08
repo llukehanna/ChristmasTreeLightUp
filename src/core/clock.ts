@@ -1,3 +1,6 @@
+/** The reveal before the clock starts (base spec §6): the server takes it off every ranked time. */
+export const REVEAL_MS = 900;
+
 /** Pausable game timer. The timer starts after the reveal and stops while the game is paused: the pause pill, P, or a hidden tab (spec §2.7, §6). */
 export class GameClock {
   private accumulated: number;
