@@ -351,19 +351,30 @@ export function drawStarGlow(c: CanvasRenderingContext2D, L: Layout, sc: Scene, 
   c.globalAlpha = 1;
 }
 
+/** The star's centre (and the topper's): above row 0, on the tree's axis. */
+export const starCenter = (L: Layout): [number, number] => [X(L, 0), Y(L, -1.3)];
+
+/** The win's pop: the star (or the head) springs from 0.8 to full size as it ignites. */
+export const ignitePop = (st: StarState, won: boolean): number => (won ? 0.8 + 0.2 * easeOutBack(st.on) : 1);
+
 /** Eight-point starburst above row 0. Dim until the win, then it ignites (spec §4.5 item 10). */
 export function drawStar(c: CanvasRenderingContext2D, L: Layout, sc: Scene, st: StarState, won: boolean): void {
   c.save();
-  c.translate(X(L, 0), Y(L, -1.3));
-  if (won) {
-    const k = 0.8 + 0.2 * easeOutBack(st.on);
-    c.scale(k, k);
-  }
+  c.translate(...starCenter(L));
+  const k = ignitePop(st, won);
+  c.scale(k, k);
+  drawStarBody(c, L.s, sc, st.on);
+  c.restore();
+}
+
+/** The star itself, centred on the origin: its dim glass, then the lit gold at `on` (0..1). Leaves globalAlpha changed. */
+export function drawStarBody(c: CanvasRenderingContext2D, s: number, sc: Scene, on: number): void {
+  const alpha = c.globalAlpha;
   const path = () => {
     c.beginPath();
     for (let k = 0; k < 16; k++) {
       const a = -Math.PI / 2 + (k * Math.PI) / 8;
-      const rad = k % 2 ? L.s * 0.1 : k % 4 === 0 ? L.s * 0.78 : L.s * 0.42;
+      const rad = k % 2 ? s * 0.1 : k % 4 === 0 ? s * 0.78 : s * 0.42;
       c.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
     }
     c.closePath();
@@ -374,17 +385,25 @@ export function drawStar(c: CanvasRenderingContext2D, L: Layout, sc: Scene, st: 
   c.strokeStyle = sc.starEdge;
   c.lineWidth = 1;
   c.stroke();
-  if (st.on > 0) {
+  if (on > 0) {
     path();
-    const g = c.createRadialGradient(0, 0, 0, 0, 0, L.s * 0.8);
+    const g = c.createRadialGradient(0, 0, 0, 0, 0, s * 0.8);
     g.addColorStop(0, '#ffffff');
     g.addColorStop(0.4, sc.core);
     g.addColorStop(1, sc.glow);
-    c.globalAlpha = st.on;
+    c.globalAlpha = alpha * Math.min(1, on);
     c.fillStyle = g;
     c.fill();
   }
-  c.restore();
+}
+
+/** A gold foil fleck's colour: `face` 0..1 is how squarely it faces the viewer (brightest face-on), `tone` 0..1 varies the warmth. */
+export function foil(face: number, tone: number): string {
+  const lum = 0.3 + 0.7 * face;
+  const r = Math.round(140 + 115 * lum);
+  const g = Math.round((88 + 140 * lum) * (0.92 + 0.08 * tone));
+  const b = Math.round(28 + 132 * lum * lum);
+  return `rgb(${r},${g},${b})`;
 }
 
 /* ---------- win confetti: gold flecks and soft snow over the solved tree (spec §4.8) ---------- */
@@ -447,15 +466,11 @@ export class Confetti {
       }
       // A tumbling foil fleck: foreshortened by its flip, brightest when it faces the viewer.
       const face = Math.abs(Math.cos(f.tumble * tt + f.ph));
-      const lum = 0.3 + 0.7 * face;
-      const r = Math.round(140 + 115 * lum);
-      const g = Math.round((88 + 140 * lum) * (0.92 + 0.08 * f.tone));
-      const b = Math.round(28 + 132 * lum * lum);
       c.translate(x, y);
       c.rotate(f.spin * tt + f.ph);
       c.scale(1, Math.max(0.12, face));
       c.globalAlpha = a;
-      c.fillStyle = `rgb(${r},${g},${b})`;
+      c.fillStyle = foil(face, f.tone);
       c.fillRect(-size, -size * 0.42, size * 2, size * 0.84);
       c.globalAlpha = 1;
       if (face > 0.94) {
