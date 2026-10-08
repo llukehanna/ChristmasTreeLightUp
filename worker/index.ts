@@ -1,6 +1,6 @@
 import type { Bucket } from './lib/bucket.js';
 import type { Db } from './lib/db.js';
-import type { AppEnv, Ctx, RateLimitBinding } from './lib/env.js';
+import type { AppEnv, Ctx } from './lib/env.js';
 import { handle } from './router.js';
 
 /** The real bindings (wrangler.jsonc). Only this file and tsconfig.worker.json know the Workers runtime types. */
@@ -15,23 +15,16 @@ export interface Env {
   /** Secret: 256 random bits keying session, claim and IP hashes. */
   AUTH_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
-  /** Secret, pasted by Luke from the Google console. */
+  /** Secret, pasted by Luke. */
   GOOGLE_CLIENT_SECRET?: string;
-  /** Comma-separated, compared lower-cased: the radio admin's Google email(s). */
+  /** Comma-separated, compared lower-cased: the radio admin's Google email(s). A secret in production (keeps the address out of the repo). */
   ADMIN_EMAILS?: string;
-  /** Secret, set by Luke. */
-  ADMIN_PASSWORD?: string;
-  /** Secret, 256 random bits that nobody sees. */
-  SESSION_SECRET?: string;
-  /** Optional ratelimit binding for login attempts. */
-  LOGIN_LIMITER?: RateLimit;
 }
 
 // Type-level proofs that the runtime types satisfy the structural ones worker/lib and worker/routes are written against.
 type Assignable<T extends U, U> = T;
 export type BucketCheck = Assignable<R2Bucket, Bucket>;
 export type DbCheck = Assignable<D1Database, Db>;
-export type LimiterCheck = Assignable<RateLimit, RateLimitBinding>;
 export type CtxCheck = Assignable<ExecutionContext, Ctx>;
 export type EnvCheck = Assignable<Env, AppEnv>;
 

@@ -29,7 +29,7 @@ interface Api {
 /** A signed-in admin over a routed API. */
 async function admin(page: Page, data: StationsFile = fixture()): Promise<Api> {
   const state: Api = { puts: [], gets: 0, putStatus: null };
-  await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: true } }));
+  await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: true, name: null } }));
   await page.route('**/api/admin/stations', async (r) => {
     if (r.request().method() === 'GET') {
       state.gets++;
@@ -53,17 +53,21 @@ const leaveWarns = (page: Page) =>
     return e.defaultPrevented;
   });
 
-test('admin page loads and asks for sign-in', async ({ page }) => {
-  await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: false } }));
-  await page.route('**/api/admin/login', (r) => r.fulfill({ status: 503, json: { error: 'Admin is not configured' } }));
+test('admin page loads and asks for Google sign-in', async ({ page }) => {
+  await page.route('**/api/admin/session', (r) => r.fulfill({ status: 401, json: { error: 'signed_out', message: 'Sign in first.' } }));
   await page.goto('/admin.html');
   await expect(page.getByRole('heading', { name: 'Radio admin' })).toBeVisible();
-  await expect(page.locator('input[type="password"]')).toBeFocused();
-  await expect(page.getByText('Too many failed attempts pause sign-in for everyone for up to 15 minutes.')).toBeVisible();
-  // The server's own words.
-  await page.getByLabel('Password').fill('anything');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('alert')).toHaveText('Admin is not configured');
+  const google = page.getByRole('link', { name: 'Sign in with Google' });
+  await expect(google).toBeFocused();
+  await expect(google).toHaveAttribute('href', '/api/auth/google?return=%2Fadmin');
+  await expect(google).not.toHaveAttribute('target', '_blank');
+});
+
+test('another Google account is told it is not authorized', async ({ page }) => {
+  await page.route('**/api/admin/session', (r) => r.fulfill({ status: 403, json: { error: 'forbidden', message: 'This account is not the radio admin.' } }));
+  await page.goto('/admin.html');
+  await expect(page.getByRole('heading', { name: 'Not authorized' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Use another account' })).toBeFocused();
 });
 
 test('the game bundle has no admin code (and the admin bundle does)', async ({ page }) => {
@@ -80,7 +84,7 @@ test('the game bundle has no admin code (and the admin bundle does)', async ({ p
   expect(game).not.toContain('handleUploadUrl');
 
   scripts.clear();
-  await page.route('**/api/admin/session', (r) => r.fulfill({ json: { admin: false } }));
+  await page.route('**/api/admin/session', (r) => r.fulfill({ status: 401, json: { error: 'signed_out', message: 'Sign in first.' } }));
   await page.goto('/admin.html');
   await page.waitForLoadState('networkidle');
   expect([...scripts.values()].join('\n')).toContain('/api/admin/');
@@ -163,18 +167,38 @@ test('other save failures keep the edits; invalid fields are pointed at before s
 
 test('an expired session goes back to sign-in and keeps the unsaved edits', async ({ page }) => {
   const api = await admin(page);
-  await page.route('**/api/admin/login', (r) => r.fulfill({ json: { ok: true } }));
   await page.getByLabel('Track 1 title').fill('Sleigh Ride (Mono)');
   api.putStatus = { status: 401, error: 'Not signed in' };
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('alert')).toHaveText('Your session expired. Sign in again.');
-  await expect(page.getByLabel('Password')).toBeFocused();
+  // Leaving would lose the edits: Google opens in a new tab, and Continue checks again.
+  await expect(page.getByRole('link', { name: 'Sign in with Google' })).toHaveAttribute('target', '_blank');
   const gets = api.gets;
-  await page.getByLabel('Password').fill('anything');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByLabel('Track 1 title')).toHaveValue('Sleigh Ride (Mono)');
   expect(api.gets).toBe(gets); // no load() over the edits
   await expect(page.locator('header .sub')).toHaveText('Radio admin · v7 · unsaved changes');
+});
+
+test('a 403 mid-session says Not authorized; another account signs in in a new tab and the edits are kept', async ({ page }) => {
+  const api = await admin(page);
+  let signOuts = 0;
+  await page.route('**/api/auth/signout', (r) => {
+    signOuts++;
+    return r.fulfill({ json: {} });
+  });
+  await page.getByLabel('Track 1 title').fill('Sleigh Ride (Mono)');
+  api.putStatus = { status: 403, error: 'forbidden' };
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('heading', { name: 'Not authorized' })).toBeVisible();
+  await page.getByRole('button', { name: 'Use another account' }).click();
+  await expect(page.getByRole('link', { name: 'Sign in with Google' })).toHaveAttribute('target', '_blank');
+  expect(signOuts).toBe(1);
+  expect(await leaveWarns(page)).toBe(true);
+  const gets = api.gets;
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByLabel('Track 1 title')).toHaveValue('Sleigh Ride (Mono)');
+  expect(api.gets).toBe(gets);
 });
 
 test('delete a station with an in-page confirm', async ({ page }) => {

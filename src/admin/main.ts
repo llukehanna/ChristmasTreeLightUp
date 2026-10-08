@@ -1,6 +1,6 @@
 import './admin.css';
 import { parseStation, type Station, type StationsFile, type Track } from '../radio/schema.js';
-import { ApiError, api, audioDuration } from './api.js';
+import { ApiError, api, audioDuration, SIGN_IN_HREF } from './api.js';
 import { slugify } from './names.js';
 import { mustWarnBeforeLeaving } from './leave.js';
 import { fillMissingLengths, isMp3, mp3DurationOfBlob } from './lengths.js';
@@ -55,7 +55,7 @@ let savedAt = 0;
 let saving = false;
 /** A "Fill in missing lengths" run is in flight. */
 let filling = false;
-let screen: 'boot' | 'login' | 'editor' = 'boot';
+let screen: 'boot' | 'signin' | 'denied' | 'editor' = 'boot';
 let creating = false;
 let deleting: string | null = null;
 
@@ -133,24 +133,27 @@ function touch(): void {
   refreshHeader();
 }
 
-// ---------- session ----------
+// ---------- session (the admin's Google account, spec 2026-10-07 §4) ----------
 
-/** A 401 from any admin call: back to sign-in, keeping everything in memory. */
-function expired(): void {
+/** A 401 or 403 from any admin call: the sign-in or not-authorized card, keeping everything in memory. */
+function authLost(e: ApiError): void {
   queue.pause();
-  if (screen !== 'login') renderLogin(SESSION_EXPIRED);
+  if (e.status === 403) renderDenied();
+  else if (screen !== 'signin') renderSignIn(SESSION_EXPIRED);
 }
-const isExpired = (e: unknown): boolean => e instanceof ApiError && e.status === 401;
+const isAuthLost = (e: unknown): e is ApiError => e instanceof ApiError && (e.status === 401 || e.status === 403);
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 async function boot(): Promise<void> {
   try {
-    const { admin } = await api.session();
-    if (admin) await loadAndRender();
-    else renderLogin();
+    await api.session();
   } catch (e) {
-    renderFatal(errText(e));
+    if (e instanceof ApiError && e.status === 401) renderSignIn();
+    else if (e instanceof ApiError && e.status === 403) renderDenied();
+    else renderFatal(errText(e));
+    return;
   }
+  await loadAndRender();
 }
 
 function renderFatal(text: string): void {
@@ -160,39 +163,59 @@ function renderFatal(text: string): void {
   );
 }
 
-function renderLogin(message = ''): void {
-  screen = 'login';
-  const input = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Password', attrs: { 'aria-label': 'Password' } });
-  const submit = h('button', { type: 'submit', class: 'primary', textContent: 'Sign in' });
+/** Leaving the page would lose unsaved edits or uploads: then Google opens in a new tab and Continue checks again. */
+const mustKeepPage = (): boolean => loaded && (dirty() || queue.busy);
+
+function renderSignIn(message = ''): void {
+  screen = 'signin';
+  const keep = mustKeepPage();
+  const google = h('a', { class: 'button primary', href: SIGN_IN_HREF, textContent: 'Sign in with Google' });
+  if (keep) {
+    google.target = '_blank';
+    google.rel = 'noopener';
+  }
   const err = h('p', { class: 'err', textContent: message, attrs: { role: 'alert' } });
-  const form = h(
-    'form',
+  const card = h(
+    'div',
     { class: 'card login' },
     h('div', { class: 'wm' }, h('span', { class: 'dot' }), 'Aglow'),
     h('h1', { textContent: 'Radio admin' }),
-    input,
-    submit,
+    google,
     err,
-    h('p', { class: 'note', textContent: 'Too many failed attempts pause sign-in for everyone for up to 15 minutes.' }),
+    h('p', { class: 'note', textContent: keep ? 'Sign in in the new tab, then come back and continue. Your unsaved changes are still here.' : "Sign in with the radio admin's Google account." }),
   );
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    void (async () => {
-      submit.disabled = true;
-      err.textContent = '';
-      try {
-        await api.login(input.value);
-      } catch (x) {
-        err.textContent = errText(x);
-        submit.disabled = false;
-        input.select();
-        return;
-      }
-      await afterLogin();
-    })();
-  });
-  root.replaceChildren(form);
-  input.focus();
+  if (keep) card.append(h('button', { textContent: 'Continue', onclick: () => void recheck(err) }));
+  root.replaceChildren(card);
+  google.focus();
+}
+
+/** Continue, after signing in in another tab: back to the editor with everything kept, or why not. */
+async function recheck(err: HTMLElement): Promise<void> {
+  try {
+    await api.session();
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 403) renderDenied();
+    else err.textContent = e instanceof ApiError && e.status === 401 ? 'Still signed out. Sign in in the other tab first.' : errText(e);
+    return;
+  }
+  await afterLogin();
+}
+
+function renderDenied(): void {
+  screen = 'denied';
+  const other = h('button', { class: 'primary', textContent: 'Use another account', onclick: () => void signOut() });
+  root.replaceChildren(
+    h(
+      'div',
+      { class: 'card login' },
+      h('div', { class: 'wm' }, h('span', { class: 'dot' }), 'Aglow'),
+      h('h1', { textContent: 'Not authorized' }),
+      h('p', { class: 'note', textContent: 'This Google account is not the radio admin.' }),
+      other,
+      h('a', { class: 'button', href: '/', textContent: 'Back to Aglow' }),
+    ),
+  );
+  other.focus();
 }
 
 async function afterLogin(): Promise<void> {
@@ -209,18 +232,18 @@ async function afterLogin(): Promise<void> {
 
 async function signOut(): Promise<void> {
   try {
-    await api.logout();
+    await api.signOut();
   } catch {
-    // the cookie is cleared by the response; a failed call still leaves the user on the sign-in screen
+    // the response clears the cookie; a failed call still lands on the sign-in card
   }
-  renderLogin();
+  renderSignIn();
 }
 
 async function loadAndRender(): Promise<void> {
   try {
     file = await api.load();
   } catch (e) {
-    if (isExpired(e)) expired();
+    if (isAuthLost(e)) authLost(e);
     else if (screen === 'editor') showMessage(errText(e));
     else renderFatal(errText(e));
     return;
@@ -253,7 +276,7 @@ async function save(): Promise<void> {
     savedAt = sentAt; // edits made while the save was in flight stay unsaved
     toast('Saved. Live in the game within a minute');
   } catch (e) {
-    if (isExpired(e)) expired();
+    if (isAuthLost(e)) authLost(e);
     else if (e instanceof ApiError && e.status === 409) showConflict(e.message);
     else showMessage(`${errText(e)} Your edits are still here, so you can save again.`);
   } finally {
@@ -394,8 +417,8 @@ const queue = new UploadQueue<Job, Result>({
     refreshHeader();
   },
   requeueOn: (e) => {
-    if (!isExpired(e)) return false;
-    expired();
+    if (!isAuthLost(e)) return false;
+    authLost(e);
     return true;
   },
 });

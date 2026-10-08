@@ -14,9 +14,11 @@ export class ApiError extends Error {
 
 const UNREACHABLE = "Couldn't reach the server. Check the connection and try again.";
 
+/** The Worker's `{error, message}` (or an older route's `{error: text}`) as one line. */
 const errorText = (data: unknown, status: number): string => {
-  const e = typeof data === 'object' && data !== null ? (data as { error?: unknown }).error : undefined;
-  return typeof e === 'string' && e ? e : `Request failed (${status})`;
+  const o = typeof data === 'object' && data !== null ? (data as { error?: unknown; message?: unknown }) : {};
+  if (typeof o.message === 'string' && o.message) return o.message;
+  return typeof o.error === 'string' && o.error ? o.error : `Request failed (${status})`;
 };
 
 async function call<T>(method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown): Promise<T> {
@@ -38,11 +40,14 @@ async function call<T>(method: 'GET' | 'POST' | 'PUT', url: string, body?: unkno
 
 export type Folder = 'tracks' | 'covers';
 
+/** "Sign in with Google": Google (fake sign-in locally), then back to /admin. */
+export const SIGN_IN_HREF = `/api/auth/google?return=${encodeURIComponent('/admin')}`;
+
 /** The Worker's admin API (worker/routes/admin/*). Every failure is an ApiError. */
 export const api = {
-  session: () => call<{ admin: boolean }>('GET', '/api/admin/session'),
-  login: (password: string) => call<{ ok: true }>('POST', '/api/admin/login', { password }),
-  logout: () => call<{ ok: true }>('POST', '/api/admin/logout'),
+  /** 200 for the admin; otherwise an ApiError with status 401 (signed out) or 403 (another Google account). */
+  session: () => call<{ admin: true; name: string | null }>('GET', '/api/admin/session'),
+  signOut: () => call<Record<string, never>>('POST', '/api/auth/signout', {}),
   load: () => call<StationsFile>('GET', '/api/admin/stations'),
   save: (expectedVersion: number, stations: Station[]) => call<{ version: number }>('PUT', '/api/admin/stations', { expectedVersion, stations }),
   /**

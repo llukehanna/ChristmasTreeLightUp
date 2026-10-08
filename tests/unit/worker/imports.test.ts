@@ -47,7 +47,7 @@ describe('Worker imports', () => {
     const rel = reachable().map((f) => f.slice(ROOT.length + 1));
     expect(rel).toContain('worker/index.ts');
     expect(rel).toContain('worker/routes/admin/stations.ts');
-    expect(rel).toContain('worker/lib/session.ts');
+    expect(rel).toContain('worker/lib/users.ts');
     expect(rel).toContain('src/radio/schema.ts');
     expect(rel).toContain('src/radio/ids.ts');
     expect(rel).toContain('src/core/judge.ts');
