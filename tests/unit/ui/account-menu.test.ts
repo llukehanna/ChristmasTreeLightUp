@@ -49,9 +49,13 @@ it('signed in: the name (escaped) and initial, and a menu with the leaderboard, 
   expect([...drop().querySelectorAll('.acct-drop-foot > *')].map((n) => n.textContent)).toEqual(['Sign out', 'Delete account', 'Privacy']);
 });
 
-it('no name yet: offers to pick one; an admin also gets Radio admin', () => {
+it('no name yet: the person icon and "Account" (no initial), a menu that offers a name; an admin also gets Radio admin', () => {
   menu.render({ name: null, isAdmin: true });
-  expect(menu.chip.getAttribute('aria-label')).toBe('Account: Account');
+  expect(menu.chip.getAttribute('aria-label')).toBe('Account');
+  expect(menu.chip.querySelector('svg')).not.toBeNull();
+  expect(menu.chip.querySelector('.acct-av')).toBeNull();
+  expect(menu.chip.textContent).toBe('Account');
+  expect(drop().querySelector('.acct-av.anon svg')).not.toBeNull();
   expect(items()).toEqual(['Pick a display name', 'Leaderboard', 'Your games', 'Radio admin']);
   expect(drop().querySelector<HTMLAnchorElement>('a.acct-item')?.getAttribute('href')).toBe('/admin');
 });
@@ -78,6 +82,17 @@ it('opens from the chip (telling the app), routes items, and closes on Escape ba
   dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
   expect(menu.isOpen).toBe(false);
   expect(document.activeElement).toBe(menu.chip);
+});
+
+it('keeps keyboard focus on the same item when the summary arrives and the menu re-renders', () => {
+  menu.render({ name: 'Comet', isAdmin: false });
+  menu.open();
+  drop().querySelector<HTMLElement>('[data-act="games"]')?.focus();
+  menu.render({ name: 'Comet', isAdmin: false }, { rank: 3, best: 50_000 });
+  expect(document.activeElement).toBe(drop().querySelector('[data-act="games"]'));
+  drop().querySelector<HTMLElement>('a[href="/privacy"]')?.focus();
+  menu.render({ name: 'Comet', isAdmin: false }, { rank: 2, best: 49_000 });
+  expect(document.activeElement).toBe(drop().querySelector('a[href="/privacy"]'));
 });
 
 it('signing out closes an open menu', () => {

@@ -97,3 +97,78 @@ test('?auth=failed: a toast says sign-in did not finish, and the address drops t
   await expect(page.locator('#toast')).toHaveText("Sign-in didn't finish. Try again.");
   expect(new URL(page.url()).search).toBe('?test');
 });
+
+test('delete account: typing the name enables Delete; the account goes, the chip signs out, and a toast says so', async ({ page }) => {
+  const player = await asPlayer(page);
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  await page.locator('#account-chip').click();
+  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Delete account' }).click();
+  const card = page.getByRole('dialog', { name: 'Delete account' });
+  const field = card.getByLabel(`Type your name, ${player.name}, to confirm`);
+  await expect(field).toBeFocused();
+  const go = card.getByRole('button', { name: 'Delete account' });
+  await field.fill('not my name');
+  await expect(go).toBeDisabled();
+  await field.fill(player.name.toUpperCase());
+  await go.click();
+  await expect(card).toBeHidden();
+  await expect(page.locator('#toast')).toHaveText('Account deleted');
+  await expect(page.locator('#account-chip')).toHaveAccessibleName('Sign in');
+  // The session went with the account.
+  expect(await page.evaluate(() => fetch('/api/me').then((r) => r.json()))).toEqual({ user: null });
+});
+
+test('delete account before a name: a wrong email is refused inline, the right one deletes', async ({ page }) => {
+  const player = await asPlayer(page);
+  await ready(page);
+  await signInFromChip(page);
+  await page.getByRole('dialog', { name: 'Pick a display name' }).waitFor();
+  await page.keyboard.press('Escape');
+  await resumeIfPaused(page);
+  const chip = page.locator('#account-chip');
+  await expect(chip).toHaveAccessibleName('Account');
+  await chip.click();
+  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Delete account' }).click();
+  const card = page.getByRole('dialog', { name: 'Delete account' });
+  const field = card.getByLabel('Type the email of your Google account to confirm');
+  await field.fill('someone.else@example.com');
+  await card.getByRole('button', { name: 'Delete account' }).click();
+  await expect(card.locator('.acct-check')).toHaveText("That doesn't match. Type it exactly as shown.");
+  await expect(card).toBeVisible();
+  await field.fill(player.email);
+  await card.getByRole('button', { name: 'Delete account' }).click();
+  await expect(card).toBeHidden();
+  await expect(page.locator('#toast')).toHaveText('Account deleted');
+  await expect(chip).toHaveAccessibleName('Sign in');
+});
+
+test('the admin sees Radio admin in the account menu; a player does not', async ({ page }) => {
+  await page.context().addCookies([{ name: 'aglow_fake_as', value: 'admin@example.com', url: 'http://localhost:4173' }]);
+  await ready(page);
+  await signInFromChip(page);
+  // The admin may have picked a name in another test; without one, the name card opens first.
+  await expect(page.locator('#account-chip')).toHaveAccessibleName(/^Account/);
+  if (await page.getByRole('dialog', { name: 'Pick a display name' }).isVisible()) await page.keyboard.press('Escape');
+  await resumeIfPaused(page);
+  await page.locator('#account-chip').click();
+  const menu = page.getByRole('dialog', { name: 'Account' });
+  await expect(menu.getByRole('link', { name: 'Radio admin' })).toHaveAttribute('href', '/admin');
+  await page.keyboard.press('Escape');
+
+  // Another Google account, signed in afresh.
+  await page.context().clearCookies();
+  await asPlayer(page);
+  await page.reload();
+  await expect(page.locator('#account-chip')).toHaveAccessibleName('Sign in');
+  await page.evaluate(() => sessionStorage.clear());
+  await signInFromChip(page);
+  await page.getByRole('dialog', { name: 'Pick a display name' }).waitFor();
+  await page.keyboard.press('Escape');
+  await resumeIfPaused(page);
+  await page.locator('#account-chip').click();
+  await expect(menu.getByRole('button', { name: 'Your games' })).toBeVisible();
+  await expect(menu.getByRole('link', { name: 'Radio admin' })).toHaveCount(0);
+});
