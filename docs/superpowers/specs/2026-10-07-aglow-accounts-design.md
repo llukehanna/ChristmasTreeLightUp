@@ -29,7 +29,7 @@ Players can sign in with Google, pick a display name, and post verified times to
 
 - Daily or seasonal boards, friends, other players' profiles, avatars.
 - Passwords, email codes or any provider other than Google.
-- Importing pre-accounts local stats. The existing `aglow.stats` stays as it is, local only.
+- Importing pre-accounts local stats. The existing `aglow.stats` stays as it is, local only. (Superseded on 2026-10-08 for the admin's own devices: `2026-10-08-aglow-history-import-design.md`.)
 - An in-app moderation UI. Moderation is `wrangler d1 execute`, deleting a game row.
 - Bot detection beyond replay, the clock anchor and the speed floors.
 

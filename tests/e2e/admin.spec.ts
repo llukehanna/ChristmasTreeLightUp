@@ -533,3 +533,55 @@ test('the admin signs in with (fake) Google and gets the editor; another account
   await page.getByRole('link', { name: 'Sign in with Google' }).click();
   await expect(page.getByRole('heading', { name: 'Not authorized' })).toBeVisible();
 });
+
+// The real Worker, nothing routed: the admin imports this device's history (fake Google). The times are slow on purpose
+// (50 minutes) so the shared e2e board's top runs, which other tests check, don't change.
+test("the admin imports this device's history once", async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name === 'phone', 'desktop only');
+  await context.addCookies([{ name: 'aglow_fake_as', value: 'admin@example.com', url: 'http://localhost:4173' }]);
+  await page.addInitScript(() => {
+    if (localStorage.getItem('aglow.stats')) return;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('aglow.stats', JSON.stringify({ v: 1, solved: 3, totalSeconds: 9300, bestSeconds: 3000, bestScore: -250000, streak: 1, longestStreak: 2, lastSolvedDay: today }));
+  });
+  await page.goto('/admin');
+  await page.getByRole('link', { name: 'Sign in with Google' }).click();
+  const card = page.getByRole('region', { name: "Import this device's history" });
+  await expect(card.getByLabel('Games solved')).toHaveValue('3');
+  await expect(card.getByLabel('Best time (m:ss)')).toHaveValue('50:00');
+  await expect(card.getByLabel('Average time (m:ss.t)')).toHaveValue('51:40.0');
+  await expect(card.getByLabel('Current streak (days)')).toHaveValue('1');
+  await expect(card.getByLabel('Longest streak (days)')).toHaveValue('2');
+  await expect(card).toContainText(/Your account already has [\d,]+ played games?/);
+
+  // Before anything is sent, the card says what it will create, and follows edits.
+  const preview = card.locator('.preview');
+  await expect(preview).toHaveText(/^Will add 3 runs: best 50:00\.0, average 51:40\.0, streak 1 day, longest streak 2 days, last played \d{4}-\d{2}-\d{2}\.$/);
+  await card.getByLabel('Average time (m:ss.t)').fill('40:00.0');
+  await expect(preview).toHaveText("Average time can't be faster than the best time.");
+  await expect(card.getByRole('button', { name: 'Import 3 runs' })).toBeDisabled();
+  await card.getByLabel('Average time (m:ss.t)').fill('51:40.0');
+  await expect(preview).toContainText('Will add 3 runs');
+
+  await card.getByRole('button', { name: 'Import 3 runs' }).click();
+  await expect(card.getByRole('status')).toHaveText('Imported 3 runs from this device.');
+  await expect(card.getByRole('button', { name: 'Imported' })).toBeDisabled();
+
+  // The account has them: ranked, marked imported, the best exactly 50:00.
+  const stats = await page.evaluate(async () => {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return (await (await fetch(`/api/me/stats?today=${today}&tz=${d.getTimezoneOffset()}`)).json()) as { imported: number };
+  });
+  expect(stats.imported).toBeGreaterThanOrEqual(3);
+  const mine = (await (await page.request.get('/api/me/games')).json()) as { games: { imported: boolean; ms: number }[] };
+  const fromDevice = mine.games.filter((g) => g.imported);
+  expect(fromDevice.length).toBeGreaterThanOrEqual(3);
+  expect(Math.min(...fromDevice.map((g) => g.ms))).toBe(3_000_000);
+
+  // This device stays marked as imported.
+  await page.reload();
+  await expect(card.getByRole('button', { name: 'Imported' })).toBeDisabled();
+  await expect(card.getByRole('status')).toHaveText("This device's history was imported (3 runs).");
+});
