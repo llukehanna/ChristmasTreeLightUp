@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Request, type Route } from '@playwright/test';
 import type { Station, StationsFile } from '../../src/radio/schema';
 
-// Every API call is routed: `vite preview` has no Worker, and no real uploads happen in e2e.
+// Every admin API call is routed (the local Worker's admin routes need a real admin session), so no real uploads happen in e2e.
 
 const MEDIA = 'https://aglow-music.example';
 const fixture = (): StationsFile => ({
@@ -348,6 +348,65 @@ test('an upload that fails with a 503 is retried once by itself; a 413 is not', 
   await expect(page.locator('.up', { hasText: 'flaky.mp3' })).toContainText('done'); // after its automatic retry
   expect(calls).toEqual({ 'flaky.mp3': 2, 'big.mp3': 1 });
   await expect(page.getByLabel('Track 3 title')).toHaveValue('flaky');
+});
+
+test('a 401 on an upload while only uploads are pending keeps the queue, and Continue resumes it', async ({ page }) => {
+  const api = await admin(page);
+  const up = await uploads(page);
+  up.failing.set('One.mp3', { status: 401, error: 'signed_out' });
+  up.hold('Two.mp3');
+  up.hold('Three.mp3');
+  await page.getByLabel('Upload tracks').setInputFiles([mp3('One.mp3'), mp3('Two.mp3'), mp3('Three.mp3'), mp3('Four.mp3')]);
+  await expect(page.getByRole('alert')).toHaveText('Your session expired. Sign in again.');
+  // No edits yet, but leaving would lose the queued files: Google opens in a new tab.
+  await expect(page.getByRole('link', { name: 'Sign in with Google' })).toHaveAttribute('target', '_blank');
+  expect(await leaveWarns(page)).toBe(true);
+  up.release('Two.mp3');
+  up.release('Three.mp3');
+  up.failing.delete('One.mp3');
+  const gets = api.gets;
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.locator('#upload-summary')).toHaveText('All uploads finished: 4 done.');
+  const titles = await page.locator('tbody tr td.title input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  expect(titles).toEqual(['Sleigh Ride', 'Blue Christmas', 'One', 'Two', 'Three', 'Four']);
+  expect(up.seen.map((s) => s.name)).toEqual(['One.mp3', 'Two.mp3', 'Three.mp3', 'One.mp3', 'Four.mp3']);
+  expect(api.gets).toBe(gets); // no load() over the queue
+});
+
+test('a second 403 leaves the Not authorized card alone, and one arriving after "Use another account" is ignored', async ({ page }) => {
+  await admin(page);
+  const up = await uploads(page);
+  let signOuts = 0;
+  await page.route('**/api/auth/signout', (r) => {
+    signOuts++;
+    return r.fulfill({ json: {} });
+  });
+  for (const name of ['One.mp3', 'Two.mp3', 'Three.mp3']) up.failing.set(name, { status: 403, error: 'forbidden' });
+  up.hold('Two.mp3');
+  up.hold('Three.mp3');
+  await page.getByLabel('Upload tracks').setInputFiles([mp3('One.mp3'), mp3('Two.mp3'), mp3('Three.mp3')]);
+  await expect(page.getByRole('heading', { name: 'Not authorized' })).toBeVisible();
+  const back = page.getByRole('link', { name: 'Back to Aglow' });
+  await back.focus();
+  up.release('Two.mp3');
+  await expect.poll(() => up.seen.length).toBe(3);
+  await page.waitForTimeout(200);
+  await expect(back).toBeFocused(); // not re-rendered
+  await page.getByRole('button', { name: 'Use another account' }).click();
+  await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
+  expect(signOuts).toBe(1);
+  up.release('Three.mp3');
+  await page.waitForTimeout(300);
+  await expect(page.getByRole('heading', { name: 'Not authorized' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
+});
+
+test('back from a failed sign-in, /admin says so and drops ?auth=failed from the address', async ({ page }) => {
+  await page.route('**/api/admin/session', (r) => r.fulfill({ status: 401, json: { error: 'signed_out', message: 'Sign in first.' } }));
+  await page.goto('/admin?auth=failed');
+  await expect(page.getByRole('alert')).toHaveText("Sign-in didn't finish. Try again.");
+  expect(new URL(page.url()).search).toBe('');
+  await expect(page.getByRole('link', { name: 'Sign in with Google' })).toHaveAttribute('href', '/api/auth/google?return=%2Fadmin');
 });
 
 test('after a conflict, Reload is refused while uploads are running', async ({ page }) => {
