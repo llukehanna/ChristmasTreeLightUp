@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardResponse, MyGamesResponse } from '../../src/api/types';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
+import { BOARD_TTL_MS, cachedTotal, resetBoardCache } from '../../worker/lib/board-cache';
 import { BEST_SQL, TOP_SQL } from '../../worker/lib/ranks';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
@@ -41,6 +42,8 @@ describe('the leaderboard', () => {
   it('is empty at first, with a short private cache', async () => {
     const res = await call(env, 'GET', '/api/board');
     expect(res.headers.get('Cache-Control')).toBe('private, max-age=15');
+    // The browser may keep it (src/api/client.ts), but never across a sign-in or sign-out.
+    expect(res.headers.get('Vary')).toBe('Cookie');
     expect(await res.json()).toEqual({ rows: [], total: 0, you: null });
   });
 
@@ -91,6 +94,7 @@ describe('the leaderboard', () => {
     expect(b.total).toBe(52);
     expect(b.you).toEqual({ rank: 51, name: 'Meridian', ms: 98_000, finishedAt: 6000, mine: true });
     await run(ana, 5_000, 7000);
+    resetBoardCache(); // a run straight into D1 shows once the isolate's copy of the top 50 expires
     const again = await board(cookie);
     expect(again.rows[0]).toEqual({ rank: 1, name: 'Meridian', ms: 5_000, finishedAt: 7000, mine: true });
     expect(again.you).toBeNull();
@@ -141,6 +145,62 @@ describe('the leaderboard', () => {
       const text = await (await call(env, 'GET', path, { cookie })).text();
       expect(text).not.toMatch(/email|"sub"|google_sub|example\.com|fake:/i);
     }
+  });
+});
+
+describe('the board cache (isolate memory, BOARD_TTL_MS)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('serves the top 50 and the total from memory until they expire', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const ana = await user('ana@example.com', 'Meridian');
+    await run(ana, 50_000, 1000);
+    expect((await board()).total).toBe(1);
+    await run(ana, 40_000, 2000); // another isolate's finish, say
+    vi.setSystemTime(1_800_000_000_000 + BOARD_TTL_MS - 1);
+    const cached = await board();
+    expect(cached.total).toBe(1);
+    expect(cached.rows.map((r) => r.ms)).toEqual([50_000]);
+    vi.setSystemTime(1_800_000_000_000 + BOARD_TTL_MS);
+    const fresh = await board();
+    expect(fresh.total).toBe(2);
+    expect(fresh.rows.map((r) => r.ms)).toEqual([40_000, 50_000]);
+  });
+
+  it('counts the board once per BOARD_TTL_MS, not once per request', async () => {
+    await run(await user('ana@example.com', 'Meridian'), 50_000, 1000);
+    let statements = 0;
+    const counting: Db = {
+      prepare: (q) => {
+        statements++;
+        return db.prepare(q);
+      },
+      batch: (s) => db.batch(s),
+    };
+    const t = 1_800_000_000_000;
+    expect(await cachedTotal(counting, t)).toBe(1);
+    expect(await cachedTotal(counting, t + BOARD_TTL_MS - 1)).toBe(1);
+    expect(statements).toBe(1);
+    expect(await cachedTotal(counting, t + BOARD_TTL_MS)).toBe(1);
+    expect(statements).toBe(2);
+  });
+
+  it('your pinned best stays live while the top 50 are cached', async () => {
+    const bo = await user('bo@example.com', 'Comet');
+    await db.batch(
+      Array.from({ length: 50 }, (_, k) =>
+        db
+          .prepare("INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, ranked) VALUES (?, ?, 1, 1, 0, ?, ?, 1)")
+          .bind(`fast-${String(k).padStart(16, '0')}`, bo, 1000 + k, 10_000 + k),
+      ),
+    );
+    const ana = await user('ana@example.com', 'Meridian');
+    await run(ana, 99_000, 5000);
+    const cookie = await signIn(env, 'ana@example.com');
+    expect((await board(cookie)).you).toMatchObject({ ms: 99_000, rank: 51 });
+    await run(ana, 90_000, 6000);
+    expect((await board(cookie)).you).toMatchObject({ ms: 90_000, rank: 51 });
   });
 });
 

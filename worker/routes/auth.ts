@@ -1,5 +1,6 @@
 import { cleanName, isReserved, NAME_RULE, nameKey } from '../../src/api/names.js';
 import type { NameCheck } from '../../src/api/types.js';
+import { resetBoardCache } from '../lib/board-cache.js';
 import { fromBase64url, randomToken, sha256 } from '../lib/crypto.js';
 import type { AppEnv } from '../lib/env.js';
 import { cookie, getCookie, HttpError, json, readJson, redirect } from '../lib/http.js';
@@ -197,6 +198,8 @@ export async function setName(req: Request, env: AppEnv): Promise<Response> {
     if (String(e).includes('UNIQUE')) throw new HttpError(409, 'taken', 'That name is taken.');
     throw e;
   }
+  // The account's ranked runs join the board now.
+  resetBoardCache();
   return json({ user: publicUser(env, { name, email: user.email }) });
 }
 

@@ -1,7 +1,8 @@
 import type { MeResponse, MyGamesResponse, RecentGame, UnrankedReason } from '../../src/api/types.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
-import { bestOf, boardTotal, rankOf, topRuns, type TopRow } from '../lib/ranks.js';
+import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
+import { bestOf, rankOf } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
 
 const DAY_MS = 86_400_000;
@@ -23,6 +24,7 @@ export async function deleteMe(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
   if (norm((await readJson(req)).confirm) !== norm(user.name ?? user.email)) throw new HttpError(400, 'confirm', 'Type it exactly as shown to confirm.');
   await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
+  resetBoardCache(); // the account's runs leave the board
   return json({}, { headers: { 'Set-Cookie': clearSessionCookie() } });
 }
 
@@ -37,13 +39,13 @@ interface RecentRow {
 /** GET /api/me/games: your best and its rank, how many of the top 50 are yours, and your last 30 games. */
 export async function myGames(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
-  const [best, recent, top, total] = await Promise.all([
+  const [best, recent, { top, total }] = await Promise.all([
     bestOf(env.DB, user.id),
     env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
       .bind(user.id)
       .all<RecentRow>(),
-    user.name ? topRuns(env.DB) : Promise.resolve<TopRow[]>([]),
-    boardTotal(env.DB),
+    // The top 50 and the total from the isolate's copy (BOARD_TTL_MS); your best and its rank are read live.
+    user.name ? cachedTopAndTotal(env.DB) : cachedTotal(env.DB).then((n) => ({ top: [], total: n })),
   ]);
   const rank = best && user.name ? await rankOf(env.DB, best.ms, best.finished_at) : null;
   const games: RecentGame[] = recent.results.map((g) => ({
