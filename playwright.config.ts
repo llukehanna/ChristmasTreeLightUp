@@ -14,7 +14,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
-    // The account flows again at phone size: the chip shows an initial and the sheets are bottom sheets.
-    { name: 'phone', use: { ...devices['Pixel 7'] }, testMatch: /accounts\.spec\.ts/ },
+    // The account flows again at phone size: the chip shows an initial and the sheets are bottom sheets. The star-head
+    // egg too: its taps are a finger's there.
+    { name: 'phone', use: { ...devices['Pixel 7'] }, testMatch: /(accounts|star-head)\.spec\.ts/ },
   ],
 });
