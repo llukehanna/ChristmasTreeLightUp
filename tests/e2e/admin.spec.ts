@@ -370,7 +370,10 @@ test('a 401 on an upload while only uploads are pending keeps the queue, and Con
   await expect(page.locator('#upload-summary')).toHaveText('All uploads finished: 4 done.');
   const titles = await page.locator('tbody tr td.title input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
   expect(titles).toEqual(['Sleigh Ride', 'Blue Christmas', 'One', 'Two', 'Three', 'Four']);
-  expect(up.seen.map((s) => s.name)).toEqual(['One.mp3', 'Two.mp3', 'Three.mp3', 'One.mp3', 'Four.mp3']);
+  // Three uploads run at once, so each batch's requests can reach the route in any order.
+  const seen = up.seen.map((s) => s.name);
+  expect(seen.slice(0, 3).sort()).toEqual(['One.mp3', 'Three.mp3', 'Two.mp3']);
+  expect(seen.slice(3).sort()).toEqual(['Four.mp3', 'One.mp3']);
   expect(api.gets).toBe(gets); // no load() over the queue
 });
 
