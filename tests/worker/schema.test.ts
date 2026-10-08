@@ -22,6 +22,12 @@ describe('migrations', () => {
     expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_ip', 'games_abandoned']));
   });
 
+  it('games_board and games_abandoned are partial indexes', async () => {
+    const sql = async (name: string) => (await db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?").bind(name).first<{ sql: string }>())?.sql ?? '';
+    expect(await sql('games_board')).toMatch(/WHERE ranked = 1$/);
+    expect(await sql('games_abandoned')).toMatch(/WHERE finished_at IS NULL$/);
+  });
+
   it('deleting a user deletes their sessions and games (foreign keys cascade); signed-out games stay', async () => {
     const user = await db.prepare("INSERT INTO users (google_sub, email, created_at) VALUES ('g-1', 'a@example.com', 1) RETURNING id").first<{ id: number }>();
     if (!user) throw new Error('no user');

@@ -10,9 +10,12 @@ import * as me from './routes/me.js';
 import * as stations from './routes/stations.js';
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
-type Route = readonly [method: Method, pattern: RegExp, handler: Handler];
+export type Route = readonly [method: Method, pattern: RegExp, handler: Handler];
 
-/** Every /api route. Patterns are anchored; their capture groups become the handler's params. */
+/**
+ * Every /api route. Patterns are anchored; their capture groups become the handler's params, which are the raw,
+ * still URL-encoded path segments: a handler must validate (and decode, if it needs to) each one itself.
+ */
 export const ROUTES: readonly Route[] = [
   ['GET', /^\/api\/stations$/, stations.GET],
   ['GET', /^\/api\/auth\/google$/, auth.googleStart],
@@ -30,14 +33,17 @@ export const ROUTES: readonly Route[] = [
   ['PUT', /^\/api\/admin\/upload$/, upload.PUT],
 ];
 
-/** The Worker's request handler (it only runs for /api/*; everything else is static assets). */
-export async function handle(req: Request, env: AppEnv, ctx: Ctx): Promise<Response> {
+/** The Worker's request handler (it only runs for /api/*; everything else is static assets). `routes` is for tests. */
+export async function handle(req: Request, env: AppEnv, ctx: Ctx, routes: readonly Route[] = ROUTES): Promise<Response> {
   let pathname = '';
   try {
     pathname = new URL(req.url).pathname;
     // Fake sign-in skips Google: anywhere but a developer's machine it would let anyone be anyone.
-    if (env.AUTH_MODE === 'fake' && !isLocalHost(req)) throw new HttpError(500, 'misconfigured', 'Sign-in is misconfigured.');
-    const matching = ROUTES.filter(([, pattern]) => pattern.test(pathname));
+    if (env.AUTH_MODE === 'fake' && !isLocalHost(req)) {
+      console.error('api', 'misconfigured');
+      throw new HttpError(500, 'misconfigured', 'Sign-in is misconfigured.');
+    }
+    const matching = routes.filter(([, pattern]) => pattern.test(pathname));
     if (matching.length === 0) throw new HttpError(404, 'not_found', 'Not found');
     const route = matching.find(([method]) => method === req.method);
     if (!route) {
