@@ -386,6 +386,8 @@ export class Topper {
     if (alpha <= 0) return;
     const s = L.s;
     const faces = head ? this.faces(HEAD_H * s * px, sc.light === 'day') : null;
+    // The stored head at start, still decoding: nothing for those few frames, rather than a star that pops into a head.
+    if (head && !faces && this.loading) return;
     c.save();
     c.globalAlpha = alpha;
     if (!faces) {
