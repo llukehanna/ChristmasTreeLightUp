@@ -137,7 +137,8 @@ export class Sheet {
       this.close();
     } else if (e.key === 'Tab') {
       const stops = [...this.root.querySelectorAll<HTMLElement>('button, input, a[href], [tabindex]:not([tabindex="-1"])')].filter(
-        (n) => !(n instanceof HTMLButtonElement && n.disabled) && n.getClientRects().length > 0,
+        // tabIndex -1: out of the Tab order (the tablist's unselected tab).
+        (n) => !(n instanceof HTMLButtonElement && n.disabled) && n.tabIndex >= 0 && n.getClientRects().length > 0,
       );
       if (!stops.length) return;
       const first = stops[0];

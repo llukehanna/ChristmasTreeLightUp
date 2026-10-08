@@ -32,6 +32,13 @@ test('the account menu opens the leaderboard and Your games; Escape closes the s
   await board.getByRole('tab', { name: 'Your games' }).click();
   const games = page.getByRole('dialog', { name: 'Your games' });
   await expect(games).toContainText('No games yet. Light a tree to see it here.');
+  // The tabs answer the arrow keys, and focus stays on the selected tab across the re-render.
+  await expect(games.getByRole('tab', { name: 'Your games' })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(board.getByRole('tab', { name: 'Leaderboard', selected: true })).toBeFocused();
+  await expect(board.getByRole('tabpanel')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(games.getByRole('tab', { name: 'Your games', selected: true })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(games).toBeHidden();
 });

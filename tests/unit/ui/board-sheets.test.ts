@@ -101,3 +101,58 @@ it('your games, signed out: an invitation to sign in', () => {
   expect(el.querySelector('.acct-empty h3')?.textContent).toBe('Keep every tree');
   expect(el.querySelector('[data-act="signin"]')).not.toBeNull();
 });
+
+it('the two views are an ARIA tablist: tabs control one tabpanel, only the selected tab is in the Tab order', () => {
+  for (const tab of ['board', 'games'] as const) {
+    const el = render(tab, { status: 'ready', data: board }, { status: 'loading' }, me, now);
+    const tabs = [...el.querySelectorAll<HTMLElement>('[role="tablist"] [role="tab"]')];
+    expect(tabs.map((t) => t.id)).toEqual(['acct-tab-board', 'acct-tab-games']);
+    expect(tabs.map((t) => t.getAttribute('aria-controls'))).toEqual(['acct-panel', 'acct-panel']);
+    const selected = tab === 'board' ? 0 : 1;
+    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(selected === 0 ? ['true', 'false'] : ['false', 'true']);
+    expect(tabs.map((t) => t.tabIndex)).toEqual(selected === 0 ? [0, -1] : [-1, 0]);
+    const panel = el.querySelector('#acct-panel');
+    expect(panel?.getAttribute('role')).toBe('tabpanel');
+    expect(panel?.getAttribute('aria-labelledby')).toBe(tabs[selected].id);
+  }
+});
+
+it('Left and Right arrows (and Home, End) move to the other tab and select it', () => {
+  // The sheet as Accounts drives it: a tab's click re-renders with that tab, and focus goes to the selected tab.
+  const host = document.createElement('div');
+  document.body.append(host);
+  let tab: 'board' | 'games' = 'board';
+  const show = () => {
+    listView(tab, { status: 'ready', data: board }, { status: 'loading' }, me, now).render(host);
+    host.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+  };
+  const clicked: (string | undefined)[] = [];
+  host.addEventListener('click', (e) => {
+    const act = (e.target as HTMLElement).dataset.act;
+    clicked.push(act);
+    tab = act === 'tab-board' ? 'board' : 'games';
+    show();
+  });
+  show();
+  const press = (key: string) => {
+    const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    document.activeElement?.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+  const focused = () => document.activeElement?.id;
+  expect(press('ArrowRight')).toBe(true);
+  expect(focused()).toBe('acct-tab-games');
+  expect(press('ArrowRight')).toBe(true); // wraps
+  expect(focused()).toBe('acct-tab-board');
+  press('ArrowLeft'); // wraps the other way
+  expect(focused()).toBe('acct-tab-games');
+  press('Home');
+  expect(focused()).toBe('acct-tab-board');
+  press('Home'); // already there: nothing to select
+  press('End');
+  expect(focused()).toBe('acct-tab-games');
+  expect(clicked).toEqual(['tab-games', 'tab-board', 'tab-games', 'tab-board', 'tab-games']);
+  expect(host.querySelector('#acct-panel')?.getAttribute('aria-labelledby')).toBe('acct-tab-games');
+  expect(press('ArrowDown')).toBe(false);
+  host.remove();
+});
