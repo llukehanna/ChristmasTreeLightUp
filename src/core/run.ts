@@ -20,7 +20,7 @@ export interface RunStart {
  * (src/core/replay.ts) so an honest run always verifies (spec 2026-10-07 §5.2):
  * - the board runs on integer ms, a fixed whole number of ms behind log time, so "has this turn finished?" is answered
  *   the same way here and in the replay;
- * - turns finish at their exact finishing times, in order (as the replay's advance does), however late a frame comes;
+ * - turns finish at their exact finishing times, in order (Board.advanceTo, which the replay uses too), however late a frame comes;
  * - before a tap goes in, every turn due by then finishes; only taps the board accepts are logged;
  * - no tap goes in while paused, before the reveal has ended, or after the win; the clock (and the log's 'r') resumes
  *   at the latest with the first tap after a pause or a reload, so a tap is never logged inside a pause.
@@ -101,15 +101,11 @@ export class Run {
     if (!this.board.won) this.log.pause(this.logNow(now));
   }
 
-  /** Finishes turns at their exact finishing times up to `to` (board time), one by one, as the replay does. */
+  /** Finishes turns at their exact finishing times up to `to` (board time), exactly as the replay does. */
   private advance(to: number): BoardEvent[] {
     const out: BoardEvent[] = [];
-    for (;;) {
-      let next = Infinity;
-      for (const r of this.board.rotating.values()) next = Math.min(next, r.t0 + this.board.rotateMs);
-      if (!(next <= to)) return out; // (never loops on a NaN)
-      out.push(...this.board.tick(next));
-    }
+    this.board.advanceTo(to, out);
+    return out;
   }
 
   /** The clock stops with the win (the frame or tap that sees it). */

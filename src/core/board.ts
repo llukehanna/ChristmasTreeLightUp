@@ -147,6 +147,23 @@ export class Board {
     return events;
   }
 
+  /**
+   * Advance time to `to`, finishing turns one by one at their exact finishing times (a single tick takes one step per
+   * turn, however late it comes). The browser (src/core/run.ts) and the server's replay (src/core/replay.ts) both move
+   * time this way, so they agree on every tap. Events go to `out`; returns the time of the win if it happens on the
+   * way (and stops there).
+   */
+  advanceTo(to: number, out: BoardEvent[] = []): number | null {
+    for (;;) {
+      let next = Infinity;
+      for (const r of this.rotating.values()) next = Math.min(next, r.t0 + this.rotateMs);
+      if (!(next <= to)) return null; // nothing due (or `to` is not a number)
+      const events = this.tick(next);
+      for (const e of events) out.push(e);
+      if (this.won) return next;
+    }
+  }
+
   /** Bits to draw: a turning tile shows the shape it is turning from. */
   displayBits(i: number): number {
     return this.rotating.get(i)?.from ?? this.bits[i];
