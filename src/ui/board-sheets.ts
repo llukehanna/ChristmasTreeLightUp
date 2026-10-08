@@ -69,6 +69,27 @@ function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, 
   return `${stats}<h3 class="acct-h3">Recent games</h3>${list}${links}`;
 }
 
+const tabAttrs = (id: ListTab, tab: ListTab): string =>
+  `role="tab" id="acct-tab-${id}" aria-controls="acct-panel" aria-selected="${tab === id}" tabindex="${tab === id ? 0 : -1}"`;
+
+/**
+ * The tablist's keys (WAI-ARIA tabs, automatic activation): Left and Right move to the other tab, wrapping, and Home
+ * and End to the first and last; the tab moved to is selected through its own click, as a pointer would.
+ */
+function bindTabKeys(list: HTMLElement): void {
+  list.addEventListener('keydown', (e) => {
+    const tabs = [...list.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const at = tabs.indexOf(e.target as HTMLElement);
+    if (at < 0) return;
+    const keys: Record<string, number> = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 };
+    if (!Object.hasOwn(keys, e.key)) return;
+    e.preventDefault();
+    const next = tabs[(keys[e.key] + tabs.length) % tabs.length];
+    next.focus({ preventScroll: true });
+    if (next.getAttribute('aria-selected') !== 'true') next.click();
+  });
+}
+
 /** The leaderboard and Your games: one sheet, two tabs (spec §6, pick 2C). */
 export function listView(tab: ListTab, board: Loadable<BoardResponse>, games: Loadable<MyGamesResponse>, user: User | null | undefined, now: number): SheetView {
   return {
@@ -81,12 +102,14 @@ export function listView(tab: ListTab, board: Loadable<BoardResponse>, games: Lo
           <div class="acct-emb">${I.trophy}</div>
           <div class="acct-titles"><h2 class="acct-title">${tab === 'board' ? 'Leaderboard' : 'Your games'}</h2><p class="acct-sub">${sub}</p></div>
           <div class="acct-tabs" role="tablist" aria-label="Leaderboard views">
-            <button role="tab" type="button" data-act="tab-board" aria-selected="${tab === 'board'}">Leaderboard</button>
-            <button role="tab" type="button" data-act="tab-games" aria-selected="${tab === 'games'}">Your games</button>
+            <button ${tabAttrs('board', tab)} type="button" data-act="tab-board">Leaderboard</button>
+            <button ${tabAttrs('games', tab)} type="button" data-act="tab-games">Your games</button>
           </div>
         </header>
-        <div class="acct-body">${tab === 'board' ? boardBody(board, now) : gamesBody(games, user, now)}</div>
+        <div class="acct-body" id="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${tab === 'board' ? boardBody(board, now) : gamesBody(games, user, now)}</div>
         ${tab === 'board' ? `<footer class="acct-pin">${boardPin(board, user, now)}</footer>` : ''}`;
+      const list = inner.querySelector<HTMLElement>('[role="tablist"]');
+      if (list) bindTabKeys(list);
     },
   };
 }
