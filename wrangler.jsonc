@@ -18,9 +18,9 @@
     "run_worker_first": ["/api/*"]
   },
   "r2_buckets": [{ "binding": "MUSIC", "bucket_name": "aglow-music" }],
-  // D1 "aglow": users, sessions and games. Create it with `npx wrangler d1 create aglow` and paste its id here (rollout).
+  // D1 "aglow": users, sessions and games (`npx wrangler d1 create aglow`). Its id is not a secret.
   "d1_databases": [
-    { "binding": "DB", "database_name": "aglow", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "aglow", "database_id": "bcbc2e3a-2618-49f5-bc13-c922bac44585", "migrations_dir": "migrations" }
   ],
   // Workers Logs: the router logs the route and error class of any unexpected failure (never messages or secrets).
   "observability": { "enabled": true },
@@ -28,7 +28,7 @@
     "MUSIC_BASE_URL": "https://aglow-music.lukeghanna.com",
     // Sign-in (spec 2026-10-07): "google" here; "fake" only on localhost (npm run serve:e2e and .dev.vars pass it).
     "AUTH_MODE": "google",
-    // The Google Web client's id (public). A placeholder until rollout; npm run deploy refuses it.
-    "GOOGLE_CLIENT_ID": "REPLACE_WITH_GOOGLE_CLIENT_ID"
+    // The Google Web client's id (public; Google shows it to every visitor on the consent screen).
+    "GOOGLE_CLIENT_ID": "100766354067-le88hcdj6tgaud7890cjevag6c8okts5.apps.googleusercontent.com"
   }
 }
