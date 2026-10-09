@@ -1,85 +1,123 @@
 import { describe, expect, it } from 'vitest';
 import { BEAT, BeatTracker, RESTART_GAP_MS, beatStrength } from '../../../src/radio/beat';
 
-/** Low-band energy for a kick drum: `kick` for the first 60 ms of each beat, `floor` otherwise, sampled at `fps`. */
-function kicks(fps: number, ms: number, { bpm = 120, kick = 0.8, floor = 0.15 } = {}): [number, number][] {
+/**
+ * Onset flux (src/radio/lightshow.ts onsetFlux, dB of rise) as the real analyser gives it: `kick` on the first frame
+ * of each beat (or `kicks[k]` for the k-th), a pad's wobble (up to `noise`) otherwise, sampled at `fps`.
+ */
+function flux(fps: number, ms: number, { bpm = 120, kick = 12, kicks = [] as number[], noise = 2 } = {}): [number, number][] {
   const period = 60_000 / bpm;
   const out: [number, number][] = [];
-  for (let k = 0, t = 0; t < ms; k++, t = (k * 1000) / fps) out.push([t, t % period < 60 ? kick : floor]);
+  let s = 3;
+  let beat = -1;
+  for (let k = 0, t = 0; t < ms; k++, t = (k * 1000) / fps) {
+    const n = Math.floor(t / period);
+    const first = n !== beat;
+    beat = n;
+    s = (s * 1664525 + 1013904223) >>> 0;
+    out.push([t, first ? (kicks.length ? kicks[n % kicks.length] : kick) : (noise * s) / 2 ** 32]);
+  }
   return out;
 }
 const onsets = (b: BeatTracker, samples: [number, number][]) => samples.filter(([t, e]) => b.update(e, t)).map(([t]) => t);
 
 describe('BeatTracker', () => {
   it('finds every kick after the warm-up, on its first frame', () => {
-    const at = onsets(new BeatTracker(), kicks(60, 4000));
+    const at = onsets(new BeatTracker(), flux(60, 4000));
     expect(at).toHaveLength(7); // 500 … 3500; the kick at 0 is inside the warm-up
     at.forEach((t, k) => expect(Math.abs(t - 500 * (k + 1))).toBeLessThanOrEqual(1000 / 60));
   });
 
   it('finds the same beats at 30 and 60 frames a second', () => {
-    const a = onsets(new BeatTracker(), kicks(60, 6000));
-    const b = onsets(new BeatTracker(), kicks(30, 6000));
+    const a = onsets(new BeatTracker(), flux(60, 6000));
+    const b = onsets(new BeatTracker(), flux(30, 6000));
     expect(b).toHaveLength(a.length);
     b.forEach((t, k) => expect(Math.abs(t - a[k])).toBeLessThanOrEqual(34));
   });
 
   it('keeps 250 ms between beats however fast the kicks come', () => {
-    const at = onsets(new BeatTracker(), kicks(60, 3000, { bpm: 300 }));
+    const at = onsets(new BeatTracker(), flux(60, 3000, { bpm: 300 }));
     expect(at.length).toBeGreaterThan(3);
     for (let k = 1; k < at.length; k++) expect(at[k] - at[k - 1]).toBeGreaterThanOrEqual(BEAT.refractoryMs);
   });
 
-  it('ignores music too quiet to drive anything', () => {
-    expect(onsets(new BeatTracker(), kicks(60, 3000, { kick: 0.05, floor: 0.01 }))).toEqual([]);
+  it('ignores anything under the floor: a pad’s wobble, a soft hit', () => {
+    expect(onsets(new BeatTracker(), flux(60, 4000, { kick: 0, noise: BEAT.floor - 0.01 }))).toEqual([]);
+    expect(onsets(new BeatTracker(), flux(60, 4000, { kick: BEAT.floor - 0.5 }))).toEqual([]);
   });
 
-  it('counts strong beats, and weak ones as beats but not strong', () => {
-    const loud = new BeatTracker();
-    const n = onsets(loud, kicks(60, 4000)).length;
-    expect(loud.strong).toBe(n);
-    expect(loud.strength).toBe(1);
-    const soft = new BeatTracker();
-    expect(onsets(soft, kicks(60, 4000, { kick: 0.26 })).length).toBeGreaterThan(3);
-    expect(soft.strong).toBe(0);
-    expect(soft.strength).toBeLessThan(BEAT.strong);
+  it('a steady wash of flux (noise, applause) is no beat: it must jump over the recent average', () => {
+    expect(onsets(new BeatTracker(), flux(60, 4000, { kick: 9, noise: 0 }).map(([t]) => [t, 9] as [number, number]))).toEqual([]);
   });
 
-  it('reset forgets the beat, the strong count and the average, and warms up again', () => {
+  it('strength is relative to the song’s recent beats: equal kicks are all strong, however soft or loud the master', () => {
+    for (const kick of [6, 12, 40]) {
+      const b = new BeatTracker();
+      const n = onsets(b, flux(60, 4000, { kick })).length;
+      expect(n).toBe(7);
+      expect(b.strength).toBe(1);
+      expect(b.strong).toBe(n);
+    }
+  });
+
+  it('the bigger hits are strong and the smaller ones not: loud and soft kicks in turn', () => {
     const b = new BeatTracker();
-    onsets(b, kicks(60, 2000));
+    const strengths: number[] = [];
+    for (const [t, e] of flux(60, 4000, { kicks: [20, 7] })) if (b.update(e, t)) strengths.push(b.strength);
+    expect(strengths).toHaveLength(7); // 500 (soft) … 3500 (soft)
+    // The loud ones at 1000, 2000 and 3000, and the first soft one (the song's peak until the first loud one).
+    expect(strengths.filter((s) => s >= BEAT.strong)).toHaveLength(4);
+    expect(b.strong).toBe(4);
+    expect(strengths.slice(2).filter((_, k) => k % 2 === 0).every((s) => s < BEAT.strong)).toBe(true); // 1500, 2500, 3500
+    expect(Math.min(...strengths)).toBeLessThan(BEAT.strong);
+  });
+
+  it('the peak fades: after a loud stretch, a quieter one’s kicks become strong again', () => {
+    const b = new BeatTracker();
+    onsets(b, flux(60, 2000, { kick: 40 }));
+    const soft = flux(60, 12_000, { kick: 8 }).filter(([t]) => t >= 2000);
+    const strengths: number[] = [];
+    for (const [t, e] of soft) if (b.update(e, t)) strengths.push(b.strength);
+    expect(strengths[0]).toBeLessThan(BEAT.strong);
+    expect(strengths.at(-1)).toBeGreaterThanOrEqual(BEAT.strong);
+  });
+
+  it('reset forgets the beat, the strong count, the peak and the average, and warms up again', () => {
+    const b = new BeatTracker();
+    onsets(b, flux(60, 2000, { kick: 40 }));
     expect(b.strong).toBeGreaterThan(0);
     b.reset();
     expect([b.at, b.strength, b.strong]).toEqual([Number.NEGATIVE_INFINITY, 0, 0]);
-    expect(b.update(0.1, 10_000)).toBe(false);
-    expect(b.update(0.5, 10_200)).toBe(false); // clears every threshold, but still warming up
-    expect(b.update(0.1, 10_300)).toBe(false);
-    expect(b.update(0.5, 10_400)).toBe(true); // warmed up
+    expect(b.update(0.5, 10_000)).toBe(false);
+    expect(b.update(12, 10_200)).toBe(false); // clears every threshold, but still warming up
+    expect(b.update(0.5, 10_300)).toBe(false);
+    expect(b.update(8, 10_400)).toBe(true); // warmed up
+    expect(b.strength).toBe(1); // the old loud peak is forgotten
   });
 
   it('a clock that goes backwards starts the warm-up again', () => {
     const b = new BeatTracker();
-    onsets(b, kicks(60, 2000));
-    expect(b.update(0.1, 5)).toBe(false); // backwards: a new start
-    expect(b.update(0.8, 205)).toBe(false); // warming up
+    onsets(b, flux(60, 2000));
+    expect(b.update(0.5, 5)).toBe(false); // backwards: a new start
+    expect(b.update(12, 205)).toBe(false); // warming up
   });
 
-  it('a long gap between samples starts the warm-up again: the old average is stale', () => {
+  it('a long gap between samples starts the warm-up again', () => {
     const b = new BeatTracker();
-    for (let t = 0; t <= 1000; t += 1000 / 60) b.update(0.1, t);
+    for (let t = 0; t <= 1000; t += 1000 / 60) b.update(0.5, t);
     expect(6000 - 1000).toBeGreaterThan(RESTART_GAP_MS);
-    // Five seconds later the music is loud and steady: no beat from the stale quiet average.
-    const at = onsets(b, kicks(60, 1000).map(([t]) => [6000 + t, 0.5] as [number, number]));
-    expect(at).toEqual([]);
+    // Five seconds later the first sample (stale against the old frame) and its warm-up raise nothing.
+    expect(b.update(30, 6000)).toBe(false);
+    expect(b.update(12, 6200)).toBe(false);
   });
 });
 
 describe('beatStrength', () => {
-  it('0.3 at the threshold, 1 from 2.5 times the average', () => {
-    expect(beatStrength(0.13, 0.1)).toBeCloseTo(0.3);
-    expect(beatStrength(0.19, 0.1)).toBeCloseTo(0.65);
-    expect(beatStrength(0.25, 0.1)).toBeCloseTo(1);
-    expect(beatStrength(1, 0.1)).toBe(1);
-    expect(beatStrength(0.1, 0)).toBe(1); // a floor under the average
+  it('0.3 at the floor, 1 at the recent peak', () => {
+    expect(beatStrength(BEAT.floor, 20)).toBeCloseTo(0.3);
+    expect(beatStrength((BEAT.floor + 20) / 2, 20)).toBeCloseTo(0.65);
+    expect(beatStrength(20, 20)).toBe(1);
+    expect(beatStrength(30, 20)).toBe(1);
+    expect(beatStrength(BEAT.floor, BEAT.floor)).toBe(1); // no spread: every beat is the peak
   });
 });
