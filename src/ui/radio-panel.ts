@@ -1,6 +1,7 @@
 import { formatTime } from '../core/score';
 import { FIREPLACE_ID, MUSIC_BOX_ID, MUSIC_BOX_META } from '../radio/builtin';
 import { EMBED_PRESETS } from '../radio/embed';
+import { SECRET_ID } from '../radio/ids';
 import type { Radio, RadioView } from '../radio/radio';
 import { el } from './dom';
 
@@ -282,7 +283,7 @@ export class RadioPanel {
     this.panel.classList.toggle('playing', v.playing);
 
     // Now playing
-    const carol = v.kind === 'musicbox';
+    const carol = v.kind === 'musicbox' || v.kind === 'celesta';
     setText(this.q('.station'), sourceName(v) ?? 'Aglow Radio');
     setText(
       this.q('.title'),
@@ -355,7 +356,7 @@ export class RadioPanel {
     const on = v.playing && name !== null;
     const full = on ? name : v.settings.on && v.kind === null ? 'Radio' : 'Music off';
     const short = on ? shortName(name) : full === 'Radio' ? 'Radio' : 'Off';
-    const song = on && (v.kind === 'station' || v.kind === 'musicbox') && v.track ? v.track : null;
+    const song = on && (v.kind === 'station' || v.kind === 'musicbox' || v.kind === 'celesta') && v.track ? v.track : null;
     const track = song?.title ?? '';
     const artist = song?.artist ?? '';
     const key = `${on}|${full}|${short}|${track}|${artist}`;
@@ -390,10 +391,25 @@ export class RadioPanel {
 
   /** Rows are built when the list changes and updated in place otherwise, so keyboard focus survives a pick. */
   private renderStations(v: RadioView): void {
-    const key = v.stations.map((s) => s.id).join(',');
+    // Secret mode (spec 2026-10-08 secret mode §4.4): one Secret row on top, the station when it can play, else the celesta.
+    const secret = v.secretStation;
+    // Playable as the radio judges it (spec §4.4 secretSource): tracks, and not failing right now.
+    const playable = !!secret && secret.tracks.length > 0 && !v.unavailable(SECRET_ID);
+    const secretKey = v.secretMode ? `secret:${secret?.name ?? ''}:${secret?.description ?? ''}:${secret?.tracks.length ?? 0}:${playable}|` : '';
+    const key = secretKey + v.stations.map((s) => s.id).join(',');
     if (key !== this.rowsKey) {
       this.rowsKey = key;
       this.rows = [
+        ...(v.secretMode
+          ? [
+              {
+                id: SECRET_ID,
+                name: secret?.name || 'Secret',
+                desc: playable && secret ? secret.description || `${secret.tracks.length} tracks` : 'Dreamy celesta carols',
+                icon: ICON.star,
+              },
+            ]
+          : []),
         ...v.stations.map((s) => ({
           id: s.id,
           name: s.name,
@@ -434,10 +450,12 @@ export class RadioPanel {
       const b = r.node;
       if (!b) continue;
       const current =
-        r.id === FIREPLACE_ID ? v.kind === 'fireplace'
+        r.id === SECRET_ID ? v.kind === 'celesta' || (v.kind === 'station' && v.station?.id === SECRET_ID)
+        : r.id === FIREPLACE_ID ? v.kind === 'fireplace'
         : r.id === MUSIC_BOX_ID ? v.kind === 'musicbox'
         : v.kind === 'station' && v.station?.id === r.id;
-      const unavailable = r.id !== FIREPLACE_ID && r.id !== MUSIC_BOX_ID && v.unavailable(r.id);
+      // The Secret row is never unavailable: it plays the celesta when the station can't.
+      const unavailable = r.id !== FIREPLACE_ID && r.id !== MUSIC_BOX_ID && r.id !== SECRET_ID && v.unavailable(r.id);
       b.setAttribute('aria-current', String(current));
       b.classList.toggle('live', current && v.playing);
       b.disabled = unavailable && !current;
@@ -469,6 +487,8 @@ function sourceName(v: RadioView): string | null {
       return v.station?.name ?? 'Radio';
     case 'musicbox':
       return MUSIC_BOX_META.name;
+    case 'celesta':
+      return 'Secret';
     case 'fireplace':
       return 'Fireplace';
     case 'embed':

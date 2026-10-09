@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import { CAROLS } from '../../../src/radio/carols';
-import { arrange, creditFor, due, MusicBox, nextOrder, playsFor, ringTime } from '../../../src/radio/musicbox';
+import { arrange, CELESTA, creditFor, due, MUSIC_BOX, MusicBox, nextOrder, playsFor, ringTime } from '../../../src/radio/musicbox';
 
 it('arranges a carol into sorted, finite events with melody, bass and inner voices', () => {
   for (const c of CAROLS) {
@@ -237,4 +237,21 @@ it('next() moves to a different carol and prev() goes back to it', () => {
   mb.prev(); // well into it: restart the same carol
   expect(mb.current()?.id).toBe(a);
   mb.stop();
+});
+
+describe('the celesta (secret mode)', () => {
+  it('plays the same carols slower: the tempo stretches every time', () => {
+    const c = CAROLS[0];
+    const a = arrange(c, 1);
+    const b = arrange(c, 1, CELESTA.tempo);
+    expect(b.duration).toBeCloseTo(a.duration / CELESTA.tempo, 6);
+    expect(b.events.map((e) => e.midi)).toEqual(a.events.map((e) => e.midi));
+    expect(b.events[5].t).toBeCloseTo(a.events[5].t / CELESTA.tempo, 6);
+  });
+  it('the music box keeps its own sound; the celesta is softer, purer and wetter', () => {
+    expect(MUSIC_BOX).toMatchObject({ mode2: 6.267, mode2Level: 0.22, mode2Decay: 8, mode3: 17.55, tineLevel: 0.18, tineDecayS: 0.012, attackS: 0.002, ringScale: 1, tempo: 1, level: 0.98 });
+    expect(MUSIC_BOX.room).toEqual({ send: 0.2, tone: 3800, taps: [[0.067, 0.3, -0.5], [0.103, 0.28, 0.5]] });
+    expect(CELESTA).toMatchObject({ mode2: 2.756, mode2Level: 0.08, mode2Decay: 5, mode3: 5.404, tineLevel: 0.05, tineDecayS: 0.02, attackS: 0.006, ringScale: 1.35, tempo: 0.8, level: 0.9 });
+    expect(CELESTA.room).toEqual({ send: 0.42, tone: 3000, taps: [[0.137, 0.46, -0.6], [0.211, 0.42, 0.6]] });
+  });
 });
