@@ -3,12 +3,14 @@ import { degree } from '../core/dirs';
 import { GRID } from '../core/mask';
 import { Aurora, sweepFrame, type SweepFrame } from './aurora';
 import { drawBlurred } from './blur';
-import { drawBulb, drawBulbGlint, drawBulbHalo } from './bulbs';
+import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
 import type { Camera } from './camera';
 import {
   Confetti, Current, Embers, SPARKS, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
   drawHover, drawSourceCore, drawSourceGlow, drawStarGlow, easeSnap, starState,
 } from './effects';
+import { FaceSprites } from './face-sprites';
+import { FACE_CONFETTI_PX, FACE_GARLAND_H, FACE_ORNAMENT_H, faceBulbTile, faceGarlandIndex } from './faces';
 import { Garland } from './garland';
 import { tileGeometry } from './geometry';
 import { Y, computeLayout, tileCenter, type Layout } from './layout';
@@ -85,6 +87,13 @@ export class Renderer {
   private readonly presents = new Presents();
   /** The star on top, or the star-head egg's sticker (src/render/topper.ts). */
   readonly topper = new Topper();
+  /** Secret mode's faces, from the topper's sticker (spec 2026-10-08 secret mode §3). */
+  readonly faces = new FaceSprites(() => this.topper.image);
+  /** The presents and garland were last laid out with the faces. */
+  private faced = false;
+  /** The face ornament's tile, worked out once per tree. */
+  private faceBoard: Board | null = null;
+  private faceTile = -1;
   /** Fraction of tiles whose light has visibly arrived (last frame). */
   private visFrac = 0;
   /** Set by the first resize: until then a scene change has nothing to repaint. */
@@ -180,8 +189,20 @@ export class Renderer {
   private repaint(): void {
     paintBackground(ctx2d(this.bg), this.layout, this.scene);
     paintTree(ctx2d(this.tree), this.layout, this.scene);
-    this.presents.layout(this.layout, GRID, this.scene);
-    this.garland.paint(this.scene, this.layout.dpr);
+    this.layFaces();
+  }
+
+  /** Presents and garland: in secret mode, once the sticker has loaded, with the face paper and the face bulb. */
+  private layFaces(): void {
+    const faces = this.secret && this.faces.ready ? this.faces : null;
+    this.presents.layout(this.layout, GRID, this.scene, faces);
+    this.garland.paint(this.scene, this.layout.dpr, faces ? faceGarlandIndex(this.garland.geo) : -1);
+    this.faced = faces !== null;
+  }
+
+  /** Where the faces are (the e2e probe): the ornament's tile, the present and the garland bulb, or -1. */
+  faceInfo(): { tile: number; gift: number; garland: number } {
+    return { tile: this.secret && this.faces.ready ? this.faceTile : -1, gift: this.presents.faceIndex, garland: this.garland.face };
   }
 
   frame(f: FrameInput): void {
@@ -208,6 +229,15 @@ export class Renderer {
     const world = (c: CanvasRenderingContext2D, k: number) => c.setTransform(k * cam.scale, 0, 0, k * cam.scale, k * cam.tx, k * cam.ty);
 
     vis.prune(now);
+    // Secret mode's faces: lay the presents and garland out again once the sticker arrives; one ornament per tree.
+    const secret = this.secret;
+    if (secret && !this.faced && this.faces.ready) this.layFaces();
+    if (secret && board !== this.faceBoard) {
+      this.faceBoard = board;
+      this.faceTile = faceBulbTile(board.solution, GRID.ids);
+    }
+    const faceTile = secret && this.faces.ready ? this.faceTile : -1;
+    const facePx = FACE_ORNAMENT_H * s * dpr * cam.scale;
     if (style === 'filament' && tier < 2) this.current.step(board, vis, now, f.dt);
     else this.current.clear();
 
@@ -277,7 +307,11 @@ export class Renderer {
       ctx.rotate(angle);
       ctx.scale(k, k);
       drawUnlit(ctx, tileGeometry(shown, 0), s, sc, style);
-      if (isBulb) drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style);
+      if (isBulb) {
+        const face = i === faceTile ? this.faces.get('ornament', facePx, false) : null;
+        if (face) drawFaceBulb(ctx, shown, 0, s, sc, face);
+        else drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style);
+      }
       ctx.restore();
 
       const { q, alpha } = vis.fill(board, i, now);
@@ -350,7 +384,10 @@ export class Renderer {
       ctx.scale(k, k);
       drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker });
       if (degree(board.solution[i]) === 1 && q >= 1) {
-        drawBulb(ctx, board.bits[i], sc.bulbs[board.colors[i]], this.bulbAmount(f, i) * alpha, s, sc, style);
+        const amt = this.bulbAmount(f, i) * alpha;
+        const face = i === faceTile ? this.faces.get('ornament', facePx, true) : null;
+        if (face) drawFaceBulb(ctx, board.bits[i], amt, s, sc, face);
+        else drawBulb(ctx, board.bits[i], sc.bulbs[board.colors[i]], amt, s, sc, style);
         if (!f.reducedMotion) drawBulbGlint(ctx, now - (vis.litStart[i] + TILE_FILL_MS), s);
       }
       ctx.restore();
@@ -364,8 +401,12 @@ export class Renderer {
     // 6. Lit garland glass, foreground snow, then win confetti (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.garland.drawLit(ctx, sc, now, f.winAt, f.reducedMotion);
+    if (secret) {
+      const px = FACE_GARLAND_H * this.garland.geo.size * dpr;
+      this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), 0);
+    }
     this.snow.draw(ctx, L, sc, true, motionDt, now, density);
-    if (!f.reducedMotion) this.confetti.draw(ctx, L, now, f.winAt, density, sc);
+    if (!f.reducedMotion) this.confetti.draw(ctx, L, now, f.winAt, density, sc, secret ? this.faces.get('confetti', FACE_CONFETTI_PX * dpr, true) : null);
   }
 
   /** Pop intensity + light-show boost + the bottom-to-top win wave (spec §4.5 item 10). */

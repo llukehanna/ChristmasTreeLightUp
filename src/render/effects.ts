@@ -406,6 +406,8 @@ export function foil(face: number, tone: number): string {
 
 export const CONFETTI_MS = 6500;
 export const CONFETTI_COUNT = 120;
+/** Secret mode: each gold fleck falls as a mini head this many times its size (spec 2026-10-08 secret mode §6). */
+export const HEAD_FLECK = 4;
 
 interface Fleck {
   gold: boolean;
@@ -437,7 +439,7 @@ export class Confetti {
   }
 
   /** Screen space; leaves a CSS px (`dpr`) transform set. */
-  draw(c: CanvasRenderingContext2D, L: Layout, now: number, winAt: number | null, density: number, sc: Scene): void {
+  draw(c: CanvasRenderingContext2D, L: Layout, now: number, winAt: number | null, density: number, sc: Scene, head: HTMLCanvasElement | null = null): void {
     const n = this.count(now, winAt, density);
     if (!n || winAt === null) return;
     if (this.seed !== winAt) this.spawn(winAt);
@@ -462,6 +464,18 @@ export class Confetti {
       }
       // A tumbling foil fleck: foreshortened by its flip, brightest when it faces the viewer.
       const face = Math.abs(Math.cos(f.tumble * tt + f.ph));
+      if (head) {
+        // A mini head turning like a coin as it tumbles: foreshortened across, spinning slower than a fleck so the face reads.
+        const hh = size * HEAD_FLECK;
+        const hw = (hh * head.width) / head.height;
+        c.translate(x, y);
+        c.rotate((f.spin * tt + f.ph) * 0.35);
+        c.scale(Math.max(0.12, face), 1);
+        c.globalAlpha = a;
+        c.drawImage(head, -hw / 2, -hh / 2, hw, hh);
+        c.globalAlpha = 1;
+        continue;
+      }
       c.translate(x, y);
       c.rotate(f.spin * tt + f.ph);
       c.scale(1, Math.max(0.12, face));

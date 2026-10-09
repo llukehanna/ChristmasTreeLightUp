@@ -1,4 +1,5 @@
 import { mix, rgba, shade } from './color';
+import { FACE_GARLAND_H } from './faces';
 import type { Scene } from './scenes';
 
 /**
@@ -126,6 +127,8 @@ export class Garland {
   private backH = 0;
   private width = 1;
   private lastCount = -1;
+  /** Secret mode: the bulb whose glass is Luke's head (spec 2026-10-08 secret mode §3), or -1. */
+  face = -1;
 
   layout(w: number, s: number, chromeBottom: number): void {
     const prev = this.onAt;
@@ -201,7 +204,8 @@ export class Garland {
   }
 
   /** Pre-renders the static back layer. Call after `layout` and on scene change. */
-  paint(sc: Scene, dpr: number): void {
+  paint(sc: Scene, dpr: number, face = -1): void {
+    this.face = face;
     const top = Math.floor(this.geo.y0 - 8);
     const h = Math.ceil(this.geo.bottom + 6) - top;
     const cv = this.back ?? document.createElement('canvas');
@@ -246,7 +250,7 @@ export class Garland {
       c.translate(b.x, b.y);
       c.rotate(b.angle);
       this.socket(c, g.size, day);
-      this.glassUnlit(c, sc.bulbs[k % sc.bulbs.length], g.size, day);
+      if (k !== this.face) this.glassUnlit(c, sc.bulbs[k % sc.bulbs.length], g.size, day);
       c.restore();
     }
     c.restore();
@@ -280,7 +284,7 @@ export class Garland {
     c.save();
     for (let k = 0; k < g.n; k++) {
       const a = this.amount(k, now, winAt, reduced);
-      if (a <= 0) continue;
+      if (a <= 0 || k === this.face) continue;
       const b = g.bulbs[k];
       const col = sc.bulbs[k % sc.bulbs.length];
       c.save();
@@ -314,6 +318,30 @@ export class Garland {
       c.ellipse(-0.14 * z, cy - 0.12 * z, 0.045 * z, 0.2 * z, 0.12, 0, TAU);
       c.fill();
       c.restore();
+    }
+    c.restore();
+  }
+
+  /**
+   * Secret mode: Luke's head hangs under the face bulb's socket in place of its glass, dimmed while the bulb is dark and
+   * lit on top as it lights; `bob` (bulb sizes, down) moves it gently and on the beat. Screen space, CSS px transform.
+   */
+  drawFace(c: CanvasRenderingContext2D, now: number, winAt: number | null, reduced: boolean, lit: HTMLCanvasElement | null, dim: HTMLCanvasElement | null, bob: number): void {
+    const k = this.face;
+    if (k < 0 || !lit || !dim) return;
+    const z = this.geo.size;
+    const b = this.geo.bulbs[k];
+    const a = this.amount(k, now, winAt, reduced);
+    const h = FACE_GARLAND_H * z;
+    const w = (h * lit.width) / lit.height;
+    const top = 0.3 * z + bob * z;
+    c.save();
+    c.translate(b.x, b.y);
+    c.rotate(b.angle);
+    if (a < 1) c.drawImage(dim, -w / 2, top, w, h);
+    if (a > 0) {
+      c.globalAlpha = Math.min(1, a);
+      c.drawImage(lit, -w / 2, top, w, h);
     }
     c.restore();
   }
