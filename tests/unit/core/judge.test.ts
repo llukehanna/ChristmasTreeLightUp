@@ -143,8 +143,22 @@ describe('judge', () => {
     expect(tick.mock.calls.length).toBeLessThanOrEqual(log.length);
     expect(board.bfsRuns).toBeLessThanOrEqual(MAX_REPLAY_BFS);
 
-    // A loose sanity check on the clock too (about 1.5 ms on Luke's Mac; the Free plan allows 10 ms of CPU). The bound is
-    // wide because the full suite runs ~70 files in parallel; the counts above are the real guard.
+    // The judge still ranks it. The counts above are the guard: wall-clock time depends on how busy the machine is.
+    const serverElapsedMs = solvedAt(log, seed) + 300;
+    expect(judge({ seed, genVersion: GEN_VERSION, log, serverElapsedMs })?.reason).toBeNull();
+  });
+
+  // About 1.5 ms on Luke's Mac; the Free plan allows 10 ms of CPU. Opt-in (PERF=1 npx vitest run tests/unit/core/judge.test.ts):
+  // on a loaded machine it failed npm run deploy at 147 ms.
+  it.runIf(process.env.PERF === '1')('the longest legal log judges in well under the Free plan CPU limit (PERF=1)', () => {
+    const seed = 77;
+    const solve = honest(REVEAL_MS, 50, seed);
+    const tile = GRID.ids[5];
+    const pad: LogEntry[] = [];
+    for (let t = 1000; pad.length + solve.length + 4 <= MAX_LOG_ENTRIES; t += 130) pad.push({ t, a: tile });
+    pad.length -= pad.length % 4;
+    const offset = pad[pad.length - 1].t + 200;
+    const log = [...pad, ...solve.map((e) => ({ t: e.t + offset, a: e.a }))];
     const serverElapsedMs = solvedAt(log, seed) + 300;
     const times: number[] = [];
     for (let k = 0; k < 9; k++) {
@@ -153,6 +167,6 @@ describe('judge', () => {
       times.push(performance.now() - s);
     }
     times.sort((x, y) => x - y);
-    expect(times[4]).toBeLessThan(100);
+    expect(times[4]).toBeLessThan(25); // generous: run it on a quiet machine
   });
 });
