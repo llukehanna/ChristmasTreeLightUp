@@ -24,6 +24,19 @@ describe('StarTaps', () => {
     for (const t of [4000, 4100, 4200]) taps.tap(t);
     expect(taps.tap(6000)).toBe(1);
   });
+
+  it('count is the taps so far toward the next toggle (the e2e probe reads it)', () => {
+    const taps = new StarTaps();
+    expect(taps.count).toBe(0);
+    for (const t of [0, 100, 200]) taps.tap(t);
+    expect(taps.count).toBe(3);
+    taps.tap(300);
+    taps.tap(400);
+    expect(taps.count).toBe(0);
+    taps.tap(500);
+    taps.tap(500 + STAR_TAP_GAP_MS + 1);
+    expect(taps.count).toBe(1);
+  });
 });
 
 describe('TypedWord("hohoho")', () => {
@@ -334,5 +347,62 @@ describe('StarEgg', () => {
     session.set(null);
     expect(egg.isOn).toBe(true);
     expect(saved).toEqual([true]);
+  });
+
+  describe('secret mode hooks', () => {
+    const key = (k: string) => ({ key: k, target: document.body, ctrlKey: false, metaKey: false, altKey: false, repeat: false });
+
+    it("reports the starting value, then the player's toggles as loud", async () => {
+      const { h } = hooks();
+      const mode = vi.fn();
+      h.mode = mode;
+      const egg = new StarEgg(new Session(), h, false);
+      expect(mode).toHaveBeenCalledWith(false, 'start');
+      fiveTaps(egg);
+      await flush();
+      expect(mode).toHaveBeenLastCalledWith(true, 'loud');
+      fiveTaps(egg);
+      expect(mode).toHaveBeenLastCalledWith(false, 'loud');
+    });
+
+    it('calls gesture synchronously inside the fifth tap and the last letter, with where it is heading', () => {
+      const { h } = hooks();
+      const gesture = vi.fn();
+      h.gesture = gesture;
+      const egg = new StarEgg(new Session(), h, false);
+      for (let k = 0; k < 4; k++) egg.tap((now += 200));
+      expect(egg.tapCount).toBe(4);
+      expect(gesture).not.toHaveBeenCalled();
+      egg.tap((now += 200));
+      expect(gesture).toHaveBeenCalledWith(true); // before the sticker's load has resolved
+      const typedHooks = hooks().h;
+      const g2 = vi.fn();
+      typedHooks.gesture = g2;
+      const typed = new StarEgg(new Session(), typedHooks, true);
+      for (const c of 'hohoho') typed.key(key(c), (now += 100));
+      expect(g2).toHaveBeenCalledWith(false);
+    });
+
+    it('a sign-in that changes it is quiet', async () => {
+      const { h } = hooks();
+      const mode = vi.fn();
+      h.mode = mode;
+      const session = new Session();
+      new StarEgg(session, h, false);
+      session.set(user(true));
+      await flush();
+      expect(mode).toHaveBeenLastCalledWith(true, 'quiet');
+    });
+
+    it('a stored head whose sticker fails turns secret mode off quietly', async () => {
+      loads = false;
+      const { h } = hooks();
+      const mode = vi.fn();
+      h.mode = mode;
+      new StarEgg(new Session(), h, true);
+      expect(mode).toHaveBeenCalledWith(true, 'start');
+      await flush();
+      expect(mode).toHaveBeenLastCalledWith(false, 'quiet');
+    });
   });
 });
