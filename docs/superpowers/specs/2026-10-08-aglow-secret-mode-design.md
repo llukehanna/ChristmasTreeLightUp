@@ -15,7 +15,7 @@ Luke's words: "I recall using apps/playing games where there is an alternate 'se
 | Luke's face | Exactly one tree bulb, one present and one garland bulb, all drawn from the topper's already-loaded `public/star-head.png`. Picks are deterministic (§3.1). |
 | Music | A station with the id `secret` in the stations file, edited in `/admin`. It is listed in the game only in secret mode, and autoplays on a by-hand switch-on (the 5th tap or last letter is the gesture). Empty or missing: a built-in celesta variant of the Music Box. Switch-off restores what the radio was doing. |
 | Win ad-lib | Optional `winSound` on the Secret station only: one audio file uploaded to `tracks/secret/`, played on a secret-mode win when game sounds are on. |
-| On the beat | A new frame-rate-independent onset tracker (`src/radio/beat.ts`) on the light show's low band (20–150 Hz, read as unclipped linear amplitude, §5.1). It drives the head's nod, a bulb pulse, a palette step on strong beats and the garland face's bob. Gated by the radio's existing light-show setting. |
+| On the beat | A new frame-rate-independent onset tracker (`src/radio/beat.ts`) on the light show's spectral flux (a kick band above the 808 and a click band, rises in dB, from its own 2048-point tap, §5.1). It drives the head's nod, a bulb pulse, a palette step on strong beats and the garland face's bob. Gated by the radio's existing light-show setting. |
 | Confetti | The win's gold flecks become tumbling mini heads in secret mode; snow flecks stay. Same `CONFETTI_MS` and `CONFETTI_COUNT`. |
 | Cost | Cached layers plus at most 3 extra `drawImage` per frame for the sky, at most 4 for the faces, zero canvas or gradient allocations per frame. |
 
@@ -253,43 +253,62 @@ Other rules:
 
 ### 5.1 The detector (`BeatTracker`, `src/radio/beat.ts`)
 
-Input: the light show's low band as **unclipped linear amplitude**, `e = lowAmplitude(db, binHz)` (`src/radio/lightshow.ts`): the analyser's **float** spectrum (`getFloatFrequencyData`, dB, not clamped), read into one reused `Float32Array` in the same `sample()` as the bytes (the browser analyses once per render quantum, so both reads see the same frame), and, over the bins from 20 to 150 Hz (`LOW_BAND`, the same bins as `bandEnergies` via the shared `binRange`), the mean of `10^((dB − LOW_REF_DB) / 20)` with `LOW_REF_DB = −30` (the default `maxDecibels`): 1 at −30 dB, 0.1 twenty dB below, 10 twenty dB above. One sample per drawn frame at `now` (ms). The existing post-win `BeatDetector` and `bandEnergies` (bytes) are untouched.
+Input: **onset flux**, `e = onsetFlux(db, prev, sorted, binHz)` (`src/radio/lightshow.ts`), one sample per drawn frame at `now` (ms). It is half-wave-rectified spectral flux: the sum of each bin's rise since the last frame, never its fall. The existing post-win `BeatDetector` and `bandEnergies` (bytes from the radio's analyser) are untouched.
 
-Why linear (amended 2026-10-08, Task 5): the analyser's bytes are dB-scaled (−100..−30 dB), so with any held bass or pad their low-band average sits at about 0.75–1.0 and a kick lifts it by less than `ratio`. Measured with the real Chromium `AnalyserNode` (fftSize 1024, smoothing 0.6, one read per frame) on synthesized 10 s tracks, beats found / kicks played:
-
-| Mix | Byte average, 60 fps / 30 fps | Linear amplitude, 60 fps / 30 fps |
-| --- | --- | --- |
-| Kick only, 120 bpm | 19/19 (18 strong) / 19/19 (0 strong) | 19/19 / 19/19, all strong |
-| Kick + 808, 120 bpm | 9/19 / 9/19 | 19/19 / 19/19 |
-| Kick + 808 + pad, 100 bpm | 0/15 / 0/15 | 16/15 / 16/15 |
-| Kick + bass line + pad, 95 bpm | 0/14 / 0/14 | 15/14 / 15/14 |
-| Kick + pad, quiet master | 0/19 / 0/19 | 19/19 / 19/19 |
-| Pad only (no beat) | 0 / 0 | 2 / 11 weak (≤ 0.58, never strong) |
-
-The byte input also made strength depend on the frame rate (the analyser smooths per read), so strong beats fell away at 30 fps; linear amplitude finds the kicks, and the strong beats, at both rates. It is not frame-rate exact on non-percussive material: a pad alone raised 2 weak beats at 60 fps and 11 at 30 fps (strength ≤ 0.58: a faint flash, no palette step).
-
-Why the float spectrum (amended 2026-10-08, Task 5 review): the bytes also **clip** at `maxDecibels` (−30 dB), and a loud master's low bins sit above it (measured peaks of −19 to −11 dB in the mixes below), so a hot, bass-heavy track pins the byte input and hides every kick. Same harness, 60 fps, through a compressor (threshold −14 dB, 8:1) at rising drive:
-
-| Mix (RMS) | Bytes as amplitude: frames pinned at 255, beats | Float amplitude: beats |
-| --- | --- | --- |
-| Kick + sustained 808, 75 bpm (−8.2 to −5.5 dBFS) | 7–11 %, 0/11 | 1/11 |
-| Kick + sustained 808 + pad, 100 bpm (−9.3 to −6.1 dBFS) | 10–27 %, 0/15 | 0–1/15 |
-| Over-driven, limited and clipped (−1 dBFS) | 100 %, 0 | 1 |
-
-The float input removes the clipping, but these mixes show a second limit that is not clipping: when an 808 is held at nearly the kick's level through the same bins, the band's mean barely moves on a kick, so no input to this averaged-band tracker can show it (the kick's 94–150 Hz bins alone found every kick, but also 12 false beats on a pad alone, so they are not adopted). Real masters are judged in the live review (Task 7). The constants below are unchanged. Unit tests guard both inputs: a kick over a held bass that the byte average cannot show, and a kick in a loud master whose bytes clip.
+- **The beat tap.** The flux reads its own analyser, `BEAT_FFT = 2048` points and `BEAT_SMOOTHING = 0.4`, hung off the radio's analyser (`a.connect(tap)`: an analyser passes its input through, and the radio's is a dead-end tap on the music bus, made once). The radio's 1024-point window is 21 ms, so at 30 fps 12 ms of every frame is never analysed, and a kick's 20 ms of punch can fall into that gap. A 43 ms window leaves none. If a tap can't be made, the radio's own analyser stands in. The float spectrum (`getFloatFrequencyData`, dB, unclamped) goes into reused `Float32Array`s (this frame, the last, and a scratch for a median). Nothing is allocated per frame.
+- **Rises in dB.** Each bin is floored at `floorDb = −100` (silence, −Infinity, reads the floor), and its rise since the last frame is capped at `capDb = 40`. In dB, loudness does not matter: a loud master, a quiet volume slider and a ducked bus all give the same flux.
+- **Bands** (`FLUX`; bins via the shared `binRange`):
+  - The **kick band**, 120–250 Hz. It is the kick's punch, above an 808's fundamental: a held 808 owns the bins below 120 Hz, and in the measurements they even dipped on a kick.
+  - The **click band**, 2–6 kHz: the beater's attack.
+  - The **duck band**, 24–500 Hz.
+  - Each band's value is the mean of its bins' capped rises.
+- **The limiter's duck.** A hot master's limiter pulls the whole mix down when the kick hits, and that hides the kick's own rise. So the kick band's rises are measured against `duck = min(0, median change across the duck band)`.
+- **The weighting.** `e = kick · (1 + clickWeight · click / capDb)` with `clickWeight = 0.5`. A kick with its attack counts up to 1.5×. A hat, which is a click with no kick under it, counts for nothing; hats are on every eighth in trap.
+- **A fresh start.** The first frame reads 0. After a gap of more than `RESTART_GAP_MS` the last spectrum is stale, and the flux starts again.
 
 ```
-BEAT = { floor: 0.06, rise: 0.035, ratio: 1.3, tauMs: 300, warmupMs: 300, refractoryMs: 250, strong: 0.6 }
+BEAT = { floor: 5, rise: 0.5, ratio: 1.3, tauMs: 300, warmupMs: 300, refractoryMs: 250, strong: 0.6, peakMs: 4000 }
 ```
 
 - First sample, the clock going backwards, or a gap of more than `RESTART_GAP_MS = 1000` since the last sample (a hidden tab, the music paused: the average is stale): `avg = e`, start the warm-up, no beat.
 - `dt = min(100, now − prev)`.
-- Onset when all hold: `now − start ≥ warmupMs`; `e ≥ floor`; `e − avg ≥ rise`; `e ≥ ratio · avg`; `now − at ≥ refractoryMs`.
-- On an onset: `at = now`; `strength = beatStrength(e, avg)` = `clamp(0.3 + 0.7 · (e / max(avg, 0.02) − ratio) / (2.5 − ratio), 0.3, 1)` (0.3 at the threshold, 1 from 2.5× the average); a strong beat (`strength ≥ strong`) increments `strong`.
-- Then the moving average: `avg += (e − avg) · (1 − exp(−dt / tauMs))` (a time constant, so 30 Hz and 60 Hz frames find the same kicks).
-- `reset()` forgets everything, `at`, `strength`, `strong` (so the palette starts unstepped) and the average (the app calls it when secret mode turns on).
+- Onset when all hold: `now − start ≥ warmupMs`; `e ≥ floor`; `e − avg ≥ rise`; `e ≥ ratio · avg`; `now − at ≥ refractoryMs`. `floor` (5 dB of mean rise) does the work. The other two keep a steady wash of flux, such as noise or applause, from counting.
+- On an onset: `at = now`; `peak = max(e, peak · exp(−(now − peakAt) / peakMs))`; `strength = beatStrength(e, peak)` = `clamp(0.3 + 0.7 · (e − floor) / (peak − floor), 0.3, 1)`, which is 0.3 at the floor and 1 at the song's recent peak (1 when there is no spread). So a hot master's biggest hits are strong too, and a strong beat (`strength ≥ strong`) increments `strong`.
+- Then the moving average: `avg += (e − avg) · (1 − exp(−dt / tauMs))`, a time constant, so 30 Hz and 60 Hz frames agree.
+- `reset()` forgets everything: `at`, `strength`, `strong` (so the palette starts unstepped), the peak and the average. The app calls it when secret mode turns on.
 
-`LightShow` owns one `BeatTracker` (`show.beat`) and feeds it `lowAmplitude(…)` from the same `sample()` (one analysis per frame, read as bytes for the post-win show and as floats for the beat).
+`LightShow` owns one `BeatTracker` (`show.beat`) and feeds it in `sample()`, after the radio analyser's byte read for the post-win show.
+
+**How it was chosen** (amended 2026-10-08, Task 5 review rounds 1–2). The first input was the byte average of 20–150 Hz. It found no kick under a held bass or pad: the bytes are dB-scaled and sit at 0.75–1.0. Linear amplitude fixed that, but the bytes also clip at −30 dB, and a loud master pinned them. The float spectrum removed the clipping. Then mixes with an 808 held at nearly the kick's level still found 0–1 beats: no level of an averaged band moves on a kick there.
+
+Spectral flux was tuned in real Chromium on synthesized mixes. They were rendered in an `OfflineAudioContext` and read through a real `AnalyserNode` once per frame, with a browser's jitter. The levels the analyser showed:
+
+- A kick lifts the 141–188 Hz bins by 8–12 dB, even over a held 808.
+- Its click lifts 2–6 kHz by 10–25 dB.
+- Pads wobble about ±3 dB per bin.
+
+Rises in amplitude rather than dB grew with loudness: a loud pad master raised 26–35 false beats. The 2–6 kHz band on its own, or added rather than multiplied, made every hat a beat. The search kept every pad, hat and lone-808 case at zero false beats; `floor` 4 let 1–2 through on pads, and 6 lost kicks.
+
+`tests/e2e/beat.spec.ts` renders the five required mixes plus a loud pad master. Each is 8 s long and wired as the radio wires the bus. The real `LightShow` samples it, and the spec reports kicks found (after the warm-up), snares and false beats:
+
+| Mix | 60 fps | 30 fps |
+| --- | --- | --- |
+| Clean kick, 120 bpm (−20.8 dBFS RMS) | 14/14, 0 false | 14/14, 0 false |
+| Kick over a held 808 at near-kick level, 120 bpm (−6.7) | 14/14, 0 false | 14/14, 0 false |
+| Trap, 140 bpm half-time: kick, 808, hats on eighths and a roll, snare (−6.4) | 8/8 + snare 2/2, 0 false | 8/8 + snare 2/2, 0 false |
+| The same trap, loud mastered: compressor, makeup, limiter (−3.1) | 8/8 + snare 2/2, 0 false | 6/8 + snare 2/2, 0 false |
+| Pads only, chords changing every 2 s (−27.9) | 0 false | 0 false |
+| Pads only, loud mastered (−8.5) | 0 false | 0 false |
+
+Holdouts were not tuned on: 10 s each, offline through the same analyser settings.
+
+- **Trap at 150 bpm with another pattern, mastered:** 12/14 kicks at 60 fps and 10/14 at 30 fps. Two kicks sit 200 ms from a snare, inside the 250 ms refractory.
+- **Kick over a held 808 at 95 bpm, with hats and snares:** 15/15 kicks at both rates.
+- **Hats and pads with no kick, and slowly changing pads through the master:** 0 false beats.
+
+Snares register as beats, a nod on the backbeat. An 808 note's own start is a beat too.
+
+Limits: the spectra are synthesized, not Gucci Mane's master. The live review (Task 7) is the real test.
 
 ### 5.2 When it runs
 
