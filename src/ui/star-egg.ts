@@ -16,6 +16,11 @@ export class StarTaps {
   private n = 0;
   private last = Number.NEGATIVE_INFINITY;
 
+  /** The taps so far toward the next toggle (0–4), as of the last tap. */
+  get count(): number {
+    return this.n;
+  }
+
   /** Counts a tap on the star: 1–4 build up, 5 toggles (and the count starts over). */
   tap(now: number): number {
     if (now - this.last > STAR_TAP_GAP_MS) this.n = 0;
@@ -65,6 +70,13 @@ export interface EggHooks {
   put(on: boolean): Promise<unknown>;
   /** A flip has started (the app re-renders the share image once it has landed). */
   flipped?(): void;
+  /**
+   * Secret mode follows the head (spec 2026-10-08 secret mode §1): 'start' when constructed, 'loud' for the player's
+   * own toggle, 'quiet' for a sign-in or a stored head whose sticker failed.
+   */
+  mode?(on: boolean, how: 'start' | 'loud' | 'quiet'): void;
+  /** Called synchronously inside the gesture that completes a toggle (the 5th tap, the last letter), before anything async: `on` is where it is heading. */
+  gesture?(on: boolean): void;
   now?(): number;
 }
 
@@ -90,12 +102,14 @@ export class StarEgg {
   ) {
     this.on = starHeadFor(local, session.current);
     h.topper.set(this.on);
+    h.mode?.(this.on, 'start');
     if (this.on) {
       // A stored head whose sticker can't load: the star, quietly, for this visit (the preference itself stays).
       void h.topper.load().then((ok) => {
         if (ok || !this.on || this.turning) return;
         this.on = false;
         h.topper.set(false);
+        h.mode?.(false, 'quiet');
       });
     }
     session.subscribe((s) => this.onSession(s));
@@ -103,6 +117,11 @@ export class StarEgg {
 
   get isOn(): boolean {
     return this.on;
+  }
+
+  /** The star taps so far toward the next toggle (the e2e probe). */
+  get tapCount(): number {
+    return this.taps.count;
   }
 
   /** A tap on the star (the app has already checked it is one). */
@@ -115,12 +134,14 @@ export class StarEgg {
       this.h.vibrate(6);
       return;
     }
+    if (!this.turning) this.h.gesture?.(!this.on);
     this.toggle(now);
   }
 
   /** A keydown the game would otherwise see: true when it completed "hohoho" (and toggled). */
   key(e: KeyLike, now: number): boolean {
     if (!this.word.feed(e, now)) return false;
+    if (!this.turning) this.h.gesture?.(!this.on);
     this.toggle(now);
     return true;
   }
@@ -152,6 +173,7 @@ export class StarEgg {
     this.h.save(on);
     this.h.topper.flip(on, now);
     this.h.flipped?.();
+    this.h.mode?.(on, loud ? 'loud' : 'quiet');
     if (!loud) return;
     this.send(on);
     this.h.sfx.jingle(on);

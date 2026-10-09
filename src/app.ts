@@ -11,14 +11,16 @@ import { GRID } from './core/mask';
 import { Run } from './core/run';
 import { formatTime, scoreFor, wholeSeconds } from './core/score';
 import { seededBoard } from './core/seeded';
+import { audio } from './audio/context';
 import { Sfx } from './audio/sfx';
 import { bindInput } from './input';
 import { Radio } from './radio/radio';
+import { WinSound } from './radio/win-sound';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { starCenter } from './render/effects';
 import { tileAt, tileCenter } from './render/layout';
-import { Renderer } from './render/renderer';
-import { SCENES, sceneForHour, type SceneId } from './render/scenes';
+import { Renderer, type BeatFrame } from './render/renderer';
+import { sceneFor, sceneForHour, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
 import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
@@ -32,12 +34,11 @@ import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
 import { accountStatsView, deviceStatsView, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
-import { makeShareImage, prepareShareImage, shareResult, type ShareImage } from './ui/share';
+import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareImage } from './ui/share';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
 
 const INTRO_KEY = 'aglow.seenIntro';
-const INK: Record<SceneId, string> = { midnight: '#f3ead8', fireside: '#f4e6cf', frost: '#15261f' };
 
 export class App {
   readonly sfx = new Sfx();
@@ -100,6 +101,12 @@ export class App {
   private statsSeq = 0;
   /** The star-head egg: taps on the star and "hohoho" swap the topper (src/ui/star-egg.ts). */
   private readonly egg: StarEgg;
+  /** Secret mode (spec 2026-10-08 secret mode): on exactly while the head tops the tree. */
+  private secret = false;
+  /** The Secret station's win ad-lib. */
+  private readonly winSound = new WinSound();
+  /** The beat handed to the renderer, reused every frame. */
+  private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -158,6 +165,11 @@ export class App {
         put: (on) => api.setStarHead(on),
         // After a win the share image shows the topper: render it again once the flip and its flecks have settled.
         flipped: () => setTimeout(() => this.refreshShare(), FLIP_MS / 2 + BURST_MS + 100),
+        // Inside the completing gesture: the Secret station may only start later, so the radio is primed now.
+        gesture: (on) => {
+          if (on) this.radio.primeSecret();
+        },
+        mode: (on, how) => this.setSecret(on, how),
       },
       loadStarHead(),
     );
@@ -345,12 +357,31 @@ export class App {
     this.winAt = this.vis.lastLitAt(this.board);
     const game = this.board;
     const delay = Math.max(0, this.winAt - now);
-    if (sound) setTimeout(() => this.board === game && this.sfx.win(), delay);
+    if (sound) {
+      setTimeout(() => {
+        if (this.board !== game) return;
+        this.sfx.win();
+        if (this.secret) this.playWinSound();
+      }, delay);
+    }
     setTimeout(() => {
       if (this.board !== game || this.starting) return;
       this.prepareShare();
       this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: this.statsView() });
     }, delay + 1500);
+  }
+
+  /**
+   * Secret mode's win ad-lib (spec §4.6): a game sound, so only with the effects volume up. The music ducks under it
+   * for its whole length (a later game sound's shorter duck keeps that hold).
+   */
+  private playWinSound(): void {
+    const url = this.radio.secretWinSound();
+    const ctx = audio.ctx;
+    if (!url || !ctx || !audio.sfx || this.settings.effectsVolume <= 0) return;
+    void this.winSound.play(url, ctx, audio.sfx).then((played) => {
+      if (played) this.radio.duck(this.winSound.lastDurationS);
+    });
   }
 
   /** Back from sign-in, or a reload before the finish was answered: the solved tree and its results tag again (stats were recorded at the win). */
@@ -538,7 +569,7 @@ export class App {
 
   /** Renders the share image from the stage as it is now (the lit tree, identity camera). */
   private prepareShare(): ShareImage {
-    const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, INK[this.sceneId]));
+    const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, shareInk(this.renderer.scene)));
     this.shareImage = image;
     return image;
   }
@@ -555,11 +586,17 @@ export class App {
     }
   }
 
-  /** After a win, a scene or size change re-renders the share image once the stage has redrawn. */
+  /** After a win, a scene or size change re-renders the share image once the stage has redrawn (and any sky sweep has landed). */
   private refreshShare(): void {
     if (!this.shareImage) return;
     const game = this.board;
-    requestAnimationFrame(() => requestAnimationFrame(() => this.board === game && this.shareImage && this.prepareShare()));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (this.board !== game || !this.shareImage) return;
+        if (this.renderer.sweeping) this.refreshShare(); // never a half-swept sky with its seam
+        else this.prepareShare();
+      }),
+    );
   }
 
   /* ---------- frame loop ---------- */
@@ -584,13 +621,26 @@ export class App {
     // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow.
     const show = this.winAt !== null && this.radio.lightShowActive && !this.reduced.matches;
     this.lightShowOn = show;
-    if (show) this.radio.show.sample(now);
+    // Secret mode's beat (spec 2026-10-08 secret mode §5.2): the same analyser, before and after the win, and under
+    // reduced motion too (its gentle pulse).
+    const beating = this.secret && this.radio.lightShowActive;
+    if (show || beating) this.radio.show.sample(now);
     this.renderer.frame({
       board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover,
       revealAt: this.run.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
       extraBulb: show ? (i) => this.radio.show.extraBulb(Math.floor(i / GRID.w), now) : undefined,
       ambient: show ? this.radio.show.low : 0,
+      beat: beating ? this.beatFrame() : undefined,
     });
+  }
+
+  /** The tracker's last onset for the renderer: no palette step under reduced motion. */
+  private beatFrame(): BeatFrame {
+    const b = this.radio.show.beat;
+    this.beat.at = b.at;
+    this.beat.strength = b.strength;
+    this.beat.hue = this.reduced.matches ? 0 : b.strong;
+    return this.beat;
   }
 
   private updateHud(now: number): void {
@@ -675,6 +725,8 @@ export class App {
     this.hideIntro();
     // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
     this.radio.firstGesture();
+    // A page loaded in secret mode had no audio context (or catalog) to preload the ad-lib with: once both exist. Once per URL.
+    if (this.secret) this.winSound.preload(this.radio.secretWinSound(), audio.ctx);
     this.handle(this.run.tap(i, now, Date.now()), now);
   }
 
@@ -697,13 +749,34 @@ export class App {
     if (restyle || rescene) this.refreshShare();
   }
 
-  /** Returns whether the scene changed. */
-  private setScene(id: SceneId): boolean {
+  /**
+   * Secret mode follows the head (spec 2026-10-08 secret mode §1). 'start': the first applySettings puts the scene up.
+   * 'loud' (the player's toggle): the sky sweeps from the flip's midpoint and the Secret station plays. 'quiet' (a
+   * sign-in, a sticker that failed): at once, and nothing starts. The egg's `flipped` re-renders the share image.
+   */
+  private setSecret(on: boolean, how: 'start' | 'loud' | 'quiet'): void {
+    const changed = on !== this.secret;
+    this.secret = on;
+    this.radio.setSecret(on, how === 'loud');
+    if (on && changed) {
+      this.radio.show.beat.reset();
+      this.winSound.preload(this.radio.secretWinSound(), audio.ctx);
+    }
+    if (how === 'start' || !changed) return;
+    const reduced = this.reduced.matches;
+    const sweep = how === 'loud' ? { now: performance.now() + (reduced ? 0 : FLIP_MS / 2), reduced } : null;
+    this.pausedDrawn = false;
+    this.setScene(this.sceneId, sweep);
+  }
+
+  /** Returns whether the scene changed. In secret mode the stage shows the aurora whatever the hour; `id` still drives the radio's suggestion. */
+  private setScene(id: SceneId, sweep: { now: number; reduced: boolean } | null = null): boolean {
     this.radio.setScene(id);
-    if (id === this.sceneId && this.renderer.scene === SCENES[id]) return false;
+    const scene = sceneFor(id, this.secret);
+    if (id === this.sceneId && this.renderer.scene === scene) return false;
     this.sceneId = id;
-    document.body.dataset.scene = id;
-    this.renderer.setScene(SCENES[id]);
+    document.body.dataset.scene = scene.id;
+    this.renderer.setScene(scene, sweep);
     return true;
   }
 
@@ -897,9 +970,15 @@ export class App {
     return toScreen(this.camera, x, y);
   }
 
-  /** The egg's state: the head is (or is landing) on top; a flip is under way. */
-  get starHead(): { head: boolean; flipping: boolean } {
-    return { head: this.egg.isOn, flipping: this.renderer.topper.busy(performance.now()) };
+  /** The egg's state: the head is (or is landing) on top; a flip is under way; the star taps toward the next toggle. */
+  get starHead(): { head: boolean; flipping: boolean; taps: number } {
+    return { head: this.egg.isOn, flipping: this.renderer.topper.busy(performance.now()), taps: this.egg.tapCount };
+  }
+
+  /** Secret mode: on, the stage's scene, a sky sweep under way, and where Luke's face is (-1: not placed). */
+  get secretState(): { on: boolean; scene: string; sweeping: boolean; faceTile: number; faceGift: number; faceGarland: number } {
+    const f = this.renderer.faceInfo();
+    return { on: this.secret, scene: this.renderer.scene.id, sweeping: this.renderer.sweeping, faceTile: f.tile, faceGift: f.gift, faceGarland: f.garland };
   }
 
   debugSolve(): void {

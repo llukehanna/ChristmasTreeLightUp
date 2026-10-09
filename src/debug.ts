@@ -7,15 +7,20 @@ export interface AglowProbe {
   tileCenter(i: number): [number, number];
   solve(): void;
   ids: number[];
-  /** `lightShow`: the post-win light show drew the last frame (win, analysable source, setting on, no reduced motion). */
-  radio(): { kind: string | null; playing: boolean; stations: string[]; catalogLoaded: boolean; lightShow: boolean };
+  /**
+   * `lightShow`: the post-win light show drew the last frame (win, analysable source, setting on, no reduced motion).
+   * `source`: the station id for a station, else the kind. `secretListed`: the panel shows the Secret row.
+   */
+  radio(): { kind: string | null; playing: boolean; stations: string[]; catalogLoaded: boolean; lightShow: boolean; source: string | null; secretListed: boolean };
+  /** Secret mode: on, the stage's scene, a sky sweep under way, and where Luke's face is (-1: not placed). */
+  secret(): { on: boolean; scene: string; sweeping: boolean; faceTile: number; faceGift: number; faceGarland: number };
   /** A real tap on tile i, through the game (logged, as a finger's would be). */
   tap(i: number): void;
   /** The server game behind the tree, what became of its run, and the log's length. */
   game(): { id: string | null; outcome: RunOutcome['kind'] | null; reason: string | null; ranked: boolean | null; log: number };
   newTree(): void;
-  /** The star-head egg: the star's centre on screen, whether the head is on top, and whether a flip is under way. */
-  star(): { center: [number, number]; head: boolean; flipping: boolean };
+  /** The star-head egg: the star's centre on screen, whether the head is on top, whether a flip is under way, and the taps toward the next toggle (0–4). */
+  star(): { center: [number, number]; head: boolean; flipping: boolean; taps: number };
   /** The game clock in ms (0 until the reveal ends), and the ms since the reveal ended (0 before): the clock is never ahead of it. */
   clock(): { ms: number; sinceReveal: number };
 }
@@ -50,8 +55,12 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
     ids: [...GRID.ids],
     radio: () => {
       const v = app.radio.view();
-      return { kind: v.kind, playing: v.playing, stations: v.stations.map((s) => s.id), catalogLoaded: app.radio.catalogLoaded, lightShow: app.lightShowOn };
+      return {
+        kind: v.kind, playing: v.playing, stations: v.stations.map((s) => s.id), catalogLoaded: app.radio.catalogLoaded,
+        lightShow: app.lightShowOn, source: v.kind === 'station' ? (v.station?.id ?? null) : v.kind, secretListed: v.secretMode,
+      };
     },
+    secret: () => app.secretState,
     tap: (i) => app.tapTile(i),
     game: () => {
       const o = app.runOutcome;

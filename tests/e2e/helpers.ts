@@ -71,6 +71,38 @@ export async function pickName(page: Page, name: string): Promise<void> {
   await expect(card).toBeHidden();
 }
 
+/**
+ * Stops the page's clock (page.clock.install() before the page loaded): performance.now, Date, timers, frames and event
+ * timestamps stand still until page.clock.resume(). It stops a moment ahead of the page's own time, never in the past
+ * (a loaded machine can be slow to get there: then it is stopped where it was and asked again).
+ */
+export async function stopClock(page: Page): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    const t = await page.evaluate(() => Date.now());
+    try {
+      await page.clock.pauseAt(t + 500);
+      return;
+    } catch (e) {
+      if (attempt >= 2 || !String(e).includes('past')) throw e;
+    }
+  }
+}
+
+/**
+ * Taps the star `times` times as a player would (a mouse click on desktop, a finger on the phone), with the page's
+ * clock stopped: on a loaded machine the gaps between taps can't stretch past the egg's 1.6 s or a touch past 500 ms,
+ * so the taps count as the quick ones they are. The clock runs again afterwards unless `keepStopped`.
+ */
+export async function tapStarStill(page: Page, times: number, touch: boolean, keepStopped = false): Promise<void> {
+  const [x, y] = (await page.evaluate(() => (window as unknown as W).__aglow.star())).center;
+  await stopClock(page);
+  for (let k = 0; k < times; k++) {
+    if (touch) await page.touchscreen.tap(x, y);
+    else await page.mouse.click(x, y);
+  }
+  if (!keepStopped) await page.clock.resume();
+}
+
 /** A sheet over a game in progress pauses it; this resumes, as a player tapping the overlay would. */
 export async function resumeIfPaused(page: Page): Promise<void> {
   const overlay = page.locator('#pause');
