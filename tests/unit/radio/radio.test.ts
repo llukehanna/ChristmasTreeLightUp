@@ -640,4 +640,44 @@ describe('secret mode (spec §4.4)', () => {
     expect(ramps[2][1]).toBe(0.7);
     expect(ramps[2][2]).toBeCloseTo(3.28 + 2.5);
   });
+
+  it("a later, shorter duck never ends an ad-lib's hold early; one that outlasts it extends it", async () => {
+    const { ctx, gain } = fakeAudio();
+    const r = await ready();
+    r.firstGesture();
+    ctx.currentTime = 3;
+    r.duck(2.5); // the ad-lib: held down until 5.53, back up by 5.78
+    const lastRamp = () => gain.calls.filter((c) => c[0] === 'linearRampToValueAtTime').at(-1);
+    ctx.currentTime = 4;
+    gain.value = 0.7 * 0.63;
+    const before = gain.calls.length;
+    r.duck(); // a tile tick under the ad-lib
+    const ramps = gain.calls.slice(before).filter((c) => c[0] === 'linearRampToValueAtTime');
+    expect(ramps.map((c) => c[1])).toEqual([0.7 * 0.63, 0.7 * 0.63, 0.7]);
+    expect(ramps[1][2]).toBeCloseTo(3.03 + 2.5);
+    expect(lastRamp()?.[2]).toBeCloseTo(3.28 + 2.5);
+    // A sound after the hold's end ducks as usual, from its own time.
+    ctx.currentTime = 7;
+    r.duck();
+    expect(lastRamp()?.[2]).toBeCloseTo(7.28);
+    // One that would hold longer than the ad-lib still gets its whole hold.
+    ctx.currentTime = 8;
+    r.duck(3);
+    ctx.currentTime = 8.5;
+    r.duck(1);
+    expect(lastRamp()?.[2]).toBeCloseTo(8.28 + 3);
+  });
+
+  it('a volume change ends any hold: the next duck is its own length again', async () => {
+    const { ctx, gain } = fakeAudio();
+    const r = await ready();
+    r.firstGesture();
+    ctx.currentTime = 3;
+    r.duck(2.5);
+    ctx.currentTime = 3.5;
+    r.setVolume(0.5);
+    ctx.currentTime = 4;
+    r.duck();
+    expect(gain.calls.filter((c) => c[0] === 'linearRampToValueAtTime').at(-1)).toEqual(['linearRampToValueAtTime', 0.5, 4.28]);
+  });
 });
