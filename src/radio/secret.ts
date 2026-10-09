@@ -10,6 +10,8 @@ import { CELESTA_ID, SECRET_ID } from './ids';
 export interface RadioSnapshot {
   /** The audible source (a station id, 'music-box', 'fireplace' or 'embed'), or null when nothing was playing. */
   source: string | null;
+  /** Nothing played yet, but the listener's first move was waiting for the catalog to start the music. */
+  pending: boolean;
   /** The listener's saved settings at the time: music on, and the remembered source. */
   on: boolean;
   remembered: string | null;

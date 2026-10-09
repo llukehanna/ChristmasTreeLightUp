@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SECRET_OFF, isSecretSource, secretStep, type RadioSnapshot, type SecretState } from '../../../src/radio/secret';
 
-const jazz: RadioSnapshot = { source: 'christmas-jazz', on: true, remembered: 'christmas-jazz' };
+const jazz: RadioSnapshot = { source: 'christmas-jazz', pending: false, on: true, remembered: 'christmas-jazz' };
 const on = (autoplay: boolean, muted = false) => ({ type: 'on' as const, autoplay, muted, current: jazz });
 const off = (playingSecret: boolean, musicOn = true) => ({ type: 'off' as const, playingSecret, musicOn });
 
