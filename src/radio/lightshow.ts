@@ -13,6 +13,21 @@ export function bandEnergies(bins: Uint8Array, binHz: number): { low: number; mi
   return { low: avg(20, 150), mid: avg(150, 2000), high: avg(2000, 8000) };
 }
 
+/**
+ * The low band (20–150 Hz, as bandEnergies) as linear amplitude, 1 at `maxDb`: secret mode's beat input (spec 2026-10-08
+ * secret mode §5.1). The analyser's bytes are dB-scaled, so over a held bass a kick lifts their average by too little to
+ * clear BEAT.ratio; undone into amplitude, the same kick stands well clear. A few bins per frame, no allocation.
+ */
+export function lowAmplitude(bins: Uint8Array, binHz: number, minDb: number, maxDb: number): number {
+  const a = Math.max(0, Math.floor(20 / binHz));
+  const b = Math.min(bins.length, Math.ceil(150 / binHz));
+  if (b <= a) return 0;
+  const k = (maxDb - minDb) / 255;
+  let s = 0;
+  for (let i = a; i < b; i++) s += 10 ** ((bins[i] * k + minDb - maxDb) / 20);
+  return s / (b - a);
+}
+
 /** Onset detection on the low band: a jump above the running average, at most one per cooldown. */
 export class BeatDetector {
   private avg = 0;
@@ -31,7 +46,7 @@ export class BeatDetector {
 export class LightShow {
   beatAt = -Infinity;
   low = 0;
-  /** Secret mode's beat (src/radio/beat.ts), fed from the same samples, before and after the win. */
+  /** Secret mode's beat (src/radio/beat.ts), fed from the same samples (as linear amplitude), before and after the win. */
   readonly beat = new BeatTracker();
   private readonly detector = new BeatDetector();
   private bins = new Uint8Array(0);
@@ -43,10 +58,11 @@ export class LightShow {
     if (!a) return;
     if (this.bins.length !== a.frequencyBinCount) this.bins = new Uint8Array(a.frequencyBinCount);
     a.getByteFrequencyData(this.bins);
-    const e = bandEnergies(this.bins, a.context.sampleRate / a.fftSize);
+    const binHz = a.context.sampleRate / a.fftSize;
+    const e = bandEnergies(this.bins, binHz);
     this.low = this.low * 0.8 + e.low * 0.2;
     if (this.detector.update(e.low, now)) this.beatAt = now;
-    this.beat.update(e.low, now);
+    this.beat.update(lowAmplitude(this.bins, binHz, a.minDecibels, a.maxDecibels), now);
   }
 
   /** Extra brightness for a bulb in `row` (0 = top, 8 = bottom): bottom rows pulse first. */
