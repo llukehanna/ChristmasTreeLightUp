@@ -1,3 +1,5 @@
+import { BeatTracker } from './beat';
+
 /** Average energy (0..1) of the bins between two frequencies. */
 export function bandEnergies(bins: Uint8Array, binHz: number): { low: number; mid: number; high: number } {
   const avg = (from: number, to: number) => {
@@ -29,6 +31,8 @@ export class BeatDetector {
 export class LightShow {
   beatAt = -Infinity;
   low = 0;
+  /** Secret mode's beat (src/radio/beat.ts), fed from the same samples, before and after the win. */
+  readonly beat = new BeatTracker();
   private readonly detector = new BeatDetector();
   private bins = new Uint8Array(0);
 
@@ -42,6 +46,7 @@ export class LightShow {
     const e = bandEnergies(this.bins, a.context.sampleRate / a.fftSize);
     this.low = this.low * 0.8 + e.low * 0.2;
     if (this.detector.update(e.low, now)) this.beatAt = now;
+    this.beat.update(e.low, now);
   }
 
   /** Extra brightness for a bulb in `row` (0 = top, 8 = bottom): bottom rows pulse first. */

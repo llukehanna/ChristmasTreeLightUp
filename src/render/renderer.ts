@@ -2,6 +2,7 @@ import type { Board } from '../core/board';
 import { degree } from '../core/dirs';
 import { GRID } from '../core/mask';
 import { Aurora, SkySweep } from './aurora';
+import { beatPulse, garlandBob } from './beat-fx';
 import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
 import type { Camera } from './camera';
@@ -39,6 +40,13 @@ const EXPOSURE_DROP = 0.5;
 const EXPOSURE_POW = 1.3;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+/** Secret mode's beat (spec 2026-10-08 secret mode §5): when the last onset landed, how hard (0.3..1), the palette step. */
+export interface BeatFrame {
+  at: number;
+  strength: number;
+  hue: number;
+}
+
 export interface FrameInput {
   board: Board;
   vis: VisualState;
@@ -53,6 +61,8 @@ export interface FrameInput {
   extraBulb?: (tile: number) => number;
   /** Light show (Plan 2): low-band energy 0..1 that breathes the ground pool and star. */
   ambient?: number;
+  /** Secret mode while music drives it: the nod, the bulb pulse, the palette step and the garland face's bob. */
+  beat?: BeatFrame;
 }
 
 function ctx2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
@@ -219,6 +229,12 @@ export class Renderer {
     }
     const faceTile = secret && this.faces.ready ? this.faceTile : -1;
     const facePx = FACE_ORNAMENT_H * s * dpr * cam.scale;
+    // On the beat (spec 2026-10-08 secret mode §5.3); no palette step under reduced motion.
+    const beatAt = f.beat ? f.beat.at : Number.NEGATIVE_INFINITY;
+    const beatPower = f.beat ? f.beat.strength : 0;
+    const hue = f.beat && !f.reducedMotion ? f.beat.hue : 0;
+    const nb = sc.bulbs.length;
+    this.topper.nod(beatAt, beatPower);
     if (style === 'filament' && tier < 2) this.current.step(board, vis, now, f.dt);
     else this.current.clear();
 
@@ -307,7 +323,7 @@ export class Renderer {
       g.translate(cx, cy);
       g.scale(k, k);
       drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, flicker });
-      if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[board.colors[i]], this.bulbAmount(f, i) * alpha, s);
+      if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i) * alpha, s);
       g.restore();
       if (q >= 1 && board.lighting.lit[i] && !won) drawFrontier(g, board, L, i, now, sc, false);
     }
@@ -371,7 +387,7 @@ export class Renderer {
         const amt = this.bulbAmount(f, i) * alpha;
         const face = i === faceTile ? this.faces.get('ornament', facePx, true) : null;
         if (face) drawFaceBulb(ctx, board.bits[i], amt, s, sc, face);
-        else drawBulb(ctx, board.bits[i], sc.bulbs[board.colors[i]], amt, s, sc, style);
+        else drawBulb(ctx, board.bits[i], sc.bulbs[(board.colors[i] + hue) % nb], amt, s, sc, style);
         if (!f.reducedMotion) drawBulbGlint(ctx, now - (vis.litStart[i] + TILE_FILL_MS), s);
       }
       ctx.restore();
@@ -387,7 +403,7 @@ export class Renderer {
     this.garland.drawLit(ctx, sc, now, f.winAt, f.reducedMotion);
     if (secret) {
       const px = FACE_GARLAND_H * this.garland.geo.size * dpr;
-      this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), 0);
+      this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), garlandBob(now, beatAt, beatPower, f.reducedMotion));
     }
     this.snow.draw(ctx, L, sc, true, motionDt, now, density);
     if (!f.reducedMotion) {
@@ -405,6 +421,7 @@ export class Renderer {
       const w = f.now - f.winAt - (GRID.h - 1 - row) * 70;
       a += 0.6 * Math.exp(-(w * w) / (2 * 110 * 110));
     }
+    if (f.beat) a += beatPulse(f.now - f.beat.at, f.beat.strength, f.reducedMotion);
     return a;
   }
 }
