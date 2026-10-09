@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { audio } from '../../../src/audio/context';
 import * as builtin from '../../../src/radio/builtin';
 import { STATIONS_URL } from '../../../src/radio/catalog';
@@ -12,6 +12,8 @@ import { loadRadioSettings } from '../../../src/store/radio-settings';
 const track = (id: string) => ({ id, url: `/a/${id}.m4a`, title: id, artist: '', credit: 'CC0', duration: 10 });
 const station = (id: string) => ({ id, name: id, description: '', tracks: [track(`${id}-1`), track(`${id}-2`)] });
 const STATIONS = { version: 1, stations: [station('christmas-jazz'), station('christmas-classics')] };
+const WITH_SECRET = { version: 1, stations: [...STATIONS.stations, station('secret')] };
+let served: unknown = STATIONS;
 
 /** An AudioParam that records every scheduling call. */
 class FakeParam {
@@ -57,12 +59,13 @@ beforeEach(() => {
   localStorage.clear();
   gate = Promise.resolve();
   fetched = [];
+  served = STATIONS;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
       fetched.push(url);
       await gate;
-      return new Response(JSON.stringify(STATIONS));
+      return new Response(JSON.stringify(served));
     }),
   );
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
@@ -379,4 +382,158 @@ it('a paused station that becomes unavailable is let go, so play starts somethin
   r.playPause();
   expect(r.view().playing).toBe(true);
   expect(r.view().station?.id).not.toBe('christmas-jazz');
+});
+
+describe('secret mode (spec §4.4)', () => {
+  /** Music Box and the celesta need a real context: record their start instead. */
+  const boxes = () => vi.spyOn(MusicBox.prototype, 'start').mockImplementation(() => undefined);
+
+  it('never lists the Secret station, and says whether secret mode is on', async () => {
+    served = WITH_SECRET;
+    const r = await ready();
+    expect(r.view().stations.map((s) => s.id)).toEqual(['christmas-jazz', 'christmas-classics']);
+    expect(r.view()).toMatchObject({ secretMode: false, secretStation: { id: 'secret' } });
+    r.setSecret(true, false);
+    expect(r.view().secretMode).toBe(true);
+    expect(r.view().stations.map((s) => s.id)).not.toContain('secret');
+  });
+
+  it('by hand: plays the Secret station (never remembered), and switching off restores what played', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.select('christmas-jazz');
+    r.setSecret(true, true);
+    expect(r.view().station?.id).toBe('secret');
+    expect(loadRadioSettings().source).toBe('christmas-jazz');
+    r.setSecret(false, true);
+    expect(r.view().station?.id).toBe('christmas-jazz');
+    expect(loadRadioSettings()).toMatchObject({ on: true, source: 'christmas-jazz' });
+  });
+
+  it('with no playable Secret station, plays the celesta; off restores the silence it found', async () => {
+    fakeAudio();
+    const start = boxes();
+    const r = await ready();
+    r.setSecret(true, true);
+    expect(r.view().kind).toBe('celesta');
+    expect(start).toHaveBeenCalledTimes(1);
+    r.setSecret(false, true);
+    expect(r.view().kind).toBeNull();
+    expect(r.view().playing).toBe(false);
+  });
+
+  it('a muted radio, or a quiet switch, plays nothing', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.setSecret(true, false);
+    expect(r.view().kind).toBeNull();
+    r.setSecret(false, false);
+    r.setVolume(0);
+    r.setSecret(true, true);
+    expect(r.view().kind).toBeNull();
+  });
+
+  it('switched on before the catalog arrives: primed in the gesture, plays when it lands', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    let open!: () => void;
+    gate = new Promise<void>((res) => (open = res));
+    const prime = vi.spyOn(RadioPlayer.prototype, 'prime');
+    const r = new Radio();
+    r.primeSecret();
+    r.setSecret(true, true);
+    expect(prime).toHaveBeenCalled();
+    expect(r.view().kind).toBeNull();
+    open();
+    await vi.waitFor(() => expect(r.view().station?.id).toBe('secret'));
+  });
+
+  it("the listener's own pick wins: switching off no longer restores", async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.select('christmas-jazz');
+    r.setSecret(true, true);
+    r.select('christmas-classics');
+    r.setSecret(false, true);
+    expect(r.view().station?.id).toBe('christmas-classics');
+  });
+
+  it('off with a secret source and nothing saved: moves on to the preferred source', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.setScene('frost');
+    r.setSecret(true, false);
+    r.select('secret');
+    expect(r.view().station?.id).toBe('secret');
+    expect(loadRadioSettings().source).toBeNull();
+    r.setSecret(false, false);
+    expect(r.view().station?.id).toBe('christmas-classics');
+  });
+
+  it('the Secret station is the suggestion in secret mode, and never the fallback outside it', async () => {
+    fakeAudio();
+    boxes();
+    served = { version: 1, stations: [station('secret')] };
+    const r = await ready();
+    r.playPause();
+    expect(r.view().kind).toBe('musicbox');
+    r.playPause();
+    r.setSecret(true, false);
+    r.playPause();
+    expect(r.view().station?.id).toBe('secret');
+  });
+
+  it('select("secret") only works in secret mode; select("celesta") never', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.select('secret');
+    r.select('celesta');
+    expect(r.view().kind).toBeNull();
+    r.setSecret(true, false);
+    r.select('secret');
+    expect(r.view().station?.id).toBe('secret');
+  });
+
+  it('a Secret station that keeps failing falls back to the celesta', async () => {
+    fakeAudio();
+    boxes();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.setSecret(true, true);
+    (r as unknown as { player: RadioPlayer }).player.onUnavailable?.(true);
+    expect(r.view().kind).toBe('celesta');
+  });
+
+  it('switched on and off before the first move: the first move still starts the music', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.primeSecret();
+    r.setSecret(true, true);
+    r.setSecret(false, true);
+    expect(r.view().kind).toBeNull();
+    r.firstGesture();
+    expect(r.view().station?.id).toBe('christmas-jazz'); // the default fireside scene's suggestion
+  });
+
+  it('the first move never interrupts what secret mode started', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.primeSecret();
+    r.setSecret(true, true);
+    r.firstGesture();
+    expect(r.view().station?.id).toBe('secret');
+  });
+
+  it('hands out the Secret station win ad-lib', async () => {
+    served = { version: 1, stations: [{ ...station('secret'), winSound: '/w.mp3' }] };
+    const r = await ready();
+    expect(r.secretWinSound()).toBe('/w.mp3');
+  });
 });

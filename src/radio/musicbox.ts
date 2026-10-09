@@ -17,20 +17,51 @@ import { nextIndex, shuffled } from './queue';
  * spread slightly across the stereo field by pitch (as along a comb), with a light feedback-delay room.
  */
 
-/** Cantilever mode ratios (Euler–Bernoulli, clamped-free). */
-const MODE2 = 6.267;
-const MODE3 = 17.55;
-const MODE2_LEVEL = 0.22;
-const MODE2_DECAY_FACTOR = 8;
-const TINE_LEVEL = 0.18;
-const TINE_DECAY_S = 0.012;
-const ATTACK_S = 0.002;
+/** One instrument's voice: its partials, envelopes, tempo and room. */
+export interface Timbre {
+  /** Second and third mode, as multiples of the fundamental. */
+  mode2: number;
+  mode2Level: number;
+  /** How many times faster the second mode dies than the body. */
+  mode2Decay: number;
+  mode3: number;
+  /** The strike's transient (pin click plus the third mode). */
+  tineLevel: number;
+  tineDecayS: number;
+  attackS: number;
+  /** Multiplies ringTime. */
+  ringScale: number;
+  /** Multiplies every carol's bpm. */
+  tempo: number;
+  /** Station output level into the music bus. */
+  level: number;
+  room: { send: number; tone: number; taps: readonly (readonly [delay: number, feedback: number, pan: number])[] };
+}
+
+/**
+ * The music box: cantilever mode ratios (Euler–Bernoulli, clamped-free), a 2 ms pluck, a light room. Output level set
+ * by measurement (RMS about −22 dBFS into the music bus at full volume).
+ */
+export const MUSIC_BOX: Timbre = {
+  mode2: 6.267, mode2Level: 0.22, mode2Decay: 8, mode3: 17.55, tineLevel: 0.18, tineDecayS: 0.012, attackS: 0.002,
+  ringScale: 1, tempo: 1, level: 0.98,
+  room: { send: 0.2, tone: 3800, taps: [[0.067, 0.3, -0.5], [0.103, 0.28, 0.5]] },
+};
+
+/**
+ * Secret mode's fallback (spec 2026-10-08 secret mode §4.5): a dreamy celesta. Felt hammers on steel bars over
+ * resonators: a softer attack and click, a purer tone whose second mode sits where a free bar's does (2.756×) and
+ * dies fast, a longer ring, slower carols and a bigger, wetter room.
+ */
+export const CELESTA: Timbre = {
+  mode2: 2.756, mode2Level: 0.08, mode2Decay: 5, mode3: 5.404, tineLevel: 0.05, tineDecayS: 0.02, attackS: 0.006,
+  ringScale: 1.35, tempo: 0.8, level: 0.9,
+  room: { send: 0.42, tone: 3000, taps: [[0.137, 0.46, -0.6], [0.211, 0.42, 0.6]] },
+};
 /** No partials above this (they would only alias or waste a node). */
 const MAX_PARTIAL_HZ = 16000;
 
 const ROLE_GAIN: Readonly<Record<Role, number>> = { melody: 0.3, bass: 0.17, inner: 0.085 };
-/** Station output level, set by measurement (RMS about −22 dBFS into the music bus at full volume). */
-const LEVEL = 0.98;
 
 const TICK_MS = 200;
 /**
@@ -117,8 +148,8 @@ export const playsFor = (c: Carol): number => ((c.beats * 60) / c.bpm < MIN_PIEC
  * Turns a carol into timed note events: the melody (accented by its place in the bar), a bass and
  * inner-voice accompaniment from the chords, and a ritardando over the last bars. Deterministic.
  */
-export function arrange(c: Carol, plays = playsFor(c)): Score {
-  const spb = 60 / c.bpm;
+export function arrange(c: Carol, plays = playsFor(c), tempo = 1): Score {
+  const spb = 60 / (c.bpm * tempo);
   const total = c.beats * plays;
   const ritLen = Math.min(RIT_BARS * c.barBeats, total);
   const ritFrom = total - ritLen;
@@ -289,6 +320,7 @@ export class MusicBox {
   constructor(
     private readonly carols: readonly Carol[] = CAROLS,
     private readonly rng: Rng = Math.random,
+    private readonly timbre: Timbre = MUSIC_BOX,
   ) {}
 
   get running(): boolean {
@@ -304,11 +336,11 @@ export class MusicBox {
     master.gain.linearRampToValueAtTime(1, t + FADE_IN_S);
     master.connect(out);
     const input = ctx.createGain();
-    input.gain.value = LEVEL;
+    input.gain.value = this.timbre.level;
     input.connect(master);
     this.master = master;
     this.input = input;
-    this.room = buildRoom(ctx, input, master);
+    this.room = buildRoom(ctx, input, master, this.timbre.room);
     this.bright = ctx.createPeriodicWave(new Float32Array(4), Float32Array.from([0, 1, 0.08, 0.02]));
     this.warm = ctx.createPeriodicWave(new Float32Array(5), Float32Array.from([0, 1, 0.3, 0.1, 0.04]));
     this.click = pinClick(ctx);
@@ -420,7 +452,7 @@ export class MusicBox {
   private begin(at: number, idx: number): Piece {
     const ctx = this.ctx as AudioContext;
     const carol = this.carols[idx];
-    const score = arrange(carol);
+    const score = arrange(carol, playsFor(carol), this.timbre.tempo);
     const out = ctx.createGain();
     out.connect(this.input as GainNode);
     const pans = PAN.map((v) => panner(ctx, v));
@@ -455,7 +487,7 @@ export class MusicBox {
       const nextAt = p.cur.start + p.score.duration + GAP_S;
       if (nextAt > now + LOOKAHEAD_S) break;
       // Let the last notes ring out before disconnecting the finished piece.
-      this.retire(p, p.cur.start + p.score.duration + ringTime(BASS_LO) + 0.5);
+      this.retire(p, p.cur.start + p.score.duration + ringTime(BASS_LO) * this.timbre.ringScale + 0.5);
       this.pos = this.advanceIndex();
       this.begin(Math.max(nextAt, now + 0.05), this.order[this.pos]);
     }
@@ -467,12 +499,13 @@ export class MusicBox {
   private voice(p: Piece, ev: ScoreEvent, when: number, now: number): void {
     const ctx = this.ctx as AudioContext;
     const rng = this.rng;
+    const T = this.timbre;
     const jitter = Math.max(-2.5, Math.min(2.5, (rng() + rng() + rng() - 1.5) * 2)) * TIMING_JITTER_S;
     const t = Math.max(now + 0.005, when + jitter);
     const f = mtof(ev.midi);
     const vel = Math.min(1, ev.vel * (1 + (rng() * 2 - 1) * VELOCITY_JITTER));
     const amp = ROLE_GAIN[ev.role] * vel ** 1.6;
-    const ring = ringTime(ev.midi);
+    const ring = ringTime(ev.midi) * T.ringScale;
     const dest = p.pans[panIndex(ev.midi)];
 
     // The comb's damper stops a tine that is still ringing just before it is plucked again.
@@ -484,21 +517,21 @@ export class MusicBox {
     body.frequency.value = f;
     const gb = ctx.createGain();
     gb.gain.setValueAtTime(0, t);
-    gb.gain.linearRampToValueAtTime(amp, t + ATTACK_S);
-    gb.gain.setTargetAtTime(0, t + ATTACK_S, ring / 6.91);
+    gb.gain.linearRampToValueAtTime(amp, t + T.attackS);
+    gb.gain.setTargetAtTime(0, t + T.attackS, ring / 6.91);
     body.connect(gb).connect(dest);
     body.start(t);
     body.stop(t + ring + 0.1);
     this.ringing.set(ev.midi, { g: gb, until: t + ring });
 
-    if (f * MODE2 < MAX_PARTIAL_HZ) {
-      const ring2 = ring / MODE2_DECAY_FACTOR;
+    if (f * T.mode2 < MAX_PARTIAL_HZ) {
+      const ring2 = ring / T.mode2Decay;
       const m2 = ctx.createOscillator();
-      m2.frequency.value = f * MODE2;
+      m2.frequency.value = f * T.mode2;
       const g2 = ctx.createGain();
       g2.gain.setValueAtTime(0, t);
-      g2.gain.linearRampToValueAtTime(amp * MODE2_LEVEL, t + ATTACK_S);
-      g2.gain.setTargetAtTime(0, t + ATTACK_S, ring2 / 6.91);
+      g2.gain.linearRampToValueAtTime(amp * T.mode2Level, t + T.attackS);
+      g2.gain.setTargetAtTime(0, t + T.attackS, ring2 / 6.91);
       m2.connect(g2).connect(dest);
       m2.start(t);
       m2.stop(t + ring2 + 0.05);
@@ -506,20 +539,20 @@ export class MusicBox {
 
     // The tine transient: the pin's click plus the fast-dying third mode, sharing one envelope.
     const gt = ctx.createGain();
-    gt.gain.setValueAtTime(amp * TINE_LEVEL, t);
-    gt.gain.setTargetAtTime(0, t, TINE_DECAY_S);
+    gt.gain.setValueAtTime(amp * T.tineLevel, t);
+    gt.gain.setTargetAtTime(0, t, T.tineDecayS);
     gt.connect(dest);
     const pick = ctx.createBufferSource();
     pick.buffer = this.click;
     pick.playbackRate.value = 0.75 + Math.max(0, ev.midi - BASS_LO) / 80;
     pick.connect(gt);
     pick.start(t);
-    if (f * MODE3 < MAX_PARTIAL_HZ) {
+    if (f * T.mode3 < MAX_PARTIAL_HZ) {
       const m3 = ctx.createOscillator();
-      m3.frequency.value = f * MODE3;
+      m3.frequency.value = f * T.mode3;
       m3.connect(gt);
       m3.start(t);
-      m3.stop(t + TINE_DECAY_S * 8);
+      m3.stop(t + T.tineDecayS * 8);
     }
   }
 }
@@ -532,19 +565,16 @@ function panner(ctx: AudioContext, pan: number): AudioNode {
   return p;
 }
 
-/** A light room: two damped feedback delays, panned apart. Returns the nodes to disconnect on stop. */
-function buildRoom(ctx: AudioContext, input: AudioNode, out: AudioNode): AudioNode[] {
+/** The timbre's room: damped feedback delays, panned apart. Returns the nodes to disconnect on stop. */
+function buildRoom(ctx: AudioContext, input: AudioNode, out: AudioNode, room: Timbre['room']): AudioNode[] {
   const send = ctx.createGain();
-  send.gain.value = 0.2;
+  send.gain.value = room.send;
   const tone = ctx.createBiquadFilter();
   tone.type = 'lowpass';
-  tone.frequency.value = 3800;
+  tone.frequency.value = room.tone;
   input.connect(send).connect(tone);
   const nodes: AudioNode[] = [send, tone];
-  for (const [delay, feedback, pan] of [
-    [0.067, 0.3, -0.5],
-    [0.103, 0.28, 0.5],
-  ] as const) {
+  for (const [delay, feedback, pan] of room.taps) {
     const d = ctx.createDelay(1);
     d.delayTime.value = delay;
     const lp = ctx.createBiquadFilter();
