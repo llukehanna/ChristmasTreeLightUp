@@ -19,6 +19,7 @@ import { WinSound } from './radio/win-sound';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { starCenter } from './render/effects';
 import { tileAt, tileCenter } from './render/layout';
+import { fillBeatFrame } from './render/beat-frame';
 import { Renderer, type BeatFrame } from './render/renderer';
 import { sceneFor, sceneForHour, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
@@ -39,6 +40,22 @@ import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
 
 const INTRO_KEY = 'aglow.seenIntro';
+
+/** Secret mode as the test probe sees it (src/debug.ts). */
+export interface SecretState {
+  on: boolean;
+  /** The stage's scene id. */
+  scene: string;
+  /** A sky sweep is under way. */
+  sweeping: boolean;
+  /** Where Luke's face is: the ornament's tile, the present, the garland bulb (-1: not placed). */
+  faceTile: number;
+  faceGift: number;
+  faceGarland: number;
+  /** Win ad-libs asked for (secret mode, a fresh win, effects up, a context) and actually started. */
+  adlibsAsked: number;
+  adlibsPlayed: number;
+}
 
 export class App {
   readonly sfx = new Sfx();
@@ -105,6 +122,8 @@ export class App {
   private secret = false;
   /** The Secret station's win ad-lib. */
   private readonly winSound = new WinSound();
+  /** Win ad-libs asked for (every gate passed) and started: the test probe's view. */
+  private readonly adlibs = { asked: 0, played: 0 };
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
 
@@ -361,7 +380,7 @@ export class App {
       setTimeout(() => {
         if (this.board !== game) return;
         this.sfx.win();
-        if (this.secret) this.playWinSound();
+        if (this.secret) this.playWinSound(game);
       }, delay);
     }
     setTimeout(() => {
@@ -375,12 +394,17 @@ export class App {
    * Secret mode's win ad-lib (spec §4.6): a game sound, so only with the effects volume up. The music ducks under it
    * for its whole length (a later game sound's shorter duck keeps that hold).
    */
-  private playWinSound(): void {
+  private playWinSound(game: Board): void {
     const url = this.radio.secretWinSound();
     const ctx = audio.ctx;
     if (!url || !ctx || !audio.sfx || this.settings.effectsVolume <= 0) return;
-    void this.winSound.play(url, ctx, audio.sfx).then((played) => {
-      if (played) this.radio.duck(this.winSound.lastDurationS);
+    this.adlibs.asked++;
+    // Decoded late (up to WIN_SOUND_LATE_MS), it must not talk over a new tree, or a world switched back.
+    const still = (): boolean => this.board === game && this.secret;
+    void this.winSound.play(url, ctx, audio.sfx, undefined, still).then((played) => {
+      if (!played) return;
+      this.adlibs.played++;
+      this.radio.duck(this.winSound.lastDurationS);
     });
   }
 
@@ -630,17 +654,9 @@ export class App {
       revealAt: this.run.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
       extraBulb: show ? (i) => this.radio.show.extraBulb(Math.floor(i / GRID.w), now) : undefined,
       ambient: show ? this.radio.show.low : 0,
-      beat: beating ? this.beatFrame() : undefined,
+      // While secret mode is on: the onset only while beating, the palette step held through a music pause.
+      beat: this.secret ? fillBeatFrame(this.beat, this.radio.show.beat, beating, this.reduced.matches) : undefined,
     });
-  }
-
-  /** The tracker's last onset for the renderer: no palette step under reduced motion. */
-  private beatFrame(): BeatFrame {
-    const b = this.radio.show.beat;
-    this.beat.at = b.at;
-    this.beat.strength = b.strength;
-    this.beat.hue = this.reduced.matches ? 0 : b.strong;
-    return this.beat;
   }
 
   private updateHud(now: number): void {
@@ -975,10 +991,13 @@ export class App {
     return { head: this.egg.isOn, flipping: this.renderer.topper.busy(performance.now()), taps: this.egg.tapCount };
   }
 
-  /** Secret mode: on, the stage's scene, a sky sweep under way, and where Luke's face is (-1: not placed). */
-  get secretState(): { on: boolean; scene: string; sweeping: boolean; faceTile: number; faceGift: number; faceGarland: number } {
+  /** Secret mode for the test probe: see SecretState. */
+  get secretState(): SecretState {
     const f = this.renderer.faceInfo();
-    return { on: this.secret, scene: this.renderer.scene.id, sweeping: this.renderer.sweeping, faceTile: f.tile, faceGift: f.gift, faceGarland: f.garland };
+    return {
+      on: this.secret, scene: this.renderer.scene.id, sweeping: this.renderer.sweeping, faceTile: f.tile, faceGift: f.gift, faceGarland: f.garland,
+      adlibsAsked: this.adlibs.asked, adlibsPlayed: this.adlibs.played,
+    };
   }
 
   debugSolve(): void {

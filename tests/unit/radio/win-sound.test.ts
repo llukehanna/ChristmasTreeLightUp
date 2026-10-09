@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WIN_SOUND_FETCH_MS, WIN_SOUND_LATE_MS, WinSound } from '../../../src/radio/win-sound';
+import { WIN_SOUND_FETCH_MS, WIN_SOUND_LATE_MS, WIN_SOUND_RETRY_MS, WinSound } from '../../../src/radio/win-sound';
 
 function fakeCtx() {
   const started: unknown[] = [];
@@ -85,9 +85,54 @@ describe('a request that stalls', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchFn.mock.calls[0][1]?.signal?.aborted).toBe(true);
-    w.preload('/w.mp3', ctx);
+    void w.play('/w.mp3', ctx, out);
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
+});
+
+it('after a failure, preloads wait a minute before fetching that URL again; the win itself still tries', async () => {
+  let t = 0;
+  const fetchFn = vi.fn(async () => new Response('', { status: 404 }));
+  const w = new WinSound(fetchFn as unknown as typeof fetch, () => t);
+  const { ctx } = fakeCtx();
+  w.preload('/w.mp3', ctx);
+  await vi.waitFor(() => expect(w.failing('/w.mp3')).toBe(true));
+  // Every tile tap preloads: a failing host is not asked again on each one.
+  for (const at of [100, 5000, WIN_SOUND_RETRY_MS - 1]) {
+    t = at;
+    w.preload('/w.mp3', ctx);
+  }
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+  // Another URL is not held back.
+  w.preload('/other.mp3', ctx);
+  expect(fetchFn).toHaveBeenCalledTimes(2);
+  t = WIN_SOUND_RETRY_MS;
+  w.preload('/w.mp3', ctx);
+  expect(fetchFn).toHaveBeenCalledTimes(3);
+  await new Promise((r) => setTimeout(r, 10)); // that one fails too
+  t += 10;
+  expect(await w.play('/w.mp3', ctx, out, () => t)).toBe(false);
+  expect(fetchFn).toHaveBeenCalledTimes(4);
+});
+
+it('a success clears the back-off', async () => {
+  let ok = false;
+  const fetchFn = vi.fn(async () => (ok ? bytes() : new Response('', { status: 404 })));
+  const w = new WinSound(fetchFn as unknown as typeof fetch, () => 0);
+  const { ctx } = fakeCtx();
+  expect(await w.play('/w.mp3', ctx, out)).toBe(false);
+  ok = true;
+  expect(await w.play('/w.mp3', ctx, out)).toBe(true);
+  expect(w.failing('/w.mp3')).toBe(false);
+});
+
+it('never starts once the moment has passed (a new tree began while it decoded)', async () => {
+  const w = new WinSound(vi.fn(async () => bytes()) as unknown as typeof fetch);
+  const { ctx, started } = fakeCtx();
+  expect(await w.play('/w.mp3', ctx, out, undefined, () => false)).toBe(false);
+  expect(started).toHaveLength(0);
+  expect(await w.play('/w.mp3', ctx, out, undefined, () => true)).toBe(true);
+  expect(started).toHaveLength(1);
 });
 
 it('remembers how long the last ad-lib it started lasts, for the duck', async () => {

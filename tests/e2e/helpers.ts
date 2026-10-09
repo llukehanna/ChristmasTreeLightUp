@@ -73,17 +73,17 @@ export async function pickName(page: Page, name: string): Promise<void> {
 
 /**
  * Stops the page's clock (page.clock.install() before the page loaded): performance.now, Date, timers, frames and event
- * timestamps stand still until page.clock.resume(). It stops a moment ahead of the page's own time, never in the past
+ * timestamps stand still until page.clock.resume(). It stops 50 ms ahead of the page's own time, never in the past
  * (a loaded machine can be slow to get there: then it is stopped where it was and asked again).
  */
 export async function stopClock(page: Page): Promise<void> {
   for (let attempt = 0; ; attempt++) {
     const t = await page.evaluate(() => Date.now());
     try {
-      await page.clock.pauseAt(t + 500);
+      await page.clock.pauseAt(t + 50);
       return;
     } catch (e) {
-      if (attempt >= 2 || !String(e).includes('past')) throw e;
+      if (attempt >= 4 || !String(e).includes('past')) throw e;
     }
   }
 }

@@ -247,7 +247,7 @@ Other rules:
 
 ### 4.6 Win ad-lib (`src/radio/win-sound.ts`)
 
-`WinSound.preload(url, ctx)` fetches (CORS; the media host sends `Access-Control-Allow-Origin: *`) and decodes once per URL; a failure forgets it so a later call retries. The app preloads when secret mode turns on, and (a page loaded in secret mode has no audio context yet) again on each tile tap while it is on, which fetches only once per URL. On a fresh secret-mode win (not a restored one), at the moment the win chime plays, if the Secret station has a `winSound`, the effects volume is above 0 and the context exists, `WinSound.play` starts it once on the effects bus (so the effects volume applies) and the music ducks for its whole length (`radio.duck(winSound.lastDurationS)`). The radio keeps the hold's end (`duckUntil`): a later game sound's shorter duck re-schedules the bus but never lifts the music before the ad-lib ends; a volume change ends the hold. Not decoded within `WIN_SOUND_LATE_MS` = 3000 ms of the win: dropped.
+`WinSound.preload(url, ctx)` fetches (CORS; the media host sends `Access-Control-Allow-Origin: *`) and decodes once per URL; a failure forgets it so a later call retries. The app preloads when secret mode turns on, and (a page loaded in secret mode has no audio context yet) again on each tile tap while it is on, which fetches only once per URL. On a fresh secret-mode win (not a restored one), at the moment the win chime plays, if the Secret station has a `winSound`, the effects volume is above 0 and the context exists, `WinSound.play` starts it once on the effects bus (so the effects volume applies) and the music ducks for its whole length (`radio.duck(winSound.lastDurationS)`). The radio keeps the hold's end (`duckUntil`): a later game sound's shorter duck re-schedules the bus but never lifts the music before the ad-lib ends; a volume change ends the hold. A URL that failed is left alone by preloads for `WIN_SOUND_RETRY_MS` = 60 s (the win itself still tries). An ad-lib decoded late is dropped if a new tree has started or secret mode has turned off meanwhile. Not decoded within `WIN_SOUND_LATE_MS` = 3000 ms of the win: dropped.
 
 ## 5. On the beat
 
@@ -312,7 +312,7 @@ Limits: the spectra are synthesized, not Gucci Mane's master. The live review (T
 
 ### 5.2 When it runs
 
-`beating = secret mode && radio.lightShowActive` (the radio's light-show setting is on and an analysable source, not an embed, is playing). While `beating`, the app samples the light show every drawn frame (before and after the win) and passes `beat = { at, strength, hue }` to the renderer, with `hue = show.beat.strong` (0 under reduced motion). Otherwise no `beat`: the head keeps the egg's idle sway after the win, the garland face its idle bob.
+`beating = secret mode && radio.lightShowActive` (the radio's light-show setting is on and an analysable source, not an embed, is playing). While `beating`, the app samples the light show every drawn frame (before and after the win) and passes `beat = { at, strength, hue }` to the renderer, with `hue = show.beat.strong` (0 under reduced motion). Otherwise, while secret mode is on, `beat = { at: −∞, strength: 0, hue }`: no onset (the head keeps the egg's idle sway after the win, the garland face its idle bob) but the palette step held, so the palette step holds while the music is paused; it starts over when secret mode turns on (`show.beat.reset()`). Outside secret mode, no `beat`.
 
 ### 5.3 What moves (`src/render/beat-fx.ts`, pure)
 

@@ -135,6 +135,47 @@ test('a load in secret mode shows the aurora at once, with no sweep and no music
   await expect.poll(async () => (await radio(page)).kind).toBe('celesta');
 });
 
+/** The Secret station with a win ad-lib, and a count of the ad-lib's fetches. */
+async function withAdlib(page: Page): Promise<{ fetched: () => number }> {
+  await stations(page, [{ ...SECRET, winSound: '/e2e-media/win.wav' }]);
+  let n = 0;
+  page.on('request', (r) => {
+    if (r.url().endsWith('/e2e-media/win.wav')) n++;
+  });
+  return { fetched: () => n };
+}
+
+const solve = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.solve());
+
+test('a fresh win in secret mode plays the Secret station’s win ad-lib once, on the effects bus', async ({ page }) => {
+  const adlib = await withAdlib(page);
+  await ready(page);
+  await fiveTaps(page);
+  await expect.poll(async () => (await secret(page)).on).toBe(true);
+  // Preloaded as secret mode turned on, so it is decoded well before the win.
+  await expect.poll(adlib.fetched).toBeGreaterThan(0);
+  await solve(page);
+  await expect.poll(async () => (await secret(page)).adlibsPlayed, { timeout: 30_000 }).toBe(1);
+  await expect(page.locator('#results')).toBeVisible();
+  expect(await secret(page)).toMatchObject({ adlibsAsked: 1, adlibsPlayed: 1 });
+});
+
+test('with the effects volume at 0 the win ad-lib is never asked for', async ({ page }) => {
+  await withAdlib(page);
+  await page.addInitScript(() => {
+    if (localStorage.getItem('aglow.settings') === null) {
+      localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'auto', pathStyle: 'filament', effectsVolume: 0, haptics: true }));
+    }
+  });
+  await ready(page);
+  await fiveTaps(page);
+  await expect.poll(async () => (await secret(page)).on).toBe(true);
+  await solve(page);
+  // The tag comes 1.5 s after the chime, whose moment is when the ad-lib would be asked for.
+  await expect(page.locator('#results')).toBeVisible({ timeout: 30_000 });
+  expect(await secret(page)).toMatchObject({ adlibsAsked: 0, adlibsPlayed: 0 });
+});
+
 test('a muted radio: the world changes, the music does not', async ({ page }) => {
   await stations(page, [SECRET]);
   await pinRadio(page, { volume: 0 });
