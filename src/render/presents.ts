@@ -179,6 +179,7 @@ function lighting(sc: Scene): Lighting {
   const lightFace = { top: 0.85, side: 0.65, front: 0.4 };
   if (sc.light === 'day') return { ambient: [0.86, 0.9, 0.95], face: { front: 0.9, top: 1.12, side: 0.66 }, warm: g, lightFace };
   if (sc.light === 'moon') return { ambient: [0.2, 0.24, 0.36], face: { front: 0.9, top: 1.35, side: 0.65 }, warm: g, lightFace };
+  if (sc.light === 'aurora') return { ambient: [0.18, 0.26, 0.4], face: { front: 0.9, top: 1.4, side: 0.65 }, warm: g, lightFace };
   return { ambient: [0.3, 0.2, 0.14], face: { front: 0.95, top: 1.25, side: 0.7 }, warm: g, lightFace };
 }
 

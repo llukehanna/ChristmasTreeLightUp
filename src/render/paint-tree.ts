@@ -126,6 +126,12 @@ function paintNeedles(o: CanvasRenderingContext2D, L: Layout, sc: Scene, r: Rng,
     lg.addColorStop(0.3, 'rgba(255,120,50,.10)');
     lg.addColorStop(0.55, 'rgba(0,0,0,0)');
     lg.addColorStop(1, 'rgba(0,0,0,.45)');
+  } else if (sc.light === 'aurora') {
+    // Aurora light from above, the skirt in shadow.
+    lg = o.createLinearGradient(0, Y(L, -1), 0, Y(L, 10));
+    lg.addColorStop(0, 'rgba(120,255,210,.14)');
+    lg.addColorStop(0.5, 'rgba(0,0,0,0)');
+    lg.addColorStop(1, 'rgba(0,0,0,.30)');
   } else {
     lg = o.createLinearGradient(0, Y(L, -1), 0, Y(L, 10));
     lg.addColorStop(0, 'rgba(255,255,255,.05)');

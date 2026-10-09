@@ -21,6 +21,7 @@ body[data-scene='frost'] {
   --cran-top: rgba(158, 26, 38, 0.9); --cran: rgba(108, 14, 24, 0.92);
   --focus: #8e1622;
 }
+body[data-scene='aurora'] { --ink: #eef0ff; --accent: #9fe7ff; --panel: rgba(12, 12, 40, 0.74); }
 * { box-sizing: border-box; }
 html, body {
   margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--ink);
