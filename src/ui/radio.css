@@ -27,6 +27,7 @@
 .eq i:nth-child(3) { animation-delay: -0.75s !important; }
 .radio-pill.muted .eq i { animation: none; height: 3px; opacity: 0.55; box-shadow: none; }
 body[data-scene='frost'] .eq i { box-shadow: none; }
+body[data-scene='aurora'] .eq i { background: linear-gradient(180deg, #effcff, #8fe6ff 45%, #6a8cf0); box-shadow: 0 0 4px rgba(120, 220, 255, 0.5); }
 @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 12px; } }
 
 /* ---------- Panel: the gift-wrap of the settings menu, as a 380px popover ---------- */

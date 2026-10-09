@@ -74,7 +74,7 @@ Places that switch on `sc.light`:
 - `paintTree` lighting pass: `'aurora'` → a vertical gradient from `Y(L, -1)` to `Y(L, 10)`: `0` `'rgba(120,255,210,.14)'`, `0.5` `'rgba(0,0,0,0)'`, `1` `'rgba(0,0,0,.30)'` (aurora light from above), then the existing ambient occlusion.
 - `presents.ts` `lighting()`: `'aurora'` → `ambient: [0.18, 0.26, 0.4]`, `face: { front: 0.9, top: 1.4, side: 0.65 }`.
 - Everything else already treats non-`'day'` as night (topper dimming, garland, contact shadows, confetti snow).
-- `document.body.dataset.scene = 'aurora'`; CSS: `body[data-scene='aurora'] { --ink: #eef0ff; --accent: #9fe7ff; --panel: rgba(12, 12, 40, 0.74); }` and `body[data-scene='aurora'] .radio .art { background: radial-gradient(70% 70% at 50% 62%, rgba(120, 230, 255, 0.24), transparent 70%), linear-gradient(160deg, #1b1650, #070a1e); }`. Share-image ink: `'#eef0ff'`.
+- `document.body.dataset.scene = 'aurora'`; CSS: `body[data-scene='aurora'] { --ink: #eef0ff; --accent: #9fe7ff; --panel: rgba(12, 12, 40, 0.74); }` and `body[data-scene='aurora'] .radio .art { background: radial-gradient(70% 70% at 50% 62%, rgba(120, 230, 255, 0.24), transparent 70%), linear-gradient(160deg, #1b1650, #070a1e); }`. Share-image ink: `'#eef0ff'`. The HUD pills and the toast become frosted indigo glass with an ice hairline (`body[data-scene='aurora'] .pill, .toast`): `linear-gradient(180deg, rgba(74,66,168,.42), rgba(20,18,64,.55))`, border `rgba(160,210,255,.4)`, ink `#e6f0ff`. The timer's bulb and the radio pill's equalizer turn ice-blue. The wordmark, menu and radio panel keep their gold and cranberry.
 
 ### 2.2 Layers
 
@@ -84,13 +84,24 @@ Places that switch on `sc.light`:
    - a faint baked haze so a still frame (reduced motion, tier 3) still reads as aurora: `blurredLayer(c, dpr, 1.2 s, …)` with one ellipse at `(0.5 w, 0.25 hz)`, radii `(0.55 w, 0.09 hz)`, `'rgba(90,255,180,.06)'`;
    - the horizon line `'rgba(160,190,255,.12)'`, 1 px; 160 snow glints below it, `1×1` px, `rgba(200,225,255, r·0.3)`.
    (`hz = Y(L, 10.05)` as in every scene.)
-2. **Aurora ribbons** (`src/render/aurora.ts`, class `Aurora`): three curtain sprites baked lazily on the first draw after a resize, at `RES = 0.25` sprite px per device px. Each sprite is `ceil(SPAN · L.w · dpr · RES)` × `ceil(hz · height · dpr · RES)` with `SPAN = 1.6`. Baking: one vertical gradient per sprite (`0` transparent, `0.55` `rgba(rgb, 0.28)`, `0.86` `rgba(rgb, 1)`, `1` transparent); for every sprite column `x` (`u = x / w`), the column is filled 1 px wide, raised by `lift = 0.22 · (0.5 + 0.5 sin(2π u · waves + phase))` of its height, at alpha `rays · ends`, where `rays = 0.45 + 0.55 sin²(2π u · waves · 4.3 + 2 phase)` and `ends = min(1, u / 0.12, (1 − u) / 0.12)`.
+2. **Aurora ribbons** (`src/render/aurora.ts`, class `Aurora`): three curtain sprites baked lazily on the first draw after a resize, at `RES = 0.25` sprite px per device px. Each sprite is `ceil(SPAN · L.w · dpr · RES)` × `ceil(hz · height · dpr · RES)` with `SPAN = 1.6`. Baking (as shipped, Task 3 fix round 1):
+   - **Gradient:** one vertical gradient per sprite, from `LIFT · h` to `h` (`LIFT = 0.22`). The headroom means a lifted column never cuts its transparent top off at the sprite's edge. Stops: `0` transparent, `0.55` `rgba(rgb, 0.28)`, `0.9` `rgba(rgb, 1)`, `0.97` transparent: a crisp lit hem.
+   - **Columns:** for every sprite column `x` (`u = x / w`), the column is filled 1 px wide and raised by `lift = LIFT · (0.5 + 0.5 sin(2π u · waves + phase))` of its height.
+   - **Ray height:** each column is scaled vertically about the hem by `reach = 0.65 + 0.35 n₃(x)`, so ray tops are ragged.
+   - **Alpha:** `min(1, 1.25 · rays · striae) · ends`, where:
+     - `rays = 0.45 + 0.55 sin²(2π u · waves · 4.3 + 2 phase)`;
+     - `striae = 0.3 + 0.7 (0.55 n₁(x) + 0.45 n₂(x))^1.4`;
+     - `ends = min(1, u / 0.12, (1 − u) / 0.12)`.
+   - **Noise:** `n₁`, `n₂`, `n₃` are `rayNoise` value noise (cosine-interpolated `mulberry32(29 + k)` knots, 0..1). Their spacing: `n₁` 46 CSS px; `n₂` and `n₃` 13 CSS px; never under 2.5 sprite px.
+   - **Cost:** bake-time only; nothing per frame.
 
    | k | colour (`rgb`) | `top` (× hz) | `height` (× hz) | `waves` | `alpha` | `phase` | `driftMs` | `shimmerMs` | `breathMs` |
    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
    | 0 | `92,255,170` green | 0.06 | 0.42 | 1.7 | 0.55 | 0 | 41 000 | 5 300 | 9 700 |
-   | 1 | `70,214,236` teal | 0.14 | 0.34 | 2.6 | 0.40 | 2.1 | 53 000 | 7 100 | 12 100 |
+   | 1 | `70,214,236` teal | 0.08 | 0.34 | 2.6 | 0.40 | 2.1 | 53 000 | 7 100 | 12 100 |
    | 2 | `170,120,255` violet | 0.00 | 0.30 | 1.2 | 0.36 | 4.2 | 67 000 | 8 900 | 15 300 |
+
+   Teal's `top` was 0.14 in the first draft. That put its hem on green's line (both at 0.48 hz), so they stacked into one flat shelf across a desktop sky. At 0.08, teal's hem sits at 0.42 hz: a second, farther curtain.
 
    Per frame (screen space, CSS px transform, `'lighter'`), ribbon `k` is one `drawImage` at `x = −0.3 L.w + drift`, width `SPAN · L.w`, bottom edge fixed at `hz · (top + height)`, height `hz · height · breath`, alpha `R.alpha · shimmer · a` (`a` is the sweep alpha, else 1), where with `t = now` (or `0` under reduced motion):
    `drift = sin(2π t / driftMs + phase) · DRIFT · L.w` (`DRIFT = 0.12`), `shimmer = 0.78 + 0.22 sin(2π t / shimmerMs + phase)`, `breath = 1 + 0.06 sin(2π t / breathMs + 1.3 phase)`.
@@ -109,10 +120,26 @@ Unchanged except step 1 of `Renderer.draw`: the backdrop, then (aurora scene or 
 
 `sweepFrame(t, dir, reduced)` (pure, `src/render/aurora.ts`), `t` = ms since the sweep's start (may be negative: not started):
 
-- Not reduced: `k = clamp01(t / SWEEP_MS)`, `e = easeInOutCubic(k)`; `cover = e` (`'down'`) or `1 − e` (`'up'`); `alpha = 1`; `edge = sin(π k)`; `done = t ≥ SWEEP_MS`.
+- Not reduced: `k = clamp01(t / SWEEP_MS)`, `e = easeInOutCubic(k)`; `cover = e` (`'down'`) or `1 − e` (`'up'`); `alpha = 1`; `edge = sin(π k)` for `k < 1`, exactly `0` at `k = 1` (`sin(π)` is `1.2e-16`); `done = t ≥ SWEEP_MS`.
 - Reduced: `k = clamp01(t / SWEEP_FADE_MS)`; `cover = 1`; `alpha = k` (`'down'`) or `1 − k` (`'up'`); `edge = 0`; `done = t ≥ SWEEP_FADE_MS`.
 
-Drawing while not done: the non-aurora backdrop in full; then, clipped to `[0, cover · L.h]` (CSS px), the aurora backdrop at `alpha` and the ribbons at `alpha`; then, when `edge > 0`, a glowing seam at `y = cover · L.h`: one `drawImage` of a cached 1×64 strip (`0` transparent, `0.5` `'rgba(140,255,220,.55)'`, `1` transparent) stretched to `L.w × 1.6 L.s`, centred on `y`, `'lighter'`, alpha `edge`. The tree, presents and garland switch to the new scene at the sweep's start (their cached layers repaint at once; the flip covers it). A resize ends a sweep.
+Drawing while not done (as shipped, Task 3 fix round 1; `SkySweep` and `Aurora.clipSky` / `drawSeam` in `src/render/aurora.ts`):
+
+1. **The leaving or staying sky:** the non-aurora backdrop in full.
+2. **The aurora's part:** clipped to the sky above the edge at `y = cover · L.h`, the aurora backdrop at `alpha`, drawn 1:1 in device pixels (no resample at fractional DPRs), then the ribbons at `alpha`.
+   - With `edge > 0`, the clip's lower edge billows: 33 path points at `y + amp · seamWave((x − x0) / span)`. Path ops only; no `Path2D`.
+     - `seamWave(u) = 0.65 sin(2π · 3.1 u + 0.4) + 0.35 sin(2π · 7.3 u + 2.2)`.
+     - `amp = (28 / 80) · hh`, where `hh = min(1.6 L.s, 0.05 L.h)`.
+     - The edge sways with the seam: `x0 = (−0.25 + 0.18 sin(2π now / 3600)) · L.w`, `span = 1.5 L.w`.
+   - With `edge = 0` (the reduced-motion crossfade, or before the sweep starts), the clip is the plain rectangle `[0, y]`.
+3. **The seam, when `edge > 0`:** one `drawImage`, `'lighter'`, alpha `edge`, of a cached 512×128 strip, drawn at `(x0, y − (84 / 80) · hh)`, size `span × 1.6 hh`.
+   - **Profile:** 80 rows tall, its hot core on row 84 ± 28 · `seamWave(u)`, so the core rides the clip's edge and hides the backdrop step everywhere. Stops over the profile: `0` `rgba(120,255,200,0)`, `0.45` `rgba(120,255,200,.18)`, `0.68` `rgba(210,255,240,.9)`, `0.74` `rgba(120,255,200,.25)`, `0.82` `rgba(120,255,200,0)`.
+   - **Texture:** each column's alpha is `(0.5 + 0.5 (0.6 n₁ + 0.4 n₂)) · ends(3 %)`. Its wash above the core is scaled about the core by `0.55 + 0.45 n₃`. The noise is `rayNoise`, `mulberry32(41)`, spaced 16, 5 and 7 strip columns. So the edge breaks into rays like the curtains' own hem.
+4. **Firelight and embers** come from the non-aurora side of the sky while a sweep runs (`fromScene` going down, the new scene going up).
+5. **Everything else:** the tree, presents and garland switch to the new scene at the sweep's start (their cached layers repaint at once; the flip covers it).
+6. **Ending:** a resize, or a change that doesn't cross the aurora boundary, ends a sweep at once.
+7. **Reversal:** a crossing change during a sweep reverses it from where it stands. The arriving and leaving canvases swap, and the clock is mirrored (`at = lastNow − (1 − k) · duration`; `easeInOutCubic` is symmetric), so the cover never jumps.
+8. **Under the pause overlay** the app keeps drawing while `Renderer.sweeping`, so a sweep never freezes half-done.
 
 ## 3. Luke's face, hidden around
 

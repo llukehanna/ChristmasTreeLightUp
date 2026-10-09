@@ -575,9 +575,10 @@ export class App {
     this.updateHud(now);
     // While paused the stage is blurred behind the overlay: draw one frame, then idle until resume. The topper is the
     // exception: a flip that lands under the overlay (the account's choice arriving) or a sticker that finishes
-    // loading keeps drawing until it has settled, so the paused frame shows it.
+    // loading keeps drawing until it has settled, so the paused frame shows it. So does a sky sweep, which would
+    // otherwise freeze half-swept with its seam in the paused frame.
     if (this.paused) {
-      if (this.pausedDrawn && !this.renderer.topper.needsFrame(now)) return;
+      if (this.pausedDrawn && !this.renderer.topper.needsFrame(now) && !this.renderer.sweeping) return;
       this.pausedDrawn = true;
     } else this.pausedDrawn = false;
     // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow.

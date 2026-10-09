@@ -1,7 +1,7 @@
 import type { Board } from '../core/board';
 import { degree } from '../core/dirs';
 import { GRID } from '../core/mask';
-import { Aurora, sweepFrame, type SweepFrame } from './aurora';
+import { Aurora, SkySweep } from './aurora';
 import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
 import type { Camera } from './camera';
@@ -66,14 +66,10 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly glow = document.createElement('canvas');
   private readonly g: CanvasRenderingContext2D;
-  private bg = document.createElement('canvas');
+  /** The scene's backdrop (`sky.bg`), and the sky sweep when secret mode is switched by hand (spec 2026-10-08 secret mode §2.4). */
+  private readonly sky = new SkySweep();
   /** Secret mode's curtains (spec 2026-10-08 secret mode §2). */
   private readonly aurora = new Aurora();
-  /** A sky sweep in progress (secret mode on or off by hand), with the backdrop it is leaving. */
-  private sweep: { from: HTMLCanvasElement; at: number; dir: 'down' | 'up'; reduced: boolean } | null = null;
-  /** The last sweep's canvas, emptied: reused by the next sweep. */
-  private spare: HTMLCanvasElement | null = null;
-  private readonly sweepOut: SweepFrame = { cover: 0, alpha: 1, edge: 0, done: false };
   private readonly tree = document.createElement('canvas');
   layout: Layout = computeLayout(1, 1, 1);
   scene: Scene = SCENES.fireside;
@@ -107,8 +103,8 @@ export class Renderer {
 
   /** `chromeBottom`: lowest edge of the wordmark and HUD in CSS px (the garland hangs below it). */
   resize(w: number, h: number, dpr: number, chromeBottom = w < 600 ? 46 : 58): void {
-    this.endSweep();
-    for (const c of [this.canvas, this.bg, this.tree]) {
+    this.sky.end();
+    for (const c of [this.canvas, this.sky.bg, this.tree]) {
       c.width = Math.round(w * dpr);
       c.height = Math.round(h * dpr);
     }
@@ -126,26 +122,9 @@ export class Renderer {
    */
   setScene(scene: Scene, sweep: { now: number; reduced: boolean } | null = null): void {
     if (scene === this.scene) return;
-    const crossing = (scene.id === 'aurora') !== (this.scene.id === 'aurora');
-    this.endSweep();
-    if (sweep && crossing && this.sized) {
-      const from = this.bg;
-      this.bg = this.spare ?? document.createElement('canvas');
-      this.spare = null;
-      this.bg.width = from.width;
-      this.bg.height = from.height;
-      this.sweep = { from, at: sweep.now, dir: scene.id === 'aurora' ? 'down' : 'up', reduced: sweep.reduced };
-    }
+    this.sky.change(this.scene, scene, sweep, this.sized);
     this.scene = scene;
     if (this.sized) this.repaint();
-  }
-
-  private endSweep(): void {
-    if (!this.sweep) return;
-    const c = this.sweep.from;
-    c.width = c.height = 0; // frees its pixels; the next sweep sizes it again
-    this.spare = c;
-    this.sweep = null;
   }
 
   setStyle(style: PathStyle): void {
@@ -160,7 +139,7 @@ export class Renderer {
 
   /** A sky sweep is under way (the e2e probe). */
   get sweeping(): boolean {
-    return this.sweep !== null;
+    return this.sky.current !== null;
   }
 
   /** Top of the star (CSS px, identity camera). */
@@ -187,7 +166,7 @@ export class Renderer {
   }
 
   private repaint(): void {
-    paintBackground(ctx2d(this.bg), this.layout, this.scene);
+    paintBackground(ctx2d(this.sky.bg), this.layout, this.scene);
     paintTree(ctx2d(this.tree), this.layout, this.scene);
     this.layFaces();
   }
@@ -245,32 +224,35 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
-    const sw = this.sweep;
-    const fr = sw ? sweepFrame(now - sw.at, sw.dir, sw.reduced, this.sweepOut) : null;
-    if (sw && fr && !fr.done) {
-      // The non-aurora sky in full; the aurora's backdrop and curtains over the covered part; the seam at its edge.
-      ctx.drawImage(sw.dir === 'down' ? sw.from : this.bg, 0, 0);
+    const fr = this.sky.frame(now);
+    const sw = this.sky.current;
+    // During a sweep, firelight and embers belong to the non-aurora side of the sky.
+    let back = sc;
+    if (fr && sw) {
+      if (sw.dir === 'down') back = sw.fromScene;
+      // The non-aurora sky in full; the aurora's backdrop and curtains over the covered part; the hem at its edge.
+      ctx.drawImage(sw.dir === 'down' ? sw.from : this.sky.bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const y = fr.cover * L.h;
       if (y > 0 && fr.alpha > 0) {
         ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, L.w, y);
-        ctx.clip();
+        this.aurora.clipSky(ctx, L, y, fr.edge, now);
         ctx.globalAlpha = fr.alpha;
-        ctx.drawImage(sw.dir === 'down' ? this.bg : sw.from, 0, 0, L.w, L.h);
+        // Device pixels, 1:1 (the clip survives the transform change): no resampling at fractional DPRs.
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(sw.dir === 'down' ? this.sky.bg : sw.from, 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         this.aurora.draw(ctx, L, now, tier, f.reducedMotion, fr.alpha);
         ctx.restore();
       }
-      this.aurora.drawSeam(ctx, L, y, fr.edge);
+      this.aurora.drawSeam(ctx, L, y, fr.edge, now);
     } else {
-      if (fr?.done) this.endSweep();
-      ctx.drawImage(this.bg, 0, 0);
+      ctx.drawImage(this.sky.bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (this.secret) this.aurora.draw(ctx, L, now, tier, f.reducedMotion);
     }
-    if (sc.light === 'fire') drawFirelight(ctx, L, now);
-    if (sc.embers && tier < 3) this.embers.draw(ctx, L, motionDt, now);
+    if (back.light === 'fire') drawFirelight(ctx, L, now);
+    if (back.embers && tier < 3) this.embers.draw(ctx, L, motionDt, now);
     this.snow.draw(ctx, L, sc, false, motionDt, now, density);
 
     // 2. Tree + hover (world space)
