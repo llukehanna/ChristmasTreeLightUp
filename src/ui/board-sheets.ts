@@ -1,4 +1,4 @@
-import type { AccountStats, BoardResponse, BoardRow, MyGamesResponse, RecentGame, User } from '../api/types';
+import { BOARD_TOP, type AccountStats, type BoardResponse, type BoardRow, type MyGamesResponse, type RecentGame, type User } from '../api/types';
 import { count, esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
 import { G_LOGO, I } from './icons';
 import type { SheetView } from './sheet';
@@ -82,7 +82,7 @@ function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, 
   const stats = `<div class="acct-stats">
       <div><b>${d.best ? formatMs(d.best.ms) : '–'}</b><span>Your best</span></div>
       <div><b>${d.best?.rank ? `#${Number(d.best.rank)}` : '–'}</b><span>of ${plural(d.total, 'run')}</span></div>
-      <div><b>${Number(d.inTop)}</b><span>In the top 50</span></div></div>`;
+      <div><b>${Number(d.inTop)}</b><span>In the top ${BOARD_TOP}</span></div></div>`;
   const list = d.games.length ? `<ul class="acct-games">${d.games.map((x) => gameHtml(x, now)).join('')}</ul>` : '<p class="acct-note">No games yet. Light a tree to see it here.</p>';
   const links = `<div class="acct-links"><p>Signed in with Google${user.name ? ` as <b>${esc(user.name)}</b>` : ''}</p>
       <div><button type="button" data-act="signout">Sign out</button><button type="button" class="danger" data-act="delete">Delete account</button><a href="/privacy">Privacy</a></div></div>`;

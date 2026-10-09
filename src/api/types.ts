@@ -5,6 +5,8 @@ export type { UnrankedReason };
 
 /** Most claims one POST /api/games/claim handles; the browser sends them in batches of this many. */
 export const MAX_CLAIMS_PER_REQUEST = 8;
+/** How many runs the leaderboard shows (and Your games counts "in the top"). */
+export const BOARD_TOP = 25;
 
 export interface User {
   /** null until the player picks one. */
@@ -66,11 +68,11 @@ export interface BoardRow {
 }
 
 export interface BoardResponse {
-  /** The top 50 runs. */
+  /** The top BOARD_TOP runs. */
   rows: BoardRow[];
   /** Ranked runs on the board. */
   total: number;
-  /** Your best run's row when it is outside the top 50. */
+  /** Your best run's row when it is outside the top BOARD_TOP. */
   you: BoardRow | null;
 }
 
@@ -88,7 +90,7 @@ export interface RecentGame {
 
 export interface MyGamesResponse {
   best: { ms: number; rank: number | null; finishedAt: number } | null;
-  /** How many of the top 50 runs are yours. */
+  /** How many of the top BOARD_TOP runs are yours. */
   inTop: number;
   total: number;
   /** The last 30 finished games, newest first. */

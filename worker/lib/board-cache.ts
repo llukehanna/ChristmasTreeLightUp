@@ -20,7 +20,7 @@ export function resetBoardCache(): void {
 }
 
 /**
- * Runs just joined the board in this isolate (a ranked finish or claim by a named player): the top 50 are read again
+ * Runs just joined the board in this isolate (a ranked finish or claim by a named player): the top BOARD_TOP are read again
  * next time, and a cached total counts them now, so the finish's own "#r of total" includes its run.
  */
 export function boardGrew(added: number): void {
@@ -37,7 +37,7 @@ export async function cachedTotal(db: Db, now = Date.now()): Promise<number> {
   return n;
 }
 
-/** The top 50 runs and the board total (one batch on a miss), at most BOARD_TTL_MS old. Per-player rows stay live. */
+/** The top BOARD_TOP runs and the board total (one batch on a miss), at most BOARD_TTL_MS old. Per-player rows stay live. */
 export async function cachedTopAndTotal(db: Db, now = Date.now()): Promise<{ top: TopRow[]; total: number }> {
   if (top && total && fresh(top, now) && fresh(total, now)) return { top: top.rows, total: total.n };
   const r = await topAndTotal(db);
