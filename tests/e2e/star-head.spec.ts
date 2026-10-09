@@ -12,6 +12,7 @@ test.beforeEach(async ({ page }) => {
 const star = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.star());
 const stored = (page: Page) => page.evaluate(() => localStorage.getItem('aglow.starHead'));
 const board = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.state());
+const clock = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.clock());
 
 const touch = (): boolean => test.info().project.name === 'phone';
 
@@ -61,14 +62,19 @@ async function tapTile(page: Page, i: number): Promise<void> {
 }
 
 test('star taps during the reveal never start the clock, and the tile right under the star still turns', async ({ page }) => {
+  // The page's clock stands still from the load until after the taps, so they land inside the reveal (900 ms) however
+  // loaded the machine: the premise is checked, not hoped for.
+  await page.clock.pauseAt(Date.now() + 1000);
   await page.goto('/?test');
   await page.waitForFunction(() => !!(window as Window & { __aglow?: W['__aglow'] }).__aglow?.state().bits.length);
-  await tapStar(page, 5);
-  // The clock only ever runs from the reveal's end: star taps never start it early.
-  const c = await page.evaluate(() => (window as unknown as W).__aglow.clock());
-  expect(c.ms).toBeLessThanOrEqual(c.sinceReveal + 20);
+  await tapStarStill(page, 5, touch(), true);
+  expect(await clock(page)).toEqual({ ms: 0, sinceReveal: 0 }); // still in the reveal, and the game clock hasn't started
   await expect.poll(async () => (await star(page)).head).toBe(true);
+  await page.clock.resume();
   await waitInteractive(page);
+  // The clock only ever runs from the reveal's end: star taps never start it early.
+  const c = await clock(page);
+  expect(c.ms).toBeLessThanOrEqual(c.sinceReveal + 20);
   const log = (await game(page)).log;
   const i = await tileUnderStar(page);
   const before = (await board(page)).bits[i];

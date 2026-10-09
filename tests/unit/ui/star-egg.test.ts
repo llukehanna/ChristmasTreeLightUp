@@ -394,6 +394,24 @@ describe('StarEgg', () => {
       expect(mode).toHaveBeenLastCalledWith(true, 'quiet');
     });
 
+    it("a sign-in that lands while the player's own switch-on waits for the sticker leaves it loud", async () => {
+      const { h, topper } = hooks();
+      let done!: (ok: boolean) => void;
+      const sticker = new Promise<boolean>((r) => (done = r));
+      topper.load.mockImplementation(() => sticker);
+      const mode = vi.fn();
+      h.mode = mode;
+      const session = new Session();
+      const egg = new StarEgg(session, h, false);
+      session.set(user(true)); // the account's head, waiting for the sticker
+      fiveTaps(egg); // and the player's own toggle, waiting for it too
+      done(true);
+      await flush();
+      expect(egg.isOn).toBe(true);
+      expect(mode.mock.calls.filter(([on]) => on)).toEqual([[true, 'loud']]);
+      expect(puts).toEqual([true]);
+    });
+
     it('a stored head whose sticker fails turns secret mode off quietly', async () => {
       loads = false;
       const { h } = hooks();

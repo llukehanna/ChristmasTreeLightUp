@@ -226,8 +226,9 @@ export class StarEgg {
       return;
     }
     void this.h.topper.load().then((ok) => {
-      // Still what the account says, and the player hasn't turned it meanwhile.
-      if (ok && !this.on && this.session.current?.starHead === true) this.apply(true, this.time(), false);
+      // Still what the account says, and the player hasn't turned it meanwhile. A toggle of the player's own waiting for
+      // the same sticker lands it instead, loud (its PUT agrees with the account).
+      if (ok && !this.on && !this.turning && this.session.current?.starHead === true) this.apply(true, this.time(), false);
     });
   }
 }

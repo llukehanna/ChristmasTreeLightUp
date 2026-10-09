@@ -1,5 +1,5 @@
 import type { RunOutcome } from './api/outcome';
-import type { App } from './app';
+import type { App, SecretState } from './app';
 import { GRID } from './core/mask';
 
 export interface AglowProbe {
@@ -12,8 +12,8 @@ export interface AglowProbe {
    * `source`: the station id for a station, else the kind. `secretListed`: the panel shows the Secret row.
    */
   radio(): { kind: string | null; playing: boolean; stations: string[]; catalogLoaded: boolean; lightShow: boolean; source: string | null; secretListed: boolean };
-  /** Secret mode: on, the stage's scene, a sky sweep under way, and where Luke's face is (-1: not placed). */
-  secret(): { on: boolean; scene: string; sweeping: boolean; faceTile: number; faceGift: number; faceGarland: number };
+  /** Secret mode: on, the stage's scene, a sky sweep under way, where Luke's face is (-1: not placed), the win ad-libs asked for and started. */
+  secret(): SecretState;
   /** A real tap on tile i, through the game (logged, as a finger's would be). */
   tap(i: number): void;
   /** The server game behind the tree, what became of its run, and the log's length. */
