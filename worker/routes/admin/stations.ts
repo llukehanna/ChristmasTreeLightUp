@@ -2,7 +2,8 @@ import { parseStationsFile, type StationsFile } from '../../../src/radio/schema.
 import type { AppEnv, Ctx } from '../../lib/env.js';
 import { json, readTextCapped } from '../../lib/http.js';
 import { resetPublicCache } from '../../lib/public-stations.js';
-import { deleteKeys, mediaBase, readStations, removedMediaKeys, writeStations } from '../../lib/stations-store.js';
+import { SECRET_ID } from '../../../src/radio/ids.js';
+import { deleteKeys, isWinSoundUrl, mediaBase, readStations, removedMediaKeys, writeStations } from '../../lib/stations-store.js';
 import { requireAdmin } from '../../lib/users.js';
 
 // A full list (20 stations x 500 tracks) fits well inside this.
@@ -47,6 +48,12 @@ export async function PUT(req: Request, env: AppEnv, ctx: Ctx): Promise<Response
   if (body.expectedVersion !== current.version) return conflict();
   const next = parseStationsFile({ version: current.version + 1, stations: body.stations });
   if (!next) return json({ error: 'Some station or track fields are invalid. Every track needs a title.' }, { status: 400 });
+  const base = mediaBase(env.MUSIC_BASE_URL);
+  // The shared schema can't know MUSIC_BASE_URL: the ad-lib must be a file uploaded here, for the Secret station.
+  const win = next.stations.find((s) => s.id === SECRET_ID)?.winSound;
+  if (win !== undefined && !isWinSoundUrl(win, base)) {
+    return json({ error: 'The win ad-lib must be a file uploaded to the Secret station.' }, { status: 400 });
+  }
 
   try {
     // Conditional on the etag just read (or on nothing existing yet): a save that landed in between makes this a no-op.
@@ -64,7 +71,7 @@ export async function PUT(req: Request, env: AppEnv, ctx: Ctx): Promise<Response
   resetPublicCache();
 
   // Best-effort cleanup after the response: leftover files are harmless.
-  const removed = removedMediaKeys(current, next, mediaBase(env.MUSIC_BASE_URL));
+  const removed = removedMediaKeys(current, next, base);
   if (removed.length) ctx.waitUntil(deleteKeys(bucket, removed).catch(() => undefined));
   return json({ version: next.version });
 }

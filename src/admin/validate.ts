@@ -1,3 +1,4 @@
+import { SECRET_ID } from '../radio/ids.js';
 import { STATION_ID, isUrl, parseStation, parseStationsFile, type Station } from '../radio/schema.js';
 
 export type Field = 'name' | 'description' | 'title' | 'artist' | 'credit';
@@ -33,6 +34,10 @@ export function firstProblem(stations: readonly Station[]): Problem | null {
     if (s.name.length > 60) return at('the name is longer than 60 characters.', 'name');
     if (s.description.length > 200) return at('the description is longer than 200 characters.', 'description');
     if (s.cover !== undefined && !isUrl(s.cover)) return at('the cover link is not valid. Upload the cover again.');
+    if (s.winSound !== undefined) {
+      if (s.id !== SECRET_ID) return at('only the Secret station can have a win ad-lib.');
+      if (!isUrl(s.winSound)) return at('the win ad-lib link is not valid. Upload it again.');
+    }
     if (s.tracks.length > MAX_TRACKS) return at(`a station can have at most ${MAX_TRACKS} tracks.`);
     const trackIds = new Set<string>();
     for (const [i, t] of s.tracks.entries()) {

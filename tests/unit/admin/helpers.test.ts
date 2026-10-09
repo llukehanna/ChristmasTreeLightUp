@@ -114,4 +114,12 @@ describe('firstProblem', () => {
     expect(firstProblem([station(), station()])?.message).toBe('Two stations have the id "christmas-jazz".');
     expect(firstProblem([station({ tracks: [track(), track()] })])?.message).toBe('Christmas Jazz, track 2: the same track appears twice. Remove one of them.');
   });
+  it('a win ad-lib belongs to the Secret station and must be a valid link', () => {
+    const win = 'https://aglow-music.example/tracks/secret/0123abcd-adlib.mp3';
+    expect(firstProblem([station({ id: 'secret', name: 'Secret', winSound: win })])).toBeNull();
+    expect(firstProblem([station({ winSound: win })])?.message).toBe('Christmas Jazz: only the Secret station can have a win ad-lib.');
+    expect(firstProblem([station({ id: 'secret', name: 'Secret', winSound: 'http://x.example/a.mp3' })])?.message).toBe(
+      'Secret: the win ad-lib link is not valid. Upload it again.',
+    );
+  });
 });

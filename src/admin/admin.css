@@ -63,6 +63,11 @@ nav .station { flex-direction: column; align-items: flex-start; gap: 2px; text-a
 nav .station.on { background: rgba(255, 176, 112, 0.12); }
 nav .station small { color: var(--dim); }
 nav .add { margin-top: 8px; border-style: dashed; justify-content: center; }
+nav .station .badge { font-size: 11px; color: #9fe7ff; border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; }
+nav .add.secret { border-color: rgba(159, 231, 255, 0.5); color: #9fe7ff; }
+.secret-panel { margin-bottom: 18px; }
+.secret-panel .win { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.secret-panel audio { height: 32px; }
 .new-station { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 

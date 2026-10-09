@@ -578,3 +578,44 @@ describe('public list', () => {
     expect(get).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('the Secret station (secret mode)', () => {
+  const WIN = `${B}/tracks/secret/0123abcd-adlib.mp3`;
+  const secret = (winSound?: string) => ({ id: 'secret', name: 'Secret', description: '', tracks: [], ...(winSound === undefined ? {} : { winSound }) });
+  const NOT_OURS = { error: 'The win ad-lib must be a file uploaded to the Secret station.' };
+
+  it('saves a Secret station with a win ad-lib uploaded to tracks/secret/', async () => {
+    const r = await putStations({ expectedVersion: 3, stations: [...v3.stations, secret(WIN)] });
+    expect(r.status).toBe(200);
+    expect(stored().stations[1]).toEqual(secret(WIN));
+  });
+
+  it('refuses a win ad-lib from anywhere else, or with no usable MUSIC_BASE_URL, without writing', async () => {
+    const put = vi.spyOn(bucket, 'put');
+    for (const url of ['https://elsewhere.example/tracks/secret/a.mp3', `${B}/tracks/christmas-jazz/a.mp3`, `${B}/covers/secret/a.png`, '/tracks/secret/a.mp3']) {
+      const r = await putStations({ expectedVersion: 3, stations: [...v3.stations, secret(url)] });
+      expect(r.status, url).toBe(400);
+      expect(await r.json()).toEqual(NOT_OURS);
+    }
+    const body = JSON.stringify({ expectedVersion: 3, stations: [...v3.stations, secret(WIN)] });
+    const r = await call(req('PUT', '/api/admin/stations', { headers: await authed(), body }), env({ MUSIC_BASE_URL: '' }));
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual(NOT_OURS);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('refuses a win ad-lib on any other station (the schema)', async () => {
+    const r = await putStations({ expectedVersion: 3, stations: [{ ...v3.stations[0], winSound: WIN }] });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: 'Some station or track fields are invalid. Every track needs a title.' });
+  });
+
+  it('deletes a replaced win ad-lib after the save', async () => {
+    bucket.seed('tracks/secret/old.mp3', 'media');
+    bucket.seed(CURRENT, JSON.stringify({ version: 3, stations: [...v3.stations, secret(`${B}/tracks/secret/old.mp3`)] }), { contentType: 'application/json' });
+    const r = await putStations({ expectedVersion: 3, stations: [...v3.stations, secret(WIN)] });
+    expect(r.status).toBe(200);
+    await settle();
+    expect(bucket.objects.has('tracks/secret/old.mp3')).toBe(false);
+  });
+});

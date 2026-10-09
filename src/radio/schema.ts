@@ -1,4 +1,4 @@
-import { FIREPLACE_ID, MUSIC_BOX_ID } from './ids.js';
+import { CELESTA_ID, FIREPLACE_ID, MUSIC_BOX_ID, SECRET_ID } from './ids.js';
 
 export interface Track {
   id: string;
@@ -17,6 +17,8 @@ export interface Station {
   description: string;
   cover?: string;
   tracks: Track[];
+  /** The Secret station only (spec 2026-10-08 secret mode §4.1): a short audio file played on a secret-mode win. */
+  winSound?: string;
 }
 
 export interface StationsFile {
@@ -27,7 +29,7 @@ export interface StationsFile {
 /** Station ids: lower-case letters, digits and hyphens, starting with a letter or digit, up to 64 characters. */
 export const STATION_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** Source ids the radio itself uses: a station with one of these would be unreachable or shadow a built-in source. */
-const RESERVED_IDS: ReadonlySet<string> = new Set([MUSIC_BOX_ID, FIREPLACE_ID, 'embed']);
+const RESERVED_IDS: ReadonlySet<string> = new Set([MUSIC_BOX_ID, FIREPLACE_ID, CELESTA_ID, 'embed']);
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 /** https URLs or site-relative paths only. */
 export const isUrl = (v: unknown): v is string => {
@@ -71,9 +73,10 @@ export function parseTrack(v: unknown): Track | null {
 export function parseStation(v: unknown): Station | null {
   const o = obj(v);
   if (!o) return null;
-  const { id, name, description, cover, tracks } = o;
+  const { id, name, description, cover, tracks, winSound } = o;
   if (!isStr(id, 64) || !STATION_ID.test(id) || RESERVED_IDS.has(id) || !isStr(name, 60) || name.trim() === '' || !isStr(description, 200)) return null;
   if (cover !== undefined && !isUrl(cover)) return null;
+  if (winSound !== undefined && (id !== SECRET_ID || !isUrl(winSound))) return null;
   if (!Array.isArray(tracks) || tracks.length > 500) return null;
   const parsed: Track[] = [];
   const ids = new Set<string>();
@@ -83,7 +86,7 @@ export function parseStation(v: unknown): Station | null {
     ids.add(p.id);
     parsed.push(p);
   }
-  return { id, name, description, ...(cover !== undefined ? { cover } : {}), tracks: parsed };
+  return { id, name, description, ...(cover !== undefined ? { cover } : {}), tracks: parsed, ...(winSound !== undefined ? { winSound } : {}) };
 }
 
 export function parseStationsFile(v: unknown): StationsFile | null {

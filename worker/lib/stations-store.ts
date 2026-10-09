@@ -1,3 +1,4 @@
+import { SECRET_ID } from '../../src/radio/ids.js';
 import { STATION_ID, parseStationsFile, type StationsFile } from '../../src/radio/schema.js';
 import type { Bucket } from './bucket.js';
 
@@ -76,7 +77,15 @@ export function mediaKey(url: string, base: string): string | null {
 }
 
 const urlsOf = (f: StationsFile): string[] =>
-  f.stations.flatMap((s) => [s.cover, ...s.tracks.flatMap((t) => [t.url, t.cover])]).filter((u): u is string => typeof u === 'string');
+  f.stations
+    .flatMap((s) => [s.cover, s.winSound, ...s.tracks.flatMap((t) => [t.url, t.cover])])
+    .filter((u): u is string => typeof u === 'string');
+
+/** A win ad-lib must be our own upload for the Secret station: `<MUSIC_BASE_URL>/tracks/secret/…` (spec 2026-10-08 secret mode §4.2). */
+export function isWinSoundUrl(url: string, base: string | null): boolean {
+  const key = base ? mediaKey(url, base) : null;
+  return key !== null && key.startsWith(`tracks/${SECRET_ID}/`);
+}
 
 const keysOf = (f: StationsFile, base: string): Set<string> =>
   new Set(urlsOf(f).flatMap((u) => mediaKey(u, base) ?? []));
