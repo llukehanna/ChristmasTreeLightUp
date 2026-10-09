@@ -109,9 +109,10 @@ export function drawBulbGlint(c: CanvasRenderingContext2D, sinceLitMs: number, s
 
 /**
  * Secret mode's face ornament (spec 2026-10-08 secret mode §3.2): the socket still faces the wire, and Luke's head,
- * upright, takes the glass's place: `sprite` is dimmed when unlit, lit (at the glass's opacity) when lit.
+ * upright, takes the glass's place: `sprite` is dimmed when unlit, lit (at the glass's opacity) when lit. `tilt`: the
+ * tile's turn so far (radians, already applied to `c`), undone for the head so it stays upright while the tile turns.
  */
-export function drawFaceBulb(c: CanvasRenderingContext2D, b: number, amt: number, s: number, sc: Scene, sprite: HTMLCanvasElement): void {
+export function drawFaceBulb(c: CanvasRenderingContext2D, b: number, amt: number, s: number, sc: Scene, sprite: HTMLCanvasElement, tilt = 0): void {
   const swell = amt > 1 ? 1 + (amt - 1) * 0.35 : 1;
   const r = s * 0.2 * swell;
   const a = bulbAngle(b);
@@ -126,8 +127,10 @@ export function drawFaceBulb(c: CanvasRenderingContext2D, b: number, amt: number
   const w = (h * sprite.width) / sprite.height;
   const gx = -Math.cos(a) * r * 0.12;
   const gy = -Math.sin(a) * r * 0.12;
-  const a0 = c.globalAlpha;
-  if (amt > 0) c.globalAlpha = a0 * Math.min(1, 0.35 + amt);
-  c.drawImage(sprite, gx - w / 2, gy - h * 0.55, w, h);
-  c.globalAlpha = a0;
+  c.save();
+  if (amt > 0) c.globalAlpha *= Math.min(1, 0.35 + amt);
+  c.translate(gx, gy);
+  c.rotate(-tilt);
+  c.drawImage(sprite, -w / 2, -h * 0.55, w, h);
+  c.restore();
 }
