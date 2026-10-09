@@ -5,6 +5,9 @@
  */
 export const BEAT = { floor: 0.06, rise: 0.035, ratio: 1.3, tauMs: 300, warmupMs: 300, refractoryMs: 250, strong: 0.6 } as const;
 
+/** A gap longer than this between samples (a hidden tab, music paused) starts the warm-up again: the average is stale. */
+export const RESTART_GAP_MS = 1000;
+
 /** 0.3 at the threshold (energy = 1.3 × the average), 1 from 2.5 × up. */
 export function beatStrength(e: number, avg: number): number {
   const r = e / Math.max(avg, 0.02);
@@ -21,10 +24,10 @@ export class BeatTracker {
   private start = Number.NaN;
   private prev = Number.NaN;
 
-  /** One sample of low-band energy (0..1) at `now`; true on a beat. */
+  /** One sample of the low band's amplitude at `now` (lowAmplitude: 1 at -30 dB, louder reads above 1); true on a beat. */
   update(e: number, now: number): boolean {
     if (!Number.isFinite(e)) return false;
-    if (Number.isNaN(this.start) || now < this.prev) {
+    if (Number.isNaN(this.start) || now < this.prev || now - this.prev > RESTART_GAP_MS) {
       this.start = this.prev = now;
       this.avg = e;
       return false;
@@ -46,11 +49,12 @@ export class BeatTracker {
     return onset;
   }
 
-  /** Forgets the music (secret mode switched on): the next sample starts the warm-up again. */
+  /** Forgets the music (secret mode switched on): the next sample starts the warm-up again, the palette back at 0. */
   reset(): void {
     this.start = this.prev = Number.NaN;
     this.avg = 0;
     this.at = Number.NEGATIVE_INFINITY;
     this.strength = 0;
+    this.strong = 0;
   }
 }

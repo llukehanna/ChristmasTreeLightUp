@@ -15,7 +15,7 @@ Luke's words: "I recall using apps/playing games where there is an alternate 'se
 | Luke's face | Exactly one tree bulb, one present and one garland bulb, all drawn from the topper's already-loaded `public/star-head.png`. Picks are deterministic (§3.1). |
 | Music | A station with the id `secret` in the stations file, edited in `/admin`. It is listed in the game only in secret mode, and autoplays on a by-hand switch-on (the 5th tap or last letter is the gesture). Empty or missing: a built-in celesta variant of the Music Box. Switch-off restores what the radio was doing. |
 | Win ad-lib | Optional `winSound` on the Secret station only: one audio file uploaded to `tracks/secret/`, played on a secret-mode win when game sounds are on. |
-| On the beat | A new frame-rate-independent onset tracker (`src/radio/beat.ts`) on the light show's low band (20–150 Hz, read as linear amplitude, §5.1). It drives the head's nod, a bulb pulse, a palette step on strong beats and the garland face's bob. Gated by the radio's existing light-show setting. |
+| On the beat | A new frame-rate-independent onset tracker (`src/radio/beat.ts`) on the light show's low band (20–150 Hz, read as unclipped linear amplitude, §5.1). It drives the head's nod, a bulb pulse, a palette step on strong beats and the garland face's bob. Gated by the radio's existing light-show setting. |
 | Confetti | The win's gold flecks become tumbling mini heads in secret mode; snow flecks stay. Same `CONFETTI_MS` and `CONFETTI_COUNT`. |
 | Cost | Cached layers plus at most 3 extra `drawImage` per frame for the sky, at most 4 for the faces, zero canvas or gradient allocations per frame. |
 
@@ -253,7 +253,7 @@ Other rules:
 
 ### 5.1 The detector (`BeatTracker`, `src/radio/beat.ts`)
 
-Input: the light show's low band as **linear amplitude**, `e = lowAmplitude(bins, binHz, minDecibels, maxDecibels)` (`src/radio/lightshow.ts`): over the analyser's byte bins from 20 to 150 Hz (the same bins as `bandEnergies`), the mean of `10^((byte · (max − min) / 255 + min − max) / 20)`, so 1 at `maxDecibels` and 0.1 twenty dB below. One sample per drawn frame at `now` (ms). The existing post-win `BeatDetector` and `bandEnergies` are untouched.
+Input: the light show's low band as **unclipped linear amplitude**, `e = lowAmplitude(db, binHz)` (`src/radio/lightshow.ts`): the analyser's **float** spectrum (`getFloatFrequencyData`, dB, not clamped), read into one reused `Float32Array` in the same `sample()` as the bytes (the browser analyses once per render quantum, so both reads see the same frame), and, over the bins from 20 to 150 Hz (`LOW_BAND`, the same bins as `bandEnergies` via the shared `binRange`), the mean of `10^((dB − LOW_REF_DB) / 20)` with `LOW_REF_DB = −30` (the default `maxDecibels`): 1 at −30 dB, 0.1 twenty dB below, 10 twenty dB above. One sample per drawn frame at `now` (ms). The existing post-win `BeatDetector` and `bandEnergies` (bytes) are untouched.
 
 Why linear (amended 2026-10-08, Task 5): the analyser's bytes are dB-scaled (−100..−30 dB), so with any held bass or pad their low-band average sits at about 0.75–1.0 and a kick lifts it by less than `ratio`. Measured with the real Chromium `AnalyserNode` (fftSize 1024, smoothing 0.6, one read per frame) on synthesized 10 s tracks, beats found / kicks played:
 
@@ -266,20 +266,30 @@ Why linear (amended 2026-10-08, Task 5): the analyser's bytes are dB-scaled (−
 | Kick + pad, quiet master | 0/19 / 0/19 | 19/19 / 19/19 |
 | Pad only (no beat) | 0 / 0 | 2 / 11 weak (≤ 0.58, never strong) |
 
-The byte input also made strength depend on the frame rate (the analyser smooths per read), so strong beats fell away at 30 fps; linear amplitude finds the same beats and strong beats at 30 and 60 fps. The constants below are unchanged. A unit test (a kick over a held bass that the bytes cannot show) guards it.
+The byte input also made strength depend on the frame rate (the analyser smooths per read), so strong beats fell away at 30 fps; linear amplitude finds the kicks, and the strong beats, at both rates. It is not frame-rate exact on non-percussive material: a pad alone raised 2 weak beats at 60 fps and 11 at 30 fps (strength ≤ 0.58: a faint flash, no palette step).
+
+Why the float spectrum (amended 2026-10-08, Task 5 review): the bytes also **clip** at `maxDecibels` (−30 dB), and a loud master's low bins sit above it (measured peaks of −19 to −11 dB in the mixes below), so a hot, bass-heavy track pins the byte input and hides every kick. Same harness, 60 fps, through a compressor (threshold −14 dB, 8:1) at rising drive:
+
+| Mix (RMS) | Bytes as amplitude: frames pinned at 255, beats | Float amplitude: beats |
+| --- | --- | --- |
+| Kick + sustained 808, 75 bpm (−8.2 to −5.5 dBFS) | 7–11 %, 0/11 | 1/11 |
+| Kick + sustained 808 + pad, 100 bpm (−9.3 to −6.1 dBFS) | 10–27 %, 0/15 | 0–1/15 |
+| Over-driven, limited and clipped (−1 dBFS) | 100 %, 0 | 1 |
+
+The float input removes the clipping, but these mixes show a second limit that is not clipping: when an 808 is held at nearly the kick's level through the same bins, the band's mean barely moves on a kick, so no input to this averaged-band tracker can show it (the kick's 94–150 Hz bins alone found every kick, but also 12 false beats on a pad alone, so they are not adopted). Real masters are judged in the live review (Task 7). The constants below are unchanged. Unit tests guard both inputs: a kick over a held bass that the byte average cannot show, and a kick in a loud master whose bytes clip.
 
 ```
 BEAT = { floor: 0.06, rise: 0.035, ratio: 1.3, tauMs: 300, warmupMs: 300, refractoryMs: 250, strong: 0.6 }
 ```
 
-- First sample (or the clock going backwards): `avg = e`, start the warm-up, no beat.
+- First sample, the clock going backwards, or a gap of more than `RESTART_GAP_MS = 1000` since the last sample (a hidden tab, the music paused: the average is stale): `avg = e`, start the warm-up, no beat.
 - `dt = min(100, now − prev)`.
 - Onset when all hold: `now − start ≥ warmupMs`; `e ≥ floor`; `e − avg ≥ rise`; `e ≥ ratio · avg`; `now − at ≥ refractoryMs`.
 - On an onset: `at = now`; `strength = beatStrength(e, avg)` = `clamp(0.3 + 0.7 · (e / max(avg, 0.02) − ratio) / (2.5 − ratio), 0.3, 1)` (0.3 at the threshold, 1 from 2.5× the average); a strong beat (`strength ≥ strong`) increments `strong`.
-- Then the moving average: `avg += (e − avg) · (1 − exp(−dt / tauMs))` (a time constant, so 30 Hz and 60 Hz frames find the same beats).
-- `reset()` forgets everything (the app calls it when secret mode turns on).
+- Then the moving average: `avg += (e − avg) · (1 − exp(−dt / tauMs))` (a time constant, so 30 Hz and 60 Hz frames find the same kicks).
+- `reset()` forgets everything, `at`, `strength`, `strong` (so the palette starts unstepped) and the average (the app calls it when secret mode turns on).
 
-`LightShow` owns one `BeatTracker` (`show.beat`) and feeds it `lowAmplitude(…)` from the same `sample()` (one analyser read per frame).
+`LightShow` owns one `BeatTracker` (`show.beat`) and feeds it `lowAmplitude(…)` from the same `sample()` (one analysis per frame, read as bytes for the post-win show and as floats for the beat).
 
 ### 5.2 When it runs
 
