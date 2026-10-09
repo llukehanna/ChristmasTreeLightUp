@@ -445,6 +445,35 @@ test('a cover uploads through its own labelled input', async ({ page }) => {
   expect(up.seen[0]).toMatchObject({ folder: 'covers', type: 'image/png' });
 });
 
+test('the Secret station: its own button creates it, labelled Secret mode only; a win ad-lib uploads to tracks/secret and is saved', async ({ page }) => {
+  const api = await admin(page);
+  const up = await uploads(page);
+  await page.getByRole('button', { name: '+ Secret station' }).click();
+  const nav = page.locator('nav .station', { hasText: 'Secret mode only' });
+  await expect(nav).toHaveAttribute('aria-current', 'true');
+  await expect(nav).toContainText('secret · 0 tracks');
+  await expect(page.getByRole('button', { name: '+ Secret station' })).toHaveCount(0);
+  await expect(page.getByText('Secret mode only. The game lists this station only while secret mode is on, and plays it when secret mode is switched on.')).toBeVisible();
+  const pick = page.locator('.secret-panel label.button');
+  await expect(pick).toHaveText('Add win ad-lib');
+
+  await page.getByLabel('Upload win ad-lib').setInputFiles([mp3('Ad-lib.mp3')]);
+  await expect(page.locator('.up', { hasText: 'Win ad-lib: Ad-lib.mp3' })).toContainText('done');
+  expect(up.seen.at(-1)).toEqual({ folder: 'tracks', station: 'secret', name: 'Ad-lib.mp3', type: 'audio/mpeg' });
+  await expect(pick).toHaveText('Replace win ad-lib');
+  await expect(page.getByRole('button', { name: 'Remove win ad-lib' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved. Live in the game within a minute' })).toBeVisible();
+  expect(api.puts[0].stations.find((s) => s.id === 'secret')).toEqual({
+    id: 'secret', name: 'Secret', description: '', tracks: [], winSound: `${MEDIA}/tracks/secret/0123abcd-Ad-lib.mp3`,
+  });
+
+  await page.getByRole('button', { name: 'Remove win ad-lib' }).click();
+  await expect(pick).toHaveText('Add win ad-lib');
+  await expect(page.locator('header .sub')).toContainText('unsaved changes');
+});
+
 // ---------- lengths (a routed fake media host: no real storage, no real music) ----------
 
 /** MPEG-1 Layer III, 128 kbit/s: 16 000 audio bytes per second. Zeros after two frame headers. */

@@ -1,4 +1,5 @@
 import './admin.css';
+import { SECRET_ID } from '../radio/ids.js';
 import { parseStation, type Station, type StationsFile, type Track } from '../radio/schema.js';
 import { ApiError, api, audioDuration, SIGN_IN_HREF } from './api.js';
 import { h } from './dom.js';
@@ -25,6 +26,7 @@ const MAX_UPLOAD = 30 * 1024 * 1024;
 /** An upload with no progress (and no answer) for this long is aborted, and its row offers Retry. */
 const STALL_MS = 120_000;
 const MAX_STATIONS = 20;
+const AUDIO_ACCEPT = 'audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,.mp3,.m4a,.aac,.ogg';
 const SESSION_EXPIRED = 'Your session expired. Sign in again.';
 const AUTH_FAILED = "Sign-in didn't finish. Try again.";
 
@@ -79,12 +81,13 @@ const rows = new Map<number, { row: HTMLElement; state: HTMLElement; retry: HTML
 /** "Import this device's history": built on the first editor render, then kept (it holds its own state). */
 let historyPanel: HTMLElement | null = null;
 
-/** One track input and one cover input per station, created once and re-attached by every render. */
-const inputs = new Map<string, { tracks: HTMLInputElement; cover: HTMLInputElement }>();
+/** One track, cover and win ad-lib input per station, created once and re-attached by every render. */
+const inputs = new Map<string, { tracks: HTMLInputElement; cover: HTMLInputElement; win: HTMLInputElement }>();
 
 // Per render: the parts a finished upload or an edit updates in place.
 let tableHost: HTMLElement | null = null;
 let coverSlot: HTMLElement | null = null;
+let winSlot: HTMLElement | null = null;
 const navNames = new Map<string, HTMLElement>();
 const navCounts = new Map<string, HTMLElement>();
 
@@ -363,11 +366,11 @@ async function fillLengths(): Promise<void> {
 // ---------- uploads ----------
 
 interface Job {
-  kind: 'track' | 'cover';
+  kind: 'track' | 'cover' | 'win';
   stationId: string;
   file: File;
 }
-type Result = { kind: 'track'; track: Track } | { kind: 'cover'; url: string };
+type Result = { kind: 'track'; track: Track } | { kind: 'cover'; url: string } | { kind: 'win'; url: string };
 
 /**
  * One upload, aborted as "Upload stalled" when neither progress nor an answer arrives for STALL_MS. A network error or a
@@ -411,9 +414,9 @@ async function trackLength(f: File): Promise<number> {
 async function runJob(job: Job, onProgress: (pct: number) => void): Promise<Result> {
   if (job.file.size > MAX_UPLOAD) throw new Error('The file is too large (30 MB max)');
   if (job.file.size === 0) throw new Error('The file is empty');
-  if (job.kind === 'cover') {
-    const { url } = await upload('covers', job, onProgress);
-    return { kind: 'cover', url };
+  if (job.kind === 'cover' || job.kind === 'win') {
+    const { url } = await upload(job.kind === 'cover' ? 'covers' : 'tracks', job, onProgress);
+    return job.kind === 'cover' ? { kind: 'cover', url } : { kind: 'win', url };
   }
   const [{ url }, duration, tags] = await Promise.all([upload('tracks', job, onProgress), trackLength(job.file), tagsFromBlob(job.file, job.file.name)]);
   const title = tags.title.trim().slice(0, 200) || 'Untitled';
@@ -450,6 +453,12 @@ function landed(job: Job, result: Result): void {
     if (s.id === selected) renderCoverSlot(s);
     return;
   }
+  if (result.kind === 'win') {
+    s.winSound = result.url;
+    touch();
+    if (s.id === selected && screen === 'editor') renderWinSlot(s);
+    return;
+  }
   s.tracks.push(result.track);
   touch();
   navCounts.get(s.id)?.replaceChildren(`${s.id} · ${plural(s.tracks.length, 'track')}`);
@@ -472,7 +481,7 @@ function updateRow(item: QueueItem<Job>): void {
     const row = h(
       'li',
       { class: 'up' },
-      h('span', { class: 'name', textContent: item.job.kind === 'cover' ? `Cover: ${name}` : name }),
+      h('span', { class: 'name', textContent: item.job.kind === 'cover' ? `Cover: ${name}` : item.job.kind === 'win' ? `Win ad-lib: ${name}` : name }),
       h('span', { class: 'where', textContent: where }),
       state,
       retry,
@@ -509,7 +518,7 @@ function clearFinished(): void {
   refreshUploads();
 }
 
-function stationInputs(stationId: string): { tracks: HTMLInputElement; cover: HTMLInputElement } {
+function stationInputs(stationId: string): { tracks: HTMLInputElement; cover: HTMLInputElement; win: HTMLInputElement } {
   let pair = inputs.get(stationId);
   if (pair) return pair;
   const make = (label: string, accept: string, multiple: boolean, kind: Job['kind']): HTMLInputElement => {
@@ -522,8 +531,9 @@ function stationInputs(stationId: string): { tracks: HTMLInputElement; cover: HT
     return input;
   };
   pair = {
-    tracks: make('Upload tracks', 'audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,.mp3,.m4a,.aac,.ogg', true, 'track'),
+    tracks: make('Upload tracks', AUDIO_ACCEPT, true, 'track'),
     cover: make('Upload cover', 'image/jpeg,image/png,image/webp', false, 'cover'),
+    win: make('Upload win ad-lib', AUDIO_ACCEPT, false, 'win'),
   };
   inputs.set(stationId, pair);
   return pair;
@@ -537,6 +547,7 @@ function render(): void {
   navCounts.clear();
   tableHost = null;
   coverSlot = null;
+  winSlot = null;
   const s = current();
   historyPanel ??= historyCard({ authLost });
   const main = h('main', {}, s ? stationEditor(s) : h('p', { class: 'empty', textContent: 'Create a station to start uploading music.' }), uploadsPanel, historyPanel);
@@ -552,10 +563,28 @@ function stationNav(): HTMLElement {
     navNames.set(s.id, name);
     navCounts.set(s.id, count);
     const b = h('button', { class: `station${s.id === selected ? ' on' : ''}`, onclick: () => select(s.id) }, name, count);
+    if (s.id === SECRET_ID) b.append(h('span', { class: 'badge', textContent: 'Secret mode only' }));
     if (s.id === selected) b.setAttribute('aria-current', 'true');
     return b;
   });
-  return h('nav', { class: 'stations', attrs: { 'aria-label': 'Stations' } }, ...items, creating ? newStationForm() : h('button', { class: 'add', textContent: '+ New station', onclick: () => ((creating = true), render()) }));
+  const secret = !stationById(SECRET_ID) && file.stations.length < MAX_STATIONS ? [h('button', { class: 'add secret', textContent: '+ Secret station', onclick: () => createSecret() })] : [];
+  return h(
+    'nav',
+    { class: 'stations', attrs: { 'aria-label': 'Stations' } },
+    ...items,
+    ...secret,
+    creating ? newStationForm() : h('button', { class: 'add', textContent: '+ New station', onclick: () => ((creating = true), render()) }),
+  );
+}
+
+/** The Secret station (spec 2026-10-08 secret mode §4.3): the game lists and plays it only in secret mode. */
+function createSecret(): void {
+  if (stationById(SECRET_ID) || file.stations.length >= MAX_STATIONS) return;
+  file.stations.push({ id: SECRET_ID, name: 'Secret', description: '', tracks: [] });
+  selected = SECRET_ID;
+  creating = false;
+  touch();
+  render();
 }
 
 function select(id: string): void {
@@ -644,9 +673,43 @@ function stationEditor(s: Station): HTMLElement {
     { class: 'editor', attrs: { 'aria-label': s.name || s.id } },
     h('div', { class: 'fields' }, field('name', 'Name', 60), field('description', 'Description', 200, 'Shown under the station name')),
     meta,
+    ...(s.id === SECRET_ID ? [secretPanel(s)] : []),
     tableHost,
     drop,
   );
+}
+
+function secretPanel(s: Station): HTMLElement {
+  winSlot = h('div', { class: 'win' });
+  renderWinSlot(s);
+  return h(
+    'div',
+    { class: 'secret-panel' },
+    h('p', { class: 'note', textContent: 'Secret mode only. The game lists this station only while secret mode is on, and plays it when secret mode is switched on.' }),
+    winSlot,
+  );
+}
+
+/** The win ad-lib: a preview, Add or Replace (the persistent file input), Remove. */
+function renderWinSlot(s: Station): void {
+  if (!winSlot) return;
+  const kids: (Node | string)[] = [h('b', { textContent: 'Win ad-lib' })];
+  if (s.winSound) kids.push(h('audio', { controls: true, preload: 'none', src: s.winSound }));
+  kids.push(h('label', { class: 'button' }, s.winSound ? 'Replace win ad-lib' : 'Add win ad-lib', stationInputs(s.id).win));
+  if (s.winSound) {
+    kids.push(
+      h('button', {
+        textContent: 'Remove win ad-lib',
+        onclick: () => {
+          delete s.winSound;
+          touch();
+          renderWinSlot(s);
+        },
+      }),
+    );
+  }
+  kids.push(h('small', { class: 'dim', textContent: 'Plays once when a tree is solved in secret mode, if game sounds are on.' }));
+  winSlot.replaceChildren(...kids);
 }
 
 function renderCoverSlot(s: Station, coverInput = stationInputs(s.id).cover): void {

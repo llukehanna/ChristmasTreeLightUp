@@ -52,3 +52,29 @@ describe('parseStationsFile', () => {
     expect(parseStationsFile({ version: -1, stations: [] })).toBeNull();
   });
 });
+
+describe('the Secret station (secret mode)', () => {
+  const secret = { id: 'secret', name: 'Secret', description: '', tracks: [track] };
+  const win = 'https://aglow-music.example/tracks/secret/0123abcd-adlib.mp3';
+
+  it('is an ordinary station id, and the only one that may carry a win ad-lib', () => {
+    expect(parseStationsFile({ version: 1, stations: [secret] })).not.toBeNull();
+    expect(parseStationsFile({ version: 1, stations: [{ ...secret, winSound: win }] })?.stations[0].winSound).toBe(win);
+    expect(parseStationsFile({ version: 1, stations: [{ ...file.stations[0], winSound: win }] })).toBeNull();
+  });
+
+  it('refuses a win ad-lib that is not a usable URL', () => {
+    for (const bad of ['http://x.example/a.mp3', 'javascript:alert(1)', '', 5, null]) {
+      expect(parseStationsFile({ version: 1, stations: [{ ...secret, winSound: bad }] }), String(bad)).toBeNull();
+    }
+  });
+
+  it('keeps the parsed key order, with winSound last', () => {
+    const p = parseStationsFile({ version: 1, stations: [{ winSound: '/a.mp3', tracks: [], description: '', name: 'Secret', id: 'secret' }] });
+    expect(Object.keys(p?.stations[0] ?? {})).toEqual(['id', 'name', 'description', 'tracks', 'winSound']);
+  });
+
+  it("reserves the celesta's id", () => {
+    expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id: 'celesta' }] })).toBeNull();
+  });
+});

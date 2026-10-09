@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CURRENT, deleteKeys, mediaBase, mediaKey, mediaUrl, readStations, removedMediaKeys, writeStations } from '../../../worker/lib/stations-store';
+import { CURRENT, deleteKeys, isWinSoundUrl, mediaBase, mediaKey, mediaUrl, readStations, removedMediaKeys, writeStations } from '../../../worker/lib/stations-store';
 import { isUrl, type StationsFile } from '../../../src/radio/schema';
 import { FakeBucket } from './fake-bucket';
 
@@ -132,5 +132,33 @@ describe('deleteKeys', () => {
     expect(del.mock.calls.map((c) => c[0].length)).toEqual([1000, 1000, 1]);
     await deleteKeys(b, []);
     expect(del).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('isWinSoundUrl', () => {
+  it('accepts only an upload under <base>/tracks/secret/', () => {
+    expect(isWinSoundUrl(`${B}/tracks/secret/0123abcd-adlib.mp3`, B)).toBe(true);
+    for (const u of [
+      `${B}/tracks/christmas-jazz/a.mp3`,
+      `${B}/covers/secret/a.png`,
+      'https://elsewhere.example/tracks/secret/a.mp3',
+      '/tracks/secret/a.mp3',
+      `${B}/tracks/secret/..%2Fx.mp3`,
+    ]) {
+      expect(isWinSoundUrl(u, B), u).toBe(false);
+    }
+    expect(isWinSoundUrl(`${B}/tracks/secret/a.mp3`, null)).toBe(false);
+  });
+});
+
+describe('removedMediaKeys and the win ad-lib', () => {
+  const secret = (win?: string): StationsFile => ({
+    version: 1,
+    stations: [{ id: 'secret', name: 'Secret', description: '', tracks: [], ...(win ? { winSound: win } : {}) }],
+  });
+  it('sees a win ad-lib that was replaced or removed', () => {
+    expect(removedMediaKeys(secret(`${B}/tracks/secret/a.mp3`), secret(`${B}/tracks/secret/b.mp3`), B)).toEqual(['tracks/secret/a.mp3']);
+    expect(removedMediaKeys(secret(`${B}/tracks/secret/a.mp3`), secret(), B)).toEqual(['tracks/secret/a.mp3']);
+    expect(removedMediaKeys(secret(`${B}/tracks/secret/a.mp3`), secret(`${B}/tracks/secret/a.mp3`), B)).toEqual([]);
   });
 });
