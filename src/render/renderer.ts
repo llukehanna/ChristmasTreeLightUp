@@ -211,6 +211,8 @@ export class Renderer {
     // Secret mode's faces: lay the presents and garland out again once the sticker arrives; one ornament per tree.
     const secret = this.secret;
     if (secret && !this.faced && this.faces.ready) this.layFaces();
+    // …and plain again if the faces can no longer be drawn (a lost 2D context), rather than a bulb with no glass.
+    else if (this.faced && !(secret && this.faces.ready)) this.layFaces();
     if (secret && board !== this.faceBoard) {
       this.faceBoard = board;
       this.faceTile = faceBulbTile(board.solution, GRID.ids);
@@ -291,7 +293,7 @@ export class Renderer {
       drawUnlit(ctx, tileGeometry(shown, 0), s, sc, style);
       if (isBulb) {
         const face = i === faceTile ? this.faces.get('ornament', facePx, false) : null;
-        if (face) drawFaceBulb(ctx, shown, 0, s, sc, face);
+        if (face) drawFaceBulb(ctx, shown, 0, s, sc, face, angle);
         else drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style);
       }
       ctx.restore();
@@ -388,7 +390,11 @@ export class Renderer {
       this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), 0);
     }
     this.snow.draw(ctx, L, sc, true, motionDt, now, density);
-    if (!f.reducedMotion) this.confetti.draw(ctx, L, now, f.winAt, density, sc, secret ? this.faces.get('confetti', FACE_CONFETTI_PX * dpr, true) : null);
+    if (!f.reducedMotion) {
+      // The mini heads' sprite is asked for only while the confetti falls.
+      const heads = secret && this.confetti.count(now, f.winAt, density) > 0;
+      this.confetti.draw(ctx, L, now, f.winAt, density, sc, heads ? this.faces.get('confetti', FACE_CONFETTI_PX * dpr, true) : null);
+    }
   }
 
   /** Pop intensity + light-show boost + the bottom-to-top win wave (spec §4.5 item 10). */

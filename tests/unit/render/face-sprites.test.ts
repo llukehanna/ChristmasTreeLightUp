@@ -41,3 +41,19 @@ it('caches a lit and a dim copy per slot, in 8 px steps', () => {
   expect(made).toBeGreaterThan(after);
   expect(f.get('garland', 33, true)).not.toBe(f.get('ornament', 41, true));
 });
+
+it('frees the copies it replaces: on a size step, and when the sticker changes', () => {
+  let src = img;
+  const f = new FaceSprites(() => src);
+  const lit = f.get('garland', 40, true);
+  const dim = f.get('garland', 40, false);
+  expect(lit?.width).toBeGreaterThan(0);
+  const next = f.get('garland', 56, true);
+  expect([lit?.width, lit?.height, dim?.width, dim?.height]).toEqual([0, 0, 0, 0]);
+  expect(next?.height).toBe(56);
+  src = { naturalWidth: 240, naturalHeight: 256 } as HTMLImageElement;
+  const other = f.get('ornament', 24, true);
+  expect(f.get('garland', 56, true)).not.toBe(next);
+  expect(next?.width).toBe(0);
+  expect(other?.width).toBeGreaterThan(0);
+});
