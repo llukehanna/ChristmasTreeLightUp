@@ -54,7 +54,7 @@ it('a headless board turns, queues, drops taps and wins exactly like the real on
     expect(fast.won).toBe(true);
     expect(real.won).toBe(true);
   }
-});
+}, 180_000); // ~4 s normally; 20 full sessions, so a loaded machine needs room (it once took 45 s during a deploy)
 
 it('rapid taps on one tile fill the queue and drop the rest, the same on both boards', () => {
   for (let seed = 1; seed <= 10; seed++) {
