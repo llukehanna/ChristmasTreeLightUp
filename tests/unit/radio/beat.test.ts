@@ -51,7 +51,7 @@ describe('BeatTracker', () => {
   });
 
   it('strength is relative to the song’s recent beats: equal kicks are all strong, however soft or loud the master', () => {
-    for (const kick of [6, 12, 40]) {
+    for (const kick of [2 * BEAT.floor, 12, 40]) {
       const b = new BeatTracker();
       const n = onsets(b, flux(60, 4000, { kick })).length;
       expect(n).toBe(7);
@@ -91,15 +91,18 @@ describe('BeatTracker', () => {
     expect(b.update(0.5, 10_000)).toBe(false);
     expect(b.update(12, 10_200)).toBe(false); // clears every threshold, but still warming up
     expect(b.update(0.5, 10_300)).toBe(false);
-    expect(b.update(8, 10_400)).toBe(true); // warmed up
+    expect(b.update(12, 10_400)).toBe(true); // warmed up
     expect(b.strength).toBe(1); // the old loud peak is forgotten
   });
 
-  it('a clock that goes backwards starts the warm-up again', () => {
+  it('a clock that goes backwards starts the warm-up again, and forgets beats now in its future', () => {
     const b = new BeatTracker();
-    onsets(b, flux(60, 2000));
+    onsets(b, flux(60, 10_050));
+    expect(b.at).toBeGreaterThanOrEqual(10_000);
     expect(b.update(0.5, 5)).toBe(false); // backwards: a new start
     expect(b.update(12, 205)).toBe(false); // warming up
+    expect(b.update(0.5, 305)).toBe(false);
+    expect(b.update(12, 405)).toBe(true); // not blocked by the beat at 10 000
   });
 
   it('a long gap between samples starts the warm-up again', () => {
@@ -112,12 +115,23 @@ describe('BeatTracker', () => {
   });
 });
 
+it('a marginal first onset is a weak beat: it is measured against a typical kick, not itself', () => {
+  const b = new BeatTracker();
+  for (const [t, e] of flux(60, 700, { kick: 0, noise: 0.5 })) b.update(e, t);
+  expect(b.update(BEAT.floor * 1.04, 700)).toBe(true); // 4 % over the floor
+  expect(b.strength).toBeLessThan(BEAT.strong);
+  expect(b.strong).toBe(0);
+});
+
 describe('beatStrength', () => {
-  it('0.3 at the floor, 1 at the recent peak', () => {
+  it('0.3 at the floor, 1 at the recent peak (at least peakMin × the floor), on a log scale', () => {
+    expect(beatStrength(BEAT.floor * 1.04, 0)).toBeLessThan(BEAT.strong);
+    expect(beatStrength(BEAT.peakMin * BEAT.floor, 0)).toBe(1);
+    expect(beatStrength(Math.sqrt(BEAT.floor * 20), 20)).toBeCloseTo(0.65); // halfway, in log terms
     expect(beatStrength(BEAT.floor, 20)).toBeCloseTo(0.3);
-    expect(beatStrength((BEAT.floor + 20) / 2, 20)).toBeCloseTo(0.65);
     expect(beatStrength(20, 20)).toBe(1);
     expect(beatStrength(30, 20)).toBe(1);
-    expect(beatStrength(BEAT.floor, BEAT.floor)).toBe(1); // no spread: every beat is the peak
+    expect(beatStrength(BEAT.floor, BEAT.floor)).toBeCloseTo(0.3);
+    expect(beatStrength(BEAT.floor - 1, 20)).toBe(0.3);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BEAT } from '../../../src/radio/beat';
-import { BEAT_FFT, BEAT_SMOOTHING, BeatDetector, FLUX, LightShow, bandEnergies, binRange, onsetFlux } from '../../../src/radio/lightshow';
+import { BEAT_FFT, BEAT_SMOOTHING, BeatDetector, FLUX, LightShow, TAP_DEAD_MS, bandEnergies, binHi, binLo, onsetFlux } from '../../../src/radio/lightshow';
 
 it('splits spectrum energy into low / mid / high bands (0..1)', () => {
   const bins = new Uint8Array(512);
@@ -29,10 +29,10 @@ it('pulses bulbs bottom row first after a beat', () => {
   expect(show.extraBulb(8, 5000)).toBeLessThan(0.01);
 });
 
-it('binRange: the bins between two frequencies, clamped to the spectrum', () => {
-  expect(binRange(512, 43, 20, 150)).toEqual([0, 4]);
-  expect(binRange(512, 46.875, 150, 2000)).toEqual([3, 43]);
-  expect(binRange(8, 43, 2000, 8000)).toEqual([46, 8]); // empty
+it('binLo, binHi: the bins between two frequencies, clamped to the spectrum', () => {
+  expect([binLo(43, 20), binHi(512, 43, 150)]).toEqual([0, 4]);
+  expect([binLo(46.875, 150), binHi(512, 46.875, 2000)]).toEqual([3, 43]);
+  expect([binLo(43, 2000), binHi(8, 43, 8000)]).toEqual([46, 8]); // empty
 });
 
 /**
@@ -45,8 +45,7 @@ const spectrum = (at: (hz: number) => number): Float32Array => Float32Array.from
 /** The bin at `hz` is one of `band`'s, as onsetFlux reads it (binRange). */
 const inBand = (hz: number, band: readonly [number, number]) => {
   const i = Math.round(hz / HZ);
-  const [a, b] = binRange(N, HZ, band[0], band[1]);
-  return i >= a && i < b;
+  return i >= binLo(HZ, band[0]) && i < binHi(N, HZ, band[1]);
 };
 /** A quiet mix: everything at -90 dB. */
 const quiet = () => -90;
@@ -61,8 +60,7 @@ function wobble(db: number) {
 /** onsetFlux from `from` to `to`, the scratch sized as LightShow sizes it. */
 function flux(from: Float32Array, to: Float32Array): number {
   const prev = new Float32Array(N).fill(Number.NaN);
-  const [da, db] = binRange(N, HZ, FLUX.duckBand[0], FLUX.duckBand[1]);
-  const sorted = new Float32Array(db - da);
+  const sorted = new Float32Array(binHi(N, HZ, FLUX.duckBand[1]) - binLo(HZ, FLUX.duckBand[0]));
   onsetFlux(from, prev, sorted, HZ);
   return onsetFlux(to, prev, sorted, HZ);
 }
@@ -80,8 +78,19 @@ describe('onsetFlux', () => {
   it('a clean kick: the kick band and its click rise together, far over the floor', () => {
     const kick = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -50 : inBand(hz, FLUX.clickBand) ? -70 : -90));
     const e = flux(spectrum(quiet), kick);
-    expect(e).toBeCloseTo(40 * (1 + (FLUX.clickWeight * 20) / FLUX.capDb)); // kick +40 (capped), click +20
-    expect(e).toBeGreaterThan(BEAT.floor);
+    expect(e).toBeGreaterThan(3 * BEAT.floor);
+    // Kick +40 (capped), click +20, and most of the new power low: the click's 20 dB is little power.
+    expect(e).toBeLessThanOrEqual(40 * (1 + (FLUX.clickWeight * 20) / FLUX.capDb));
+  });
+
+  it('a rapped syllable: its formants take the new power, so its low rise is no beat', () => {
+    // Before: a quiet mix. After: the voice's low harmonics up 10 dB, its formants (250 Hz – 4 kHz) up 25 dB.
+    const syllable = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -60 : inBand(hz, FLUX.voiceBand) ? -45 : -70));
+    expect(flux(spectrum(() => -70), syllable)).toBeLessThan(BEAT.floor / 10);
+    // The same low rise with the voice holding steady (a kick under a held word) is a beat.
+    const held = (hz: number) => (inBand(hz, FLUX.voiceBand) && !inBand(hz, FLUX.kickBand) ? -45 : -70);
+    const kick = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -60 : held(hz)));
+    expect(flux(spectrum(held), kick)).toBeGreaterThan(BEAT.floor);
   });
 
   it('a kick over a held 808: the 808 owns the bins below 120 Hz, the kick still shows above them', () => {
@@ -98,14 +107,22 @@ describe('onsetFlux', () => {
   });
 
   it('a loud master: the kick is measured against the limiter ducking the rest of the mix', () => {
-    // The limiter pulls everything down 6 dB on the kick; the kick band ends only 1 dB up, 7 dB over the duck.
+    // The limiter pulls everything down 3 dB on the kick; the kick band ends only 2 dB up, 5 dB over the duck.
     const before = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -30 : -20));
-    const after = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -29 : -26));
-    expect(flux(before, after)).toBeCloseTo(7);
-    expect(flux(before, after)).toBeGreaterThan(BEAT.floor);
-    // Without the duck, the same kick would read 1 dB.
-    const level = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -29 : -20));
-    expect(flux(before, level)).toBeCloseTo(1);
+    const after = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -28 : -23));
+    expect(flux(before, after)).toBeCloseTo(5);
+    expect(flux(before, after)).toBeGreaterThanOrEqual(BEAT.floor);
+    // Without the duck, the same kick would read 2 dB.
+    const level = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -28 : -20));
+    expect(flux(before, level)).toBeCloseTo(2);
+  });
+
+  it('follows a duck by at most duckMaxDb: a hard 10 dB drop of the whole mix is no kick', () => {
+    // Everything falls 10 dB in a frame (a cut, an unramped duck) while the kick band happens to tick up 1 dB.
+    const after = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -19 : -30));
+    const e = flux(spectrum(() => -20), after);
+    expect(e).toBeCloseTo(1 + FLUX.duckMaxDb); // not 1 + 10
+    expect(e).toBeLessThan(BEAT.floor);
   });
 
   it('pads wobbling ±3 dB per bin never reach the floor', () => {
@@ -123,8 +140,8 @@ describe('onsetFlux', () => {
 
   it('caps each bin’s rise, so silence turning to sound can’t outweigh the rest', () => {
     const from = spectrum(() => Number.NEGATIVE_INFINITY);
-    const to = spectrum(() => 0);
-    expect(flux(from, to)).toBeCloseTo(FLUX.capDb * (1 + FLUX.clickWeight)); // every bin +100 dB, capped at capDb
+    const to = spectrum((hz) => (inBand(hz, FLUX.kickBand) ? 0 : Number.NEGATIVE_INFINITY));
+    expect(flux(from, to)).toBeCloseTo(FLUX.capDb); // the kick band +100 dB, capped
   });
 });
 
@@ -155,8 +172,9 @@ function fakeRadio(tapDb: () => Float32Array, { tap = true } = {}) {
     getByteFrequencyData: (out: Uint8Array) => out.fill(100),
     getFloatFrequencyData: vi.fn((out: Float32Array) => out.fill(-60)),
     connect: vi.fn(),
+    disconnect: vi.fn(),
   };
-  return { radio: radio as unknown as AnalyserNode, connect: radio.connect, radioFloat: radio.getFloatFrequencyData, made };
+  return { radio: radio as unknown as AnalyserNode, connect: radio.connect, disconnect: radio.disconnect, radioFloat: radio.getFloatFrequencyData, made };
 }
 
 describe('LightShow: secret mode’s beat', () => {
@@ -192,7 +210,7 @@ describe('LightShow: secret mode’s beat', () => {
   });
 
   it('finds the kicks in a loud master, through the limiter’s duck', () => {
-    const { beats } = kicks(spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -29 : -26)), spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -30 : -20)));
+    const { beats } = kicks(spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -28 : -23)), spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -30 : -20)));
     // Each kick frame is followed by a recovery frame (the duck lifting: +6 dB everywhere but the kick band); only kicks count.
     expect(beats).toHaveLength(7);
   });
@@ -203,6 +221,30 @@ describe('LightShow: secret mode’s beat', () => {
     show.sample(0);
     show.sample(17);
     expect(r.radioFloat).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a tap that hears nothing while the radio hears music, for the radio’s own analyser', () => {
+    const r = fakeRadio(() => spectrum(() => Number.NEGATIVE_INFINITY));
+    const show = new LightShow(() => r.radio);
+    for (let t = 0; t < TAP_DEAD_MS; t += 1000 / 60) show.sample(t);
+    expect(r.radioFloat).not.toHaveBeenCalled();
+    show.sample(TAP_DEAD_MS + 20);
+    expect(r.disconnect).toHaveBeenCalledWith(r.made[0]);
+    show.sample(TAP_DEAD_MS + 40);
+    expect(r.radioFloat).toHaveBeenCalled();
+  });
+
+  it('a new analyser from the radio: the old tap is unhooked and a new one made', () => {
+    const one = fakeRadio(() => spectrum(quiet));
+    const two = fakeRadio(() => spectrum(quiet));
+    let radio = one.radio;
+    const show = new LightShow(() => radio);
+    show.sample(0);
+    radio = two.radio;
+    show.sample(17);
+    expect(one.disconnect).toHaveBeenCalledWith(one.made[0]);
+    expect(two.made).toHaveLength(1);
+    expect(two.connect).toHaveBeenCalledWith(two.made[0]);
   });
 
   it('starts the flux afresh after a gap: a stale spectrum is no beat', () => {
