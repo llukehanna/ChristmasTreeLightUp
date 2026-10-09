@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardResponse, ClaimResponse, FinishResult, StartResponse } from '../../src/api/types';
 import { REVEAL_MS } from '../../src/core/clock';
 import type { LogEntry } from '../../src/core/log';
@@ -39,8 +39,15 @@ const spanOf = (seed: number, log: LogEntry[]): number => {
 const backdate = (id: string, ms: number) => db.prepare('UPDATE games SET started_at = started_at - ? WHERE id = ?').bind(ms, id).run();
 /** Finishes like an honest client: the server has seen the log's span plus `extra` ms of network. */
 async function finish(game: StartResponse, log: LogEntry[], { cookie, extra = 300 }: { cookie?: string; extra?: number } = {}): Promise<Response> {
-  await backdate(game.id, spanOf(game.seed, log) + extra);
-  return call(env, 'POST', `/api/games/${game.id}/finish`, { cookie, body: { log } });
+  // The clock stands still from the backdate to the judging, so the server sees exactly span + extra: a loaded
+  // machine (seconds between the two) must not turn an honest run into 'clock'. Only Date is faked; timers run.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
+  try {
+    await backdate(game.id, spanOf(game.seed, log) + extra);
+    return await call(env, 'POST', `/api/games/${game.id}/finish`, { cookie, body: { log } });
+  } finally {
+    vi.useRealTimers();
+  }
 }
 async function play(cookie?: string, opts: { gap?: number; pauses?: number; extra?: number } = {}) {
   const game = await start(cookie);
