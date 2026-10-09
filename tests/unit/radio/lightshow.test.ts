@@ -27,3 +27,20 @@ it('pulses bulbs bottom row first after a beat', () => {
   expect(show.extraBulb(8, 1000 + 30)).toBeGreaterThan(show.extraBulb(0, 1000 + 30));
   expect(show.extraBulb(8, 5000)).toBeLessThan(0.01);
 });
+
+it('feeds secret mode’s beat tracker from the same samples', () => {
+  let level = 40;
+  const analyser = {
+    frequencyBinCount: 512,
+    fftSize: 1024,
+    context: { sampleRate: 44_100 },
+    getByteFrequencyData: (bins: Uint8Array) => bins.fill(level),
+  } as unknown as AnalyserNode;
+  const show = new LightShow(() => analyser);
+  for (let t = 0; t <= 2000; t += 1000 / 60) {
+    level = t % 500 < 60 ? 200 : 40;
+    show.sample(t);
+  }
+  expect(show.beat.at).toBeGreaterThanOrEqual(1500);
+  expect(show.beat.strong).toBeGreaterThanOrEqual(3);
+});

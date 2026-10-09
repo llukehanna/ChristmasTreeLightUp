@@ -1,3 +1,4 @@
+import { NOD_DIP, NOD_SQUASH, nodPulse } from './beat-fx';
 import { drawStarBody, easeOutBack, foil, ignitePop, STAR_V, type StarState } from './effects';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
@@ -250,6 +251,9 @@ export class Topper {
   private tapAt = Number.NEGATIVE_INFINITY;
   private tapPower = 0;
   private burstAt = Number.NEGATIVE_INFINITY;
+  /** Secret mode's beat: when the last one landed and how hard (spec 2026-10-08 secret mode §5.3). */
+  private nodAt = Number.NEGATIVE_INFINITY;
+  private nodPower = 0;
   /** The last frame was drawn under reduced motion (a flip then starts from the face the crossfade shows). */
   private reduced = false;
   /** The sticker has just loaded: a paused stage needs one more frame to show it. */
@@ -355,6 +359,14 @@ export class Topper {
     this.p.now = Number.NaN;
   }
 
+  /** The beat for this frame (none: -Infinity, 0). The head dips and returns on each one, never under reduced motion. */
+  nod(at: number, strength: number): void {
+    if (at === this.nodAt && strength === this.nodPower) return;
+    this.nodAt = at;
+    this.nodPower = strength;
+    this.p.now = Number.NaN;
+  }
+
   /** 0..1: how brightly a tap or a flip lights the topper just now. */
   flash(now: number): number {
     const tt = now - this.tapAt;
@@ -396,8 +408,9 @@ export class Topper {
     p.won = won;
     p.on = st.on;
     p.cx = X(L, 0);
-    p.cy = Y(L, STAR_V) - (flip ? TOSS * L.s * flip.toss : 0);
-    p.k = ignitePop(st, won) * boop * (flip ? 1 + GROW * flip.toss : 1);
+    const nod = reduced ? 0 : this.nodPower * nodPulse(now - this.nodAt);
+    p.cy = Y(L, STAR_V) - (flip ? TOSS * L.s * flip.toss : 0) + NOD_DIP * L.s * nod;
+    p.k = ignitePop(st, won) * boop * (flip ? 1 + GROW * flip.toss : 1) * (1 - NOD_SQUASH * nod);
     p.angle = angle;
     p.flip = flip;
     p.fade = fade ?? -1;
