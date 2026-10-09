@@ -49,7 +49,7 @@ it('server numbers only ever paint as numbers', () => {
   expect(el.querySelector('.acct-sub')?.textContent).toBe('All-time · NaN ranked runs');
 });
 
-it('pins your best below the list when it is outside the top 50', () => {
+it('pins your best below the list when it is outside the top 25', () => {
   const you = { rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true };
   const el = render('board', { status: 'ready', data: { ...board, rows: [board.rows[0]], you } }, { status: 'loading' }, me, now);
   expect(el.querySelector('.acct-pin .acct-me .acct-rank')?.textContent).toBe('87');
@@ -74,7 +74,7 @@ it('loading, empty and error states', () => {
   expect(failed.querySelector('[data-act="reload"]')).not.toBeNull();
 });
 
-it('your games: best, rank, top-50 count, then recent games with their status', () => {
+it('your games: best, rank, top-25 count, then recent games with their status', () => {
   const games: MyGamesResponse = {
     best: { ms: 81_000, rank: 12, finishedAt: day },
     inTop: 2,

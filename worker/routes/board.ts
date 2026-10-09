@@ -6,8 +6,8 @@ import { bestOf, rankOf, rankRows } from '../lib/ranks.js';
 import { currentUser } from '../lib/users.js';
 
 /**
- * GET /api/board: the all-time top 50 runs. Varies with the cookie (your rows), so the cache is private and short.
- * The top 50 and the total come from the isolate's copy (BOARD_TTL_MS); your pinned best is read live.
+ * GET /api/board: the all-time top BOARD_TOP runs. Varies with the cookie (your rows), so the cache is private and short.
+ * The top BOARD_TOP and the total come from the isolate's copy (BOARD_TTL_MS); your pinned best is read live.
  */
 export async function getBoard(req: Request, env: AppEnv): Promise<Response> {
   const user = await currentUser(req, env);

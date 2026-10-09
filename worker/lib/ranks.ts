@@ -1,9 +1,10 @@
+import { BOARD_TOP } from '../../src/api/types.js';
 import type { Db } from './db.js';
 
 /** Ranked runs by players who have a name: the only runs on the board (spec §2). */
 const ON_BOARD = 'FROM games g JOIN users u ON u.id = g.user_id WHERE g.ranked = 1 AND u.name IS NOT NULL';
 
-export const TOP = 50;
+export const TOP = BOARD_TOP;
 
 const TOTAL_SQL = `SELECT count(*) AS n ${ON_BOARD}`;
 
@@ -33,7 +34,7 @@ export function bestOf(db: Db, userId: number): Promise<BestRun | null> {
   return db.prepare(BEST_SQL).bind(userId).first<BestRun>();
 }
 
-/** The top 50 runs: fastest, then earliest. Reads games_board (a partial index on ranked runs) in order. */
+/** The top BOARD_TOP runs: fastest, then earliest. Reads games_board (a partial index on ranked runs) in order. */
 export const TOP_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at ${ON_BOARD} ORDER BY g.ms, g.finished_at, g.id LIMIT ${TOP}`;
 
 export interface TopRow {
@@ -48,7 +49,7 @@ export async function topRuns(db: Db): Promise<TopRow[]> {
   return (await db.prepare(TOP_SQL).all<TopRow>()).results;
 }
 
-/** The top 50 and the board total in one batch: one round trip, and both read the same snapshot. */
+/** The top BOARD_TOP and the board total in one batch: one round trip, and both read the same snapshot. */
 export async function topAndTotal(db: Db): Promise<{ top: TopRow[]; total: number }> {
   const [top, total] = await db.batch([db.prepare(TOP_SQL), db.prepare(TOTAL_SQL)]);
   return { top: top.results as TopRow[], total: (total.results[0] as { n: number } | undefined)?.n ?? 0 };
