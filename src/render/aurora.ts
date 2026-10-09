@@ -1,5 +1,6 @@
 import { mulberry32, type Rng } from '../core/rng';
 import { Y, type Layout } from './layout';
+import type { Scene } from './scenes';
 
 /**
  * Secret mode's sky (spec 2026-10-08 secret mode §2): three aurora curtains baked once per layout at a quarter of the
@@ -37,7 +38,8 @@ export interface Ribbon {
 
 export const RIBBONS: readonly Ribbon[] = [
   { rgb: '92,255,170', top: 0.06, height: 0.42, waves: 1.7, alpha: 0.55, phase: 0, driftMs: 41_000, shimmerMs: 5_300, breathMs: 9_700 },
-  { rgb: '70,214,236', top: 0.14, height: 0.34, waves: 2.6, alpha: 0.4, phase: 2.1, driftMs: 53_000, shimmerMs: 7_100, breathMs: 12_100 },
+  // Teal's hem sits above green's (0.42 vs 0.48 hz): a second, farther curtain, not one flat shelf with it.
+  { rgb: '70,214,236', top: 0.08, height: 0.34, waves: 2.6, alpha: 0.4, phase: 2.1, driftMs: 53_000, shimmerMs: 7_100, breathMs: 12_100 },
   { rgb: '170,120,255', top: 0, height: 0.3, waves: 1.2, alpha: 0.36, phase: 4.2, driftMs: 67_000, shimmerMs: 8_900, breathMs: 15_300 },
 ];
 
@@ -103,8 +105,9 @@ function paintCurtain(c: CanvasRenderingContext2D, w: number, h: number, R: Ribb
   const g = c.createLinearGradient(0, LIFT * h, 0, h);
   g.addColorStop(0, `rgba(${R.rgb},0)`);
   g.addColorStop(0.55, `rgba(${R.rgb},0.28)`);
-  g.addColorStop(0.86, `rgba(${R.rgb},1)`);
-  g.addColorStop(1, `rgba(${R.rgb},0)`);
+  // A crisp hem: the lit fold's lower edge, not a smear.
+  g.addColorStop(0.9, `rgba(${R.rgb},1)`);
+  g.addColorStop(0.97, `rgba(${R.rgb},0)`);
   c.fillStyle = g;
   const r = mulberry32(seed);
   const coarse = rayNoise(w, Math.max(2.5, RAY_COARSE_CSS / cssPerPx), r);
@@ -128,7 +131,7 @@ function paintCurtain(c: CanvasRenderingContext2D, w: number, h: number, R: Ribb
 export class Aurora {
   private sprites: HTMLCanvasElement[] = [];
   private builtFor: Layout | null = null;
-  /** The sweep's seam: a 1×64 glow strip, made on first use (null: no 2D context). */
+  /** The sweep's seam: a SEAM_W × SEAM_H glow strip, made on first use (null: no 2D context). */
   private seam: HTMLCanvasElement | null | undefined;
 
   /** The curtains, in screen space (the caller sets a CSS px transform), additive. `alpha` scales them (a crossfade). */
@@ -154,8 +157,32 @@ export class Aurora {
     c.globalAlpha = a0;
   }
 
-  /** The glowing seam along the sweep's edge, `y` in CSS px, `k` its strength 0..1. */
-  drawSeam(c: CanvasRenderingContext2D, L: Layout, y: number, k: number): void {
+  /**
+   * Clips to the sky the aurora covers: above `y` (CSS px), along a billowing edge that is the seam's own core (so
+   * the hem hides the backdrop step everywhere), or a straight one while the edge is dark (`k` 0: the reduced-motion
+   * crossfade, or before the sweep starts). Path ops only, nothing allocated.
+   */
+  clipSky(c: CanvasRenderingContext2D, L: Layout, y: number, k: number, now: number): void {
+    c.beginPath();
+    if (k <= 0) c.rect(0, 0, L.w, y);
+    else {
+      const { amp, x0, span } = seamFit(L, now);
+      c.moveTo(0, -amp - 1);
+      c.lineTo(L.w, -amp - 1);
+      for (let i = SEAM_EDGE_POINTS; i >= 0; i--) {
+        const x = (i / SEAM_EDGE_POINTS) * L.w;
+        c.lineTo(x, y + amp * seamWave((x - x0) / span));
+      }
+      c.closePath();
+    }
+    c.clip();
+  }
+
+  /**
+   * The glowing hem along the sweep's edge, `y` in CSS px, `k` its strength 0..1: the strip's hot core rides the
+   * clip's billowing edge (hiding the backdrop step), its rays trail up into the aurora, almost nothing spills below.
+   */
+  drawSeam(c: CanvasRenderingContext2D, L: Layout, y: number, k: number, now = 0): void {
     if (k <= 0) return;
     if (this.seam === undefined) this.seam = makeSeam();
     if (!this.seam) return;
@@ -163,7 +190,8 @@ export class Aurora {
     const a0 = c.globalAlpha;
     c.globalCompositeOperation = 'lighter';
     c.globalAlpha = k;
-    c.drawImage(this.seam, 0, y - 0.8 * L.s, L.w, 1.6 * L.s);
+    const { hh, x0, span } = seamFit(L, now);
+    c.drawImage(this.seam, x0, y - (SEAM_CORE_ROW / SEAM_P) * hh, span, (SEAM_H / SEAM_P) * hh);
     c.globalCompositeOperation = op;
     c.globalAlpha = a0;
   }
@@ -185,17 +213,147 @@ export class Aurora {
   }
 }
 
+/**
+ * The seam strip, SEAM_W × SEAM_H px. Its glow profile is SEAM_P rows tall (that is `hh` on screen) with the hot core
+ * at SEAM_CORE of it; the core rides SEAM_CORE_ROW ± SEAM_AMP rows along `seamWave`. The strip spans SEAM_SPAN
+ * viewport widths and sways sideways, so the billow travels along the edge.
+ */
+export const SEAM_W = 512;
+export const SEAM_H = 128;
+export const SEAM_P = 80;
+export const SEAM_CORE = 0.68;
+export const SEAM_CORE_ROW = 84;
+export const SEAM_AMP = 28;
+export const SEAM_SPAN = 1.5;
+/** Points along the clip's billowing edge. */
+const SEAM_EDGE_POINTS = 32;
+/** The sway: the strip's left end runs SEAM_X0 ± SEAM_SWAY viewport widths over SEAM_SWAY_MS. */
+const SEAM_X0 = -0.25;
+const SEAM_SWAY = 0.18;
+const SEAM_SWAY_MS = 3600;
+
+/** The edge's billow at `u` (0..1 along the strip), −1..1: two incommensurate folds. */
+export const seamWave = (u: number): number => 0.65 * Math.sin(TAU * u * 3.1 + 0.4) + 0.35 * Math.sin(TAU * u * 7.3 + 2.2);
+
+/** The seam on screen: glow height `hh`, billow amplitude `amp` (CSS px), the strip's left end `x0` and width `span`. */
+function seamFit(L: Layout, now: number): { hh: number; amp: number; x0: number; span: number } {
+  const hh = Math.min(1.6 * L.s, 0.05 * L.h);
+  const x0 = (SEAM_X0 + SEAM_SWAY * Math.sin((TAU * now) / SEAM_SWAY_MS)) * L.w;
+  return { hh, amp: (SEAM_AMP / SEAM_P) * hh, x0, span: SEAM_SPAN * L.w };
+}
+
+/**
+ * The sweep's hem, baked once: a soft wash trailing up, a thin near-white core, nothing much below, the core riding
+ * `seamWave`. Each column's strength and reach vary (seeded noise), so the edge breaks into rays like the curtains'
+ * own hem instead of a ruler line.
+ */
 function makeSeam(): HTMLCanvasElement | null {
   const cv = document.createElement('canvas');
-  cv.width = 1;
-  cv.height = 64;
+  cv.width = SEAM_W;
+  cv.height = SEAM_H;
   const c = cv.getContext('2d');
   if (!c) return null;
-  const g = c.createLinearGradient(0, 0, 0, 64);
-  g.addColorStop(0, 'rgba(140,255,220,0)');
-  g.addColorStop(0.5, 'rgba(140,255,220,.55)');
-  g.addColorStop(1, 'rgba(140,255,220,0)');
+  const top = SEAM_CORE_ROW - SEAM_CORE * SEAM_P;
+  const g = c.createLinearGradient(0, top, 0, top + SEAM_P);
+  g.addColorStop(0, 'rgba(120,255,200,0)');
+  g.addColorStop(0.45, 'rgba(120,255,200,.18)');
+  g.addColorStop(SEAM_CORE, 'rgba(210,255,240,.9)');
+  g.addColorStop(0.74, 'rgba(120,255,200,.25)');
+  g.addColorStop(0.82, 'rgba(120,255,200,0)');
   c.fillStyle = g;
-  c.fillRect(0, 0, 1, 64);
+  const r = mulberry32(41);
+  const coarse = rayNoise(SEAM_W, 16, r);
+  const fine = rayNoise(SEAM_W, 5, r);
+  const reach = rayNoise(SEAM_W, 7, r);
+  for (let x = 0; x < SEAM_W; x++) {
+    const u = (x + 0.5) / SEAM_W;
+    c.globalAlpha = (0.5 + 0.5 * (0.6 * coarse[x] + 0.4 * fine[x])) * Math.min(1, u / 0.03, (1 - u) / 0.03);
+    // The wash above the core reaches 55–100 % of the way up, scaled about the core, which rides the billow.
+    const k = 0.55 + 0.45 * reach[x];
+    const core = SEAM_CORE_ROW + SEAM_AMP * seamWave(u);
+    c.setTransform(1, 0, 0, k, 0, core - k * SEAM_CORE_ROW);
+    c.fillRect(x, top, 1, SEAM_P);
+  }
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalAlpha = 1;
   return cv;
+}
+
+/** The sweep under way: the backdrop it leaves (`from`, of `fromScene`), when it starts, and which way. */
+export interface SweepRun {
+  from: HTMLCanvasElement;
+  fromScene: Scene;
+  at: number;
+  dir: 'down' | 'up';
+  reduced: boolean;
+}
+
+/**
+ * The sky sweep's bookkeeping (spec §2.4): the backdrop canvas on screen, the one being left during a sweep, and one
+ * spare canvas reused sweep after sweep. A second crossing toggle mid-sweep reverses it from where it stands.
+ */
+export class SkySweep {
+  /** The backdrop of the current scene (the arriving one during a sweep). */
+  bg = document.createElement('canvas');
+  private run: SweepRun | null = null;
+  /** The last sweep's `from`, emptied: the next sweep's canvas. */
+  private spare: HTMLCanvasElement | null = null;
+  private readonly out: SweepFrame = { cover: 0, alpha: 1, edge: 0, done: false };
+  /** The last frame's clock, for a reversal's mirror. */
+  private lastNow = 0;
+
+  get current(): Readonly<SweepRun> | null {
+    return this.run;
+  }
+
+  /**
+   * The scene is changing from `from` to `to`; the caller repaints `bg` after. A sweep runs only with `sweep`, a sized
+   * stage and a change into or out of the aurora; any other change ends a sweep under way.
+   */
+  change(from: Scene, to: Scene, sweep: { now: number; reduced: boolean } | null, sized: boolean): void {
+    const crossing = (to.id === 'aurora') !== (from.id === 'aurora');
+    const dir = to.id === 'aurora' ? 'down' : 'up';
+    const run = this.run;
+    if (run && sweep && crossing && sized) {
+      // Reverse: the leaving backdrop becomes the arriving one, and the clock is mirrored so the cover doesn't jump
+      // (easeInOutCubic is symmetric: 1 − e(1 − k) = e(k)).
+      const k = clamp01((this.lastNow - run.at) / (run.reduced ? SWEEP_FADE_MS : SWEEP_MS));
+      const arriving = run.from;
+      run.from = this.bg;
+      run.fromScene = from;
+      this.bg = arriving;
+      run.at = this.lastNow - (1 - k) * (sweep.reduced ? SWEEP_FADE_MS : SWEEP_MS);
+      run.dir = dir;
+      run.reduced = sweep.reduced;
+      return;
+    }
+    this.end();
+    if (!sweep || !crossing || !sized) return;
+    const old = this.bg;
+    this.bg = this.spare ?? document.createElement('canvas');
+    this.spare = null;
+    this.bg.width = old.width;
+    this.bg.height = old.height;
+    this.run = { from: old, fromScene: from, at: sweep.now, dir, reduced: sweep.reduced };
+  }
+
+  /** This frame's sweep (the shared `out`), or null: none, or it has just finished (and is ended). */
+  frame(now: number): SweepFrame | null {
+    this.lastNow = now;
+    const run = this.run;
+    if (!run) return null;
+    const fr = sweepFrame(now - run.at, run.dir, run.reduced, this.out);
+    if (!fr.done) return fr;
+    this.end();
+    return null;
+  }
+
+  /** Ends a sweep under way (a resize, another scene): the target sky shows at once. */
+  end(): void {
+    if (!this.run) return;
+    const c = this.run.from;
+    c.width = c.height = 0; // frees its pixels; the next sweep sizes it again
+    this.spare = c;
+    this.run = null;
+  }
 }
