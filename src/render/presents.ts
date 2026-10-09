@@ -1,6 +1,8 @@
 import type { Grid } from '../core/mask';
 import { CANVAS_FILTER } from './blur';
 import { hexRgb } from './color';
+import type { FaceSprites } from './face-sprites';
+import { faceGiftIndex } from './faces';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
 
@@ -14,7 +16,7 @@ import type { Scene } from './scenes';
 export interface Paper {
   base: string;
   ribbon: string;
-  pattern: 'plain' | 'stripe' | 'dots';
+  pattern: 'plain' | 'stripe' | 'dots' | 'face';
   ink: string;
 }
 
@@ -26,6 +28,9 @@ export const PAPERS: readonly Paper[] = [
   { base: '#c49440', ribbon: '#9e1b2a', pattern: 'plain', ink: '#c49440' }, // gold paper, red ribbon
   { base: '#6e1420', ribbon: '#efe0bd', pattern: 'stripe', ink: '#e2b25a' }, // wine, gold stripe
 ];
+
+/** Secret mode's present (spec 2026-10-08 secret mode §3.2): midnight-indigo paper printed with Luke's head, an ice ribbon. */
+export const FACE_PAPER: Paper = { base: '#22275e', ribbon: '#d8ecff', pattern: 'face', ink: '#22275e' };
 
 /** [u, w, h, dz, paper, bow]: centre offset, width, height and depth-forward in tile units; bow scale. */
 type Spec = readonly [number, number, number, number, number, number];
@@ -183,6 +188,9 @@ function lighting(sc: Scene): Lighting {
   return { ambient: [0.3, 0.2, 0.14], face: { front: 0.95, top: 1.25, side: 0.7 }, warm: g, lightFace };
 }
 
+/** How much of the lit sticker the light pass prints on a gift's front (the base pass's dimmed sticker adds the rest). */
+const PRINT_LIGHT = 0.8;
+
 class Tone {
   constructor(private readonly lt: Lighting, private readonly pass: Pass) {}
 
@@ -194,6 +202,18 @@ class Tone {
     const f = (this.pass === 'base' ? lt.face[face] : lt.lightFace[face]) * k;
     const ch = a.map((v, i) => Math.min(255, Math.round(v * light[i] * f)));
     return `rgb(${ch.join(',')})`;
+  }
+
+  /**
+   * The grey a print on `face` is multiplied by, so the box's faces shade it as they shade the paper (the top brightest)
+   * without dulling the sticker's own colours: in the base pass (already the dimmed sticker) its share of the ambient,
+   * in the light pass its share of the tree's light, the front at PRINT_LIGHT so the lit sum stays short of white.
+   */
+  print(face: Face): string {
+    const f = this.pass === 'base' ? this.lt.face : this.lt.lightFace;
+    const k = this.pass === 'base' ? f[face] / Math.max(f.front, f.top, f.side) : Math.min(1, (PRINT_LIGHT * f[face]) / f.front);
+    const v = Math.round(255 * k);
+    return `rgb(${v},${v},${v})`;
   }
 }
 
@@ -211,12 +231,19 @@ function linear(c: CanvasRenderingContext2D, a: P, b: P, stops: readonly (readon
   return gr;
 }
 
-/** Pattern printed on the paper, clipped to the current path. */
-function paperPattern(c: CanvasRenderingContext2D, g: Gift, t: Tone, face: Face, box: Rect): void {
+/** Pattern printed on the paper, clipped to the current path. `print`: the sticker, for the face paper. */
+function paperPattern(c: CanvasRenderingContext2D, g: Gift, t: Tone, face: Face, box: Rect, print: HTMLCanvasElement | null = null): void {
   const p = g.paper;
-  if (p.pattern === 'plain') return;
+  if (p.pattern === 'plain' || (p.pattern === 'face' && !print)) return;
   c.save();
   c.clip();
+  if (p.pattern === 'face' && print) {
+    const shaded = shadedPrint(print, t.print(face));
+    printFaces(c, g, box, shaded);
+    shaded.width = shaded.height = 0;
+    c.restore();
+    return;
+  }
   c.fillStyle = t.of(p.ink, face, 0.95);
   c.strokeStyle = t.of(p.ink, face, 0.95);
   const step = Math.max(4, g.w * 0.11);
@@ -244,6 +271,30 @@ function paperPattern(c: CanvasRenderingContext2D, g: Gift, t: Tone, face: Face,
   c.restore();
 }
 
+/** `print` multiplied by `light`, keeping its own alpha: a layout-time copy (one per box face and pass), never per frame. */
+function shadedPrint(print: HTMLCanvasElement, light: string): HTMLCanvasElement {
+  const [cv, c] = canvas(print.width, print.height);
+  c.drawImage(print, 0, 0);
+  c.globalCompositeOperation = 'multiply';
+  c.fillStyle = light;
+  c.fillRect(0, 0, cv.width, cv.height);
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(print, 0, 0);
+  return cv;
+}
+
+/** The face paper: the sticker on a staggered grid, every other row offset by half a step. */
+function printFaces(c: CanvasRenderingContext2D, g: Gift, box: Rect, print: HTMLCanvasElement): void {
+  const step = Math.max(8, g.w * 0.26);
+  const fh = step * 0.78;
+  const fw = (fh * print.width) / print.height;
+  c.globalAlpha = 0.92;
+  let row = 0;
+  for (let y = box.y0 + step * 0.45; y < box.y1 + fh / 2; y += step * 0.82, row++) {
+    for (let x = box.x0 + (row % 2 ? step / 2 : 0); x < box.x1 + fw / 2; x += step) c.drawImage(print, x - fw / 2, y - fh / 2, fw, fh);
+  }
+}
+
 /** A satin ribbon band: dark edges and a bright centre line along its length. */
 function ribbonFill(c: CanvasRenderingContext2D, t: Tone, hex: string, face: Face, a: P, b: P): CanvasGradient {
   return linear(c, a, b, [
@@ -255,7 +306,7 @@ function ribbonFill(c: CanvasRenderingContext2D, t: Tone, hex: string, face: Fac
 }
 
 /** One wrapped box (lid, ribbons, bow), in CSS px layout coordinates. */
-function paintBox(c: CanvasRenderingContext2D, g: Gift, t: Tone, pass: Pass): void {
+function paintBox(c: CanvasRenderingContext2D, g: Gift, t: Tone, pass: Pass, print: HTMLCanvasElement | null = null): void {
   const { cx, base, w, h, sx, rise, lid, over } = g;
   const paper = g.paper.base;
   const rib = g.paper.ribbon;
@@ -277,7 +328,7 @@ function paintBox(c: CanvasRenderingContext2D, g: Gift, t: Tone, pass: Pass): vo
     poly(c, side);
     c.fillStyle = linear(c, [sideX, lyB], [sideX, base], [[0, t.of(paper, 'side', 1)], [1, t.of(paper, 'side', 0.6)]]);
     c.fill();
-    paperPattern(c, g, t, 'side', { x0: Math.min(sideX, sideX + sx), y0: lyB - rise, x1: Math.max(sideX, sideX + sx), y1: base });
+    paperPattern(c, g, t, 'side', { x0: Math.min(sideX, sideX + sx), y0: lyB - rise, x1: Math.max(sideX, sideX + sx), y1: base }, print);
     // ribbon down the middle of the side face, only where the face is wide enough to read
     if (Math.abs(sx) > rw * 1.6) {
       const m0: P = [sideX + sx * 0.5, lyB - rise * 0.5];
@@ -294,7 +345,7 @@ function paintBox(c: CanvasRenderingContext2D, g: Gift, t: Tone, pass: Pass): vo
     : [[0, t.of(paper, 'front', 1.15)], [1, t.of(paper, 'front', 0.35)]]);
   c.fill();
   poly(c, front);
-  paperPattern(c, g, t, 'front', { x0, y0: lyB, x1, y1: base });
+  paperPattern(c, g, t, 'front', { x0, y0: lyB, x1, y1: base }, print);
   // Paper sheen, and light falling off away from the tree (the tree is toward the centre of view).
   const near = sx >= 0 ? x1 : x0;
   const far = sx >= 0 ? x0 : x1;
@@ -321,7 +372,7 @@ function paintBox(c: CanvasRenderingContext2D, g: Gift, t: Tone, pass: Pass): vo
   c.fillStyle = linear(c, [0, lyT], [0, lyB], [[0, t.of(paper, 'front', 1.18)], [1, t.of(paper, 'front', 0.9)]]);
   c.fill();
   poly(c, lidFront);
-  paperPattern(c, g, t, 'front', { x0: lx0, y0: lyT, x1: lx1, y1: lyB });
+  paperPattern(c, g, t, 'front', { x0: lx0, y0: lyT, x1: lx1, y1: lyB }, print);
   c.fillStyle = ribbonFill(c, t, rib, 'front', [cx - rw / 2, 0], [cx + rw / 2, 0]);
   c.fillRect(cx - rw / 2, lyT, rw, lid);
   const top: P[] = [[lx0, lyT], [lx1, lyT], bump([lx1, lyT]), bump([lx0, lyT])];
@@ -331,7 +382,7 @@ function paintBox(c: CanvasRenderingContext2D, g: Gift, t: Tone, pass: Pass): vo
     : [[0, t.of(paper, 'top', 0.8)], [1, t.of(paper, 'top', 1.2)]]);
   c.fill();
   poly(c, top);
-  paperPattern(c, g, t, 'top', { x0: Math.min(lx0, lx0 + sx), y0: lyT - rise, x1: Math.max(lx1, lx1 + sx), y1: lyT });
+  paperPattern(c, g, t, 'top', { x0: Math.min(lx0, lx0 + sx), y0: lyT - rise, x1: Math.max(lx1, lx1 + sx), y1: lyT }, print);
   // ribbons across the top: front-to-back and left-to-right
   poly(c, [[cx - rw / 2, lyT], [cx + rw / 2, lyT], bump([cx + rw / 2, lyT]), bump([cx - rw / 2, lyT])]);
   c.fillStyle = ribbonFill(c, t, rib, 'top', [cx - rw / 2, 0], [cx + rw / 2, 0]);
@@ -446,13 +497,17 @@ function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContex
 export class Presents {
   gifts: Gift[] = [];
   private sprites: Sprite[] = [];
+  /** The gift in face paper (secret mode), or -1. */
+  faceIndex = -1;
 
-  /** Places and pre-renders the gifts. Call on layout or scene change. */
-  layout(L: Layout, grid: Grid, sc: Scene): void {
+  /** Places and pre-renders the gifts. Call on layout or scene change. `faces`: secret mode, with the sticker loaded. */
+  layout(L: Layout, grid: Grid, sc: Scene, faces: FaceSprites | null = null): void {
     for (const sp of this.sprites) sp.base.width = sp.light.width = 0;
     this.gifts = placePresents(L, grid);
+    this.faceIndex = faces?.ready ? faceGiftIndex(this.gifts) : -1;
+    if (this.faceIndex >= 0) this.gifts[this.faceIndex] = { ...this.gifts[this.faceIndex], paper: FACE_PAPER };
     const lt = lighting(sc);
-    this.sprites = this.gifts.map((g) => this.render(g, L, sc, lt));
+    this.sprites = this.gifts.map((g) => this.render(g, L, sc, lt, faces));
   }
 
   /** Union of the gifts' bounds (CSS px), or null when there are none. */
@@ -479,7 +534,7 @@ export class Presents {
     }
   }
 
-  private render(g: Gift, L: Layout, sc: Scene, lt: Lighting): Sprite {
+  private render(g: Gift, L: Layout, sc: Scene, lt: Lighting, faces: FaceSprites | null): Sprite {
     const b = giftBounds(g);
     const reflect = sc.reflect;
     const pad = 4;
@@ -494,7 +549,9 @@ export class Presents {
     for (const pass of ['base', 'light'] as const) {
       const [body, bc] = canvas(W, H);
       bc.setTransform(dpr, 0, 0, dpr, -x * dpr, -y * dpr);
-      paintBox(bc, g, new Tone(lt, pass), pass);
+      // The base pass is the dark ambient (the dimmed sticker); the light pass adds the tree's light (the lit one).
+      const print = g.paper.pattern === 'face' && faces ? faces.get('paper', Math.max(8, g.w * 0.26) * 0.78 * dpr, pass === 'light') : null;
+      paintBox(bc, g, new Tone(lt, pass), pass, print);
       const [cv, c] = canvas(W, H);
       c.setTransform(dpr, 0, 0, dpr, -x * dpr, -y * dpr);
       if (pass === 'base') contactShadow(c, g, sc);

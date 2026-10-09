@@ -1,5 +1,6 @@
 import { D, L, U } from '../core/dirs';
 import { hexRgb, mix, rgba, shade } from './color';
+import { FACE_ORNAMENT_H } from './faces';
 import { GLINT_NEAR, GLINT_WIDE, type PathStyle } from './paths';
 import type { Scene } from './scenes';
 
@@ -104,4 +105,29 @@ export function drawBulbGlint(c: CanvasRenderingContext2D, sinceLitMs: number, s
   c.lineTo(0, len * 0.7);
   c.stroke();
   c.globalAlpha = 1;
+}
+
+/**
+ * Secret mode's face ornament (spec 2026-10-08 secret mode §3.2): the socket still faces the wire, and Luke's head,
+ * upright, takes the glass's place: `sprite` is dimmed when unlit, lit (at the glass's opacity) when lit.
+ */
+export function drawFaceBulb(c: CanvasRenderingContext2D, b: number, amt: number, s: number, sc: Scene, sprite: HTMLCanvasElement): void {
+  const swell = amt > 1 ? 1 + (amt - 1) * 0.35 : 1;
+  const r = s * 0.2 * swell;
+  const a = bulbAngle(b);
+  c.save();
+  c.rotate(a);
+  c.fillStyle = sc.socket;
+  c.beginPath();
+  c.roundRect(r * 0.55, -r * 0.38, r * 0.75, r * 0.76, r * 0.12);
+  c.fill();
+  c.restore();
+  const h = s * FACE_ORNAMENT_H * swell;
+  const w = (h * sprite.width) / sprite.height;
+  const gx = -Math.cos(a) * r * 0.12;
+  const gy = -Math.sin(a) * r * 0.12;
+  const a0 = c.globalAlpha;
+  if (amt > 0) c.globalAlpha = a0 * Math.min(1, 0.35 + amt);
+  c.drawImage(sprite, gx - w / 2, gy - h * 0.55, w, h);
+  c.globalAlpha = a0;
 }

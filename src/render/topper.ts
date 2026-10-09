@@ -146,11 +146,11 @@ function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContex
 }
 
 /** A cached sticker's height for `size` device px: in steps of 8 (a pinch-zoom rebuilds it a few times, not every frame), never above the file's own. */
-const cacheHeight = (img: HTMLImageElement, size: number): number => Math.max(16, Math.min(img.naturalHeight, Math.ceil(size / 8) * 8));
-const cacheWidth = (img: HTMLImageElement, h: number): number => Math.max(1, Math.round((h * img.naturalWidth) / img.naturalHeight));
+export const cacheHeight = (img: HTMLImageElement, size: number): number => Math.max(16, Math.min(img.naturalHeight, Math.ceil(size / 8) * 8));
+export const cacheWidth = (img: HTMLImageElement, h: number): number => Math.max(1, Math.round((h * img.naturalWidth) / img.naturalHeight));
 
 /** The sticker at `w`×`h` device px, halving first so a big step down stays smooth (Safari's smoothing is plain bilinear). */
-function resample(img: HTMLImageElement, w: number, h: number): HTMLCanvasElement {
+export function resample(img: HTMLImageElement, w: number, h: number): HTMLCanvasElement {
   let src: CanvasImageSource = img;
   let sw = img.naturalWidth;
   let sh = img.naturalHeight;
@@ -176,7 +176,7 @@ function resample(img: HTMLImageElement, w: number, h: number): HTMLCanvasElemen
 }
 
 /** The unlit sticker: desaturated and darkened per pixel (ctx.filter would do it, but Safari ignores it). */
-function dimmed(lit: HTMLCanvasElement, day: boolean): HTMLCanvasElement {
+export function dimmed(lit: HTMLCanvasElement, day: boolean): HTMLCanvasElement {
   const [c, x] = canvas(lit.width, lit.height);
   x.drawImage(lit, 0, 0);
   const { sat, bright } = day ? DIM.day : DIM.night;
@@ -283,6 +283,11 @@ export class Topper {
   /** The sticker can be drawn. */
   get ready(): boolean {
     return this.img !== null && !this.broken;
+  }
+
+  /** The loaded sticker, for secret mode's other faces (src/render/face-sprites.ts); null until it loads or if it can't be drawn. */
+  get image(): HTMLImageElement | null {
+    return this.broken ? null : this.img;
   }
 
   /** A flip or crossfade is under way. */
