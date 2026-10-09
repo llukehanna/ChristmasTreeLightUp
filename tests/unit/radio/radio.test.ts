@@ -7,7 +7,7 @@ import { Fireplace } from '../../../src/radio/fireplace';
 import { MusicBox } from '../../../src/radio/musicbox';
 import { RadioPlayer } from '../../../src/radio/player';
 import { Radio } from '../../../src/radio/radio';
-import { loadRadioSettings } from '../../../src/store/radio-settings';
+import { DEFAULT_RADIO, loadRadioSettings, saveRadioSettings } from '../../../src/store/radio-settings';
 
 const track = (id: string) => ({ id, url: `/a/${id}.m4a`, title: id, artist: '', credit: 'CC0', duration: 10 });
 const station = (id: string) => ({ id, name: id, description: '', tracks: [track(`${id}-1`), track(`${id}-2`)] });
@@ -535,5 +535,109 @@ describe('secret mode (spec §4.4)', () => {
     served = { version: 1, stations: [{ ...station('secret'), winSound: '/w.mp3' }] };
     const r = await ready();
     expect(r.secretWinSound()).toBe('/w.mp3');
+  });
+
+  it('the Secret row tapped before the catalog arrives primes in the gesture, then plays when it lands', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    let open!: () => void;
+    gate = new Promise<void>((res) => (open = res));
+    const prime = vi.spyOn(RadioPlayer.prototype, 'prime');
+    const unlock = vi.spyOn(audio, 'unlock');
+    const r = new Radio();
+    r.setSecret(true, false); // a load in secret mode
+    r.select('secret');
+    expect(prime).toHaveBeenCalled();
+    expect(unlock).toHaveBeenCalled();
+    open();
+    await vi.waitFor(() => expect(r.view().station?.id).toBe('secret'));
+  });
+
+  it('while a snapshot is held, storage keeps what switching off would restore, so a reload never turns music back on', async () => {
+    saveRadioSettings({ ...DEFAULT_RADIO, on: false, source: 'christmas-classics' });
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.setSecret(true, true);
+    expect(r.view().station?.id).toBe('secret');
+    expect(loadRadioSettings()).toMatchObject({ on: false, source: 'christmas-classics' });
+    r.setVolume(0.5); // other settings still persist
+    expect(loadRadioSettings()).toMatchObject({ on: false, source: 'christmas-classics', volume: 0.5 });
+    // A reload during secret mode: the egg switches it back on quietly; the first move and switch-off play nothing.
+    const again = await ready();
+    again.setSecret(true, false);
+    again.firstGesture();
+    again.setSecret(false, false);
+    expect(again.view().playing).toBe(false);
+    expect(loadRadioSettings().on).toBe(false);
+  });
+
+  it("the listener's own pick is persisted at once, even while a snapshot was held", async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.select('christmas-jazz');
+    r.setSecret(true, true);
+    r.select('christmas-classics');
+    expect(loadRadioSettings()).toMatchObject({ on: true, source: 'christmas-classics' });
+  });
+
+  it('play/pause is a choice too: switching off no longer restores', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    const r = await ready();
+    r.setScene('frost');
+    r.playPause(); // the frost suggestion, christmas-classics (not remembered)
+    r.setScene('fireside');
+    r.setSecret(true, true);
+    r.playPause();
+    r.playPause();
+    expect(r.view().station?.id).toBe('secret');
+    r.setSecret(false, true);
+    // Not restored to christmas-classics: it leaves the Secret station for the preferred source, fireside's suggestion.
+    expect(r.view().station?.id).toBe('christmas-jazz');
+  });
+
+  it('a first move still waiting for the catalog is put back when secret mode switches off', async () => {
+    fakeAudio();
+    served = WITH_SECRET;
+    let open!: () => void;
+    gate = new Promise<void>((res) => (open = res));
+    const r = new Radio();
+    r.firstGesture(); // fireside suggests christmas-jazz: waits for the catalog
+    r.primeSecret();
+    r.setSecret(true, true);
+    open();
+    await vi.waitFor(() => expect(r.view().station?.id).toBe('secret'));
+    r.setSecret(false, true);
+    expect(r.view().station?.id).toBe('christmas-jazz');
+  });
+
+  it('a stored secret source outside secret mode reads as none: the scene suggestion plays', async () => {
+    boxes();
+    served = WITH_SECRET;
+    for (const source of ['celesta', 'secret']) {
+      saveRadioSettings({ ...DEFAULT_RADIO, source });
+      fakeAudio();
+      const r = await ready();
+      r.firstGesture();
+      expect(r.view().station?.id, source).toBe('christmas-jazz');
+    }
+  });
+
+  it('duck(hold) keeps the music down for the hold, then eases back', async () => {
+    const { ctx, gain } = fakeAudio();
+    const r = await ready();
+    r.firstGesture();
+    ctx.currentTime = 3;
+    const before = gain.calls.length;
+    r.duck(2.5);
+    const ramps = gain.calls.slice(before).filter((c) => c[0] === 'linearRampToValueAtTime');
+    expect(ramps).toHaveLength(3);
+    expect(ramps[0][1]).toBeCloseTo(0.7 * 0.63);
+    expect(ramps[1][1]).toBeCloseTo(0.7 * 0.63);
+    expect(ramps[1][2]).toBeCloseTo(3.03 + 2.5);
+    expect(ramps[2][1]).toBe(0.7);
+    expect(ramps[2][2]).toBeCloseTo(3.28 + 2.5);
   });
 });

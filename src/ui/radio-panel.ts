@@ -393,9 +393,10 @@ export class RadioPanel {
   private renderStations(v: RadioView): void {
     // Secret mode (spec 2026-10-08 secret mode §4.4): one Secret row on top, the station when it can play, else the celesta.
     const secret = v.secretStation;
-    // Playable as the radio judges it (spec §4.4 secretSource): tracks, and not failing right now.
+    // Playable as the radio judges it (spec §4.4 secretSource): tracks, and not failing right now. Chosen per render
+    // below, not in the key, so a station that starts failing doesn't rebuild the rows (and drop keyboard focus).
     const playable = !!secret && secret.tracks.length > 0 && !v.unavailable(SECRET_ID);
-    const secretKey = v.secretMode ? `secret:${secret?.name ?? ''}:${secret?.description ?? ''}:${secret?.tracks.length ?? 0}:${playable}|` : '';
+    const secretKey = v.secretMode ? `secret:${secret?.name ?? ''}:${secret?.description ?? ''}:${secret?.tracks.length ?? 0}|` : '';
     const key = secretKey + v.stations.map((s) => s.id).join(',');
     if (key !== this.rowsKey) {
       this.rowsKey = key;
@@ -405,7 +406,7 @@ export class RadioPanel {
               {
                 id: SECRET_ID,
                 name: secret?.name || 'Secret',
-                desc: playable && secret ? secret.description || `${secret.tracks.length} tracks` : 'Dreamy celesta carols',
+                desc: secret ? secret.description || `${secret.tracks.length} tracks` : CELESTA_DESC,
                 icon: ICON.star,
               },
             ]
@@ -459,11 +460,15 @@ export class RadioPanel {
       b.setAttribute('aria-current', String(current));
       b.classList.toggle('live', current && v.playing);
       b.disabled = unavailable && !current;
-      setText(b.querySelector('.d') as HTMLElement, unavailable ? 'Unavailable right now' : r.desc);
+      const desc = r.id === SECRET_ID && !playable ? CELESTA_DESC : r.desc;
+      setText(b.querySelector('.d') as HTMLElement, unavailable ? 'Unavailable right now' : desc);
       setText(b.querySelector('.lbl') as HTMLElement, current ? (v.playing ? 'Playing' : 'Paused') : '');
     }
   }
 }
+
+/** The Secret row's description when it will play the celesta (spec 2026-10-08 secret mode §7). */
+const CELESTA_DESC = 'Dreamy celesta carols';
 
 function setText(node: HTMLElement, s: string): void {
   if (node.textContent !== s) node.textContent = s;

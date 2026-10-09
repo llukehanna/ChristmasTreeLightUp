@@ -254,4 +254,39 @@ describe('the celesta (secret mode)', () => {
     expect(CELESTA).toMatchObject({ mode2: 2.756, mode2Level: 0.08, mode2Decay: 5, mode3: 5.404, tineLevel: 0.05, tineDecayS: 0.02, attackS: 0.006, ringScale: 1.35, tempo: 0.8, level: 0.9 });
     expect(CELESTA.room).toEqual({ send: 0.42, tone: 3000, taps: [[0.137, 0.46, -0.6], [0.211, 0.42, 0.6]] });
   });
+  it('a MusicBox given the celesta timbre plays with it: level, room and a free bar second mode', () => {
+    const run = (timbre?: typeof CELESTA) => {
+      const gains: ReturnType<typeof node>[] = [];
+      const oscs: ReturnType<typeof node>[] = [];
+      const ctx = {
+        ...fakeCtx(),
+        createGain: () => {
+          const n = node();
+          gains.push(n);
+          return n;
+        },
+        createOscillator: () => {
+          const n = node();
+          oscs.push(n);
+          return n;
+        },
+      };
+      const mb = new MusicBox(CAROLS, mulberry32(1), timbre);
+      mb.start(ctx as unknown as AudioContext, node() as unknown as AudioNode);
+      mb.stop();
+      const freqs = oscs.map((o) => o.frequency.value);
+      const hasRatio = (k: number) => freqs.some((a) => freqs.some((b) => Math.abs(b / a - k) < 1e-9));
+      // Gains in creation order: master, input (the level), then the room's send.
+      return { level: gains[1].gain.value, send: gains[2].gain.value, hasRatio };
+    };
+    const celesta = run(CELESTA);
+    expect(celesta.level).toBe(0.9);
+    expect(celesta.send).toBe(0.42);
+    expect(celesta.hasRatio(2.756)).toBe(true);
+    expect(celesta.hasRatio(6.267)).toBe(false);
+    const box = run();
+    expect(box.level).toBe(0.98);
+    expect(box.send).toBe(0.2);
+    expect(box.hasRatio(6.267)).toBe(true);
+  });
 });

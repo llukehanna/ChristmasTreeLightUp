@@ -158,7 +158,10 @@ export class Radio {
   select(source: string): void {
     if (source === CELESTA_ID) return; // reached through the Secret row only
     if (source === SECRET_ID) {
-      if (this.secret.on) this.playSecret();
+      if (this.secret.on) {
+        this.primeSecret(); // this is the gesture: unlock and prime now, in case the start waits for the catalog
+        this.playSecret();
+      }
       return;
     }
     if (this.play(source, true)) this.choice();
@@ -225,8 +228,11 @@ export class Radio {
     this.save({ lightShow: on });
   }
 
-  /** Game sounds duck the music ~4 dB for ~250 ms (spec §5.1). */
-  duck(): void {
+  /**
+   * Game sounds duck the music ~4 dB for ~250 ms (spec §5.1). `holdS` keeps it down that much longer: a spoken win
+   * ad-lib (secret mode §4.6) ducks for its whole length.
+   */
+  duck(holdS = 0): void {
     const m = audio.music;
     const ctx = audio.ctx;
     if (!m || !ctx || !this.started) return;
@@ -234,10 +240,12 @@ export class Radio {
     // Ducking cancels scheduled gain events; doing that mid fade-in would snap the music to full volume.
     if (t < this.fadeInUntil) return;
     const v = this.settings.volume;
+    const hold = Number.isFinite(holdS) ? Math.max(0, holdS) : 0;
     m.gain.cancelScheduledValues(t);
     m.gain.setValueAtTime(m.gain.value, t);
     m.gain.linearRampToValueAtTime(v * 0.63, t + 0.03);
-    m.gain.linearRampToValueAtTime(v, t + 0.28);
+    if (hold > 0) m.gain.linearRampToValueAtTime(v * 0.63, t + 0.03 + hold);
+    m.gain.linearRampToValueAtTime(v, t + 0.28 + hold);
   }
 
   /** The light show needs analysable audio: our stations, Music Box or the Fireplace, not embeds (spec §5.4). Reduced motion is the caller's check. */
@@ -442,7 +450,8 @@ export class Radio {
       else if (this.kind === 'fireplace') source = FIREPLACE_ID;
       else if (this.kind === 'embed') source = 'embed';
     }
-    return { source, on: this.settings.on, remembered: this.settings.source };
+    const pending = source === null && this.pendingStart && this.settings.on;
+    return { source, pending, on: this.settings.on, remembered: this.settings.source };
   }
 
   private playingSecret(): boolean {
@@ -470,12 +479,16 @@ export class Radio {
     const back = to.source !== null && this.play(to.source, false);
     if (!back) this.stopAll();
     this.save({ on: to.on, source: to.remembered });
+    // The first move had asked for music that secret mode then took over: start it now.
+    if (!back && to.pending && to.on) this.startPreferred();
   }
 
   /** The listener's own choice: secret mode no longer puts the old source back over it. */
   private choice(): void {
+    const held = this.secret.saved !== null;
     this.secret = secretStep(this.secret, { type: 'choice' }).state;
     this.pendingSecret = false;
+    if (held) saveRadioSettings(this.settings); // the live settings are the listener's own again: persist them
   }
 
   /** Lock-screen metadata for the carol that is playing. */
@@ -491,9 +504,15 @@ export class Radio {
     }
   }
 
+  /**
+   * While secret mode holds a snapshot, storage keeps the music on/off and remembered source that switching off would
+   * restore; the live values stay in memory. A reload mid secret mode (which loses the snapshot) then never turns the
+   * listener's music back on.
+   */
   private save(p: Partial<RadioSettings>): void {
     this.settings = { ...this.settings, ...p };
-    saveRadioSettings(this.settings);
+    const held = this.secret.saved;
+    saveRadioSettings(held ? { ...this.settings, on: held.on, source: held.remembered } : this.settings);
     this.onChange?.();
   }
 }
