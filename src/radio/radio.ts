@@ -56,6 +56,8 @@ export class Radio {
   private started = false;
   /** AudioContext time until which the first-gesture fade-in is still ramping the music bus. */
   private fadeInUntil = 0;
+  /** AudioContext time until which a duck holds the music down (a win ad-lib's length): a later, shorter duck keeps it. */
+  private duckUntil = 0;
   private loaded = false;
   /** The first gesture came before the catalog did: start the preferred station as soon as it arrives. */
   private pendingStart = false;
@@ -222,6 +224,7 @@ export class Radio {
     m.gain.setValueAtTime(m.gain.value, t);
     m.gain.setTargetAtTime(volume, t, 0.05);
     this.fadeInUntil = 0;
+    this.duckUntil = 0; // the listener's level takes over from any held duck
   }
 
   setLightShow(on: boolean): void {
@@ -241,11 +244,14 @@ export class Radio {
     if (t < this.fadeInUntil) return;
     const v = this.settings.volume;
     const hold = Number.isFinite(holdS) ? Math.max(0, holdS) : 0;
+    // A tick under a held ad-lib re-schedules the bus: it keeps the music down until the longer of the two ends.
+    const until = Math.max(t + 0.03 + hold, this.duckUntil);
+    this.duckUntil = until;
     m.gain.cancelScheduledValues(t);
     m.gain.setValueAtTime(m.gain.value, t);
     m.gain.linearRampToValueAtTime(v * 0.63, t + 0.03);
-    if (hold > 0) m.gain.linearRampToValueAtTime(v * 0.63, t + 0.03 + hold);
-    m.gain.linearRampToValueAtTime(v, t + 0.28 + hold);
+    if (until > t + 0.03) m.gain.linearRampToValueAtTime(v * 0.63, until);
+    m.gain.linearRampToValueAtTime(v, until + 0.25);
   }
 
   /** The light show needs analysable audio: our stations, Music Box or the Fireplace, not embeds (spec §5.4). Reduced motion is the caller's check. */
