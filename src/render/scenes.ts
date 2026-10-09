@@ -1,5 +1,6 @@
 import type { PathStyle } from './paths';
 
+/** The menu's scenes. Secret mode's aurora (spec 2026-10-08 secret mode §2) is not one of them. */
 export type SceneId = 'midnight' | 'fireside' | 'frost';
 export type Rgb = readonly [number, number, number];
 
@@ -29,8 +30,8 @@ export interface Unlit {
 const everyStyle = (u: Unlit): Readonly<Record<PathStyle, Unlit>> => ({ filament: u, fairy: u, neon: u });
 
 export interface Scene {
-  id: SceneId;
-  light: 'moon' | 'fire' | 'day';
+  id: SceneId | 'aurora';
+  light: 'moon' | 'fire' | 'day' | 'aurora';
   sky: readonly [string, string, string];
   ground: readonly [string, string];
   needleA: Rgb;
@@ -109,6 +110,25 @@ export const SCENES: Readonly<Record<SceneId, Scene>> = {
     snow: '150,172,188', snowAlpha: 0.7, bloom: 0.7, snowDust: true, reflect: false, embers: false,
   },
 };
+
+/** Secret mode's world (spec 2026-10-08 secret mode §2.1): deep navy to violet, ice-blue light, a cool fir. */
+export const AURORA: Scene = {
+  id: 'aurora', light: 'aurora',
+  sky: ['#050a1f', '#140f3d', '#2b1a5e'], ground: ['#1a2350', '#0a0d24'],
+  needleA: [12, 40, 52], needleB: [36, 92, 104], trunk: '#0a0c14',
+  unlit: everyStyle({
+    look: 'plain', wire: 'rgba(190,210,255,.40)', wireW: 0.06, copper: 'rgba(170,190,235,.5)', led: 'rgba(220,235,255,.36)',
+    glass: 'rgba(200,215,255,.12)', glassHi: 'rgba(255,255,255,.34)',
+  }),
+  bulbFrost: 0, core: '#f2f8ff', glow: '#7fd8ff', copperOn: 'rgba(170,215,255,.9)', neon: '#8a7bff', neonMid: '#b6a8ff',
+  // In hue order (green → orchid): a strong beat steps every lit bulb to its neighbour (§5.3).
+  socket: '#3a4466', bulbs: ['#6dffa8', '#4fe6d6', '#7fd0ff', '#8fa2ff', '#b48cff', '#e08cff'],
+  starOff: 'rgba(220,235,255,.05)', starEdge: 'rgba(220,235,255,.32)', hover: '170,220,255',
+  snow: '235,245,255', snowAlpha: 0.6, bloom: 1, snowDust: false, reflect: false, embers: false,
+};
+
+/** The scene on screen: the aurora while secret mode is on, whatever the hour or the menu says. */
+export const sceneFor = (id: SceneId, secret: boolean): Scene => (secret ? AURORA : SCENES[id]);
 
 /** Auto scene by local time: Frost 07–16, Fireside 16–20, Midnight 20–07. */
 export function sceneForHour(hour: number): SceneId {

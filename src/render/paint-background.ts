@@ -25,6 +25,7 @@ export function paintBackground(c: CanvasRenderingContext2D, L: Layout, sc: Scen
   c.fillRect(0, hz, L.w, L.h - hz);
   if (sc.light === 'moon') paintMoonlit(c, L, r, hz);
   else if (sc.light === 'fire') paintFireside(c, L, r, hz);
+  else if (sc.light === 'aurora') paintAurora(c, L, r, hz);
   else paintDaylight(c, L, hz);
 }
 
@@ -140,6 +141,40 @@ function paintFireside(c: CanvasRenderingContext2D, L: Layout, r: Rng, hz: numbe
     c.moveTo(0, y);
     c.lineTo(w, y);
     c.stroke();
+  }
+}
+
+/** Secret mode's sky (spec 2026-10-08 secret mode §2.2): violet at the horizon, stars, a faint baked haze, snow. The curtains are aurora.ts's. */
+function paintAurora(c: CanvasRenderingContext2D, L: Layout, r: Rng, hz: number): void {
+  const { w, h, s } = L;
+  const glow = c.createRadialGradient(w * 0.5, hz, 0, w * 0.5, hz, w * 0.7);
+  glow.addColorStop(0, 'rgba(150,110,255,.14)');
+  glow.addColorStop(1, 'rgba(150,110,255,0)');
+  c.fillStyle = glow;
+  c.fillRect(0, 0, w, hz);
+  for (let i = 0; i < 140; i++) {
+    const x = r() * w;
+    const y = r() * hz * 0.75;
+    const z = r();
+    c.fillStyle = `rgba(225,235,255,${0.05 + z * z * 0.5})`;
+    disc(c, x, y, 0.35 + z * 0.75);
+  }
+  // A faint haze where the curtains hang, so a still frame (reduced motion, the lowest quality tier) still reads as aurora.
+  blurredLayer(c, L.dpr, s * 1.2, (o) => {
+    o.fillStyle = 'rgba(90,255,180,.06)';
+    o.beginPath();
+    o.ellipse(w * 0.5, hz * 0.25, w * 0.55, hz * 0.09, 0, 0, TAU);
+    o.fill();
+  });
+  c.strokeStyle = 'rgba(160,190,255,.12)';
+  c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(0, hz);
+  c.lineTo(w, hz);
+  c.stroke();
+  for (let i = 0; i < 160; i++) {
+    c.fillStyle = `rgba(200,225,255,${r() * 0.3})`;
+    c.fillRect(r() * w, hz + r() * (h - hz), 1, 1);
   }
 }
 
