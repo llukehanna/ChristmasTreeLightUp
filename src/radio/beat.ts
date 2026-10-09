@@ -3,19 +3,36 @@
  * rise), found as a jump over a short moving average with a time constant (so 30 Hz and 60 Hz frames agree), a 250 ms
  * refractory and a strength. The post-win light show keeps its own BeatDetector.
  *
- * `floor` is the flux a beat must reach: tuned in real Chromium on synthesized mixes, where every pad, hat and held 808
- * stayed under it and kicks peaked at a median of about 10 (spec §5.1). Strength is relative to the song's recent beats
- * (a peak that decays over `peakMs`), so a hot master's biggest hits are strong too.
+ * `floor` is the flux a beat must reach: tuned in real Chromium on synthesized mixes, where every pad, hat, sliding or
+ * held 808 stayed under it, and a rapped voice almost always (spec §5.1). Strength is relative to the song's recent
+ * beats (a peak that decays over `peakMs`, never taken below `peakMin` × the floor), on a log scale (flux is in dB of
+ * rise, and a hot master's kicks sit close to the floor), so most of any song's kicks are strong, and a marginal first
+ * onset is not.
  */
-export const BEAT = { floor: 5, rise: 0.5, ratio: 1.3, tauMs: 300, warmupMs: 300, refractoryMs: 250, strong: 0.6, peakMs: 4000 } as const;
+export const BEAT = {
+  floor: 4.5,
+  rise: 0.5,
+  ratio: 1.3,
+  tauMs: 300,
+  warmupMs: 300,
+  refractoryMs: 250,
+  strong: 0.6,
+  peakMs: 2000,
+  peakMin: 1.25,
+} as const;
 
 /** A gap longer than this between samples (a hidden tab, music paused) starts the warm-up again: the average is stale. */
 export const RESTART_GAP_MS = 1000;
 
-/** A beat's strength from its flux `e` against the recent beats' peak (≥ e): 0.3 at the floor, 1 at the peak. */
+/**
+ * A beat's strength from its flux `e` against the recent beats' peak, on a log scale: 0.3 at the floor, 1 at the peak,
+ * the peak taken as at least `peakMin` × the floor (a song's first beat, just over the floor, is not a full one).
+ */
 export function beatStrength(e: number, peak: number): number {
-  if (!(peak > BEAT.floor) || e >= peak) return 1;
-  return Math.min(1, Math.max(0.3, 0.3 + (0.7 * (e - BEAT.floor)) / (peak - BEAT.floor)));
+  const ref = Math.max(peak, BEAT.peakMin * BEAT.floor);
+  if (e >= ref) return 1;
+  if (!(e > BEAT.floor)) return 0.3;
+  return Math.min(1, 0.3 + (0.7 * Math.log(e / BEAT.floor)) / Math.log(ref / BEAT.floor));
 }
 
 export class BeatTracker {
@@ -35,6 +52,8 @@ export class BeatTracker {
   update(e: number, now: number): boolean {
     if (!Number.isFinite(e)) return false;
     if (Number.isNaN(this.start) || now < this.prev || now - this.prev > RESTART_GAP_MS) {
+      // A clock that went backwards would leave the last beat in the future, blocking every beat until it caught up.
+      if (now < this.prev) this.forgetBeats();
       this.start = this.prev = now;
       this.avg = e;
       return false;
@@ -62,10 +81,13 @@ export class BeatTracker {
   reset(): void {
     this.start = this.prev = Number.NaN;
     this.avg = 0;
-    this.at = Number.NEGATIVE_INFINITY;
-    this.strength = 0;
     this.strong = 0;
+    this.forgetBeats();
+  }
+
+  private forgetBeats(): void {
+    this.at = this.peakAt = Number.NEGATIVE_INFINITY;
+    this.strength = 0;
     this.peak = 0;
-    this.peakAt = Number.NEGATIVE_INFINITY;
   }
 }
