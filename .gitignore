@@ -11,3 +11,8 @@ playwright-report/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+
+# Audio files never belong in the repo (tracks go to R2 through /admin)
+*.mp3
+*.m4a
+*.wav
