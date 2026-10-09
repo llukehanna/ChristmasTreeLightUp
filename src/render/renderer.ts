@@ -233,6 +233,8 @@ export class Renderer {
     const beatAt = f.beat ? f.beat.at : Number.NEGATIVE_INFINITY;
     const beatPower = f.beat ? f.beat.strength : 0;
     const hue = f.beat && !f.reducedMotion ? f.beat.hue : 0;
+    // The beat's flash is the same for every lit bulb: worked out once a frame.
+    const pulse = f.beat ? beatPulse(now - f.beat.at, f.beat.strength, f.reducedMotion) : 0;
     const nb = sc.bulbs.length;
     this.topper.nod(beatAt, beatPower);
     if (style === 'filament' && tier < 2) this.current.step(board, vis, now, f.dt);
@@ -323,7 +325,7 @@ export class Renderer {
       g.translate(cx, cy);
       g.scale(k, k);
       drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, flicker });
-      if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i) * alpha, s);
+      if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i, pulse) * alpha, s);
       g.restore();
       if (q >= 1 && board.lighting.lit[i] && !won) drawFrontier(g, board, L, i, now, sc, false);
     }
@@ -384,7 +386,7 @@ export class Renderer {
       ctx.scale(k, k);
       drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker });
       if (degree(board.solution[i]) === 1 && q >= 1) {
-        const amt = this.bulbAmount(f, i) * alpha;
+        const amt = this.bulbAmount(f, i, pulse) * alpha;
         const face = i === faceTile ? this.faces.get('ornament', facePx, true) : null;
         if (face) drawFaceBulb(ctx, board.bits[i], amt, s, sc, face);
         else drawBulb(ctx, board.bits[i], sc.bulbs[(board.colors[i] + hue) % nb], amt, s, sc, style);
@@ -413,15 +415,14 @@ export class Renderer {
     }
   }
 
-  /** Pop intensity + light-show boost + the bottom-to-top win wave (spec §4.5 item 10). */
-  private bulbAmount(f: FrameInput, i: number): number {
+  /** Pop intensity + light-show boost + the bottom-to-top win wave (spec §4.5 item 10) + secret mode's beat `pulse`. */
+  private bulbAmount(f: FrameInput, i: number, pulse: number): number {
     let a = f.vis.bulbIntensity(i, f.now) + (f.extraBulb?.(i) ?? 0);
     if (f.winAt !== null && !f.reducedMotion) {
       const row = Math.floor(i / GRID.w);
       const w = f.now - f.winAt - (GRID.h - 1 - row) * 70;
       a += 0.6 * Math.exp(-(w * w) / (2 * 110 * 110));
     }
-    if (f.beat) a += beatPulse(f.now - f.beat.at, f.beat.strength, f.reducedMotion);
-    return a;
+    return a + pulse;
   }
 }

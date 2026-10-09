@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BEAT, BeatTracker, beatStrength } from '../../../src/radio/beat';
+import { BEAT, BeatTracker, RESTART_GAP_MS, beatStrength } from '../../../src/radio/beat';
 
 /** Low-band energy for a kick drum: `kick` for the first 60 ms of each beat, `floor` otherwise, sampled at `fps`. */
 function kicks(fps: number, ms: number, { bpm = 120, kick = 0.8, floor = 0.15 } = {}): [number, number][] {
@@ -45,14 +45,32 @@ describe('BeatTracker', () => {
     expect(soft.strength).toBeLessThan(BEAT.strong);
   });
 
-  it('reset and a clock that goes backwards start the warm-up again', () => {
+  it('reset forgets the beat, the strong count and the average, and warms up again', () => {
     const b = new BeatTracker();
     onsets(b, kicks(60, 2000));
+    expect(b.strong).toBeGreaterThan(0);
     b.reset();
-    expect(b.update(0.8, 10_000)).toBe(false);
-    expect(b.update(0.15, 10_100)).toBe(false);
-    expect(b.update(0.8, 10_200)).toBe(false); // still warming up
-    expect(b.update(0.8, 5)).toBe(false); // backwards: a new start
+    expect([b.at, b.strength, b.strong]).toEqual([Number.NEGATIVE_INFINITY, 0, 0]);
+    expect(b.update(0.1, 10_000)).toBe(false);
+    expect(b.update(0.5, 10_200)).toBe(false); // clears every threshold, but still warming up
+    expect(b.update(0.1, 10_300)).toBe(false);
+    expect(b.update(0.5, 10_400)).toBe(true); // warmed up
+  });
+
+  it('a clock that goes backwards starts the warm-up again', () => {
+    const b = new BeatTracker();
+    onsets(b, kicks(60, 2000));
+    expect(b.update(0.1, 5)).toBe(false); // backwards: a new start
+    expect(b.update(0.8, 205)).toBe(false); // warming up
+  });
+
+  it('a long gap between samples starts the warm-up again: the old average is stale', () => {
+    const b = new BeatTracker();
+    for (let t = 0; t <= 1000; t += 1000 / 60) b.update(0.1, t);
+    expect(6000 - 1000).toBeGreaterThan(RESTART_GAP_MS);
+    // Five seconds later the music is loud and steady: no beat from the stale quiet average.
+    const at = onsets(b, kicks(60, 1000).map(([t]) => [6000 + t, 0.5] as [number, number]));
+    expect(at).toEqual([]);
   });
 });
 
