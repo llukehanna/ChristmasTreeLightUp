@@ -15,7 +15,7 @@ Luke's words: "I recall using apps/playing games where there is an alternate 'se
 | Luke's face | Exactly one tree bulb, one present and one garland bulb, all drawn from the topper's already-loaded `public/star-head.png`. Picks are deterministic (§3.1). |
 | Music | A station with the id `secret` in the stations file, edited in `/admin`. It is listed in the game only in secret mode, and autoplays on a by-hand switch-on (the 5th tap or last letter is the gesture). Empty or missing: a built-in celesta variant of the Music Box. Switch-off restores what the radio was doing. |
 | Win ad-lib | Optional `winSound` on the Secret station only: one audio file uploaded to `tracks/secret/`, played on a secret-mode win when game sounds are on. |
-| On the beat | A new frame-rate-independent onset tracker (`src/radio/beat.ts`) on the light show's existing low band. It drives the head's nod, a bulb pulse, a palette step on strong beats and the garland face's bob. Gated by the radio's existing light-show setting. |
+| On the beat | A new frame-rate-independent onset tracker (`src/radio/beat.ts`) on the light show's low band (20–150 Hz, read as linear amplitude, §5.1). It drives the head's nod, a bulb pulse, a palette step on strong beats and the garland face's bob. Gated by the radio's existing light-show setting. |
 | Confetti | The win's gold flecks become tumbling mini heads in secret mode; snow flecks stay. Same `CONFETTI_MS` and `CONFETTI_COUNT`. |
 | Cost | Cached layers plus at most 3 extra `drawImage` per frame for the sky, at most 4 for the faces, zero canvas or gradient allocations per frame. |
 
@@ -253,7 +253,20 @@ Other rules:
 
 ### 5.1 The detector (`BeatTracker`, `src/radio/beat.ts`)
 
-Input: the light show's low-band energy `e` (0..1, average of the analyser's byte bins from 20 to 150 Hz, `bandEnergies`), one sample per drawn frame at `now` (ms). The existing post-win `BeatDetector` is untouched.
+Input: the light show's low band as **linear amplitude**, `e = lowAmplitude(bins, binHz, minDecibels, maxDecibels)` (`src/radio/lightshow.ts`): over the analyser's byte bins from 20 to 150 Hz (the same bins as `bandEnergies`), the mean of `10^((byte · (max − min) / 255 + min − max) / 20)`, so 1 at `maxDecibels` and 0.1 twenty dB below. One sample per drawn frame at `now` (ms). The existing post-win `BeatDetector` and `bandEnergies` are untouched.
+
+Why linear (amended 2026-10-08, Task 5): the analyser's bytes are dB-scaled (−100..−30 dB), so with any held bass or pad their low-band average sits at about 0.75–1.0 and a kick lifts it by less than `ratio`. Measured with the real Chromium `AnalyserNode` (fftSize 1024, smoothing 0.6, one read per frame) on synthesized 10 s tracks, beats found / kicks played:
+
+| Mix | Byte average, 60 fps / 30 fps | Linear amplitude, 60 fps / 30 fps |
+| --- | --- | --- |
+| Kick only, 120 bpm | 19/19 (18 strong) / 19/19 (0 strong) | 19/19 / 19/19, all strong |
+| Kick + 808, 120 bpm | 9/19 / 9/19 | 19/19 / 19/19 |
+| Kick + 808 + pad, 100 bpm | 0/15 / 0/15 | 16/15 / 16/15 |
+| Kick + bass line + pad, 95 bpm | 0/14 / 0/14 | 15/14 / 15/14 |
+| Kick + pad, quiet master | 0/19 / 0/19 | 19/19 / 19/19 |
+| Pad only (no beat) | 0 / 0 | 2 / 11 weak (≤ 0.58, never strong) |
+
+The byte input also made strength depend on the frame rate (the analyser smooths per read), so strong beats fell away at 30 fps; linear amplitude finds the same beats and strong beats at 30 and 60 fps. The constants below are unchanged. A unit test (a kick over a held bass that the bytes cannot show) guards it.
 
 ```
 BEAT = { floor: 0.06, rise: 0.035, ratio: 1.3, tauMs: 300, warmupMs: 300, refractoryMs: 250, strong: 0.6 }
@@ -266,7 +279,7 @@ BEAT = { floor: 0.06, rise: 0.035, ratio: 1.3, tauMs: 300, warmupMs: 300, refrac
 - Then the moving average: `avg += (e − avg) · (1 − exp(−dt / tauMs))` (a time constant, so 30 Hz and 60 Hz frames find the same beats).
 - `reset()` forgets everything (the app calls it when secret mode turns on).
 
-`LightShow` owns one `BeatTracker` (`show.beat`) and feeds it from the same `sample()` (one analyser read per frame).
+`LightShow` owns one `BeatTracker` (`show.beat`) and feeds it `lowAmplitude(…)` from the same `sample()` (one analyser read per frame).
 
 ### 5.2 When it runs
 
