@@ -358,7 +358,7 @@ test('two runs by the same player both appear in Your games', async ({ page }) =
   }
   await page.locator('#account-chip').click();
   await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
-  // Your games, not the shared top 25: other tests' players can push these two runs off the board.
+  // Your games, not the shared top 50: other tests' players can push these two runs off the board.
   await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
   await expect(page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game')).toHaveCount(2);
   const mine = await page.request.get('/api/me/games');
