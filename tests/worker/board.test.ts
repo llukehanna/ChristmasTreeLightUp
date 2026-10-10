@@ -75,7 +75,7 @@ describe('the leaderboard', () => {
     expect((await board()).rows.map((r) => r.rank)).toEqual([1, 1, 3]);
   });
 
-  it('marks your runs, and pins your best below the list when it is outside the top 25', async () => {
+  it('marks your runs, and pins your best below the list when it is outside the top 50', async () => {
     const bo = await user('bo@example.com', 'Comet');
     await db.batch(
       Array.from({ length: 50 }, (_, k) =>
@@ -94,13 +94,13 @@ describe('the leaderboard', () => {
     expect(b.total).toBe(52);
     expect(b.you).toEqual({ rank: 51, name: 'Meridian', ms: 98_000, finishedAt: 6000, mine: true });
     await run(ana, 5_000, 7000);
-    resetBoardCache(); // a run straight into D1 shows once the isolate's copy of the top 25 expires
+    resetBoardCache(); // a run straight into D1 shows once the isolate's copy of the top 50 expires
     const again = await board(cookie);
     expect(again.rows[0]).toEqual({ rank: 1, name: 'Meridian', ms: 5_000, finishedAt: 7000, mine: true });
     expect(again.you).toBeNull();
   });
 
-  it('reads the top 25 through the board index', async () => {
+  it('reads the top 50 through the board index', async () => {
     expect(JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${TOP_SQL}`).all()).results)).toContain('games_board');
   });
 
@@ -127,7 +127,7 @@ describe('the leaderboard', () => {
           .bind(`fast-${String(k).padStart(16, '0')}`, bo, 1000 + k, 10_000 + k),
       ),
     );
-    // Two runs tie at (99_000, 5000) right after Bo's 50: both are 51st, and Ana's (outside the top 25) is the pinned one.
+    // Two runs tie at (99_000, 5000) right after Bo's 50: both are 51st, and Ana's (outside the top 50) is the pinned one.
     const ana = await user('ana@example.com', 'Meridian');
     const cy = await user('cy@example.com', 'Nova');
     await run(cy, 99_000, 5000);
@@ -151,7 +151,7 @@ describe('the leaderboard', () => {
 describe('the board cache (isolate memory, BOARD_TTL_MS)', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('serves the top 25 and the total from memory until they expire', async () => {
+  it('serves the top 50 and the total from memory until they expire', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
     const ana = await user('ana@example.com', 'Meridian');
@@ -186,7 +186,7 @@ describe('the board cache (isolate memory, BOARD_TTL_MS)', () => {
     expect(statements).toBe(2);
   });
 
-  it('your pinned best stays live while the top 25 are cached', async () => {
+  it('your pinned best stays live while the top 50 are cached', async () => {
     const bo = await user('bo@example.com', 'Comet');
     await db.batch(
       Array.from({ length: 50 }, (_, k) =>
@@ -209,7 +209,7 @@ describe('your games', () => {
     expect((await call(env, 'GET', '/api/me/games')).status).toBe(401);
   });
 
-  it('your best with its rank, how many of the top 25 are yours, and recent games newest first', async () => {
+  it('your best with its rank, how many of the top 50 are yours, and recent games newest first', async () => {
     const bo = await user('bo@example.com', 'Comet');
     const ana = await user('ana@example.com', 'Meridian');
     await run(bo, 40_000, 1000);
@@ -229,7 +229,7 @@ describe('your games', () => {
     });
   });
 
-  it('keeps the last 30 games; an account without a name has no rank and nothing in the top 25', async () => {
+  it('keeps the last 30 games; an account without a name has no rank and nothing in the top 50', async () => {
     const cy = await user('cy@example.com', null);
     for (let k = 0; k < 31; k++) await run(cy, 50_000 + k, 1000 + k);
     const g = await myGames(await signIn(env, 'cy@example.com'));

@@ -6,7 +6,7 @@ export type { UnrankedReason };
 /** Most claims one POST /api/games/claim handles; the browser sends them in batches of this many. */
 export const MAX_CLAIMS_PER_REQUEST = 8;
 /** How many runs the leaderboard shows (and Your games counts "in the top"). */
-export const BOARD_TOP = 25;
+export const BOARD_TOP = 50;
 
 export interface User {
   /** null until the player picks one. */
