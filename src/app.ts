@@ -16,6 +16,7 @@ import { Sfx } from './audio/sfx';
 import { bindInput } from './input';
 import { Radio } from './radio/radio';
 import { WinSound } from './radio/win-sound';
+import { HomeAloneSounds, KevinCall, type HomeAloneClip } from './audio/home-alone-sounds';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { starCenter } from './render/effects';
 import { tileAt, tileCenter } from './render/layout';
@@ -68,6 +69,9 @@ export interface HomeAloneState extends HomeAloneLayerState {
   scene: string;
   /** A cross-fade (or the head's sweep) is under way. */
   fading: boolean;
+  /** Clip plays asked for (every gate passed) and started. */
+  asked: Record<HomeAloneClip, number>;
+  played: Record<HomeAloneClip, number>;
 }
 
 export class App {
@@ -143,6 +147,12 @@ export class App {
   private readonly winSound = new WinSound();
   /** Win ad-libs asked for (every gate passed) and started: the test probe's view. */
   private readonly adlibs = { asked: 0, played: 0 };
+  /** Home Alone's clips, on the effects bus (spec 2026-10-14 §5). */
+  private readonly sounds = new HomeAloneSounds(
+    () => ({ ctx: audio.ctx, out: audio.sfx, volume: this.settings.effectsVolume }),
+    (seconds) => this.radio.duck(seconds),
+  );
+  private readonly kevin = new KevinCall();
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
 
@@ -788,6 +798,7 @@ export class App {
     this.radio.firstGesture();
     // A page loaded in secret mode had no audio context (or catalog) to preload the ad-lib with: once both exist. Once per URL.
     if (this.secret) this.winSound.preload(this.radio.secretWinSound(), audio.ctx);
+    if (this.homeAlone) this.sounds.preload(); // a page loaded in the mode had no audio context to preload with
     this.handle(this.run.tap(i, now, Date.now()), now);
   }
 
@@ -804,6 +815,7 @@ export class App {
     this.pausedDrawn = false;
     if (persist) saveSettings(s);
     this.sfx.setVolume(s.effectsVolume);
+    if (this.homeAlone) this.sounds.preload(); // the effects volume may just have come up
     const restyle = s.pathStyle !== this.renderer.style;
     if (restyle) this.renderer.setStyle(s.pathStyle);
     const rescene = this.setScene(s.scene === 'auto' ? sceneForHour(new Date().getHours()) : s.scene);
@@ -841,6 +853,7 @@ export class App {
     const changed = on !== this.homeAlone;
     this.homeAlone = on;
     if (on && this.egg.isOn) this.egg.off();
+    if (on) this.sounds.preload();
     if (how === 'start' || !changed) return;
     this.pausedDrawn = false;
     if (!on && this.secret) return; // the head is taking over: its own sweep re-scenes
@@ -848,6 +861,8 @@ export class App {
     const reduced = this.reduced.matches;
     const fade = how === 'loud' && !reduced ? { now: performance.now(), reduced, kind: 'fade' as const } : null;
     if (this.setScene(this.sceneId, fade)) this.refreshShare();
+    // The player's own switch-on screams (spec §5); a load or sign-in is silent.
+    if (on && how === 'loud') this.sounds.play('scream', () => this.homeAlone);
   }
 
   /**
@@ -934,6 +949,13 @@ export class App {
         // restored game is still saved.
         this.run.markAway(now);
         if (this.moved) this.save(now);
+      }
+    });
+    // "Kevin!" (spec 2026-10-14 §5): back after ≥ 3 s away while a run is in progress.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.kevin.hide(Date.now());
+      else if (this.kevin.show(Date.now(), this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null)) {
+        this.sounds.play('kevin', () => this.homeAlone);
       }
     });
     addEventListener('pagehide', () => {
@@ -1073,7 +1095,10 @@ export class App {
 
   /** Home Alone mode for the test probe: see HomeAloneState. */
   get homeAloneState(): HomeAloneState {
-    return { on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping, ...this.renderer.homeAlone.state() };
+    return {
+      on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping, ...this.renderer.homeAlone.state(),
+      asked: { ...this.sounds.asked }, played: { ...this.sounds.played },
+    };
   }
 
   /** The probe's way to a trap or gag now (the mode on, motion allowed); false if it couldn't. */

@@ -8,6 +8,11 @@ import { ID3_HEAD_BYTES, ID3V1_BYTES, tagsFromFilename, trackTags, type Tags } f
 
 const MUSIC_FOLDER = 'Music MP3s';
 const AUDIO = /\.(mp3|m4a)$/i;
+/**
+ * Home Alone's clips for `npm run dev` (spec 2026-10-14 §5): a local, git-ignored folder holding scream.mp3, kevin.mp3
+ * and filthy-animal.mp3. AGLOW_HOME_ALONE_CLIPS points elsewhere (absolute, or relative to the project root).
+ */
+const HOME_ALONE_CLIPS_DIR = process.env.AGLOW_HOME_ALONE_CLIPS || '.superpowers/home-alone/clips';
 
 interface DevStationDef {
   id: string;
@@ -120,11 +125,26 @@ function devMusic(): Plugin {
     apply: 'serve',
     configureServer(server) {
       const musicDir = resolve(server.config.root, MUSIC_FOLDER);
+      const clipsDir = resolve(server.config.root, HOME_ALONE_CLIPS_DIR);
       server.middlewares.use((req, res, next) => {
         const url = (req.url ?? '').split('?')[0];
         if (url === '/dev-stations.json') {
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(buildDevStations(musicDir)));
+          return;
+        }
+        // Home Alone's clips (the build fetches them from the music origin); absent → 404, which plays as silence.
+        const effect = /^\/effects\/home-alone\/(scream|kevin|filthy-animal)\.mp3$/.exec(url);
+        if (effect) {
+          const file = resolve(clipsDir, `${effect[1]}.mp3`);
+          if (!existsSync(file) || !statSync(file).isFile()) {
+            res.statusCode = 404;
+            res.end();
+            return;
+          }
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Content-Length', String(statSync(file).size));
+          pipeline(createReadStream(file), res, () => {});
           return;
         }
         if (url.startsWith('/dev-music/')) {
