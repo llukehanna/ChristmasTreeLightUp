@@ -1,7 +1,7 @@
 import { WinSound } from '../radio/win-sound';
 
 /**
- * Home Alone mode's three clips (spec 2026-10-14 §5): cut from Luke's copy of the film, stored in R2 ("aglow-music")
+ * Home Alone mode's clips (spec 2026-10-14 §5, and Mr. Hector's three, §9.4): cut from Luke's copy of the film, stored in R2 ("aglow-music")
  * and never in the repo. Game sounds, not radio: only with the effects volume up, on the effects bus, the music ducked
  * under each for its length (the secret ad-lib's handling: one WinSound per clip, fetched and decoded once).
  */
@@ -11,17 +11,22 @@ export const MUSIC_ORIGIN = 'https://aglow-music.lukeghanna.com';
 /** `npm run dev` serves local copies itself (vite.config.ts); every build fetches from the bucket. */
 export const EFFECTS_BASE: string = import.meta.env.DEV ? '' : MUSIC_ORIGIN;
 
-export type HomeAloneClip = 'scream' | 'kevin' | 'filthy-animal';
-export const HOME_ALONE_CLIPS: readonly HomeAloneClip[] = ['scream', 'kevin', 'filthy-animal'];
+export type HomeAloneClip = 'scream' | 'kevin' | 'filthy-animal' | 'hector-credit-card' | 'hector-mistaken' | 'hector-love';
+export const HOME_ALONE_CLIPS: readonly HomeAloneClip[] = ['scream', 'kevin', 'filthy-animal', 'hector-credit-card', 'hector-mistaken', 'hector-love'];
+/** Every clip at 0: the counters' starting point. */
+const zeros = (): Record<HomeAloneClip, number> => Object.fromEntries(HOME_ALONE_CLIPS.map((c) => [c, 0])) as Record<HomeAloneClip, number>;
 export const clipUrl = (clip: HomeAloneClip, base: string = EFFECTS_BASE): string => `${base}/effects/home-alone/${clip}.mp3`;
+
+/** Mr. Hector's glare (spec §9.4): a still from Luke's copy of the film, beside the clips in R2, never in the repo. */
+export const hectorImageUrl = (base: string = EFFECTS_BASE): string => `${base}/effects/home-alone/hector.jpg`;
 
 /** The effects path as it is now: the context and bus once audio has unlocked, and the effects volume setting. */
 export interface ClipBus { ctx: AudioContext | null; out: AudioNode | null; volume: number }
 
 export class HomeAloneSounds {
   /** Plays asked for (every gate passed) and started, per clip: the test probe's view. */
-  readonly asked: Record<HomeAloneClip, number> = { scream: 0, kevin: 0, 'filthy-animal': 0 };
-  readonly played: Record<HomeAloneClip, number> = { scream: 0, kevin: 0, 'filthy-animal': 0 };
+  readonly asked: Record<HomeAloneClip, number> = zeros();
+  readonly played: Record<HomeAloneClip, number> = zeros();
   private readonly clips: Record<HomeAloneClip, WinSound>;
 
   constructor(
@@ -30,10 +35,10 @@ export class HomeAloneSounds {
     make: () => WinSound = () => new WinSound(),
     private readonly base: string = EFFECTS_BASE,
   ) {
-    this.clips = { scream: make(), kevin: make(), 'filthy-animal': make() };
+    this.clips = Object.fromEntries(HOME_ALONE_CLIPS.map((c) => [c, make()])) as Record<HomeAloneClip, WinSound>;
   }
 
-  /** Fetches and decodes all three ahead of need: only with the effects volume up and an audio context. */
+  /** Fetches and decodes every clip ahead of need: only with the effects volume up and an audio context. */
   preload(): void {
     const b = this.bus();
     if (!b.ctx || b.volume <= 0) return;

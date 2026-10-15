@@ -133,17 +133,18 @@ function devMusic(): Plugin {
           res.end(JSON.stringify(buildDevStations(musicDir)));
           return;
         }
-        // Home Alone's clips (the build fetches them from the music origin); absent → 404, which plays as silence.
-        const effect = /^\/effects\/home-alone\/(scream|kevin|filthy-animal)\.mp3$/.exec(url);
+        // Home Alone's clips and Mr. Hector's still (the build fetches them from the music origin); absent → 404, which
+        // plays as silence (and shows no Hector).
+        const effect = /^\/effects\/home-alone\/((?:scream|kevin|filthy-animal|hector-credit-card|hector-mistaken|hector-love)\.mp3|hector\.jpg)$/.exec(url);
         if (effect) {
-          const file = resolve(clipsDir, `${effect[1]}.mp3`);
+          const file = resolve(clipsDir, effect[1]);
           const st = statSync(file, { throwIfNoEntry: false });
           if (!st?.isFile()) {
             res.statusCode = 404;
             res.end();
             return;
           }
-          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Content-Type', file.endsWith('.jpg') ? 'image/jpeg' : 'audio/mpeg');
           res.setHeader('Content-Length', String(st.size));
           pipeline(createReadStream(file), res, () => {});
           return;

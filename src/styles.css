@@ -208,6 +208,33 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
   box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35), 0 3px 10px rgba(120, 20, 30, 0.3);
 }
 .results .actions .primary:hover { background: linear-gradient(180deg, #d63c45, #9a1a27); }
+/* Mr. Hector's glare (Home Alone §9.4): a framed still tucked behind the tag, leaning out from its left edge (on a
+   narrow screen, up over its top-left corner), holding, then tucking back. Behind the tag, so it never covers the
+   time, the rosette or the buttons. */
+.results .hector {
+  --hector-out: translate(-88%, -16px) rotate(-7deg);
+  position: absolute; z-index: -2; left: 8px; top: 40px; width: 164px; margin: 0; padding: 7px 7px 0; box-sizing: border-box;
+  border-radius: 3px; pointer-events: none; user-select: none;
+  background: linear-gradient(180deg, #fbf4e6, #f0e2c6);
+  box-shadow: 0 0 0 1px rgba(125, 20, 32, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 10px 22px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.25);
+  opacity: 0; transform: translate(0, 0) rotate(-2deg);
+  transition: transform 0.4s cubic-bezier(0.5, 0, 0.75, 0), opacity 0.15s 0.25s;
+}
+.results .hector.in { opacity: 1; transform: var(--hector-out); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.15s; }
+.results .hector img {
+  display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 1.5px;
+  box-shadow: 0 0 0 1px rgba(58, 26, 14, 0.35); filter: sepia(0.12) saturate(0.92) contrast(1.03);
+}
+.results .hector figcaption { padding: 4px 0 6px; font: italic 400 15px/1 'Instrument Serif', serif; color: #7d1420; text-align: center; }
+@media (max-width: 760px) {
+  .results .hector { --hector-out: translate(-6px, -90%) rotate(-6deg); left: 14px; top: 12px; width: 116px; padding: 6px 6px 0; transform: translate(0, 8%) rotate(-3deg); }
+  .results .hector figcaption { font-size: 13px; padding: 3px 0 5px; }
+}
+/* Reduced motion: no lean, a fade in place (more specific than the global reduced-motion rule, so the fade survives). */
+.results .hector.still { transform: var(--hector-out); transition: opacity 0.35s; }
+@media (prefers-reduced-motion: reduce) {
+  .results .hector.still { transition: opacity 0.35s !important; }
+}
 .results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.6; }
 
 .corner { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); right: calc(24px + env(safe-area-inset-right)); }

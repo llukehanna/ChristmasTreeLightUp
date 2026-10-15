@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  HOME_ALONE_CLIPS, HomeAloneSounds, KEVIN_AWAY_MS, KEVIN_EVERY_MS, KevinCall, MUSIC_ORIGIN, clipUrl, type ClipBus,
+  HOME_ALONE_CLIPS, HomeAloneSounds, hectorImageUrl, KEVIN_AWAY_MS, KEVIN_EVERY_MS, KevinCall, MUSIC_ORIGIN, clipUrl, type ClipBus,
 } from '../../../src/audio/home-alone-sounds';
 import { WinSound } from '../../../src/radio/win-sound';
 
@@ -39,8 +39,16 @@ it("the clips live under effects/home-alone/ on the public music origin, which i
     'https://aglow-music.lukeghanna.com/effects/home-alone/scream.mp3',
     'https://aglow-music.lukeghanna.com/effects/home-alone/kevin.mp3',
     'https://aglow-music.lukeghanna.com/effects/home-alone/filthy-animal.mp3',
+    'https://aglow-music.lukeghanna.com/effects/home-alone/hector-credit-card.mp3',
+    'https://aglow-music.lukeghanna.com/effects/home-alone/hector-mistaken.mp3',
+    'https://aglow-music.lukeghanna.com/effects/home-alone/hector-love.mp3',
   ]);
   expect(clipUrl('kevin', '')).toBe('/effects/home-alone/kevin.mp3'); // npm run dev serves them itself
+});
+
+it("Mr. Hector's still lives beside the clips (never in the repo)", () => {
+  expect(hectorImageUrl(MUSIC_ORIGIN)).toBe('https://aglow-music.lukeghanna.com/effects/home-alone/hector.jpg');
+  expect(hectorImageUrl('')).toBe('/effects/home-alone/hector.jpg');
 });
 
 describe('HomeAloneSounds', () => {

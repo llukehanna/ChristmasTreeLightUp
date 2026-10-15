@@ -16,7 +16,7 @@ import { Sfx } from './audio/sfx';
 import { bindInput } from './input';
 import { Radio } from './radio/radio';
 import { WinSound } from './radio/win-sound';
-import { HomeAloneSounds, KevinCall, type HomeAloneClip } from './audio/home-alone-sounds';
+import { HomeAloneSounds, KevinCall, hectorImageUrl, type HomeAloneClip } from './audio/home-alone-sounds';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { starCenter } from './render/effects';
 import { tileAt, tileCenter } from './render/layout';
@@ -38,6 +38,7 @@ import { el, isEditable } from './ui/dom';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
+import { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareImage } from './ui/share';
@@ -77,6 +78,9 @@ export interface HomeAloneState extends HomeAloneLayerState {
   /** Share images rendered for this tree's win, and whether the last one carries the line (null: none yet). */
   shares: number;
   shareLine: boolean | null;
+  /** Mr. Hector's glare (spec §9.4) is on screen now, and the glares called for on this page (shown or not). */
+  hector: boolean;
+  glares: number;
 }
 
 export class App {
@@ -160,6 +164,10 @@ export class App {
     (seconds) => this.radio.duck(seconds),
   );
   private readonly kevin = new KevinCall();
+  /** Mr. Hector (spec 2026-10-14 §9.4): which clip a Home Alone win says, and his glare beside the tag. */
+  private readonly hector = new HectorDesk();
+  private readonly glare = new HectorGlare(() => el('results'), hectorImageUrl());
+  private glares = 0;
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
 
@@ -310,6 +318,8 @@ export class App {
     this.returning = false;
     this.accountStats = null;
     this.statsSeq++;
+    this.hector.end();
+    this.glare.cancel();
     this.setOutcome(null);
     this.vis = new VisualState(GRID.w * GRID.h);
     this.winAt = null;
@@ -347,6 +357,7 @@ export class App {
     clearGame();
     // The old tree stays on screen until the new one is ready (1.5 s at most), without its results card.
     this.results.hide();
+    this.glare.cancel();
     el('corner-new').hidden = true;
     void this.freshTree();
   }
@@ -428,13 +439,15 @@ export class App {
     this.winAt = this.vis.lastLitAt(this.board);
     const game = this.board;
     const delay = Math.max(0, this.winAt - now);
+    // A live win in Home Alone mode says one clip (spec 2026-10-14 §6, §9.4), and an unverified one brings Hector.
+    if (sound) this.hector.begin(won.newBest);
     if (sound) {
       setTimeout(() => {
         if (this.board !== game) return;
         this.sfx.win();
         if (this.secret) this.playWinSound(game);
-        // Home Alone's win (spec 2026-10-14 §6): the filthy animal, on the effects bus; never over a new tree or the mode switched off.
-        if (this.homeAlone) this.sounds.play('filthy-animal', () => this.board === game && this.homeAlone);
+        this.hector.soundDue();
+        this.hectorStep();
       }, delay);
     }
     setTimeout(() => {
@@ -443,7 +456,26 @@ export class App {
       this.results.show({
         seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
       });
+      this.hector.tagShown();
+      this.hectorStep();
     }, delay + 1500);
+  }
+
+  /**
+   * Home Alone's win, as far as it can be told now (at the sound, at the tag, and as the server answers): the filthy
+   * animal, "I love you" for a new best, or (unverified, once the tag is up) Hector's glare with one of his lines. A
+   * clip never plays over a new tree or with the mode switched off.
+   */
+  private hectorStep(): void {
+    const s = this.hector.step(this.homeAlone, this.outcome);
+    if (s.glare) {
+      this.glares++;
+      this.glare.show(this.reduced.matches);
+    }
+    if (s.clip) {
+      const game = this.board;
+      this.sounds.play(s.clip, () => this.board === game && this.homeAlone);
+    }
   }
 
   /**
@@ -622,6 +654,7 @@ export class App {
   /** The run's outcome on the results tag (pick 3B): drawn now, so it is there when the tag appears. */
   private setOutcome(o: RunOutcome | null): void {
     this.outcome = o;
+    this.hectorStep(); // a Home Alone win waiting on the server's answer
     const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning };
     renderRibbon(el('results'), o && ribbonModel(o, this.session.current, ctx), {
       board: () => this.accounts.openBoard(null, 'all'), // the rosette's rank and total are all-time ones
@@ -644,6 +677,7 @@ export class App {
 
   private keepWatching(): void {
     this.results.hide();
+    this.glare.cancel();
     el('corner-new').hidden = false;
   }
 
@@ -873,7 +907,10 @@ export class App {
     this.homeAlone = on;
     // Also while the account's head is still loading (not on yet): off() drops it and tells the account.
     if (on) this.egg.off();
-    if (on) this.sounds.preload();
+    if (on) {
+      this.sounds.preload();
+      this.glare.preload();
+    } else this.glare.cancel();
     this.results.setLine(on ? HOME_ALONE_LINE : null); // a tag already up follows the mode (its share image re-renders with the scene)
     if (how === 'start' || !changed) return;
     this.pausedDrawn = false;
@@ -1133,6 +1170,7 @@ export class App {
       asked: { ...this.sounds.asked }, played: { ...this.sounds.played },
       line: document.getElementById('r-merry')?.textContent === HOME_ALONE_LINE,
       shares: this.shareSeen.n, shareLine: this.shareSeen.line,
+      hector: this.glare.showing, glares: this.glares,
     };
   }
 

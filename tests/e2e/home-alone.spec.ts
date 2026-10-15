@@ -1,7 +1,9 @@
 import type { Page } from '@playwright/test';
 import type { TrapKind } from '../../src/render/home-alone';
 import { expect, test } from './fixtures';
-import { asPlayer, game, pickName, ready, resumeIfPaused, signInFromChip, silentWav, stopClock, typeStill, waitInteractive, type W } from './helpers';
+import {
+  asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, silentWav, solveByTapping, stopClock, typeStill, waitInteractive, type W,
+} from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -19,15 +21,25 @@ const stored = (page: Page, key: string) => page.evaluate((k) => localStorage.ge
 const force = (page: Page, kind: TrapKind, at?: [number, number]) =>
   page.evaluate(([k, a]) => (window as unknown as W).__aglow.forceTrap(k, a), [kind, at] as const);
 
-/** The three clips (a build fetches them from the music origin), as silence: never the real bucket. The paths the page asked for. */
-async function clips(page: Page): Promise<string[]> {
+/** A stand-in for Mr. Hector's still: a 1×1 PNG. */
+const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+
+/**
+ * The clips (a build fetches them from the music origin), as silence, and Hector's still as a pixel (or, `still: false`,
+ * a 404): never the real bucket. The clip paths the page asked for.
+ */
+async function clips(page: Page, still = true): Promise<string[]> {
   const asked: string[] = [];
   await page.route(`${EFFECTS}**`, (r) => {
-    asked.push(new URL(r.request().url()).pathname);
+    const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/hector.jpg')) return still ? r.fulfill({ body: PIXEL, contentType: 'image/png' }) : r.fulfill({ status: 404, body: '' });
+    asked.push(path);
     return r.fulfill({ body: silentWav(1), contentType: 'audio/wav', headers: { 'Access-Control-Allow-Origin': '*' } });
   });
   return asked;
 }
+
+const NO_CLIPS = { scream: 0, kevin: 0, 'filthy-animal': 0, 'hector-credit-card': 0, 'hector-mistaken': 0, 'hector-love': 0 };
 
 async function clickTile(page: Page, i: number): Promise<void> {
   const [x, y] = await page.evaluate((t) => (window as unknown as W).__aglow.tileCenter(t), i);
@@ -273,17 +285,29 @@ test("Harry's tooth and hat, Marv at the glass and the van never touch the board
   expect((await game(page)).log).toBe(log);
 });
 
-test('a win in the house: the line on the tag and the filthy animal on the effects bus; switched off, the usual words come back', async ({ page }) => {
+test('an unverified win in the house: the line on the tag, and Hector glares beside it with his line instead of the filthy animal; switched off, the usual words come back', async ({ page }) => {
   const asked = await clips(page);
   await ready(page);
   await typeStill(page, 'kevin');
   await expect.poll(async () => (await house(page)).on).toBe(true);
+  await onlineTree(page);
+  // The probe's solve() isn't in the log, so the server can't replay the run: "Unranked: couldn't verify this run".
   await page.evaluate(() => (window as unknown as W).__aglow.solve());
   await expect(page.locator('#results')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('#r-merry')).toHaveText('Keep the change, ya filthy animal.');
   expect((await house(page)).line).toBe(true);
-  await expect.poll(async () => (await house(page)).played['filthy-animal'], { timeout: 30_000 }).toBe(1);
-  expect(asked).toContain('/effects/home-alone/filthy-animal.mp3');
+  await expect.poll(async () => (await game(page)).outcome, { timeout: 30_000 }).toBe('unverified');
+  await expect.poll(async () => (await house(page)).hector, { timeout: 10_000 }).toBe(true);
+  await expect(page.locator('#results figure.hector img')).toBeVisible();
+  // Tucked behind the tag, and never takes a tap.
+  expect(await page.locator('#results figure.hector').evaluate((f) => getComputedStyle(f).pointerEvents)).toBe('none');
+  await expect.poll(async () => (await house(page)).played['hector-credit-card'], { timeout: 30_000 }).toBe(1);
+  expect(asked).toContain('/effects/home-alone/hector-credit-card.mp3');
+  // He holds, then leans back out of sight: one glare, one line, and no filthy animal over him.
+  await expect.poll(async () => (await house(page)).hector, { timeout: 10_000 }).toBe(false);
+  expect(await page.locator('#results figure.hector').count()).toBe(0);
+  expect((await house(page)).glares).toBe(1);
+  expect((await house(page)).asked).toEqual({ ...NO_CLIPS, scream: 1, 'hector-credit-card': 1 });
   // The share image was made with the line.
   await expect.poll(async () => (await house(page)).shareLine).toBe(true);
   const shares = (await house(page)).shares;
@@ -291,7 +315,7 @@ test('a win in the house: the line on the tag and the filthy animal on the effec
   await typeStill(page, 'kevin');
   await expect.poll(async () => (await house(page)).on).toBe(false);
   await expect(page.locator('#r-merry')).toHaveText('Merry & bright');
-  expect((await house(page)).asked['filthy-animal']).toBe(1);
+  expect((await house(page)).asked['hector-credit-card']).toBe(1);
   // Switched off after the win, the share image is made again, without the line (once the fade has landed)…
   await expect.poll(async () => (await house(page)).shares, { timeout: 10_000 }).toBeGreaterThan(shares);
   expect((await house(page)).shareLine).toBe(false);
@@ -340,6 +364,56 @@ test('with the effects volume at 0 no clip is ever asked for or fetched', async 
   await page.evaluate(() => (window as unknown as W).__aglow.solve());
   await expect(page.locator('#results')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('#r-merry')).toHaveText('Keep the change, ya filthy animal.');
-  expect((await house(page)).asked).toEqual({ scream: 0, kevin: 0, 'filthy-animal': 0 });
+  expect((await house(page)).asked).toEqual(NO_CLIPS);
   expect(asked).toEqual([]);
+});
+
+test('a still that fails to load shows no Hector, but his line still plays', async ({ page }) => {
+  const asked = await clips(page, false);
+  await ready(page);
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).on).toBe(true);
+  await onlineTree(page);
+  await page.evaluate(() => (window as unknown as W).__aglow.solve());
+  await expect(page.locator('#results')).toBeVisible({ timeout: 30_000 });
+  await expect.poll(async () => (await house(page)).glares, { timeout: 30_000 }).toBe(1);
+  await expect.poll(async () => (await house(page)).played['hector-credit-card'], { timeout: 30_000 }).toBe(1);
+  expect(asked).toContain('/effects/home-alone/hector-credit-card.mp3');
+  await page.waitForTimeout(2000); // past the 1.5 s he waits for his still
+  expect((await house(page)).hector).toBe(false);
+  expect(await page.locator('#results figure.hector').count()).toBe(0);
+});
+
+test('a verified win in the house is never glared at: a best time says "I love you", a slower one the filthy animal', async ({ page }) => {
+  await clips(page);
+  await ready(page);
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).on).toBe(true);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#results')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('#r-badge')).toHaveText('New best');
+  await expect.poll(async () => (await house(page)).played['hector-love'], { timeout: 30_000 }).toBe(1);
+  // Signed out, the run is kept unranked ('anonymous'): not his business.
+  await expect.poll(async () => (await game(page)).reason, { timeout: 30_000 }).toBe('anonymous');
+  expect(await house(page)).toMatchObject({ hector: false, glares: 0 });
+  expect((await house(page)).asked).toEqual({ ...NO_CLIPS, scream: 1, 'hector-love': 1 });
+
+  // A new tree, and a best of one second on this device: the next win can't beat it.
+  await page.evaluate(() => (window as unknown as W).__aglow.newTree());
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('aglow.stats') ?? '{}');
+    localStorage.setItem('aglow.stats', JSON.stringify({ ...s, bestSeconds: 1 }));
+  });
+  await page.reload();
+  await waitInteractive(page);
+  await expect.poll(async () => (await house(page)).on).toBe(true);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#results')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('#r-badge')).not.toHaveText('New best');
+  await expect.poll(async () => (await house(page)).played['filthy-animal'], { timeout: 30_000 }).toBe(1);
+  await expect.poll(async () => (await game(page)).reason, { timeout: 30_000 }).toBe('anonymous');
+  expect(await house(page)).toMatchObject({ hector: false, glares: 0 });
+  expect((await house(page)).asked).toEqual({ ...NO_CLIPS, 'filthy-animal': 1 });
 });
