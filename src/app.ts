@@ -463,8 +463,8 @@ export class App {
 
   /**
    * Home Alone's win, as far as it can be told now (at the sound, at the tag, and as the server answers): the filthy
-   * animal, "I love you" for a new best, or (unverified, once the tag is up) Hector's glare with one of his lines. A
-   * clip never plays over a new tree or with the mode switched off.
+   * animal, "I love you" for a new best, or (unranked and unverified, the log or the clock, once the tag is up)
+   * Hector's glare with one of his lines. A clip never plays over a new tree or with the mode switched off.
    */
   private hectorStep(): void {
     const s = this.hector.step(this.homeAlone, this.outcome);

@@ -3,8 +3,9 @@ import type { HomeAloneClip } from '../audio/home-alone-sounds';
 
 /**
  * Mr. Hector (spec 2026-10-14 §9.4). HectorDesk decides whether a Home Alone win gets his glare, and which clip it
- * says; HectorGlare puts the glare on screen. The glare is for a run the tag calls "Unranked: couldn't verify this run"
- * (the server couldn't replay the log, or the log outgrew what it takes); it brings one of his two lines, alternating.
+ * says; HectorGlare puts the glare on screen. The glare is for every unranked run the tag says couldn't be verified
+ * (the server couldn't replay the log, the log outgrew what it takes, or the server couldn't time it: 'clock'); it
+ * brings one of his two lines, alternating.
  * A new personal best says "I love you" instead of the filthy animal. A win says one clip at most, and the glare's line
  * beats the others.
  */
@@ -13,8 +14,13 @@ export type GlareClip = 'hector-credit-card' | 'hector-mistaken';
 /** His lines with the glare, in turn. */
 export const GLARE_CLIPS: readonly GlareClip[] = ['hector-credit-card', 'hector-mistaken'];
 
-/** The glare's condition: in the mode, and a run the tag calls "couldn't verify this run". Never a ranked one. */
-export const glares = (mode: boolean, o: RunOutcome | null): boolean => mode && o?.kind === 'unverified';
+/**
+ * The glare's condition: in the mode, and an unranked run the tag says couldn't be verified, whatever the reason: the
+ * log ("couldn't verify this run") or the clock (the server kept it but couldn't time it, e.g. a run that spanned
+ * reloads, sent late). Never a ranked one.
+ */
+export const glares = (mode: boolean, o: RunOutcome | null): boolean =>
+  mode && (o?.kind === 'unverified' || (o?.kind === 'done' && !o.result.ranked && o.result.reason === 'clock'));
 
 /** The server's answer is still on its way: the win's clip waits for it (until the tag shows). */
 const pending = (o: RunOutcome | null): boolean => o === null || o.kind === 'saving';

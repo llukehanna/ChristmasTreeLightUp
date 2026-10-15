@@ -19,13 +19,19 @@ function win(desk: HectorDesk, o: RunOutcome, newBest = false, mode = true) {
   return { atSound, atTag };
 }
 
-describe('glares: Hector only for a run the tag calls "couldn\'t verify this run", in the mode', () => {
-  it('unverified in the mode, and nothing else', () => {
-    expect(glares(true, unverified)).toBe(true);
-    expect(glares(false, unverified)).toBe(false);
+const clock: RunOutcome = { kind: 'done', result: result({ ranked: false, reason: 'clock', rank: null }) };
+
+describe('glares: Hector for every unranked "couldn\'t verify" run the tag shows, in the mode', () => {
+  it('the log not verified, or the clock not verified (sent late after a reload, too); never a ranked win', () => {
+    for (const o of [unverified, clock]) {
+      expect(glares(true, o)).toBe(true);
+      expect(glares(false, o)).toBe(false);
+    }
     for (const o of [ranked, saving, { kind: 'offline' }, { kind: 'failed' }, null] as (RunOutcome | null)[]) expect(glares(true, o)).toBe(false);
-    // Unranked for other reasons (signed out, the clock, too fast): not his business.
-    for (const reason of ['anonymous', 'clock', 'too_fast', 'paused'] as const) {
+    // Ranked, whatever the reason field says: never.
+    expect(glares(true, { kind: 'done', result: result({ ranked: true, reason: 'clock' }) })).toBe(false);
+    // Unranked for reasons the tag doesn't call unverified (signed out, too fast, paused): not his business.
+    for (const reason of ['anonymous', 'too_fast', 'paused'] as const) {
       expect(glares(true, { kind: 'done', result: result({ ranked: false, reason }) })).toBe(false);
     }
   });
@@ -58,6 +64,15 @@ describe('HectorDesk: which clip on which Home Alone win', () => {
     // A ranked win in between doesn't move his turn.
     win(d, ranked);
     expect(win(d, unverified).atTag.clip).toBe('hector-mistaken');
+  });
+
+  it('the clock unverified (a run that spanned reloads): the glare and his line too, in the same turn, not the filthy animal', () => {
+    const d = new HectorDesk();
+    const first = win(d, clock);
+    expect(first.atSound).toEqual(NONE);
+    expect(first.atTag).toEqual({ clip: 'hector-credit-card', glare: true });
+    expect(win(d, unverified).atTag).toEqual({ clip: 'hector-mistaken', glare: true });
+    expect(win(d, clock, true).atTag).toEqual({ clip: 'hector-credit-card', glare: true });
   });
 
   it('an unverified new best: the glare\'s clip wins over "I love you"', () => {
