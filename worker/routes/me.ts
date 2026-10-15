@@ -2,7 +2,7 @@ import type { AccountStats, MeResponse, MyGamesResponse, RecentGame, StarHeadRes
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
 import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
-import { dayNumber, dayText, isTzOffset, streaksOf } from '../lib/days.js';
+import { dayText, streaksOf, viewerDay } from '../lib/days.js';
 import { BEST_SQL, bestOf, rankOf, type BestRun } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
 
@@ -79,8 +79,6 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
   } satisfies MyGamesResponse);
 }
 
-const TZ = /^-?\d{1,3}$/;
-
 /**
  * GET /api/me/stats?today=YYYY-MM-DD&tz=<minutes> (spec 2026-10-08 §3.2): the account's stats, the same on every
  * device. One batch of two statements: the totals folded into a GROUP BY local day (the days give the streaks), and
@@ -88,11 +86,7 @@ const TZ = /^-?\d{1,3}$/;
  */
 export async function myStats(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
-  const q = new URL(req.url).searchParams;
-  const today = dayNumber(q.get('today'));
-  const tzText = q.get('tz') ?? '';
-  const tz = TZ.test(tzText) ? Number(tzText) : Number.NaN;
-  if (today === null || !isTzOffset(tz)) throw new HttpError(400, 'invalid', 'today must be YYYY-MM-DD and tz whole minutes from -840 to 840.');
+  const { today, tz } = viewerDay(new URL(req.url).searchParams);
   const [daily, best] = await env.DB.batch([
     // A finish's local day, in days since 1970-01-01; the CAST keeps the division whole whatever type D1 binds the offset as.
     env.DB.prepare(

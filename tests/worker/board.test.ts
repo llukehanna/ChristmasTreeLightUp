@@ -2,8 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { BOARD_TOP, type BoardResponse, type MyGamesResponse } from '../../src/api/types';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
-import { BOARD_TTL_MS, cachedTotal, resetBoardCache } from '../../worker/lib/board-cache';
-import { BEST_SQL, TOP_SQL } from '../../worker/lib/ranks';
+import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, boardGrew, cachedTopAndTotal, cachedTotal, resetBoardCache } from '../../worker/lib/board-cache';
+import { BEST_SQL, TOP_SQL, topSql } from '../../worker/lib/ranks';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
 let db: Db;
@@ -148,6 +148,120 @@ describe('the leaderboard', () => {
   });
 });
 
+/** Fifty fast runs by one player, finished from `at` on (one ms apart): enough to push anyone else's best below the list. */
+async function fifty(userId: number, at: number): Promise<void> {
+  await db.batch(
+    Array.from({ length: 50 }, (_, k) =>
+      db
+        .prepare('INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, ranked) VALUES (?, ?, 1, 1, 0, ?, ?, 1)')
+        .bind(`fast-${String(k).padStart(16, '0')}`, userId, at + k, 10_000 + k),
+    ),
+  );
+}
+const windowed = async (q: string, cookie?: string): Promise<BoardResponse> => (await (await call(env, 'GET', `/api/board?${q}`, { cookie })).json()) as BoardResponse;
+const msOf = (b: BoardResponse): number[] => b.rows.map((r) => r.ms);
+
+describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
+  // 2026-10-14 is a Wednesday; its week starts Monday 2026-10-12.
+  it("today and this week start at the viewer's local midnight and Monday, in a zone far from UTC", async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    // UTC+13 (getTimezoneOffset -780): Oct 14 starts at 11:00 UTC on Oct 13, and Monday Oct 12 at 11:00 UTC on Oct 11.
+    const midnight = Date.UTC(2026, 9, 13, 11);
+    const monday = Date.UTC(2026, 9, 11, 11);
+    await run(ana, 10_000, midnight); // today, to the ms
+    await run(ana, 20_000, midnight - 1); // yesterday: this week
+    await run(ana, 30_000, monday); // this week's first ms
+    await run(ana, 40_000, monday - 1); // last week: all time only
+    const q = 'today=2026-10-14&tz=-780';
+    const today = await windowed(`window=today&${q}`);
+    expect([msOf(today), today.total]).toEqual([[10_000], 1]);
+    const week = await windowed(`window=week&${q}`);
+    expect([msOf(week), week.total]).toEqual([[10_000, 20_000, 30_000], 3]);
+    const all = await windowed(`window=all&${q}`);
+    expect([msOf(all), all.total]).toEqual([[10_000, 20_000, 30_000, 40_000], 4]);
+    // The same instants in UTC: Oct 14 starts 13 hours later, so none of them is today, and Monday too, so the week
+    // starts after the two runs on Oct 11.
+    expect((await windowed('window=today&today=2026-10-14&tz=0')).total).toBe(0);
+    expect(msOf(await windowed('window=week&today=2026-10-14&tz=0'))).toEqual([10_000, 20_000]);
+    // Hawaii (600): Oct 13 there starts at 10:00 UTC, so the first two are both early on its today.
+    expect(msOf(await windowed('window=today&today=2026-10-13&tz=600'))).toEqual([10_000, 20_000]);
+  });
+
+  it("on a Monday this week is today; on a Sunday it reaches back to the Monday before", async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    await run(ana, 10_000, Date.UTC(2026, 9, 12)); // Monday's first ms
+    await run(ana, 20_000, Date.UTC(2026, 9, 12) - 1); // Sunday's last
+    const monday = await windowed('window=week&today=2026-10-12&tz=0');
+    expect(msOf(monday)).toEqual([10_000]);
+    expect(msOf(await windowed('window=today&today=2026-10-12&tz=0'))).toEqual([10_000]);
+    expect(msOf(await windowed('window=week&today=2026-10-18&tz=0'))).toEqual([10_000]);
+    expect(msOf(await windowed('window=week&today=2026-10-11&tz=0'))).toEqual([10_000, 20_000]);
+  });
+
+  it('ranks count only runs in the window; your pinned best is your best in the window, and null with none there', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    const bo = await user('bo@example.com', 'Comet');
+    const cy = await user('cy@example.com', 'Nova');
+    const midnight = Date.UTC(2026, 9, 14);
+    await run(ana, 1_000, midnight - 5 * 86_400_000); // last week: ana's all-time best, first on the board
+    await run(bo, 9_000, midnight - 2 * 86_400_000); // Monday
+    await fifty(bo, midnight + 1000);
+    await run(ana, 99_000, midnight + 5000);
+    await run(ana, 98_000, midnight + 6000); // ana's best today: below Bo's fifty
+    await run(cy, 2_000, midnight - 5 * 86_400_000); // cy played last week only
+    const anaCookie = await signIn(env, 'ana@example.com');
+    const q = 'today=2026-10-14&tz=0';
+    const today = await windowed(`window=today&${q}`, anaCookie);
+    expect(today.total).toBe(52);
+    expect(today.rows[0]).toMatchObject({ rank: 1, ms: 10_000, name: 'Comet' });
+    expect(today.you).toEqual({ rank: 51, name: 'Meridian', ms: 98_000, finishedAt: midnight + 6000, mine: true });
+    const week = await windowed(`window=week&${q}`, anaCookie);
+    expect(week.total).toBe(53);
+    expect(week.rows[0]).toMatchObject({ rank: 1, ms: 9_000, name: 'Comet' });
+    expect(week.you).toMatchObject({ rank: 52, ms: 98_000 });
+    const all = await windowed(`window=all&${q}`, anaCookie);
+    expect(all.total).toBe(55);
+    expect(all.rows[0]).toMatchObject({ rank: 1, ms: 1_000, mine: true });
+    expect(all.you).toBeNull();
+    // No run in the window: nothing pinned, nothing marked.
+    const cyCookie = await signIn(env, 'cy@example.com');
+    for (const w of ['today', 'week']) {
+      const b = await windowed(`window=${w}&${q}`, cyCookie);
+      expect(b.you).toBeNull();
+      expect(b.rows.some((r) => r.mine)).toBe(false);
+    }
+    expect((await windowed(`window=all&${q}`, cyCookie)).rows[1]).toMatchObject({ ms: 2_000, mine: true });
+  });
+
+  it('with no window the board is all time, and all time needs no calendar (an odd one is ignored)', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    await run(ana, 50_000, 1000);
+    expect(await board()).toEqual(await windowed('window=all'));
+    expect((await windowed('window=all&today=nonsense&tz=9999')).total).toBe(1);
+    const res = await call(env, 'GET', '/api/board?window=all');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=15');
+    expect(res.headers.get('Vary')).toBe('Cookie');
+  });
+
+  it("400 'invalid' for today or this week without a real today and offset, and for an unknown window", async () => {
+    for (const w of ['today', 'week']) {
+      for (const q of ['', 'today=2026-10-14', 'tz=0', 'today=2026-02-30&tz=0', 'today=2026-10-14&tz=1.5', 'today=2026-10-14&tz=841']) {
+        const res = await call(env, 'GET', `/api/board?window=${w}&${q}`);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'invalid', message: 'today must be YYYY-MM-DD and tz whole minutes from -840 to 840.' });
+      }
+    }
+    const odd = await call(env, 'GET', '/api/board?window=month&today=2026-10-14&tz=0');
+    expect(odd.status).toBe(400);
+    expect(await odd.json()).toEqual({ error: 'invalid', message: 'window must be today, week or all.' });
+  });
+
+  it('reads a window through the board index too', async () => {
+    const plan = JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${topSql(1)}`).bind(1).all()).results);
+    expect(plan).toContain('games_board');
+  });
+});
+
 describe('the board cache (isolate memory, BOARD_TTL_MS)', () => {
   afterEach(() => vi.useRealTimers());
 
@@ -184,6 +298,70 @@ describe('the board cache (isolate memory, BOARD_TTL_MS)', () => {
     expect(statements).toBe(1);
     expect(await cachedTotal(counting, t + BOARD_TTL_MS)).toBe(1);
     expect(statements).toBe(2);
+  });
+
+  /** A Db that counts the statements it prepares. */
+  function counted(): { db: Db; n: () => number } {
+    let statements = 0;
+    return {
+      db: {
+        prepare: (q) => {
+          statements++;
+          return db.prepare(q);
+        },
+        batch: (s) => db.batch(s),
+      },
+      n: () => statements,
+    };
+  }
+
+  it('keeps each window apart (keyed by its start), each with its own age', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    await run(ana, 50_000, 1000);
+    await run(ana, 40_000, 5000);
+    const t = 1_800_000_000_000;
+    expect(await cachedTopAndTotal(db, t)).toMatchObject({ total: 2 });
+    expect(await cachedTopAndTotal(db, t + 5, 2000)).toMatchObject({ total: 1 });
+    await run(ana, 30_000, 6000); // another isolate's finish, say
+    expect((await cachedTopAndTotal(db, t + 6)).top.map((r) => r.ms)).toEqual([40_000, 50_000]);
+    expect((await cachedTopAndTotal(db, t + 6, 2000)).top.map((r) => r.ms)).toEqual([40_000]);
+    expect(await cachedTopAndTotal(db, t + 6, 3000)).toMatchObject({ total: 2 }); // a window not seen yet is read now
+    // All time expires first; the later window keeps its copy a little longer.
+    expect(await cachedTopAndTotal(db, t + BOARD_TTL_MS)).toMatchObject({ total: 3 });
+    expect(await cachedTopAndTotal(db, t + BOARD_TTL_MS, 2000)).toMatchObject({ total: 1 });
+    expect(await cachedTopAndTotal(db, t + BOARD_TTL_MS + 5, 2000)).toMatchObject({ total: 2 });
+  });
+
+  it("a run joining the board in this isolate re-reads every window's top and counts it in every cached total", async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    await run(ana, 50_000, 1000);
+    await run(ana, 40_000, 5000);
+    const t = 1_800_000_000_000;
+    await cachedTopAndTotal(db, t);
+    await cachedTopAndTotal(db, t, 2000);
+    await run(ana, 30_000, 6000);
+    boardGrew(1);
+    const c = counted();
+    expect(await cachedTotal(c.db, t + 1)).toBe(3); // bumped, not counted again
+    expect(c.n()).toBe(0);
+    expect((await cachedTopAndTotal(c.db, t + 1)).top.map((r) => r.ms)).toEqual([30_000, 40_000, 50_000]);
+    expect(await cachedTopAndTotal(c.db, t + 1, 2000)).toMatchObject({ top: [{ ms: 30_000 }, { ms: 40_000 }], total: 2 });
+    expect(c.n()).toBe(4); // each window's top again (with its total, in one batch)
+  });
+
+  it(`holds at most ${BOARD_CACHE_WINDOWS} windows, dropping the oldest`, async () => {
+    await run(await user('ana@example.com', 'Meridian'), 50_000, 1000);
+    const t = 1_800_000_000_000;
+    const c = counted();
+    for (let k = 0; k <= BOARD_CACHE_WINDOWS; k++) await cachedTopAndTotal(c.db, t, 100 + k);
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 1));
+    await cachedTopAndTotal(c.db, t, 101); // still held
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 1));
+    await cachedTopAndTotal(c.db, t, 100); // the first was dropped for the seventeenth
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 2));
+    resetBoardCache();
+    await cachedTopAndTotal(c.db, t, 101);
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 3));
   });
 
   it('your pinned best stays live while the top 50 are cached', async () => {
