@@ -1,6 +1,6 @@
 import type { LogEntry } from '../core/log';
 import { localDay } from '../store/stats';
-import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type ClaimResponse, type FinishResult, type MeResponse, type MyGamesResponse, type NameCheck, type StarHeadResponse, type StartResponse, type User } from './types';
+import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type ClaimResponse, type FinishResult, type HomeAloneResponse, type MeResponse, type MyGamesResponse, type NameCheck, type StarHeadResponse, type StartResponse, type User } from './types';
 
 /** An API failure: the HTTP status (0 when the server couldn't be reached), the Worker's error code and message. */
 export class ApiError extends Error {
@@ -92,6 +92,8 @@ export const api = {
   myGames: () => request<MyGamesResponse>('GET', '/api/me/games'),
   /** The account's copy of the tree's topper preference (the star-head egg). */
   setStarHead: (on: boolean) => request<StarHeadResponse>('PUT', '/api/me/star-head', { on }),
+  /** The account's copy of Home Alone mode. */
+  setHomeAlone: (on: boolean) => request<HomeAloneResponse>('PUT', '/api/me/home-alone', { on }),
   /** The account's stats in this browser's day and zone (spec 2026-10-08 §3.2). */
   myStats: (now: Date = new Date()) => request<AccountStats>('GET', `/api/me/stats?today=${localDay(now)}&tz=${now.getTimezoneOffset()}`),
 };

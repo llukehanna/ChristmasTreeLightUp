@@ -6,4 +6,4 @@ not contain triggers (their bodies hold inner `;` line endings) or `--` / a line
 
 Apply migrations before the Worker that reads them goes out: `npm run deploy` does (`wrangler d1 migrations apply aglow
 --remote`, then `wrangler deploy`). A bare `wrangler deploy` ahead of 0003 would break every signed-in request, since
-the session lookup reads `users.star_head`. Rolling a Worker back past a migration is safe: an extra column is ignored.
+the session lookup reads `users.star_head`. Rolling a Worker back past a migration is safe: an extra column is ignored. 0004 adds users.home_alone, which the same session lookup reads: the same order applies.

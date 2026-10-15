@@ -1,4 +1,4 @@
-import type { AccountStats, MeResponse, MyGamesResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
+import type { AccountStats, HomeAloneResponse, MeResponse, MyGamesResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
 import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
@@ -39,6 +39,18 @@ export async function setStarHead(req: Request, env: AppEnv): Promise<Response> 
   if (typeof on !== 'boolean') throw new HttpError(400, 'invalid', 'on must be true or false.');
   await env.DB.prepare('UPDATE users SET star_head = ? WHERE id = ?').bind(on ? 1 : 0, user.id).run();
   return json({ starHead: on } satisfies StarHeadResponse);
+}
+
+/**
+ * PUT /api/me/home-alone { on } (2026-10-14): Home Alone mode, the account's copy. A users column like star_head, so
+ * deleting the account takes it too. Nothing else on the server reads it; exclusivity with the head is the page's.
+ */
+export async function setHomeAlone(req: Request, env: AppEnv): Promise<Response> {
+  const user = await requireUser(req, env);
+  const on = (await readJson(req)).on;
+  if (typeof on !== 'boolean') throw new HttpError(400, 'invalid', 'on must be true or false.');
+  await env.DB.prepare('UPDATE users SET home_alone = ? WHERE id = ?').bind(on ? 1 : 0, user.id).run();
+  return json({ homeAlone: on } satisfies HomeAloneResponse);
 }
 
 interface RecentRow {

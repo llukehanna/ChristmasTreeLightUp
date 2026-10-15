@@ -17,6 +17,16 @@ export interface User {
   isAdmin: boolean;
   /** The tree's topper preference: on load and sign-in the account's value wins over this browser's. */
   starHead: boolean;
+  /**
+   * Home Alone mode (spec 2026-10-14): on load and sign-in the account's value wins. The Worker always sends it; read
+   * as off when absent, so hand-made users (tests, a Worker from before migration 0004) need not carry it.
+   */
+  homeAlone?: boolean;
+}
+
+/** PUT /api/me/home-alone { on }'s answer. */
+export interface HomeAloneResponse {
+  homeAlone: boolean;
 }
 
 export interface MeResponse {
