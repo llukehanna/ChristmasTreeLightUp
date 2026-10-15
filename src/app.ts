@@ -984,8 +984,9 @@ export class App {
         this.kevin.hide(now);
         return;
       }
-      const board = this.board;
-      const still = () => !document.hidden && this.board === board && this.runInHouse();
+      // No run yet while the first tree loads (a tab shown during the load).
+      const board = this.run?.board;
+      const still = () => !document.hidden && this.run?.board === board && this.runInHouse();
       void this.kevin.show(now, this.runInHouse(), () => this.sounds.playResumed('kevin', still));
     });
     addEventListener('pagehide', () => {
