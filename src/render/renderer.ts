@@ -13,6 +13,7 @@ import {
 import { FaceSprites } from './face-sprites';
 import { FACE_CONFETTI_PX, FACE_GARLAND_H, FACE_ORNAMENT_H, faceBulbTile, faceGarlandIndex } from './faces';
 import { Garland } from './garland';
+import { HomeAloneLayer, homeAloneAlpha } from './home-alone';
 import { tileGeometry } from './geometry';
 import { Y, computeLayout, tileCenter, type Layout } from './layout';
 import { paintBackground } from './paint-background';
@@ -90,6 +91,8 @@ export class Renderer {
   private readonly current = new Current();
   private readonly confetti = new Confetti();
   readonly garland = new Garland();
+  /** Home Alone mode's window gags and traps (spec 2026-10-14). */
+  readonly homeAlone = new HomeAloneLayer();
   private readonly presents = new Presents();
   /** The star on top, or the star-head egg's sticker (src/render/topper.ts). */
   readonly topper = new Topper();
@@ -286,6 +289,9 @@ export class Renderer {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (this.secret) this.aurora.draw(ctx, L, now, tier, f.reducedMotion);
     }
+    // Home Alone's window gags, behind the tree (spec 2026-10-14 §3): faded with the house, never during a sweep.
+    const ha = homeAloneAlpha(sc, sw, fr);
+    if (ha > 0) this.homeAlone.drawWindow(ctx, L, ha, tier, f.reducedMotion);
     if (back.light === 'fire') drawFirelight(ctx, L, now);
     if (back.embers && tier < 3) this.embers.draw(ctx, L, motionDt, now);
     this.snow.draw(ctx, L, sc, false, motionDt, now, density);

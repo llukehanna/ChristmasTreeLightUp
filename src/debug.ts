@@ -1,6 +1,7 @@
 import type { RunOutcome } from './api/outcome';
 import type { App, HomeAloneState, SecretState } from './app';
 import { GRID } from './core/mask';
+import type { TrapKind } from './render/home-alone';
 
 export interface AglowProbe {
   state(): { bits: number[]; solution: number[]; litCount: number; won: boolean; rotating: number; interactive: boolean };
@@ -16,6 +17,8 @@ export interface AglowProbe {
   secret(): SecretState;
   /** Home Alone mode (spec 2026-10-14): on, the stage's scene, and (later tasks) what is on screen and heard. */
   homeAlone(): HomeAloneState;
+  /** Starts a Home Alone trap or gag now, ignoring its timer (`at`: where the tarantula starts, CSS px). Traps need a tree in play. */
+  forceTrap(kind: TrapKind, at?: [number, number]): boolean;
   /** A real tap on tile i, through the game (logged, as a finger's would be). */
   tap(i: number): void;
   /** The server game behind the tree, what became of its run, and the log's length. */
@@ -64,6 +67,7 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
     },
     secret: () => app.secretState,
     homeAlone: () => app.homeAloneState,
+    forceTrap: (kind, at) => app.forceTrap(kind, at),
     tap: (i) => app.tapTile(i),
     game: () => {
       const o = app.runOutcome;

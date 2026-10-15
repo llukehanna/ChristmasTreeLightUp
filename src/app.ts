@@ -22,6 +22,7 @@ import { tileAt, tileCenter } from './render/layout';
 import { fillBeatFrame } from './render/beat-frame';
 import { Renderer, type BeatFrame } from './render/renderer';
 import type { SceneChange } from './render/aurora';
+import type { HomeAloneGate, HomeAloneLayerState, TrapKind } from './render/home-alone';
 import { sceneFor, sceneForHour, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
@@ -61,7 +62,7 @@ export interface SecretState {
 }
 
 /** Home Alone mode as the test probe sees it (src/debug.ts). Later tasks add fields. */
-export interface HomeAloneState {
+export interface HomeAloneState extends HomeAloneLayerState {
   on: boolean;
   /** The stage's scene id. */
   scene: string;
@@ -134,6 +135,8 @@ export class App {
   private secret = false;
   /** Home Alone mode (spec 2026-10-14): on exactly while the switch is. */
   private homeAlone = false;
+  /** The Home Alone layer's gates, reused every frame. */
+  private readonly haGate: HomeAloneGate = { running: false, inPlay: false, reduced: false };
   /** Typing "kevin" switches Home Alone mode (src/ui/home-alone.ts). */
   private readonly alone: HomeAloneSwitch;
   /** The Secret station's win ad-lib. */
@@ -677,6 +680,13 @@ export class App {
     // reduced motion too (its gentle pulse).
     const beating = this.secret && this.radio.lightShowActive;
     if (show || beating) this.radio.show.sample(now);
+    if (this.homeAlone) {
+      const g = this.haGate;
+      g.running = !this.paused;
+      g.inPlay = this.live && !this.starting && this.moved && this.winAt === null && !this.paused;
+      g.reduced = this.reduced.matches;
+      this.renderer.homeAlone.step(now, dt, g, this.renderer.layout);
+    }
     this.renderer.frame({
       board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover,
       revealAt: this.run.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
@@ -714,15 +724,18 @@ export class App {
     bindInput(stage, {
       tap: (x, y) => this.tap(x, y),
       hover: (x, y) => {
+        this.renderer.homeAlone.input();
         const [wx, wy] = toWorld(this.camera, x, y);
         this.hover = tileAt(this.renderer.layout, GRID, wx, wy);
         stage.style.cursor = this.hover >= 0 && this.winAt === null ? 'pointer' : 'default';
       },
       leave: () => (this.hover = -1),
       zoom: (f, fx, fy) => {
+        this.renderer.homeAlone.input();
         if (this.winAt === null) this.setCamera(zoomAt(this.camera, f, fx, fy));
       },
       pan: (dx, dy) => {
+        this.renderer.homeAlone.input();
         if (this.winAt === null) this.setCamera(panBy(this.camera, dx, dy));
       },
     });
@@ -734,6 +747,7 @@ export class App {
 
   private tap(x: number, y: number): void {
     const now = performance.now();
+    this.renderer.homeAlone.input();
     this.sfx.unlock();
     if (this.menu.isOpen) {
       this.menu.close();
@@ -826,6 +840,7 @@ export class App {
     if (on && this.egg.isOn) this.egg.off();
     if (how === 'start' || !changed) return;
     this.pausedDrawn = false;
+    if (!on) this.renderer.homeAlone.reset();
     if (!on && this.secret) return; // the head is taking over: its own sweep re-scenes
     // The player's own switch cross-fades (instant under reduced motion); a load or sign-in switches at once.
     const reduced = this.reduced.matches;
@@ -943,6 +958,7 @@ export class App {
     });
     el('pause-btn').addEventListener('click', () => this.pause(true));
     document.addEventListener('keydown', (e) => {
+      this.renderer.homeAlone.input();
       // The settings and radio dialogs handle their own Escape (and mark it handled). Keys never reach the game while
       // the menu is open, or while focus is inside the radio panel; the desktop popover stays open while you play, so
       // with focus back on the game (or nowhere) P still pauses.
@@ -1055,7 +1071,13 @@ export class App {
 
   /** Home Alone mode for the test probe: see HomeAloneState. */
   get homeAloneState(): HomeAloneState {
-    return { on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping };
+    return { on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping, ...this.renderer.homeAlone.state() };
+  }
+
+  /** The probe's way to a trap or gag now (the mode on, motion allowed); false if it couldn't. */
+  forceTrap(kind: TrapKind, at?: [number, number]): boolean {
+    if (!this.homeAlone || this.reduced.matches) return false;
+    return this.renderer.homeAlone.force(kind, performance.now(), this.renderer.layout, at);
   }
 
   debugSolve(): void {

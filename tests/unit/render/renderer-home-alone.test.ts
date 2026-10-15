@@ -6,7 +6,7 @@ import { mulberry32 } from '../../../src/core/rng';
 import { FADE_MS } from '../../../src/render/aurora';
 import { IDENTITY } from '../../../src/render/camera';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
-import { HOME_ALONE, SCENES, type Scene } from '../../../src/render/scenes';
+import { AURORA, HOME_ALONE, SCENES, type Scene } from '../../../src/render/scenes';
 import { VisualState } from '../../../src/render/visual-state';
 
 /** A 2D context that accepts everything. */
@@ -63,4 +63,20 @@ it('the house fades in over FADE_MS, then the sky settles; reduced motion asks f
   expect(r.sweeping).toBe(false);
   r.setScene(SCENES.midnight, { now: 5000, reduced: true, kind: 'fade' });
   expect(r.sweeping).toBe(false);
+});
+
+it("the window gags draw only in the house, faded with it, never during the head's sweep", () => {
+  const { r, frame } = setup(SCENES.midnight);
+  const draw = vi.spyOn(r.homeAlone, 'drawWindow');
+  r.frame(frame(1000));
+  expect(draw).not.toHaveBeenCalled();
+  r.setScene(HOME_ALONE, { now: 2000, reduced: false, kind: 'fade' });
+  r.frame(frame(2000 + FADE_MS / 2));
+  expect(draw.mock.calls.at(-1)?.[2]).toBeCloseTo(0.5);
+  r.frame(frame(2000 + FADE_MS + 10));
+  expect(draw.mock.calls.at(-1)?.[2]).toBe(1);
+  draw.mockClear();
+  r.setScene(AURORA, { now: 5000, reduced: false });
+  r.frame(frame(5100));
+  expect(draw).not.toHaveBeenCalled();
 });

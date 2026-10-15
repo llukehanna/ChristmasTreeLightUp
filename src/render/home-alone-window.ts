@@ -1,0 +1,263 @@
+import { homeWindow, paintMullions, type WindowRect } from './home-alone-room';
+import type { Layout } from './layout';
+
+/** Spec 2026-10-14 §3: silhouettes crossing the window behind the tree, from sprites baked once per layout. */
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+
+/** A figure's height as a fraction of the window's; feet on a track at TRACK of its height. */
+export const FIG_H = 0.4;
+const TRACK = 0.9;
+
+export const PARTY_LOOP_MS = 9000;
+/** Figure 3 is the cardboard cut-out; 0–2 dance. */
+export const CUTOUT = 3;
+export const CUTOUT_MS = 4200;
+export const partyCount = (tier: number): number => (tier >= 3 ? 1 : tier >= 2 ? 2 : 4);
+
+export interface Pose { x: number; lift: number; lean: number }
+
+/** Figure k at party time t: x 0..1 across the window, lift (fraction of its height), lean (rad). Writes `out`. */
+export function partyPose(k: number, t: number, out: Pose): Pose {
+  if (k === CUTOUT) {
+    const u = (t % CUTOUT_MS) / CUTOUT_MS;
+    out.x = 0.18 + 0.64 * (u < 0.5 ? 2 * u : 2 - 2 * u);
+    out.lift = 0;
+    out.lean = 0;
+    return out;
+  }
+  out.x = -0.1 + 1.2 * ((t / PARTY_LOOP_MS + k / 3) % 1);
+  out.lift = 0.05 * Math.abs(Math.sin(t / 170 + k * 1.3));
+  out.lean = 0.14 * Math.sin(t / 340 + k * 1.7);
+  return out;
+}
+
+export const BANDIT_IDLE_MS = 20_000;
+export const BANDIT_EVERY_MS = 60_000;
+export const BANDIT_ENTER_MS = 3000;
+export const BANDIT_PAUSE_MS = 1200;
+export const BANDIT_WALK_MS = 7000;
+export const BANDIT_STOP = 0.42;
+export const BANDIT_GAP = 0.12;
+export const IRON_ODDS = 0.25;
+export const IRON_DROP_MS = 350;
+export const IRON_CRUMPLE_MS = 300;
+export const IRON_FADE_MS = 400;
+export const IRON_WALK_MS = 4800;
+
+export interface BanditPose { xShort: number; xTall: number; ironY: number; crumple: number; alpha: number; done: boolean }
+
+/** The walk `t` ms in: where each is across the window (0..1), the iron's fall (0..1, −1: none), the crumple, the fade. */
+export function banditPose(t: number, iron: boolean, out: BanditPose): BanditPose {
+  let x = -0.2 + (BANDIT_STOP + 0.2) * easeInOut(clamp01(t / BANDIT_ENTER_MS));
+  const leaveAt = BANDIT_ENTER_MS + BANDIT_PAUSE_MS;
+  if (!iron && t > leaveAt) x = BANDIT_STOP + (1.35 - BANDIT_STOP) * easeInOut(clamp01((t - leaveAt) / (BANDIT_WALK_MS - leaveAt)));
+  out.xShort = x;
+  out.xTall = x - BANDIT_GAP;
+  out.ironY = -1;
+  out.crumple = 0;
+  out.alpha = 1;
+  if (iron && t >= BANDIT_ENTER_MS) {
+    const d = t - BANDIT_ENTER_MS;
+    out.ironY = clamp01(d / IRON_DROP_MS);
+    out.crumple = clamp01((d - IRON_DROP_MS) / IRON_CRUMPLE_MS);
+    out.alpha = 1 - clamp01((t - (IRON_WALK_MS - IRON_FADE_MS)) / IRON_FADE_MS);
+  }
+  out.done = t >= (iron ? IRON_WALK_MS : BANDIT_WALK_MS);
+  return out;
+}
+
+/** The idle clock: running time with no input, and since the last walk began. */
+export class BanditTimer {
+  private idle = 0;
+  private since = Number.POSITIVE_INFINITY;
+
+  input(): void {
+    this.idle = 0;
+  }
+
+  /** `dt` ms more of running time; true when a walk should start now (and it counts from here). */
+  step(dt: number, walking: boolean): boolean {
+    this.idle += dt;
+    this.since += dt;
+    if (walking || this.idle < BANDIT_IDLE_MS || this.since < BANDIT_EVERY_MS) return false;
+    this.since = 0;
+    return true;
+  }
+}
+
+type Kind = 'dancerA' | 'dancerB' | 'cutout' | 'short' | 'tall' | 'iron';
+/** `alpha`: the silhouette's opacity, applied after it is filled (no seams where parts overlap). `glow`: its rim light. */
+interface Shape { color: string; alpha: number; glow: string; aspect: number; head?: readonly [number, number, number]; polys: readonly (readonly number[])[] }
+
+const PARTY = '#0e0604';
+const BANDIT = '#05070f';
+/**
+ * Rim light, so the silhouettes read against the night glass and the dark rooftops behind them: the party warm, as if
+ * backlit by the room; the bandits cold, lit by the moon and the snow.
+ */
+const WARM = 'rgba(255,196,120,.6)';
+const COLD = 'rgba(190,210,255,.5)';
+/** Room round each sprite for its rim glow, as a fraction of the figure's height. */
+const PAD = 0.12;
+const FIGURES: Readonly<Record<Kind, Shape>> = {
+  // Arms up in a V.
+  dancerA: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.62, head: [0, -0.88, 0.085], polys: [
+    [-0.11, -0.76, 0.11, -0.76, 0.14, -0.42, 0.09, -0.4, 0.12, 0, 0.04, 0, 0, -0.3, -0.04, 0, -0.12, 0, -0.09, -0.4, -0.14, -0.42],
+    [-0.1, -0.74, -0.28, -0.99, -0.23, -1, -0.06, -0.7], [0.1, -0.74, 0.28, -0.99, 0.23, -1, 0.06, -0.7],
+  ] },
+  // Arms out, a flared dress.
+  dancerB: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.7, head: [0, -0.88, 0.085], polys: [
+    [-0.09, -0.77, 0.09, -0.77, 0.22, -0.28, -0.22, -0.28], [-0.08, -0.3, -0.03, -0.3, -0.04, 0, -0.09, 0], [0.03, -0.3, 0.08, -0.3, 0.09, 0, 0.04, 0],
+    [-0.08, -0.72, -0.34, -0.66, -0.34, -0.62, -0.08, -0.64], [0.08, -0.72, 0.34, -0.66, 0.34, -0.62, 0.08, -0.64],
+  ] },
+  // The cardboard cut-out: a stiff board on an easel leg.
+  cutout: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.36, head: [0, -0.9, 0.08], polys: [[-0.13, -0.8, 0.13, -0.8, 0.13, -0.06, -0.13, -0.06], [-0.02, -0.4, 0.02, -0.4, 0.16, 0, 0.12, 0]] },
+  // Harry: short and stocky, a brimmed hat.
+  short: { color: BANDIT, alpha: 1, glow: COLD, aspect: 0.6, head: [0, -0.8, 0.1], polys: [
+    [-0.16, -0.88, 0.16, -0.88, 0.16, -0.85, -0.16, -0.85], [-0.09, -0.98, 0.09, -0.98, 0.1, -0.88, -0.1, -0.88],
+    [-0.2, -0.7, 0.2, -0.7, 0.22, -0.32, 0.12, -0.3, 0.13, 0, 0.03, 0, 0, -0.22, -0.03, 0, -0.13, 0, -0.12, -0.3, -0.22, -0.32],
+  ] },
+  // Marv: tall and thin, long legs, a beanie.
+  tall: { color: BANDIT, alpha: 1, glow: COLD, aspect: 0.42, head: [0, -0.9, 0.07], polys: [
+    [-0.075, -0.95, 0.075, -0.95, 0.06, -1, -0.06, -1],
+    [-0.1, -0.82, 0.1, -0.82, 0.11, -0.5, 0.07, -0.48, 0.08, 0, 0.02, 0, 0, -0.4, -0.02, 0, -0.08, 0, -0.07, -0.48, -0.11, -0.5],
+  ] },
+  // A clothes iron: sole plate and handle.
+  iron: { color: BANDIT, alpha: 1, glow: COLD, aspect: 1.4, polys: [
+    [-0.7, 0, 0.7, 0, 0.45, -0.45, -0.3, -0.55],
+    [-0.2, -0.55, 0.3, -0.5, 0.3, -0.95, -0.25, -0.95, -0.25, -0.82, 0.17, -0.82, 0.17, -0.62, -0.2, -0.62],
+  ] },
+};
+/** Each sprite's height as a multiple of a party figure's. */
+const SCALE: readonly (readonly [Kind, number])[] = [['dancerA', 1], ['dancerB', 1], ['cutout', 1], ['short', 0.8], ['tall', 1.1], ['iron', 0.22]];
+
+/** Adds the figure's parts to the current path as subpaths. */
+function trace(x: CanvasRenderingContext2D, f: Shape, part: number): void {
+  if (part < f.polys.length) {
+    const p = f.polys[part];
+    x.moveTo(p[0], p[1]);
+    for (let i = 2; i < p.length; i += 2) x.lineTo(p[i], p[i + 1]);
+    x.closePath();
+  } else if (f.head) {
+    x.moveTo(f.head[0] + f.head[2], f.head[1]);
+    x.arc(f.head[0], f.head[1], f.head[2], 0, Math.PI * 2);
+  }
+}
+
+/**
+ * One silhouette, `h` device px tall plus PAD of rim glow all round (feet PAD·h above the bottom edge); null without a
+ * 2D context. Baked once per layout.
+ */
+function makeFigure(kind: Kind, h: number): HTMLCanvasElement | null {
+  const f = FIGURES[kind];
+  const pad = PAD * h;
+  const c = document.createElement('canvas');
+  c.height = Math.round(h + 2 * pad);
+  c.width = Math.max(2, Math.round(h * f.aspect + 2 * pad));
+  const x = c.getContext('2d');
+  if (!x) return null;
+  const parts = f.polys.length + (f.head ? 1 : 0);
+  // The silhouette in one flat tone, part by part, then brought down to its opacity as a whole.
+  x.setTransform(h, 0, 0, h, c.width / 2, h + pad);
+  x.fillStyle = f.color;
+  for (let k = 0; k < parts; k++) {
+    x.beginPath();
+    trace(x, f, k);
+    x.fill();
+  }
+  if (f.alpha < 1) {
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.globalCompositeOperation = 'destination-in';
+    x.fillStyle = `rgba(0,0,0,${f.alpha})`;
+    x.fillRect(0, 0, c.width, c.height);
+  }
+  // The rim glow behind it: the whole figure as one path, filled off the canvas so only its blurred shadow lands here
+  // (shadow offsets are in device px, untouched by the transform).
+  const off = c.width + 16;
+  x.setTransform(h, 0, 0, h, c.width / 2 - off, h + pad);
+  x.globalCompositeOperation = 'destination-over';
+  x.shadowColor = f.glow;
+  x.shadowBlur = 0.6 * pad;
+  x.shadowOffsetX = off;
+  x.fillStyle = '#000';
+  x.beginPath();
+  for (let k = 0; k < parts; k++) trace(x, f, k);
+  x.fill();
+  return c;
+}
+
+export class WindowGags {
+  private builtFor: Layout | null = null;
+  private win: WindowRect | null = null;
+  private figH = 0;
+  private readonly pose: Pose = { x: 0, lift: 0, lean: 0 };
+  private readonly bandit: BanditPose = { xShort: 0, xTall: 0, ironY: -1, crumple: 0, alpha: 1, done: false };
+  private sprites: Partial<Record<Kind, HTMLCanvasElement>> = {};
+
+  /** CSS px transform set by the caller. `walkMs` −1: no walk. Clipped to the glass; the mullions go back over the figures. */
+  draw(c: CanvasRenderingContext2D, L: Layout, alpha: number, tier: number, partyMs: number, walkMs: number, iron: boolean): void {
+    if (this.builtFor !== L) this.build(L);
+    const win = this.win;
+    if (!win || alpha <= 0) return;
+    const track = win.y + TRACK * win.h;
+    c.save();
+    c.beginPath();
+    c.rect(win.x, win.y, win.w, win.h);
+    c.clip();
+    c.globalAlpha = alpha;
+    const n = partyCount(tier);
+    for (let k = 0; k < n; k++) {
+      const p = partyPose(k, partyMs, this.pose);
+      const s = k === CUTOUT ? this.sprites.cutout : k % 2 ? this.sprites.dancerB : this.sprites.dancerA;
+      this.blit(c, s, win.x + p.x * win.w, track - p.lift * this.figH, this.figH, p.lean, 1);
+    }
+    if (walkMs >= 0) {
+      const b = banditPose(walkMs, iron, this.bandit);
+      c.globalAlpha = alpha * b.alpha;
+      this.blit(c, this.sprites.short, win.x + b.xShort * win.w, track, 0.8 * this.figH, 0, 1);
+      // The tall one crumples under the iron: squashed, tipping back.
+      const xt = win.x + b.xTall * win.w;
+      const lean = -0.35 * b.crumple;
+      const tall = 1.1 * this.figH * (1 - 0.55 * b.crumple);
+      this.blit(c, this.sprites.tall, xt, track, 1.1 * this.figH, lean, 1 - 0.55 * b.crumple);
+      if (b.ironY >= 0) {
+        // It falls to the top of his head, and rides it down as he goes.
+        const headX = xt + tall * Math.sin(lean);
+        const headY = track - tall * Math.cos(lean);
+        this.blit(c, this.sprites.iron, headX, win.y + b.ironY * (headY - win.y), 0.22 * this.figH, 0, 1);
+      }
+    }
+    c.globalAlpha = 1;
+    paintMullions(c, win, L.s);
+    c.restore();
+  }
+
+  /** One sprite, feet at (x, y), `h` CSS px tall, leaning `lean` rad about its feet, squashed to `squash` of its height. */
+  private blit(c: CanvasRenderingContext2D, s: HTMLCanvasElement | undefined, x: number, y: number, h: number, lean: number, squash: number): void {
+    if (!s) return;
+    const H = h * (1 + 2 * PAD); // the sprite's rim glow round the figure
+    const w = (H * s.width) / s.height;
+    c.translate(x, y);
+    c.rotate(lean);
+    c.scale(1, squash);
+    c.drawImage(s, -w / 2, -h * (1 + PAD), w, H);
+    c.scale(1, 1 / squash);
+    c.rotate(-lean);
+    c.translate(-x, -y);
+  }
+
+  private build(L: Layout): void {
+    for (const s of Object.values(this.sprites)) if (s) s.width = s.height = 0;
+    this.sprites = {};
+    this.builtFor = L;
+    const win = homeWindow(L);
+    this.win = win;
+    this.figH = FIG_H * win.h;
+    for (const [kind, scale] of SCALE) {
+      const s = makeFigure(kind, Math.max(8, Math.round(this.figH * L.dpr * scale)));
+      if (s) this.sprites[kind] = s;
+    }
+  }
+}
