@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { AglowProbe } from '../../src/debug';
 
 export type W = Window & { __aglow: AglowProbe };
@@ -51,7 +51,9 @@ export async function solveByTapping(page: Page, gapMs = 50): Promise<void> {
 export async function asPlayer(page: Page): Promise<{ email: string; name: string }> {
   const tag = `${Date.now().toString(36).slice(-5)}${Math.floor(Math.random() * 1e4)}`;
   const email = `p${tag}@example.com`;
-  await page.context().addCookies([{ name: 'aglow_fake_as', value: email, url: 'http://localhost:4173' }]);
+  // The configured server's origin (a temporary config may run one on another port).
+  const url = new URL(test.info().project.use.baseURL ?? 'http://localhost:4173').origin;
+  await page.context().addCookies([{ name: 'aglow_fake_as', value: email, url }]);
   return { email, name: `p${tag}` };
 }
 
