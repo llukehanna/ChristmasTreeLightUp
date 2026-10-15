@@ -80,3 +80,13 @@ it("the window gags draw only in the house, faded with it, never during the head
   r.frame(frame(5100));
   expect(draw).not.toHaveBeenCalled();
 });
+
+it('the traps draw over the board only in the house', () => {
+  const { r, frame } = setup(SCENES.midnight);
+  const traps = vi.spyOn(r.homeAlone, 'drawTraps');
+  r.frame(frame(1000));
+  expect(traps).not.toHaveBeenCalled();
+  r.setScene(HOME_ALONE);
+  r.frame(frame(1016));
+  expect(traps).toHaveBeenCalledTimes(1);
+});

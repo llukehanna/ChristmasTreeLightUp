@@ -748,6 +748,8 @@ export class App {
   private tap(x: number, y: number): void {
     const now = performance.now();
     this.renderer.homeAlone.input();
+    // A tap by the tarantula sends it scurrying (spec 2026-10-14 §4); the tap itself goes on to the game unchanged.
+    this.renderer.homeAlone.scare(x, y);
     this.sfx.unlock();
     if (this.menu.isOpen) {
       this.menu.close();

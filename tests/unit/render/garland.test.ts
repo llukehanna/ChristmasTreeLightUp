@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GRID } from '../../../src/core/mask';
-import { garlandGeometry, garlandLitCount } from '../../../src/render/garland';
+import { Garland, KNOCK_MS, garlandGeometry, garlandLitCount, knockLevel } from '../../../src/render/garland';
 import { X, Y, computeLayout } from '../../../src/render/layout';
 
 describe('garlandLitCount', () => {
@@ -60,5 +60,47 @@ describe('garlandGeometry', () => {
   it('is symmetric about the centre', () => {
     const g = garlandGeometry(1440, 60, 58);
     for (let k = 0; k < g.n; k++) expect(g.bulbs[k].x + g.bulbs[g.n - 1 - k].x).toBeCloseTo(1440, 6);
+  });
+});
+
+describe('the paint can knock (Home Alone, spec 2026-10-14 §4)', () => {
+  const lit = () => {
+    const g = new Garland();
+    g.layout(1280, 50, 58);
+    g.update(1, 0);
+    return g;
+  };
+
+  it('knockLevel: dark at the hit, sputtering, back to full by KNOCK_MS, never brighter', () => {
+    expect(knockLevel(0)).toBe(0);
+    expect(knockLevel(-1)).toBe(1);
+    expect(knockLevel(KNOCK_MS)).toBe(1);
+    for (let t = 0; t < KNOCK_MS; t += 5) {
+      expect(knockLevel(t)).toBeGreaterThanOrEqual(0);
+      expect(knockLevel(t)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('only the knocked bulb flickers, and only for KNOCK_MS', () => {
+    const g = lit();
+    g.knock(2, 10_000);
+    expect(g.amount(2, 10_000, null, false)).toBe(0);
+    expect(g.amount(3, 10_000, null, false)).toBe(1);
+    expect(g.amount(2, 10_000 + KNOCK_MS, null, false)).toBe(1);
+  });
+
+  it('pickLit: −1 with nothing lit, else a lit bulb picked by u', () => {
+    const g = new Garland();
+    g.layout(1280, 50, 58);
+    expect(g.pickLit(0.5)).toBe(-1);
+    g.update(0.5, 0);
+    const n = g.geo.n;
+    for (const u of [0, 0.3, 0.99]) {
+      const k = g.pickLit(u);
+      expect(k).toBeGreaterThanOrEqual(0);
+      expect(g.amount(k, 10_000, null, false)).toBeGreaterThan(0);
+    }
+    expect(g.pickLit(0)).not.toBe(g.pickLit(0.99));
+    expect(n).toBeGreaterThan(2);
   });
 });

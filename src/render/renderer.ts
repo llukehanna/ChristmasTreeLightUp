@@ -92,7 +92,7 @@ export class Renderer {
   private readonly confetti = new Confetti();
   readonly garland = new Garland();
   /** Home Alone mode's window gags and traps (spec 2026-10-14). */
-  readonly homeAlone = new HomeAloneLayer();
+  readonly homeAlone = new HomeAloneLayer(this.garland);
   private readonly presents = new Presents();
   /** The star on top, or the star-head egg's sticker (src/render/topper.ts). */
   readonly topper = new Topper();
@@ -424,6 +424,8 @@ export class Renderer {
     // 6. Lit garland glass, foreground snow, then win confetti (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.garland.drawLit(ctx, sc, now, f.winAt, f.reducedMotion);
+    // Home Alone's traps (spec 2026-10-14 §4): over the board, decoration only.
+    if (sc.id === 'home-alone' && !f.reducedMotion) this.homeAlone.drawTraps(ctx, L);
     if (secret) {
       const px = FACE_GARLAND_H * this.garland.geo.size * dpr;
       this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), garlandBob(now, beatAt, beatPower, f.reducedMotion));

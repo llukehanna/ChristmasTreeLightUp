@@ -19,6 +19,16 @@ export const GARLAND_FADE_MS = 170;
 /** Win: every bulb blazes (a wave out from the centre), then settles into a gentle chase. */
 export const BLAZE_MS = 1600;
 
+/** Home Alone's paint can (spec 2026-10-14 §4): a knocked bulb sputters dark and recovers within this long. */
+export const KNOCK_MS = 600;
+
+/** A knocked bulb's brightness factor `t` ms after the hit: dark, two sputters, then back up to full. */
+export function knockLevel(t: number): number {
+  if (t < 0 || t >= KNOCK_MS) return 1;
+  if (t < 380) return Math.floor(t / 70) % 2 === 0 ? 0 : 0.3;
+  return (t - 380) / (KNOCK_MS - 380);
+}
+
 export interface GarlandBulb {
   /** Where the socket clips onto the wire (CSS px). */
   x: number;
@@ -129,6 +139,8 @@ export class Garland {
   private lastCount = -1;
   /** Secret mode: the bulb whose glass is Luke's head (spec 2026-10-08 secret mode §3), or -1. */
   face = -1;
+  private knockK = -1;
+  private knockAt = Number.NEGATIVE_INFINITY;
 
   layout(w: number, s: number, chromeBottom: number): void {
     const prev = this.onAt;
@@ -159,6 +171,27 @@ export class Garland {
 
   /** Brightness of bulb k: 0 = dark glass, 1 = lit, >1 = the ignite pop, the win blaze or the chase peak. */
   amount(k: number, now: number, winAt: number | null, reduced: boolean): number {
+    const a = this.level(k, now, winAt, reduced);
+    return k === this.knockK ? a * knockLevel(now - this.knockAt) : a;
+  }
+
+  /** The paint can hit bulb k (spec 2026-10-14 §4): it flickers dark for KNOCK_MS. */
+  knock(k: number, now: number): void {
+    this.knockK = k;
+    this.knockAt = now;
+  }
+
+  /** A lit bulb picked by `u` (0..1), or −1 with none lit. No allocation. */
+  pickLit(u: number): number {
+    let n = 0;
+    for (let k = 0; k < this.geo.n; k++) if (this.onAt[k] >= 0) n++;
+    if (n === 0) return -1;
+    let i = Math.min(n - 1, Math.floor(u * n));
+    for (let k = 0; k < this.geo.n; k++) if (this.onAt[k] >= 0 && i-- === 0) return k;
+    return -1;
+  }
+
+  private level(k: number, now: number, winAt: number | null, reduced: boolean): number {
     const on = this.onAt[k];
     if (on < 0) return reduced ? 0 : Math.max(0, 1 - (now - this.offAt[k]) / GARLAND_FADE_MS);
     if (reduced) return 1;
