@@ -104,6 +104,36 @@ describe('api client', () => {
     expect(fetch.mock.calls.map((c) => c[1].cache)).toEqual(['no-cache', 'default', 'no-cache', 'no-cache', 'default', 'default']);
   });
 
+  it('a write landing while a board is in flight still revalidates the next one; so does a board that failed', async () => {
+    let release = (): void => {};
+    const held = new Promise<void>((r) => (release = r));
+    const fetch = vi.fn(async (url: string, _init: RequestInit) => {
+      if (url.startsWith('/api/board') && fetch.mock.calls.length === 2) await held;
+      return Response.json({});
+    });
+    vi.stubGlobal('fetch', fetch);
+    await api.finish('g', []); // call 1
+    const inFlight = api.board('all'); // call 2: revalidates, held
+    await Promise.resolve();
+    await api.finish('g', []); // call 3, while the board is in flight
+    release();
+    await inFlight;
+    await api.board('all');
+    await api.board('all');
+    expect(fetch.mock.calls.map((c) => c[1].cache)).toEqual(['no-store', 'no-cache', 'no-store', 'no-cache', 'default']);
+
+    const ok = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', ok);
+    await api.finish('g', []);
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('offline'))));
+    await expect(api.board('week')).rejects.toBeInstanceOf(ApiError);
+    vi.stubGlobal('fetch', ok);
+    ok.mockClear();
+    await api.board('week');
+    await api.board('week');
+    expect(ok.mock.calls.map((c) => c[1].cache)).toEqual(['no-cache', 'default']);
+  });
+
   it('links to sign-in with a return path', () => {
     expect(signInHref('/?x=1')).toBe('/api/auth/google?return=%2F%3Fx%3D1');
   });

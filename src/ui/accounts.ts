@@ -30,8 +30,12 @@ export class Accounts {
   private readonly menu: AccountMenu;
   private tab: ListTab = 'board';
   /** The leaderboard's window (spec 2026-10-14 §4), as chosen last in this browser; each window keeps its own answer. */
-  private win: BoardWindow = loadBoardWindow();
+  private chosen: BoardWindow = loadBoardWindow();
+  /** The window on screen: the chosen one, or All time when the results tag's all-time rank opened the board. */
+  private win: BoardWindow = this.chosen;
   private readonly boards: Record<BoardWindow, Loadable<BoardResponse>> = { today: { status: 'loading' }, week: { status: 'loading' }, all: { status: 'loading' } };
+  /** The local day Today's and This week's answers are for: on a new day they start again from loading. */
+  private boardsDay = '';
   private games: Loadable<MyGamesResponse> = { status: 'loading' };
   private stats: Loadable<AccountStats> = { status: 'loading' };
   /** Bumped by each stats load and each session change: only the newest answer is kept. */
@@ -99,10 +103,22 @@ export class Accounts {
     if (user) this.sheet.open(deleteView(user), from);
   }
 
-  openBoard(from?: HTMLElement | null): void {
+  /** The leaderboard on the window chosen last, or on `win` (the results tag's all-time rank) without changing that choice. */
+  openBoard(from?: HTMLElement | null, win: BoardWindow = this.chosen): void {
     this.tab = 'board';
+    this.win = win;
+    this.newBoardDay();
     this.sheet.open(this.listNow(), from);
     void this.loadBoard();
+  }
+
+  /** Past midnight here, Today's and This week's answers are yesterday's: they go back to loading. */
+  private newBoardDay(): void {
+    const day = localDay(new Date());
+    if (day === this.boardsDay) return;
+    this.boardsDay = day;
+    this.boards.today = { status: 'loading' };
+    this.boards.week = { status: 'loading' };
   }
 
   openGames(from?: HTMLElement | null): void {
@@ -121,14 +137,21 @@ export class Accounts {
     if (v && !v.card) this.sheet.update(this.listNow());
   }
 
-  /** The shown window's board, into that window's own slot: an answer arriving after a switch never shows in another. */
+  /**
+   * The shown window's board, into that window's own slot: an answer arriving after a switch never shows in another,
+   * and one for Today or This week asked for before midnight here is dropped once the day has moved on.
+   */
   private async loadBoard(): Promise<void> {
     const win = this.win;
+    const day = this.boardsDay;
+    let next: Loadable<BoardResponse> | null;
     try {
-      this.boards[win] = { status: 'ready', data: await api.board(win) };
+      next = { status: 'ready', data: await api.board(win) };
     } catch {
-      if (this.boards[win].status !== 'ready') this.boards[win] = { status: 'error' };
+      next = this.boards[win].status === 'ready' ? null : { status: 'error' };
     }
+    if (win !== 'all' && day !== this.boardsDay) return;
+    if (next) this.boards[win] = next;
     this.refreshList();
   }
 
@@ -277,6 +300,7 @@ export class Accounts {
       case 'tab-board':
       case 'tab-games':
         this.tab = act === 'tab-board' ? 'board' : 'games';
+        if (this.tab === 'board') this.newBoardDay();
         this.sheet.update(this.listNow());
         this.sheet.body.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
         this.loadTab();
@@ -284,8 +308,9 @@ export class Accounts {
       case 'win-today':
       case 'win-week':
       case 'win-all':
-        this.win = act === 'win-today' ? 'today' : act === 'win-week' ? 'week' : 'all';
+        this.win = this.chosen = act === 'win-today' ? 'today' : act === 'win-week' ? 'week' : 'all';
         saveBoardWindow(this.win);
+        this.newBoardDay();
         this.sheet.update(this.listNow());
         this.sheet.body.querySelector<HTMLElement>('.acct-wins [aria-pressed="true"]')?.focus({ preventScroll: true });
         void this.loadBoard();

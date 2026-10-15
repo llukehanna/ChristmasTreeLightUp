@@ -161,7 +161,16 @@ async function fifty(userId: number, at: number): Promise<void> {
 const windowed = async (q: string, cookie?: string): Promise<BoardResponse> => (await (await call(env, 'GET', `/api/board?${q}`, { cookie })).json()) as BoardResponse;
 const msOf = (b: BoardResponse): number[] => b.rows.map((r) => r.ms);
 
+/** The server's clock at noon UTC on `day` (a viewer's today must be within a day of the server's). */
+const serverOn = (day: string): void => void vi.setSystemTime(new Date(`${day}T12:00:00Z`));
+
 describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    serverOn('2026-10-14');
+  });
+  afterEach(() => vi.useRealTimers());
+
   // 2026-10-14 is a Wednesday; its week starts Monday 2026-10-12.
   it("today and this week start at the viewer's local midnight and Monday, in a zone far from UTC", async () => {
     const ana = await user('ana@example.com', 'Meridian');
@@ -191,10 +200,13 @@ describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
     const ana = await user('ana@example.com', 'Meridian');
     await run(ana, 10_000, Date.UTC(2026, 9, 12)); // Monday's first ms
     await run(ana, 20_000, Date.UTC(2026, 9, 12) - 1); // Sunday's last
+    serverOn('2026-10-12');
     const monday = await windowed('window=week&today=2026-10-12&tz=0');
     expect(msOf(monday)).toEqual([10_000]);
     expect(msOf(await windowed('window=today&today=2026-10-12&tz=0'))).toEqual([10_000]);
+    serverOn('2026-10-18');
     expect(msOf(await windowed('window=week&today=2026-10-18&tz=0'))).toEqual([10_000]);
+    serverOn('2026-10-11');
     expect(msOf(await windowed('window=week&today=2026-10-11&tz=0'))).toEqual([10_000, 20_000]);
   });
 
@@ -254,6 +266,24 @@ describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
     const odd = await call(env, 'GET', '/api/board?window=month&today=2026-10-14&tz=0');
     expect(odd.status).toBe(400);
     expect(await odd.json()).toEqual({ error: 'invalid', message: 'window must be today, week or all.' });
+  });
+
+  it("a window's day must be within a day of the server's and its offset a whole quarter hour: no window keys made up", async () => {
+    // Every real viewer's local date is the server's UTC date, or one either side (UTC-12 to UTC+14).
+    for (const ok of ['today=2026-10-13&tz=720', 'today=2026-10-15&tz=-840', 'today=2026-10-14&tz=-345', 'today=2026-10-14&tz=570']) {
+      for (const w of ['today', 'week']) expect((await call(env, 'GET', `/api/board?window=${w}&${ok}`)).status).toBe(200);
+    }
+    for (const bad of ['today=2026-10-12&tz=0', 'today=2026-10-16&tz=0', 'today=2025-10-14&tz=0', 'today=2026-10-14&tz=7', 'today=2026-10-14&tz=-50', 'today=2026-10-14&tz=839']) {
+      for (const w of ['today', 'week']) {
+        const res = await call(env, 'GET', `/api/board?window=${w}&${bad}`);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'invalid', message: "today must be within a day of the server's and tz a whole quarter hour." });
+      }
+    }
+    // All time takes no calendar at all; Your games' stats keep their own rules (any real day, any whole minute).
+    expect((await call(env, 'GET', '/api/board?window=all&today=2020-01-01&tz=7')).status).toBe(200);
+    await user('ana@example.com', 'Meridian');
+    expect((await call(env, 'GET', '/api/me/stats?today=2020-01-01&tz=7', { cookie: await signIn(env, 'ana@example.com') })).status).toBe(200);
   });
 
   it('reads a window through the board index too', async () => {
@@ -332,21 +362,30 @@ describe('the board cache (isolate memory, BOARD_TTL_MS)', () => {
     expect(await cachedTopAndTotal(db, t + BOARD_TTL_MS + 5, 2000)).toMatchObject({ total: 2 });
   });
 
-  it("a run joining the board in this isolate re-reads every window's top and counts it in every cached total", async () => {
+  it("runs joining the board in this isolate re-read every window's top, and count in each cached total they fall in", async () => {
     const ana = await user('ana@example.com', 'Meridian');
     await run(ana, 50_000, 1000);
     await run(ana, 40_000, 5000);
     const t = 1_800_000_000_000;
     await cachedTopAndTotal(db, t);
     await cachedTopAndTotal(db, t, 2000);
+    await cachedTopAndTotal(db, t, 7000);
+    // A claim of two runs finished signed out earlier: one before the window from 2000, one in it; neither in 7000's.
     await run(ana, 30_000, 6000);
-    boardGrew(1);
+    await run(ana, 60_000, 1500);
+    boardGrew([6000, 1500]);
     const c = counted();
-    expect(await cachedTotal(c.db, t + 1)).toBe(3); // bumped, not counted again
+    expect(await cachedTotal(c.db, t + 1)).toBe(4); // bumped, not counted again
+    expect(await cachedTotal(c.db, t + 1, 2000)).toBe(2);
+    expect(await cachedTotal(c.db, t + 1, 7000)).toBe(0);
     expect(c.n()).toBe(0);
-    expect((await cachedTopAndTotal(c.db, t + 1)).top.map((r) => r.ms)).toEqual([30_000, 40_000, 50_000]);
+    expect((await cachedTopAndTotal(c.db, t + 1)).top.map((r) => r.ms)).toEqual([30_000, 40_000, 50_000, 60_000]);
     expect(await cachedTopAndTotal(c.db, t + 1, 2000)).toMatchObject({ top: [{ ms: 30_000 }, { ms: 40_000 }], total: 2 });
-    expect(c.n()).toBe(4); // each window's top again (with its total, in one batch)
+    expect(await cachedTopAndTotal(c.db, t + 1, 7000)).toMatchObject({ top: [], total: 0 });
+    expect(c.n()).toBe(6); // each window's top again (with its total, in one batch)
+    boardGrew([]);
+    expect(await cachedTopAndTotal(c.db, t + 2)).toMatchObject({ total: 4 });
+    expect(c.n()).toBe(6); // nothing joined: nothing to re-read
   });
 
   it(`holds at most ${BOARD_CACHE_WINDOWS} windows, dropping the oldest`, async () => {

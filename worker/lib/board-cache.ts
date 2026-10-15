@@ -33,15 +33,17 @@ export function resetBoardCache(): void {
 }
 
 /**
- * Runs just joined the board in this isolate (a ranked finish or claim by a named player): every window's top BOARD_TOP
- * are read again next time, and every cached total counts them now (a run finished now is in every current window),
- * so the finish's own "#r of total" includes its run.
+ * Runs just joined the board in this isolate (a ranked finish, or a claim, by a named player), given by their
+ * finished_at: every window's top BOARD_TOP are read again next time, and each cached total counts the ones in its
+ * window now, so the finish's own "#r of total" includes its run. A claimed run keeps its older finish, so it may fall
+ * before a window's start.
  */
-export function boardGrew(added: number): void {
-  if (added <= 0) return;
-  for (const e of windows.values()) {
+export function boardGrew(finishedAt: readonly number[]): void {
+  if (finishedAt.length === 0) return;
+  for (const [since, e] of windows) {
     e.top = null;
-    if (e.total) e.total = { n: e.total.n + added, at: e.total.at };
+    const added = finishedAt.filter((at) => at >= since).length;
+    if (e.total && added) e.total = { n: e.total.n + added, at: e.total.at };
   }
 }
 

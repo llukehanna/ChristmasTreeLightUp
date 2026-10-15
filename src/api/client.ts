@@ -67,11 +67,15 @@ async function changesBoard<T>(p: Promise<T>): Promise<T> {
 }
 /** One window of the board (spec 2026-10-14): today and this week are this browser's day and zone, as myStats sends them. */
 async function board(win: BoardWindow = 'all', now: Date = new Date()): Promise<BoardResponse> {
-  const revalidate = staleWindows.has(win);
   const path = win === 'all' ? '/api/board?window=all' : `/api/board?window=${win}&today=${localDay(now)}&tz=${now.getTimezoneOffset()}`;
-  const r = await request<BoardResponse>('GET', path, undefined, TIMEOUT_MS, revalidate ? 'no-cache' : 'default');
-  if (revalidate) staleWindows.delete(win);
-  return r;
+  // Cleared before asking, so a write landing while this is in flight marks the window again; put back if this fails.
+  const revalidate = staleWindows.delete(win);
+  try {
+    return await request<BoardResponse>('GET', path, undefined, TIMEOUT_MS, revalidate ? 'no-cache' : 'default');
+  } catch (e) {
+    if (revalidate) staleWindows.add(win);
+    throw e;
+  }
 }
 
 /** Everything but the board is never cached: writes, and reads that are yours alone. */

@@ -48,6 +48,7 @@ beforeEach(() => {
   accounts = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
 });
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = '';
 });
 
@@ -138,4 +139,47 @@ it('the leaderboard opens on Today; a window button fetches that window, shows i
   const again = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
   again.openBoard();
   expect(calls.board).toHaveBeenLastCalledWith('all');
+});
+
+it("the results tag's rank opens All time (its numbers are all-time ones) without changing the remembered window", () => {
+  localStorage.setItem('aglow.boardWindow', 'week');
+  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  fresh.openBoard(null, 'all');
+  expect(calls.board).toHaveBeenLastCalledWith('all');
+  expect(pressedWindow()).toBe('All time');
+  expect(localStorage.getItem('aglow.boardWindow')).toBe('week');
+  // The account menu's Leaderboard still opens on the window chosen last.
+  fresh.openBoard();
+  expect(calls.board).toHaveBeenLastCalledWith('week');
+});
+
+it("a new local day: Today and This week start again from Loading, never yesterday's runs; All time keeps its copy", async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 9, 14, 23, 50));
+  const note = (): string | null | undefined => document.querySelector('.acct-body .acct-note')?.textContent;
+  calls.board.mockResolvedValueOnce({ rows: [row('Comet', 9_000)], total: 1, you: null }).mockResolvedValueOnce({ rows: [row('Nova', 8_000)], total: 1, you: null });
+  accounts.openBoard();
+  await tick();
+  clickAct('win-all');
+  await tick();
+  expect(names()).toEqual(['Nova']);
+  // The same day: Today's copy shows at once while it is fetched again (an answer that comes back after midnight).
+  const late = deferred<BoardResponse>();
+  calls.board.mockReturnValueOnce(late.promise);
+  clickAct('win-today');
+  expect(names()).toEqual(['Comet']);
+  vi.setSystemTime(new Date(2026, 9, 15, 0, 5));
+  const fresh = deferred<BoardResponse>();
+  calls.board.mockReturnValueOnce(fresh.promise);
+  accounts.openBoard();
+  expect(note()).toBe('Loading…');
+  late.resolve({ rows: [row('Comet', 9_000)], total: 1, you: null }); // asked for yesterday: dropped
+  await tick();
+  expect(note()).toBe('Loading…');
+  fresh.resolve({ rows: [], total: 0, you: null });
+  await tick();
+  expect(note()).toBe('No runs yet today — be the first.');
+  calls.board.mockReturnValueOnce(new Promise(() => undefined));
+  clickAct('win-all');
+  expect(names()).toEqual(['Nova']);
 });

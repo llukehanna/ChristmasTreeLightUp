@@ -568,7 +568,7 @@ export class App {
     this.outcome = o;
     const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning };
     renderRibbon(el('results'), o && ribbonModel(o, this.session.current, ctx), {
-      board: () => this.accounts.openBoard(),
+      board: () => this.accounts.openBoard(null, 'all'), // the rosette's rank and total are all-time ones
       save: () => this.saveRun(),
       retry: () => this.retry(),
     });

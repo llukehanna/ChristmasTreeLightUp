@@ -141,7 +141,7 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
     throw notFound();
   }
   const done: FinishedGame = { ...game, finished_at: receivedAt, ms: verdict.ms, ranked, unranked_reason: reason };
-  boardGrew(onBoard(done) ? 1 : 0);
+  boardGrew(onBoard(done) ? [done.finished_at] : []);
   return json(await resultOf(env, done));
 }
 
@@ -172,7 +172,7 @@ export async function claimGames(req: Request, env: AppEnv): Promise<Response> {
       .run();
     if (res.meta.changes > 0) claimed.push(owned);
   }
-  boardGrew(claimed.filter(onBoard).length);
+  boardGrew(claimed.filter(onBoard).map((g) => g.finished_at));
   // Results after every claim, so best and newBest reflect the whole batch.
   const results = await resultsOf(env, user.id, claimed);
   return json({ results } satisfies ClaimResponse);
