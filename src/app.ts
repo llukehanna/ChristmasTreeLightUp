@@ -765,8 +765,6 @@ export class App {
   private tap(x: number, y: number): void {
     const now = performance.now();
     this.renderer.homeAlone.input();
-    // A tap by the tarantula sends it scurrying (spec 2026-10-14 §4); the tap itself goes on to the game unchanged.
-    this.renderer.homeAlone.scare(x, y);
     this.sfx.unlock();
     if (this.menu.isOpen) {
       this.menu.close();
@@ -786,6 +784,9 @@ export class App {
       this.resume();
       return;
     }
+    // A tap by the tarantula sends it scurrying (spec 2026-10-14 §4); the tap itself goes on to the game unchanged. Not
+    // a tap that only closed a menu or resumed from pause: that one never reached the stage.
+    this.renderer.homeAlone.scare(x, y);
     const [wx, wy] = toWorld(this.camera, x, y);
     // The star is not a tile: its taps go to the egg and never reach the board, the log or the clock.
     if (onStar(this.renderer.layout, wx, wy)) {
@@ -858,7 +859,8 @@ export class App {
   private setHomeAlone(on: boolean, how: 'start' | 'loud' | 'quiet'): void {
     const changed = on !== this.homeAlone;
     this.homeAlone = on;
-    if (on && this.egg.isOn) this.egg.off();
+    // Also while the account's head is still loading (not on yet): off() drops it and tells the account.
+    if (on) this.egg.off();
     if (on) this.sounds.preload();
     this.results.setLine(on ? HOME_ALONE_LINE : null); // a tag already up follows the mode (its share image re-renders with the scene)
     if (how === 'start' || !changed) return;
@@ -946,6 +948,11 @@ export class App {
     this.refreshShare();
   }
 
+  /** A run in progress in the house: the moment for "Kevin!". */
+  private runInHouse(): boolean {
+    return this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null;
+  }
+
   private bindLifecycle(): void {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden || !this.live) return;
@@ -959,11 +966,17 @@ export class App {
       }
     });
     // "Kevin!" (spec 2026-10-14 §5): back after ≥ 3 s away while a run is in progress.
+    // The context is resumed first (a phone's may be suspended in the background), and the call dropped if, by the time
+    // it is ready, the tab is hidden again or the run is over.
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.kevin.hide(Date.now());
-      else if (this.kevin.show(Date.now(), this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null)) {
-        this.sounds.play('kevin', () => this.homeAlone);
+      const now = Date.now();
+      if (document.hidden) {
+        this.kevin.hide(now);
+        return;
       }
+      const board = this.board;
+      const still = () => !document.hidden && this.board === board && this.runInHouse();
+      void this.kevin.show(now, this.runInHouse(), () => this.sounds.playResumed('kevin', still));
     });
     addEventListener('pagehide', () => {
       if (!this.live || this.starting || this.winAt !== null) return;

@@ -151,12 +151,17 @@ export class StarEgg {
 
   /**
    * Home Alone took over (spec 2026-10-14 §1): back to the star, quietly (no jingle, no toast), and kept so in this
-   * browser and on the account. A turn to the head still waiting for the sticker is dropped.
+   * browser and on the account. A turn to the head still waiting for the sticker is dropped, and so is the account's
+   * head still loading on a load or sign-in: the account is told it is off, or it would come back on the next load.
    */
   off(): void {
     this.seq++;
     this.turning = false;
     if (this.on) this.apply(false, this.time(), 'kept');
+    else if (this.session.current?.starHead) {
+      this.h.save(false);
+      this.send(false);
+    }
   }
 
   private time(): number {

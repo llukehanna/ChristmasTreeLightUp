@@ -465,6 +465,28 @@ describe('StarEgg', () => {
       expect(egg.isOn).toBe(true);
     });
 
+    it("the account's head still waiting for its sticker: dropped, and the account and this browser told it is off", async () => {
+      const { h, topper } = hooks();
+      let done!: (ok: boolean) => void;
+      topper.load.mockImplementation(() => new Promise<boolean>((r) => (done = r)));
+      const session = new Session();
+      const egg = new StarEgg(session, h, false);
+      session.set(user(true)); // the account says head: the sticker starts loading
+      expect(egg.isOn).toBe(false);
+      egg.off(); // kevin typed meanwhile
+      done(true);
+      await flush();
+      expect(egg.isOn).toBe(false);
+      expect(topper.flip).not.toHaveBeenCalled();
+      expect(saved).toEqual([false]);
+      expect(puts).toEqual([false]);
+      expect((session.current as User).starHead).toBe(false);
+      // The session's copy is off now: the same user again starts nothing.
+      session.set(session.current as User);
+      await flush();
+      expect(egg.isOn).toBe(false);
+    });
+
     it('with the star already up it does nothing', () => {
       const { h, topper } = hooks();
       const egg = new StarEgg(new Session(), h, false);

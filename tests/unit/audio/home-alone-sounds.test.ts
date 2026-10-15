@@ -106,22 +106,107 @@ describe('HomeAloneSounds', () => {
     expect(started).toHaveLength(0);
     expect(s.played['filthy-animal']).toBe(0);
   });
+
+  it('play() says whether it asked: not with the effects volume at 0, no context, or a clip that failed under a minute ago', async () => {
+    const { s, bus, fetchFn } = rig(0.8, false);
+    expect(s.play('scream')).toBe(true);
+    await settle();
+    expect(s.play('scream')).toBe(false); // just failed: left alone, nothing fetched
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(s.asked.scream).toBe(1);
+    bus.volume = 0;
+    expect(s.play('kevin')).toBe(false);
+    bus.volume = 0.8;
+    bus.ctx = null;
+    expect(s.play('kevin')).toBe(false);
+  });
+});
+
+describe('HomeAloneSounds.playResumed (Kevin!, back from the background)', () => {
+  function suspended(resumes: 'run' | 'stay' | 'reject') {
+    const r = rig();
+    const ctx = r.bus.ctx as unknown as { state: string; resume: () => Promise<void> };
+    ctx.state = 'suspended';
+    ctx.resume = vi.fn(async () => {
+      if (resumes === 'reject') throw new Error('not allowed');
+      if (resumes === 'run') ctx.state = 'running';
+    });
+    return { ...r, ctx };
+  }
+
+  it('a running context plays at once', async () => {
+    const r = rig();
+    (r.bus.ctx as unknown as { state: string }).state = 'running';
+    expect(await r.s.playResumed('kevin', () => true)).toBe(true);
+    await vi.waitFor(() => expect(r.started).toHaveLength(1));
+  });
+
+  it('a suspended context is resumed first, then the clip plays', async () => {
+    const { s, ctx, started } = suspended('run');
+    expect(await s.playResumed('kevin', () => true)).toBe(true);
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(started).toHaveLength(1));
+  });
+
+  it("skipped when the context can't run (resume refused or still suspended), or the moment passed while it resumed", async () => {
+    for (const how of ['reject', 'stay'] as const) {
+      const { s, started } = suspended(how);
+      expect(await s.playResumed('kevin', () => true)).toBe(false);
+      expect(s.asked.kevin).toBe(0);
+      await settle();
+      expect(started).toHaveLength(0);
+    }
+    const { s } = suspended('run');
+    expect(await s.playResumed('kevin', () => false)).toBe(false);
+    expect(s.asked.kevin).toBe(0);
+  });
+
+  it('nothing resumed or asked with the effects volume at 0', async () => {
+    const { s, bus, ctx } = suspended('run');
+    bus.volume = 0;
+    expect(await s.playResumed('kevin', () => true)).toBe(false);
+    expect(ctx.resume).not.toHaveBeenCalled();
+  });
 });
 
 describe('KevinCall', () => {
-  it('"Kevin!" only back from ≥ 3 s away, with a run in progress, at most once per 30 s', () => {
+  const yes = () => true;
+  it('"Kevin!" only back from ≥ 3 s away, with a run in progress, at most once per 30 s', async () => {
     const k = new KevinCall();
-    expect(k.show(1000, true)).toBe(false); // never hidden
+    expect(await k.show(1000, true, yes)).toBe(false); // never hidden
     k.hide(0);
-    expect(k.show(KEVIN_AWAY_MS - 1, true)).toBe(false);
+    expect(await k.show(KEVIN_AWAY_MS - 1, true, yes)).toBe(false);
     k.hide(10_000);
-    expect(k.show(10_000 + KEVIN_AWAY_MS, false)).toBe(false); // no run in progress
+    expect(await k.show(10_000 + KEVIN_AWAY_MS, false, yes)).toBe(false); // no run in progress
     k.hide(20_000);
-    expect(k.show(20_000 + KEVIN_AWAY_MS, true)).toBe(true);
+    expect(await k.show(20_000 + KEVIN_AWAY_MS, true, yes)).toBe(true);
     const last = 20_000 + KEVIN_AWAY_MS;
     k.hide(last + 1000);
-    expect(k.show(last + 1000 + 5000, true)).toBe(false); // within 30 s of the last
+    expect(await k.show(last + 1000 + 5000, true, yes)).toBe(false); // within 30 s of the last
     k.hide(last + KEVIN_EVERY_MS);
-    expect(k.show(last + KEVIN_EVERY_MS + KEVIN_AWAY_MS, true)).toBe(true);
+    expect(await k.show(last + KEVIN_EVERY_MS + KEVIN_AWAY_MS, true, yes)).toBe(true);
+  });
+
+  it('only a call actually asked for spends the 30 s: one that was not asked leaves the next return free', async () => {
+    const k = new KevinCall();
+    const ask = vi.fn(() => false);
+    k.hide(0);
+    expect(await k.show(KEVIN_AWAY_MS, true, ask)).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(1);
+    k.hide(KEVIN_AWAY_MS + 1000);
+    expect(await k.show(2 * KEVIN_AWAY_MS + 1000, true, async () => true)).toBe(true);
+  });
+
+  it('a call still being asked (the context resuming) is not asked again by a quick second return', async () => {
+    const k = new KevinCall();
+    let answer!: (asked: boolean) => void;
+    k.hide(0);
+    const first = k.show(KEVIN_AWAY_MS, true, () => new Promise<boolean>((r) => (answer = r)));
+    k.hide(KEVIN_AWAY_MS + 10);
+    const ask = vi.fn(() => true);
+    expect(await k.show(2 * KEVIN_AWAY_MS + 10, true, ask)).toBe(false);
+    expect(ask).not.toHaveBeenCalled();
+    answer(true);
+    expect(await first).toBe(true);
   });
 });

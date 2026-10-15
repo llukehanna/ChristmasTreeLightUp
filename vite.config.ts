@@ -137,13 +137,14 @@ function devMusic(): Plugin {
         const effect = /^\/effects\/home-alone\/(scream|kevin|filthy-animal)\.mp3$/.exec(url);
         if (effect) {
           const file = resolve(clipsDir, `${effect[1]}.mp3`);
-          if (!existsSync(file) || !statSync(file).isFile()) {
+          const st = statSync(file, { throwIfNoEntry: false });
+          if (!st?.isFile()) {
             res.statusCode = 404;
             res.end();
             return;
           }
           res.setHeader('Content-Type', 'audio/mpeg');
-          res.setHeader('Content-Length', String(statSync(file).size));
+          res.setHeader('Content-Length', String(st.size));
           pipeline(createReadStream(file), res, () => {});
           return;
         }

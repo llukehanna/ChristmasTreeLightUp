@@ -175,6 +175,64 @@ describe('HomeAloneSwitch', () => {
     expect(saved).toEqual([false]);
   });
 
+  it('typed before the first /api/me answers: the toggle stands, and the account is told once it arrives', async () => {
+    const { h, mode } = hooks();
+    const session = new Session(); // undefined: the first /api/me is still out
+    const s = new HomeAloneSwitch(session, h, false);
+    type(s);
+    expect(puts).toEqual([]);
+    const late = user(false);
+    session.set(late);
+    await flush();
+    expect(s.isOn).toBe(true);
+    expect(mode).toHaveBeenLastCalledWith(true, 'quiet');
+    expect(mode).not.toHaveBeenCalledWith(false, 'quiet');
+    expect(puts).toEqual([true]);
+    expect(late.homeAlone).toBe(true);
+    // Only that first answer: a later sign-in's account wins again.
+    session.set(user(false));
+    await flush();
+    expect(s.isOn).toBe(false);
+    expect(puts).toEqual([true]);
+  });
+
+  it('typed off before the first /api/me answers: the account that had it on is told off', async () => {
+    const { h } = hooks();
+    const session = new Session();
+    const s = new HomeAloneSwitch(session, h, true);
+    type(s);
+    session.set(user(true));
+    await flush();
+    expect(s.isOn).toBe(false);
+    expect(puts).toEqual([false]);
+  });
+
+  it('typed on before the first /api/me answers, with the head on the account: the house stays and the head is turned off', async () => {
+    const { h, mode } = hooks();
+    const session = new Session();
+    const s = new HomeAloneSwitch(session, h, false);
+    type(s);
+    session.set(user(false, true));
+    await flush();
+    expect(s.isOn).toBe(true);
+    // The app turns the head off on every switch-on report (StarEgg.off()), so the house is reported again.
+    expect(mode).toHaveBeenLastCalledWith(true, 'quiet');
+    expect(puts).toEqual([true]);
+  });
+
+  it('typed before the first /api/me finds no one signed in: kept here, nothing sent', async () => {
+    const { h } = hooks();
+    const session = new Session();
+    const s = new HomeAloneSwitch(session, h, false);
+    type(s);
+    session.set(null);
+    await flush();
+    expect(s.isOn).toBe(true);
+    expect(puts).toEqual([]);
+    session.set(user(false)); // a sign-in later: the account wins as ever
+    expect(s.isOn).toBe(false);
+  });
+
   it('an account answer that predates our PUT never overwrites the view', async () => {
     const { h } = hooks();
     const session = new Session();

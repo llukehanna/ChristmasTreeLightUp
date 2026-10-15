@@ -40,10 +40,13 @@ export class HomeAloneSounds {
     for (const c of HOME_ALONE_CLIPS) this.clips[c].preload(clipUrl(c, this.base), b.ctx);
   }
 
-  /** Plays `clip` once if `still()` holds when it is ready; silence with the effects volume at 0, no context, or no clip. */
-  play(clip: HomeAloneClip, still: () => boolean = () => true): void {
+  /**
+   * Plays `clip` once if `still()` holds when it is ready. Returns whether it asked for it: not with the effects volume
+   * at 0, no context, or a clip whose fetch failed less than a minute ago (silence, and nothing fetched).
+   */
+  play(clip: HomeAloneClip, still: () => boolean = () => true): boolean {
     const b = this.bus();
-    if (!b.ctx || !b.out || b.volume <= 0) return;
+    if (!b.ctx || !b.out || !this.available(clip, b)) return false;
     this.asked[clip]++;
     const sound = this.clips[clip];
     void sound.play(clipUrl(clip, this.base), b.ctx, b.out, undefined, still).then((ok) => {
@@ -51,27 +54,63 @@ export class HomeAloneSounds {
       this.played[clip]++;
       this.duck(sound.lastDurationS);
     });
+    return true;
+  }
+
+  /**
+   * As play(), once the context runs: back from the background a context may be suspended (or interrupted, on iOS), so
+   * it is resumed first, and the clip skipped if it still can't run or `still()` no longer holds. Resolves whether it asked.
+   */
+  async playResumed(clip: HomeAloneClip, still: () => boolean): Promise<boolean> {
+    const b = this.bus();
+    const ctx = b.ctx;
+    if (!ctx || !this.available(clip, b)) return false;
+    if (ctx.state !== 'running') {
+      try {
+        await ctx.resume();
+      } catch {
+        return false; // outside a gesture a browser may refuse
+      }
+      // Narrowed by the check above, but resume() has changed it since.
+      if ((ctx.state as AudioContextState) !== 'running' || !still()) return false;
+    }
+    return this.play(clip, still);
+  }
+
+  private available(clip: HomeAloneClip, b: ClipBus): boolean {
+    return b.volume > 0 && !this.clips[clip].coolingOff(clipUrl(clip, this.base));
   }
 }
 
 export const KEVIN_AWAY_MS = 3000;
 export const KEVIN_EVERY_MS = 30_000;
 
-/** "Kevin!" (spec §5): back after ≥ 3 s hidden, while a run is in progress, at most once per 30 s. Wall-clock ms. */
+/**
+ * "Kevin!" (spec §5): back after ≥ 3 s hidden, while a run is in progress, at most once per 30 s. Wall-clock ms. Only a
+ * call actually asked for (the effects up, a context that runs, the clip to be had) starts the 30 s.
+ */
 export class KevinCall {
   private hiddenAt: number | null = null;
   private last = Number.NEGATIVE_INFINITY;
+  /** A call is being asked for (its context resuming): a quick second return doesn't ask again. */
+  private asking = false;
 
   hide(now: number): void {
     this.hiddenAt = now;
   }
 
-  /** The tab is back: true when "Kevin!" is due now (and the 30 s start). */
-  show(now: number, inProgress: boolean): boolean {
+  /** The tab is back: when "Kevin!" is due, `ask` tries to play it. Resolves whether it was asked for (and the 30 s started). */
+  async show(now: number, inProgress: boolean, ask: () => boolean | Promise<boolean>): Promise<boolean> {
     const at = this.hiddenAt;
     this.hiddenAt = null;
-    if (at === null || !inProgress || now - at < KEVIN_AWAY_MS || now - this.last < KEVIN_EVERY_MS) return false;
-    this.last = now;
-    return true;
+    if (this.asking || at === null || !inProgress || now - at < KEVIN_AWAY_MS || now - this.last < KEVIN_EVERY_MS) return false;
+    this.asking = true;
+    try {
+      if (!(await ask())) return false;
+      this.last = now;
+      return true;
+    } finally {
+      this.asking = false;
+    }
   }
 }

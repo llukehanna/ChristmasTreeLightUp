@@ -36,6 +36,8 @@ export class HomeAloneSwitch {
   private on: boolean;
   private readonly word = new TypedWord(HOME_ALONE_WORD);
   private readonly account: LatestPut;
+  /** Switched by the player before the first /api/me answered: that answer can't know it, so it is kept and sent. */
+  private early = false;
 
   constructor(
     private readonly session: SessionLike,
@@ -57,6 +59,7 @@ export class HomeAloneSwitch {
   /** A keydown the game would otherwise see: true when it completed "kevin" (and switched). */
   key(e: KeyLike, now: number): boolean {
     if (!this.word.feed(e, now)) return false;
+    if (this.session.current === undefined) this.early = true;
     this.h.gesture?.(!this.on);
     this.apply(!this.on, 'loud');
     return true;
@@ -81,9 +84,19 @@ export class HomeAloneSwitch {
     this.account.send(on);
   }
 
-  /** Load or sign-in: the account wins (quietly); both on there, the head wins and the account is told. */
+  /**
+   * Load or sign-in: the account wins (quietly); both on there, the head wins and the account is told. Except the first
+   * answer after the player switched before it came: theirs is the newer word, so it stays and goes to the account (a
+   * switch-on reported again, so the app turns the account's head off too).
+   */
   private onSession(s: SessionState): void {
+    const early = this.early;
+    if (s !== undefined) this.early = false;
     if (!s) return;
+    if (early) {
+      this.apply(this.on, 'kept');
+      return;
+    }
     if (this.account.pending) {
       (s as User).homeAlone = this.on;
       return;

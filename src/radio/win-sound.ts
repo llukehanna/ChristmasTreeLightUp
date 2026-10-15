@@ -28,10 +28,15 @@ export class WinSound {
     return this.failedAt.has(url);
   }
 
+  /** The last fetch or decode of `url` failed less than WIN_SOUND_RETRY_MS ago: preloads leave it alone. */
+  coolingOff(url: string | null): boolean {
+    const failed = url === null ? undefined : this.failedAt.get(url);
+    return failed !== undefined && this.now() - failed < WIN_SOUND_RETRY_MS;
+  }
+
   /** Fetches and decodes `url` ahead of the win, unless it is under way, done, or failed less than a minute ago. */
   preload(url: string | null, ctx: AudioContext | null): void {
-    const failed = url === null ? undefined : this.failedAt.get(url);
-    if (failed !== undefined && this.now() - failed < WIN_SOUND_RETRY_MS) return;
+    if (this.coolingOff(url)) return;
     this.load(url, ctx);
   }
 
