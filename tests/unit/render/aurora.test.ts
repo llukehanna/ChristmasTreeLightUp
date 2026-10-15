@@ -2,11 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import {
-  Aurora, RIBBONS, SEAM_AMP, SEAM_CORE_ROW, SEAM_H, SEAM_P, SWEEP_FADE_MS, SWEEP_MS, SkySweep, rayNoise, ribbonCount,
-  seamWave, sweepFrame,
+  Aurora, FADE_MS, RIBBONS, SEAM_AMP, SEAM_CORE_ROW, SEAM_H, SEAM_P, SWEEP_FADE_MS, SWEEP_MS, SkySweep, rayNoise, ribbonCount,
+  fadeFrame, seamWave, sweepFrame,
 } from '../../../src/render/aurora';
 import { computeLayout } from '../../../src/render/layout';
-import { AURORA, SCENES } from '../../../src/render/scenes';
+import { AURORA, HOME_ALONE, SCENES } from '../../../src/render/scenes';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -282,5 +282,52 @@ describe('the curtain bake', () => {
         expect(d * y1 + f).toBeLessThanOrEqual(s.h + 1e-9);
       }
     }
+  });
+});
+
+describe('fadeFrame (Home Alone, spec 2026-10-14 §1)', () => {
+  it('fades the arriving backdrop in over the whole sky in FADE_MS, with no seam', () => {
+    expect(FADE_MS).toBe(800);
+    expect(fadeFrame(-50)).toEqual({ cover: 1, alpha: 0, edge: 0, done: false });
+    expect(fadeFrame(FADE_MS / 2).alpha).toBeCloseTo(0.5);
+    expect(fadeFrame(FADE_MS)).toEqual({ cover: 1, alpha: 1, edge: 0, done: true });
+  });
+});
+
+describe('SkySweep fades', () => {
+  const sized = (s: SkySweep) => {
+    s.bg.width = 80;
+    s.bg.height = 60;
+    return s;
+  };
+
+  it('fades into or out of the house only when asked, on a sized stage, and not under reduced motion', () => {
+    const s = sized(new SkySweep());
+    s.change(SCENES.midnight, HOME_ALONE, null, true);
+    expect(s.current).toBeNull();
+    s.change(HOME_ALONE, SCENES.midnight, { now: 1000, reduced: true, kind: 'fade' }, true);
+    expect(s.current).toBeNull();
+    s.change(SCENES.midnight, HOME_ALONE, { now: 1000, reduced: false, kind: 'fade' }, true);
+    expect(s.current).toMatchObject({ kind: 'fade', fromScene: SCENES.midnight, at: 1000 });
+    expect(s.frame(1000 + FADE_MS / 2)?.alpha).toBeCloseTo(0.5);
+    expect(s.frame(1000 + FADE_MS)).toBeNull();
+    expect(s.current).toBeNull();
+  });
+
+  it("a fade asked for mid-sweep (kevin during the head's sweep) ends the sweep and fades from the sky as it stands", () => {
+    const s = sized(new SkySweep());
+    s.change(SCENES.midnight, AURORA, { now: 1000, reduced: false }, true);
+    expect(s.current).toMatchObject({ kind: 'sweep', dir: 'down' });
+    s.frame(1300);
+    s.change(AURORA, HOME_ALONE, { now: 1300, reduced: false, kind: 'fade' }, true);
+    expect(s.current).toMatchObject({ kind: 'fade', fromScene: AURORA, at: 1300 });
+    expect(s.frame(1300 + FADE_MS)).toBeNull();
+  });
+
+  it('a resize ends a fade at once', () => {
+    const s = sized(new SkySweep());
+    s.change(SCENES.frost, HOME_ALONE, { now: 0, reduced: false, kind: 'fade' }, true);
+    s.end();
+    expect(s.current).toBeNull();
   });
 });

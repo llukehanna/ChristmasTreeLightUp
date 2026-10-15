@@ -21,6 +21,7 @@ import { starCenter } from './render/effects';
 import { tileAt, tileCenter } from './render/layout';
 import { fillBeatFrame } from './render/beat-frame';
 import { Renderer, type BeatFrame } from './render/renderer';
+import type { SceneChange } from './render/aurora';
 import { sceneFor, sceneForHour, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
@@ -64,6 +65,8 @@ export interface HomeAloneState {
   on: boolean;
   /** The stage's scene id. */
   scene: string;
+  /** A cross-fade (or the head's sweep) is under way. */
+  fading: boolean;
 }
 
 export class App {
@@ -808,7 +811,7 @@ export class App {
     if (how === 'start' || !changed) return;
     if (!on && this.homeAlone) return; // Home Alone is taking over: it puts its own scene up
     const reduced = this.reduced.matches;
-    const sweep = how === 'loud' ? { now: performance.now() + (reduced ? 0 : FLIP_MS / 2), reduced } : null;
+    const sweep = how === 'loud' ? { now: performance.now() + (reduced ? 0 : FLIP_MS / 2), reduced, kind: 'sweep' as const } : null;
     this.pausedDrawn = false;
     this.setScene(this.sceneId, sweep);
   }
@@ -823,16 +826,24 @@ export class App {
     if (on && this.egg.isOn) this.egg.off();
     if (how === 'start' || !changed) return;
     this.pausedDrawn = false;
+    if (!on && this.secret) return; // the head is taking over: its own sweep re-scenes
+    // The player's own switch cross-fades (instant under reduced motion); a load or sign-in switches at once.
+    const reduced = this.reduced.matches;
+    const fade = how === 'loud' && !reduced ? { now: performance.now(), reduced, kind: 'fade' as const } : null;
+    if (this.setScene(this.sceneId, fade)) this.refreshShare();
   }
 
-  /** Returns whether the scene changed. In secret mode the stage shows the aurora whatever the hour; `id` still drives the radio's suggestion. */
-  private setScene(id: SceneId, sweep: { now: number; reduced: boolean } | null = null): boolean {
+  /**
+   * Returns whether the scene changed. In secret mode the stage shows the aurora whatever the hour, in Home Alone mode
+   * the house; `id` still drives the radio's suggestion.
+   */
+  private setScene(id: SceneId, change: SceneChange | null = null): boolean {
     this.radio.setScene(id);
-    const scene = sceneFor(id, this.secret);
+    const scene = sceneFor(id, this.secret, this.homeAlone);
     if (id === this.sceneId && this.renderer.scene === scene) return false;
     this.sceneId = id;
     document.body.dataset.scene = scene.id;
-    this.renderer.setScene(scene, sweep);
+    this.renderer.setScene(scene, change);
     return true;
   }
 
@@ -1044,7 +1055,7 @@ export class App {
 
   /** Home Alone mode for the test probe: see HomeAloneState. */
   get homeAloneState(): HomeAloneState {
-    return { on: this.homeAlone, scene: this.renderer.scene.id };
+    return { on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping };
   }
 
   debugSolve(): void {

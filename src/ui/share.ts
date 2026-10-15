@@ -4,7 +4,7 @@ import type { Scene } from '../render/scenes';
 
 export const shareText = (seconds: number): string => `Lit the tree in ${formatTime(seconds)} · aglow.lukeghanna.com`;
 
-const INK: Readonly<Record<Scene['id'], string>> = { midnight: '#f3ead8', fireside: '#f4e6cf', frost: '#15261f', aurora: '#eef0ff' };
+const INK: Readonly<Record<Scene['id'], string>> = { midnight: '#f3ead8', fireside: '#f4e6cf', frost: '#15261f', aurora: '#eef0ff', 'home-alone': '#f6e7cf' };
 
 /** The caption's ink for the scene on the stage (the aurora in secret mode, whatever the hour): it is the backdrop. */
 export const shareInk = (scene: Pick<Scene, 'id'>): string => INK[scene.id];

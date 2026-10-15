@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { hexRgb } from '../../../src/render/color';
-import { AURORA, SCENES, sceneFor, sceneForHour } from '../../../src/render/scenes';
+import { AURORA, HOME_ALONE, SCENES, sceneFor, sceneForHour } from '../../../src/render/scenes';
 
 it('picks the scene by local hour', () => {
   expect(sceneForHour(7)).toBe('frost');
@@ -44,5 +44,22 @@ it('the aurora: a night scene of its own, six cool bulbs in hue order, shown onl
   for (let k = 1; k < hues.length; k++) expect(hues[k]).toBeGreaterThan(hues[k - 1]);
   expect(sceneFor('frost', true)).toBe(AURORA);
   expect(sceneFor('frost', false)).toBe(SCENES.frost);
+  expect(Object.keys(SCENES)).toEqual(['midnight', 'fireside', 'frost']); // not a menu pick
+});
+
+it('Home Alone: a warm night room of its own, chosen over the hour, never over the head', () => {
+  expect(HOME_ALONE).toMatchObject({ id: 'home-alone', light: 'fire', bulbFrost: 0, snowAlpha: 0, embers: false, reflect: true });
+  expect(HOME_ALONE.bulbs).toHaveLength(6);
+  for (const u of Object.values(HOME_ALONE.unlit)) expect(u.look).toBe('plain');
+  // Deep Christmas-card reds on the wall, wood on the floor: red channel well above green and blue.
+  for (const c of HOME_ALONE.sky) {
+    const [r, g, b] = hexRgb(c);
+    expect(r).toBeGreaterThan(2 * Math.max(g, b));
+  }
+  for (const id of ['midnight', 'fireside', 'frost'] as const) {
+    expect(sceneFor(id, false, true)).toBe(HOME_ALONE);
+    expect(sceneFor(id, true, true)).toBe(AURORA); // they never stack, but if asked, the head wins
+    expect(sceneFor(id, false)).toBe(SCENES[id]);
+  }
   expect(Object.keys(SCENES)).toEqual(['midnight', 'fireside', 'frost']); // not a menu pick
 });

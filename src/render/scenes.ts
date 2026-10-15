@@ -30,7 +30,7 @@ export interface Unlit {
 const everyStyle = (u: Unlit): Readonly<Record<PathStyle, Unlit>> => ({ filament: u, fairy: u, neon: u });
 
 export interface Scene {
-  id: SceneId | 'aurora';
+  id: SceneId | 'aurora' | 'home-alone';
   light: 'moon' | 'fire' | 'day' | 'aurora';
   sky: readonly [string, string, string];
   ground: readonly [string, string];
@@ -127,8 +127,29 @@ export const AURORA: Scene = {
   snow: '235,245,255', snowAlpha: 0.6, bloom: 1, snowDust: false, reflect: false, embers: false,
 };
 
-/** The scene on screen: the aurora while secret mode is on, whatever the hour or the menu says. */
-export const sceneFor = (id: SceneId, secret: boolean): Scene => (secret ? AURORA : SCENES[id]);
+/**
+ * Home Alone mode's world (spec 2026-10-14 §2): the McCallister living room on Christmas Eve, 1990. Deep
+ * Christmas-card reds, forest greens, warm gold light, a warm-wood tree tint ('fire' light: firelight, warm presents).
+ * Its backdrop (wallpaper, the paned window with night snow outside, the floor toys) is home-alone-room.ts's; no
+ * snow falls in the room.
+ */
+export const HOME_ALONE: Scene = {
+  id: 'home-alone', light: 'fire',
+  sky: ['#1a0507', '#2a0a0d', '#3a1014'], ground: ['#2b160b', '#0e0704'],
+  needleA: [18, 40, 22], needleB: [54, 92, 46], trunk: '#1c0f07',
+  unlit: everyStyle({
+    look: 'plain', wire: 'rgba(240,205,160,.38)', wireW: 0.06, copper: 'rgba(214,150,84,.5)', led: 'rgba(255,226,186,.34)',
+    glass: 'rgba(255,222,190,.12)', glassHi: 'rgba(255,242,222,.34)',
+  }),
+  bulbFrost: 0, core: '#fff4dc', glow: '#ffb347', copperOn: 'rgba(242,182,96,.95)', neon: '#ff4a3a', neonMid: '#ffa070',
+  // Big old C9 bulbs: red, green, gold, blue, orange, warm white.
+  socket: '#4a2c12', bulbs: ['#e3242b', '#2e9e4f', '#ffc43d', '#3a6fd8', '#ff7a2f', '#fff1d0'],
+  starOff: 'rgba(255,226,180,.05)', starEdge: 'rgba(255,226,180,.32)', hover: '255,200,120',
+  snow: '255,250,240', snowAlpha: 0, bloom: 1, snowDust: false, reflect: true, embers: false,
+};
+
+/** The scene on screen: the aurora while secret mode is on, the house in Home Alone mode, else the hour's or the menu's. */
+export const sceneFor = (id: SceneId, secret: boolean, homeAlone = false): Scene => (secret ? AURORA : homeAlone ? HOME_ALONE : SCENES[id]);
 
 /** Auto scene by local time: Frost 07–16, Fireside 16–20, Midnight 20–07. */
 export function sceneForHour(hour: number): SceneId {

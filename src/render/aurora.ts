@@ -21,6 +21,15 @@ export const DRIFT = 0.12;
 export const SWEEP_MS = 1200;
 /** Reduced motion: a crossfade instead of the sweep. */
 export const SWEEP_FADE_MS = 300;
+/** Home Alone's cross-fade (spec 2026-10-14 §1). */
+export const FADE_MS = 800;
+
+/** How a scene change arrives: the head's sweep (the default), or Home Alone's cross-fade. */
+export interface SceneChange {
+  now: number;
+  reduced: boolean;
+  kind?: 'sweep' | 'fade';
+}
 
 export interface Ribbon {
   rgb: string;
@@ -72,6 +81,15 @@ export function sweepFrame(t: number, dir: 'down' | 'up', reduced: boolean, out:
   out.alpha = 1;
   out.edge = k < 1 ? Math.sin(Math.PI * k) : 0; // sin(π) is 1e-16, not 0
   out.done = t >= SWEEP_MS;
+  return out;
+}
+
+/** The cross-fade `t` ms in: the arriving backdrop over the whole sky at `alpha`, no seam. */
+export function fadeFrame(t: number, out: SweepFrame = { cover: 1, alpha: 0, edge: 0, done: false }): SweepFrame {
+  out.cover = 1;
+  out.alpha = clamp01(t / FADE_MS);
+  out.edge = 0;
+  out.done = t >= FADE_MS;
   return out;
 }
 
@@ -279,13 +297,15 @@ function makeSeam(): HTMLCanvasElement | null {
   return cv;
 }
 
-/** The sweep under way: the backdrop it leaves (`from`, of `fromScene`), when it starts, and which way. */
+/** The sweep (or fade) under way: the backdrop it leaves (`from`, of `fromScene`), when it starts, and which way. */
 export interface SweepRun {
   from: HTMLCanvasElement;
   fromScene: Scene;
   at: number;
   dir: 'down' | 'up';
   reduced: boolean;
+  /** The head's sweep, or Home Alone's cross-fade (whole sky, no seam). */
+  kind: 'sweep' | 'fade';
 }
 
 /**
@@ -308,13 +328,15 @@ export class SkySweep {
 
   /**
    * The scene is changing from `from` to `to`; the caller repaints `bg` after. A sweep runs only with `sweep`, a sized
-   * stage and a change into or out of the aurora; any other change ends a sweep under way.
+   * stage and a change into or out of the aurora; a fade (`kind: 'fade'`) with any change of scene, on a sized stage,
+   * not under reduced motion (the house arrives at once). Any other change ends a sweep or fade under way.
    */
-  change(from: Scene, to: Scene, sweep: { now: number; reduced: boolean } | null, sized: boolean): void {
-    const crossing = (to.id === 'aurora') !== (from.id === 'aurora');
+  change(from: Scene, to: Scene, sweep: SceneChange | null, sized: boolean): void {
+    const fade = sweep?.kind === 'fade';
+    const crossing = fade ? from !== to : (to.id === 'aurora') !== (from.id === 'aurora');
     const dir = to.id === 'aurora' ? 'down' : 'up';
     const run = this.run;
-    if (run && sweep && crossing && sized) {
+    if (run && sweep && !fade && run.kind === 'sweep' && crossing && sized) {
       // Reverse: the leaving backdrop becomes the arriving one, and the clock is mirrored so the cover doesn't jump
       // (easeInOutCubic is symmetric: 1 − e(1 − k) = e(k)).
       const k = clamp01((this.lastNow - run.at) / (run.reduced ? SWEEP_FADE_MS : SWEEP_MS));
@@ -328,13 +350,14 @@ export class SkySweep {
       return;
     }
     this.end();
-    if (!sweep || !crossing || !sized) return;
+    // Reduced motion: the house arrives at once (the head's sweep keeps its own 300 ms crossfade).
+    if (!sweep || !crossing || !sized || (fade && sweep.reduced)) return;
     const old = this.bg;
     this.bg = this.spare ?? document.createElement('canvas');
     this.spare = null;
     this.bg.width = old.width;
     this.bg.height = old.height;
-    this.run = { from: old, fromScene: from, at: sweep.now, dir, reduced: sweep.reduced };
+    this.run = { from: old, fromScene: from, at: sweep.now, dir, reduced: sweep.reduced, kind: fade ? 'fade' : 'sweep' };
   }
 
   /** This frame's sweep (the shared `out`), or null: none, or it has just finished (and is ended). */
@@ -342,7 +365,7 @@ export class SkySweep {
     this.lastNow = now;
     const run = this.run;
     if (!run) return null;
-    const fr = sweepFrame(now - run.at, run.dir, run.reduced, this.out);
+    const fr = run.kind === 'fade' ? fadeFrame(now - run.at, this.out) : sweepFrame(now - run.at, run.dir, run.reduced, this.out);
     if (!fr.done) return fr;
     this.end();
     return null;

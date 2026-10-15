@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AURORA, SCENES, type Scene } from '../../../src/render/scenes';
+import { AURORA, HOME_ALONE, SCENES, type Scene } from '../../../src/render/scenes';
 import { coverRect, shareInk, shareText } from '../../../src/ui/share';
 
 it('writes the share line', () => {
@@ -24,7 +24,7 @@ describe('the caption ink', () => {
   const worst = (ink: string, s: Scene): number => Math.min(...[...s.sky, ...s.ground].map((c) => contrast(lum(ink), lum(c, 0.8))));
 
   it('reads clearly (7:1 or better) on every scene the stage can show, the aurora included', () => {
-    for (const s of [...Object.values(SCENES), AURORA]) expect(worst(shareInk(s), s), s.id).toBeGreaterThanOrEqual(7);
+    for (const s of [...Object.values(SCENES), AURORA, HOME_ALONE]) expect(worst(shareInk(s), s), s.id).toBeGreaterThanOrEqual(7);
     expect(shareInk(AURORA)).toBe('#eef0ff');
   });
 

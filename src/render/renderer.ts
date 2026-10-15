@@ -1,7 +1,7 @@
 import type { Board } from '../core/board';
 import { degree } from '../core/dirs';
 import { GRID } from '../core/mask';
-import { Aurora, SkySweep } from './aurora';
+import { Aurora, SkySweep, type SceneChange } from './aurora';
 import { beatPulse, garlandBob } from './beat-fx';
 import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
@@ -127,12 +127,13 @@ export class Renderer {
   }
 
   /**
-   * Switches the scene. With `sweep` (secret mode switched by hand) and a change into or out of the aurora, the sky
-   * sweeps from `sweep.now` (spec §2.4); the tree, presents and garland change at once.
+   * Switches the scene. With `change` (secret mode switched by hand) and a change into or out of the aurora, the sky
+   * sweeps from `change.now` (spec §2.4); with `kind: 'fade'` (Home Alone switched by hand) the backdrop cross-fades
+   * over FADE_MS (spec 2026-10-14 §1). The tree, presents and garland change at once.
    */
-  setScene(scene: Scene, sweep: { now: number; reduced: boolean } | null = null): void {
+  setScene(scene: Scene, change: SceneChange | null = null): void {
     if (scene === this.scene) return;
-    this.sky.change(this.scene, scene, sweep, this.sized);
+    this.sky.change(this.scene, scene, change, this.sized);
     this.scene = scene;
     if (this.sized) this.repaint();
   }
@@ -248,7 +249,21 @@ export class Renderer {
     const sw = this.sky.current;
     // During a sweep, firelight and embers belong to the non-aurora side of the sky.
     let back = sc;
-    if (fr && sw) {
+    if (fr && sw && sw.kind === 'fade') {
+      // Home Alone's cross-fade (spec 2026-10-14 §1): the old backdrop, the new one over it. The firelight belongs to
+      // whichever side shows more. Leaving the aurora (kevin mid-head), its curtains fade out with its sky.
+      ctx.drawImage(sw.from, 0, 0);
+      if (sw.fromScene.id === 'aurora') {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        this.aurora.draw(ctx, L, now, tier, f.reducedMotion);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+      ctx.globalAlpha = fr.alpha;
+      ctx.drawImage(this.sky.bg, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (fr.alpha < 0.5) back = sw.fromScene;
+    } else if (fr && sw) {
       if (sw.dir === 'down') back = sw.fromScene;
       // The non-aurora sky in full; the aurora's backdrop and curtains over the covered part; the hem at its edge.
       ctx.drawImage(sw.dir === 'down' ? sw.from : this.sky.bg, 0, 0);

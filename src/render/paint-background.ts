@@ -1,5 +1,6 @@
 import { mulberry32, type Rng } from '../core/rng';
 import { blurredLayer } from './blur';
+import { paintHomeAlone } from './home-alone-room';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
 
@@ -23,7 +24,9 @@ export function paintBackground(c: CanvasRenderingContext2D, L: Layout, sc: Scen
   gr.addColorStop(1, sc.ground[1]);
   c.fillStyle = gr;
   c.fillRect(0, hz, L.w, L.h - hz);
-  if (sc.light === 'moon') paintMoonlit(c, L, r, hz);
+  // The house has 'fire' light (firelight, warm presents) but a room of its own: its id is checked first.
+  if (sc.id === 'home-alone') paintHomeAlone(c, L, r, hz);
+  else if (sc.light === 'moon') paintMoonlit(c, L, r, hz);
   else if (sc.light === 'fire') paintFireside(c, L, r, hz);
   else if (sc.light === 'aurora') paintAurora(c, L, r, hz);
   else paintDaylight(c, L, hz);
