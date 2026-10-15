@@ -74,6 +74,9 @@ export interface HomeAloneState extends HomeAloneLayerState {
   played: Record<HomeAloneClip, number>;
   /** The results tag shows Home Alone's line. */
   line: boolean;
+  /** Share images rendered for this tree's win, and whether the last one carries the line (null: none yet). */
+  shares: number;
+  shareLine: boolean | null;
 }
 
 export class App {
@@ -99,6 +102,8 @@ export class App {
   private laidOut = false;
   /** The results card's share image, rendered when the card appears so the Share tap needs no await. */
   private shareImage: ShareImage | null = null;
+  /** The test probe's view of the share images: how many this win, and whether the last carries Home Alone's line. */
+  private readonly shareSeen = { n: 0, line: null as boolean | null };
   private lastFrame = 0;
   private lastTime = '';
   private lastLit = '';
@@ -307,6 +312,8 @@ export class App {
     this.vis = new VisualState(GRID.w * GRID.h);
     this.winAt = null;
     this.shareImage = null;
+    this.shareSeen.n = 0;
+    this.shareSeen.line = null;
     this.moved = false;
     this.camera = IDENTITY;
     this.setPaused(false);
@@ -640,7 +647,10 @@ export class App {
 
   /** Renders the share image from the stage as it is now (the lit tree, identity camera). */
   private prepareShare(): ShareImage {
-    const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, shareInk(this.renderer.scene), this.homeAlone ? HOME_ALONE_LINE : null));
+    const line = this.homeAlone ? HOME_ALONE_LINE : null;
+    this.shareSeen.n++;
+    this.shareSeen.line = line !== null;
+    const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, shareInk(this.renderer.scene), line));
     this.shareImage = image;
     return image;
   }
@@ -1119,6 +1129,7 @@ export class App {
       on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping, ...this.renderer.homeAlone.state(),
       asked: { ...this.sounds.asked }, played: { ...this.sounds.played },
       line: document.getElementById('r-merry')?.textContent === HOME_ALONE_LINE,
+      shares: this.shareSeen.n, shareLine: this.shareSeen.line,
     };
   }
 

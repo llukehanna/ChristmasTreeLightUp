@@ -76,15 +76,34 @@ test('typed on a fresh load, before any tap, "kevin" screams: the keydown unlock
   const contexts = () => page.evaluate(() => (window as unknown as { __contexts: () => string[] }).__contexts());
   await ready(page);
   expect(await contexts()).toEqual([]); // nothing has been tapped or clicked
+  await expect.poll(async () => (await radio(page)).catalogLoaded).toBe(true);
   const before = await radio(page);
   await typeStill(page, 'kevin');
   await expect.poll(async () => (await house(page)).on).toBe(true);
-  await expect.poll(contexts).toEqual(['running']);
+  // At least one context (a browser may make another along the way); the one in use, the last, runs.
+  await expect.poll(async () => {
+    const made = await contexts();
+    return made.length > 0 && made.at(-1) === 'running';
+  }).toBe(true);
   await expect.poll(async () => (await house(page)).played.scream, { timeout: 30_000 }).toBe(1);
   expect((await house(page)).asked.scream).toBe(1);
-  const after = await radio(page);
-  expect(after.playing).toBe(before.playing);
-  expect(after.kind).toBe(before.kind);
+  // The radio as it was: what plays, its kind and source, the catalogue, the panel.
+  expect(await radio(page)).toEqual(before);
+});
+
+test('kevin with the head on takes the head off and leaves the radio as the head going off leaves it', async ({ page }) => {
+  await clips(page);
+  await ready(page);
+  await expect.poll(async () => (await radio(page)).catalogLoaded).toBe(true);
+  const before = await radio(page);
+  await typeStill(page, 'hohoho');
+  await expect.poll(async () => (await star(page)).head).toBe(true);
+  await expect.poll(async () => (await radio(page)).secretListed).toBe(true);
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).on).toBe(true);
+  await expect.poll(async () => (await star(page)).head).toBe(false);
+  // The head going off restores the radio it found; the house itself adds nothing: the same as before the head.
+  await expect.poll(() => radio(page)).toEqual(before);
 });
 
 test('the house stays after a reload, shown at once and silently', async ({ page }) => {
@@ -163,11 +182,47 @@ test('a win in the house: the line on the tag and the filthy animal on the effec
   expect((await house(page)).line).toBe(true);
   await expect.poll(async () => (await house(page)).played['filthy-animal'], { timeout: 30_000 }).toBe(1);
   expect(asked).toContain('/effects/home-alone/filthy-animal.mp3');
+  // The share image was made with the line.
+  await expect.poll(async () => (await house(page)).shareLine).toBe(true);
+  const shares = (await house(page)).shares;
 
   await typeStill(page, 'kevin');
   await expect.poll(async () => (await house(page)).on).toBe(false);
   await expect(page.locator('#r-merry')).toHaveText('Merry & bright');
   expect((await house(page)).asked['filthy-animal']).toBe(1);
+  // Switched off after the win, the share image is made again, without the line (once the fade has landed)…
+  await expect.poll(async () => (await house(page)).shares, { timeout: 10_000 }).toBeGreaterThan(shares);
+  expect((await house(page)).shareLine).toBe(false);
+  const off = (await house(page)).shares;
+  // …and switched back on, with it again.
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).on).toBe(true);
+  await expect.poll(async () => (await house(page)).shares, { timeout: 10_000 }).toBeGreaterThan(off);
+  expect((await house(page)).shareLine).toBe(true);
+});
+
+test('a tap that only closes the menu never scares the tarantula', async ({ page }) => {
+  await clips(page);
+  await ready(page);
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).fading).toBe(false);
+  const i = await page.evaluate(() => (window as unknown as W).__aglow.ids[40]);
+  const log0 = (await game(page)).log;
+  await clickTile(page, i); // traps run only while a tree is in play
+  await expect.poll(async () => (await game(page)).log).toBe(log0 + 1);
+  await expect.poll(async () => (await board(page)).rotating).toBe(0);
+
+  const [x, y] = await page.evaluate((t) => (window as unknown as W).__aglow.tileCenter(t), i);
+  await page.click('#menu-btn');
+  await expect(page.locator('#menu')).toBeVisible();
+  await stopClock(page);
+  expect(await force(page, 'tarantula', [x, y])).toBe(true);
+  await page.mouse.click(x, y); // closes the menu; never reaches the stage
+  await expect(page.locator('#menu')).toBeHidden();
+  expect((await house(page)).tarantula).toBe('crawl');
+  await page.mouse.click(x, y); // now it does
+  expect((await house(page)).tarantula).toBe('scurry');
+  await page.clock.resume();
 });
 
 test('with the effects volume at 0 no clip is ever asked for or fetched', async ({ page }) => {
