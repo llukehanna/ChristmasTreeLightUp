@@ -103,6 +103,36 @@ export async function tapStarStill(page: Page, times: number, touch: boolean, ke
   if (!keepStopped) await page.clock.resume();
 }
 
+/**
+ * Types `word` as a player would, with the page's clock stopped (page.clock.install() before the load): a loaded machine
+ * can't stretch the gaps past TypedWord's 2 s. The clock runs again afterwards unless `keepStopped`.
+ */
+export async function typeStill(page: Page, word: string, keepStopped = false): Promise<void> {
+  await stopClock(page);
+  await page.keyboard.type(word);
+  if (!keepStopped) await page.clock.resume();
+}
+
+/** Seconds of 8 kHz mono silence as a WAV: a track Playwright's Chromium can play (it has no AAC). */
+export function silentWav(seconds = 2, rate = 8000): Buffer {
+  const n = seconds * rate;
+  const b = Buffer.alloc(44 + n * 2);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + n * 2, 4);
+  b.write('WAVE', 8);
+  b.write('fmt ', 12);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24);
+  b.writeUInt32LE(rate * 2, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(n * 2, 40);
+  return b;
+}
+
 /** A sheet over a game in progress pauses it; this resumes, as a player tapping the overlay would. */
 export async function resumeIfPaused(page: Page): Promise<void> {
   const overlay = page.locator('#pause');

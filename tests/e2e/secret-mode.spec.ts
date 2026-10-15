@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { ready, tapStarStill, type W } from './helpers';
+import { ready, silentWav, tapStarStill, type W } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -11,26 +11,6 @@ test.beforeEach(async ({ page }) => {
 
 const secret = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.secret());
 const radio = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.radio());
-
-/** Seconds of 8 kHz mono silence as a WAV: a track Playwright's Chromium can play (it has no AAC). */
-function silentWav(seconds = 2, rate = 8000): Buffer {
-  const n = seconds * rate;
-  const b = Buffer.alloc(44 + n * 2);
-  b.write('RIFF', 0);
-  b.writeUInt32LE(36 + n * 2, 4);
-  b.write('WAVE', 8);
-  b.write('fmt ', 12);
-  b.writeUInt32LE(16, 16);
-  b.writeUInt16LE(1, 20);
-  b.writeUInt16LE(1, 22);
-  b.writeUInt32LE(rate, 24);
-  b.writeUInt32LE(rate * 2, 28);
-  b.writeUInt16LE(2, 32);
-  b.writeUInt16LE(16, 34);
-  b.write('data', 36);
-  b.writeUInt32LE(n * 2, 40);
-  return b;
-}
 
 const SECRET = {
   id: 'secret', name: 'Secret', description: '',
