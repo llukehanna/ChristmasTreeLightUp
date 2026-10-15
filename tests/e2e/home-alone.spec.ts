@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { TrapKind } from '../../src/render/home-alone';
 import { expect, test } from './fixtures';
 import { asPlayer, game, pickName, ready, resumeIfPaused, signInFromChip, silentWav, stopClock, typeStill, waitInteractive, type W } from './helpers';
 
@@ -15,7 +16,7 @@ const radio = (page: Page) => page.evaluate(() => (window as unknown as W).__agl
 const star = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.star());
 const board = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.state());
 const stored = (page: Page, key: string) => page.evaluate((k) => localStorage.getItem(k), key);
-const force = (page: Page, kind: 'paint' | 'tarantula' | 'bandits' | 'iron', at?: [number, number]) =>
+const force = (page: Page, kind: TrapKind, at?: [number, number]) =>
   page.evaluate(([k, a]) => (window as unknown as W).__aglow.forceTrap(k, a), [kind, at] as const);
 
 /** The three clips (a build fetches them from the music origin), as silence: never the real bucket. The paths the page asked for. */
@@ -237,6 +238,39 @@ test('forced traps never touch the board or the log; a tap on the tarantula stil
   await page.clock.resume();
   await expect.poll(async () => (await game(page)).log).toBe(log + 1);
   await expect.poll(async () => (await board(page)).bits[i]).not.toBe(bits[i]);
+});
+
+test("Harry's tooth and hat, Marv at the glass and the van never touch the board or the log; the tooth dings once", async ({ page }) => {
+  await clips(page);
+  await ready(page);
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).fading).toBe(false);
+  const i = await page.evaluate(() => (window as unknown as W).__aglow.ids[40]);
+  // The van comes only while a tree is in play: one move first.
+  const log0 = (await game(page)).log;
+  await clickTile(page, i);
+  await expect.poll(async () => (await game(page)).log).toBe(log0 + 1);
+  await expect.poll(async () => (await board(page)).rotating).toBe(0);
+  const bits = (await board(page)).bits;
+  const log = (await game(page)).log;
+
+  expect(await force(page, 'tooth')).toBe(true);
+  expect(await house(page)).toMatchObject({ gag: 'tooth', tooth: true, bandits: false });
+  await expect.poll(async () => (await house(page)).dings, { timeout: 10_000 }).toBe(1);
+  await expect.poll(async () => (await house(page)).tooth, { timeout: 10_000 }).toBe(false);
+  expect((await house(page)).dings).toBe(1);
+
+  expect(await force(page, 'fire')).toBe(true);
+  expect(await force(page, 'marv')).toBe(true);
+  expect(await force(page, 'van')).toBe(true);
+  expect(await house(page)).toMatchObject({ gag: 'fire', fire: true, marv: true, van: true });
+  await expect.poll(async () => (await house(page)).beam, { timeout: 10_000 }).toBe(true);
+  await expect.poll(async () => {
+    const h = await house(page);
+    return h.fire || h.marv || h.van;
+  }, { timeout: 15_000 }).toBe(false);
+  expect((await board(page)).bits).toEqual(bits);
+  expect((await game(page)).log).toBe(log);
 });
 
 test('a win in the house: the line on the tag and the filthy animal on the effects bus; switched off, the usual words come back', async ({ page }) => {

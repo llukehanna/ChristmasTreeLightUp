@@ -86,6 +86,23 @@ export function floorToys(L: Layout, grid: Grid): Toy[] {
   return out;
 }
 
+/** The top of the snow banked against the glass, as a fraction of the window's height (it dips and rises either side). */
+const SNOWBANK = 0.78;
+
+/**
+ * The snowbank's top edge across the window as a closed subpath, shut along `edge` (CSS px): the window's bottom gives
+ * the bank itself; its top gives everything above the bank (where the street and the van are). Path ops only.
+ */
+export function traceSnowbank(c: CanvasRenderingContext2D, win: WindowRect, edge: number): void {
+  const bank = win.y + win.h * SNOWBANK;
+  c.moveTo(win.x, edge);
+  c.lineTo(win.x, bank + win.h * 0.03);
+  c.quadraticCurveTo(win.x + win.w * 0.3, bank - win.h * 0.03, win.x + win.w * 0.55, bank + win.h * 0.01);
+  c.quadraticCurveTo(win.x + win.w * 0.8, bank + win.h * 0.04, win.x + win.w, bank);
+  c.lineTo(win.x + win.w, edge);
+  c.closePath();
+}
+
 /** The window's mullions and muntins (also redrawn by the window gags over their silhouettes). Path ops only. */
 export function paintMullions(c: CanvasRenderingContext2D, win: WindowRect, s: number): void {
   const bar = Math.max(2, 0.12 * s);
@@ -207,18 +224,13 @@ function paintWindow(c: CanvasRenderingContext2D, L: Layout, r: Rng, hz: number)
     c.fillRect(x, y, sp, sp * 1.2);
   }
   // Snow banked against the glass, and snow falling outside.
-  const bank = win.y + win.h * 0.78;
+  const bank = win.y + win.h * SNOWBANK;
   const snow = c.createLinearGradient(0, bank, 0, win.y + win.h);
   snow.addColorStop(0, '#dfe8f5');
   snow.addColorStop(1, '#9fb2cc');
   c.fillStyle = snow;
   c.beginPath();
-  c.moveTo(win.x, win.y + win.h);
-  c.lineTo(win.x, bank + win.h * 0.03);
-  c.quadraticCurveTo(win.x + win.w * 0.3, bank - win.h * 0.03, win.x + win.w * 0.55, bank + win.h * 0.01);
-  c.quadraticCurveTo(win.x + win.w * 0.8, bank + win.h * 0.04, win.x + win.w, bank);
-  c.lineTo(win.x + win.w, win.y + win.h);
-  c.closePath();
+  traceSnowbank(c, win, win.y + win.h);
   c.fill();
   for (let k = 0; k < 90; k++) {
     c.fillStyle = `rgba(240,246,255,${(0.25 + r() * 0.55).toFixed(3)})`;

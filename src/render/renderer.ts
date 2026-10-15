@@ -446,7 +446,8 @@ export class Renderer {
     // 6. Lit garland glass, foreground snow, then win confetti (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.garland.drawLit(ctx, sc, now, f.winAt, f.reducedMotion);
-    // Home Alone's traps (spec 2026-10-14 §4): over the board, decoration only.
+    // Home Alone's van headlights sweeping the room (spec 2026-10-14 §9.3), then its traps (§4): over the board, decoration only.
+    if (ha > 0) this.homeAlone.drawBeam(ctx, L, ha, f.reducedMotion);
     if (sc.id === 'home-alone' && !f.reducedMotion) this.homeAlone.drawTraps(ctx, L);
     if (secret) {
       const px = FACE_GARLAND_H * this.garland.geo.size * dpr;

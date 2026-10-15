@@ -199,6 +199,32 @@ export class Sfx {
     bell(ctx, out, t + 0.56, on ? 28 : 7, 0.4, 0.9);
   }
 
+  /** Harry's gold tooth catching the light (spec 2026-10-14 §9.1): a tiny bright "ding", a glassy ping and its shimmer. */
+  ding(): void {
+    const a = this.begin();
+    if (!a) return;
+    const { ctx, out } = a;
+    const t = ctx.currentTime + 0.01;
+    for (const [f, gain, decay, at] of [
+      [2637, 0.07, 0.55, 0],
+      [5274, 0.025, 0.25, 0],
+      [3951, 0.035, 0.4, 0.07],
+      [7902, 0.012, 0.18, 0.07],
+    ] as const) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(gain, t + at + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + decay);
+      o.connect(g);
+      g.connect(out);
+      o.start(t + at);
+      o.stop(t + at + decay + 0.05);
+    }
+  }
+
   /** Rising arpeggio and a resolving low chord. */
   win(): void {
     const a = this.begin();

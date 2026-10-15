@@ -204,6 +204,8 @@ export class App {
       onSound?.();
       this.radio.duck();
     };
+    // Harry's gold tooth (spec 2026-10-14 §9.1): a synth ding on the effects bus, silent with the effects volume at 0.
+    this.renderer.homeAlone.onDing = () => this.sfx.ding();
     // A 401 on any signed-in call means the session is gone: sign out locally (spec §5.4).
     setUnauthorizedHandler(() => this.session.set(null));
     this.session.subscribe(() => this.accountChanged());

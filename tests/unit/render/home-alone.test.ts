@@ -27,18 +27,19 @@ describe('homeAloneAlpha', () => {
 });
 
 describe('HomeAloneLayer: the window', () => {
-  it('under reduced motion the room stays still: no bandits ever', () => {
+  it('under reduced motion the room stays still: no gag ever', () => {
     const still = new HomeAloneLayer(garland(), mulberry32(1));
-    run(still, 120_000, gate({ reduced: true }));
-    expect(still.state().bandits).toBe(false);
+    run(still, 400_000, gate({ reduced: true }));
+    expect(still.state()).toMatchObject({ gag: null, bandits: false, marv: false, van: false });
   });
 
-  it('the bandits come after 20 s idle (in play or not), and a walk ends by itself', () => {
+  it('a window gag comes after 20 s idle (in play or not), and ends by itself', () => {
     const layer = new HomeAloneLayer(garland(), () => 0.9); // never the iron
     run(layer, BANDIT_IDLE_MS + 100, gate({ inPlay: false }));
-    expect(layer.state()).toEqual(expect.objectContaining({ bandits: true, iron: false }));
+    expect(layer.state().gag).not.toBeNull();
+    expect(layer.state().iron).toBe(false);
     run(layer, BANDIT_WALK_MS + 100, gate({ inPlay: false }), BANDIT_IDLE_MS + 100);
-    expect(layer.state().bandits).toBe(false);
+    expect(layer.state().gag).toBeNull();
   });
 
   it('input keeps them away', () => {
@@ -64,15 +65,16 @@ describe('HomeAloneLayer: the window', () => {
     expect(layer.state().iron).toBe(true);
   });
 
-  it('input during a walk does not stop it', () => {
+  it('input during a gag does not stop it', () => {
     const layer = new HomeAloneLayer(garland(), () => 0.9);
     run(layer, BANDIT_IDLE_MS + 100, gate());
-    expect(layer.state().bandits).toBe(true);
+    const gag = layer.state().gag;
+    expect(gag).not.toBeNull();
     for (let t = 0; t < 2000; t += 50) {
       layer.input();
       layer.step(t, 50, gate(), L);
     }
-    expect(layer.state().bandits).toBe(true);
+    expect(layer.state().gag).toBe(gag);
   });
 
   it('reduced motion turned on mid-walk ends the walk', () => {
@@ -89,9 +91,9 @@ describe('HomeAloneLayer: the window', () => {
     layer.force('bandits', 0, L);
     let next = -1;
     for (let t = 0; t < BANDIT_EVERY_MS + 1000 && next < 0; t += 50) {
-      const was = layer.state().bandits;
+      const was = layer.state().gag;
       layer.step(t, 50, gate(), L);
-      if (!was && layer.state().bandits) next = t;
+      if (!was && layer.state().gag) next = t;
     }
     expect(next).toBeGreaterThanOrEqual(BANDIT_EVERY_MS - 100);
   });

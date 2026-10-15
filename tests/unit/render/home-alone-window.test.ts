@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  BANDIT_ENTER_MS, BANDIT_EVERY_MS, BANDIT_FIG, FIG_PAD, FIG_TRACK, BANDIT_IDLE_MS, BANDIT_PAUSE_MS, BANDIT_STOP, BANDIT_WALK_MS, BanditTimer, FIG_H, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, WindowGags, banditPose, type BanditPose,
+  BANDIT_ENTER_MS, BANDIT_EVERY_MS, BANDIT_FIG, FIG_PAD, FIG_TRACK, BANDIT_IDLE_MS, BANDIT_PAUSE_MS, BANDIT_STOP, BANDIT_WALK_MS, BanditTimer, FIG_H, FIRE_DIVE_AT, FIRE_MS, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, TOOTH_GLINT_AT, WindowGags, banditPose, type BanditPose, type GagFrame,
 } from '../../../src/render/home-alone-window';
 import { GRID } from '../../../src/core/mask';
 import { homeWindow } from '../../../src/render/home-alone-room';
@@ -96,7 +96,9 @@ describe('WindowGags', () => {
     }) as unknown as CanvasRenderingContext2D;
   }
 
-  it('bakes its silhouettes once per layout, then draws them clipped to the glass with no allocation per frame', () => {
+  const frame = (over: Partial<GagFrame> = {}): GagFrame => ({ gag: null, t: -1, iron: false, marvT: -1, vanT: -1, vanDir: 1, ...over });
+
+  it('bakes its sprites once per layout, then draws every gag clipped to the glass with no allocation per frame', () => {
     const create = document.createElement.bind(document);
     let made = 0;
     vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
@@ -107,18 +109,32 @@ describe('WindowGags', () => {
     const L = computeLayout(1280, 800, 2);
     const g = new WindowGags();
     const names: string[] = [];
-    g.draw(recorder(names), L, 1, -1, false);
+    g.draw(recorder(names), L, 1, frame());
     const baked = made;
     expect(baked).toBeGreaterThan(0);
     expect(names).toContain('clip');
-    expect(names.filter((n) => n === 'drawImage')).toHaveLength(0); // no walk, nothing in the window
+    expect(names.filter((n) => n === 'drawImage')).toHaveLength(0); // nothing at the glass
+    for (const f of [
+      frame({ gag: 'walk', t: 1500 }), frame({ gag: 'walk', t: 3500, iron: true }), frame({ gag: 'tooth', t: TOOTH_GLINT_AT + 200 }),
+      frame({ gag: 'tooth', t: 1000 }), frame({ gag: 'fire', t: 1000 }), frame({ gag: 'fire', t: FIRE_DIVE_AT + 300 }), frame({ gag: 'fire', t: FIRE_MS - 1500 }),
+      frame({ marvT: 2000 }), frame({ vanT: 3000 }),
+    ]) {
+      names.length = 0;
+      g.draw(recorder(names), L, 1, f);
+      g.drawBeam(recorder(names), L, 1, f);
+      expect(made).toBe(baked);
+      expect(names.filter((n) => n === 'drawImage').length).toBeGreaterThan(0);
+      expect(names.filter((n) => n.startsWith('create'))).toEqual([]); // no gradients, no canvases
+    }
     names.length = 0;
-    g.draw(recorder(names), L, 1, 3500, true); // and the bandits, with the iron
-    expect(made).toBe(baked);
-    expect(names.filter((n) => n === 'drawImage')).toHaveLength(3);
+    g.drawBeam(recorder(names), L, 1, frame({ vanT: 3000 }));
+    expect(names).toContain('drawImage');
+    names.length = 0;
+    g.drawBeam(recorder(names), L, 1, frame({ vanT: 500 })); // the van still far off: no beam yet
+    expect(names).not.toContain('drawImage');
   });
 
-  it("puts the mullions back over the figures at the layer's alpha (mid cross-fade, a bandit fading too), then alpha 1", () => {
+  it("puts the mullions back over the figures at the layer's alpha (mid cross-fade, a bandit fading, Marv and the van there too), then alpha 1", () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => recorder([])) as never);
     const state: Record<string | symbol, unknown> = { globalAlpha: 1, globalCompositeOperation: 'source-over' };
     const bars: number[] = [];
@@ -126,7 +142,7 @@ describe('WindowGags', () => {
       get: (t, k) => (k in t ? t[k] : k === 'fillRect' ? () => bars.push(t.globalAlpha as number) : () => (String(k).startsWith('create') ? { addColorStop() {} } : undefined)),
       set: (t, k, v) => ((t[k] = v), true),
     }) as unknown as CanvasRenderingContext2D;
-    new WindowGags().draw(c, computeLayout(1280, 800, 2), 0.4, IRON_WALK_MS - 100, true);
+    new WindowGags().draw(c, computeLayout(1280, 800, 2), 0.4, { gag: 'walk', t: IRON_WALK_MS - 100, iron: true, marvT: 2000, vanT: 3000, vanDir: -1 });
     expect(bars.length).toBeGreaterThan(0);
     for (const a of bars) expect(a).toBeCloseTo(0.4);
     expect(state.globalAlpha).toBe(1);
