@@ -1,5 +1,5 @@
 import type { RunOutcome } from './api/outcome';
-import type { App, SecretState } from './app';
+import type { App, HomeAloneState, SecretState } from './app';
 import { GRID } from './core/mask';
 
 export interface AglowProbe {
@@ -14,6 +14,8 @@ export interface AglowProbe {
   radio(): { kind: string | null; playing: boolean; stations: string[]; catalogLoaded: boolean; lightShow: boolean; source: string | null; secretListed: boolean };
   /** Secret mode: on, the stage's scene, a sky sweep under way, where Luke's face is (-1: not placed), the win ad-libs asked for and started. */
   secret(): SecretState;
+  /** Home Alone mode (spec 2026-10-14): on, the stage's scene, and (later tasks) what is on screen and heard. */
+  homeAlone(): HomeAloneState;
   /** A real tap on tile i, through the game (logged, as a finger's would be). */
   tap(i: number): void;
   /** The server game behind the tree, what became of its run, and the log's length. */
@@ -61,6 +63,7 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
       };
     },
     secret: () => app.secretState,
+    homeAlone: () => app.homeAloneState,
     tap: (i) => app.tapTile(i),
     game: () => {
       const o = app.runOutcome;

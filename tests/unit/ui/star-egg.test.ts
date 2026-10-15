@@ -423,4 +423,54 @@ describe('StarEgg', () => {
       expect(mode).toHaveBeenLastCalledWith(false, 'quiet');
     });
   });
+
+  describe('off() (Home Alone takes over, spec 2026-10-14 §1)', () => {
+    it('back to the star, quietly, and kept so in this browser and on the account', async () => {
+      const { h, topper, sfx, toast } = hooks();
+      const mode = vi.fn();
+      h.mode = mode;
+      const session = new Session();
+      session.set(user(false));
+      const egg = new StarEgg(session, h, false);
+      fiveTaps(egg);
+      await flush();
+      expect(egg.isOn).toBe(true);
+      egg.off();
+      await flush();
+      expect(egg.isOn).toBe(false);
+      expect(saved).toEqual([true, false]);
+      expect(puts).toEqual([true, false]);
+      expect(topper.flip).toHaveBeenLastCalledWith(false, now);
+      expect(mode).toHaveBeenLastCalledWith(false, 'quiet');
+      expect(toast).toHaveBeenCalledTimes(1); // "Ho ho ho." only
+      expect(sfx.jingle).not.toHaveBeenCalledWith(false);
+      expect((session.current as User).starHead).toBe(false);
+    });
+
+    it('drops a turn to the head still waiting for the sticker; the next five taps work again', async () => {
+      const { h, topper } = hooks();
+      let done!: (ok: boolean) => void;
+      topper.load.mockImplementation(() => new Promise<boolean>((r) => (done = r)));
+      const egg = new StarEgg(new Session(), h, false);
+      fiveTaps(egg);
+      egg.off();
+      done(true);
+      await flush();
+      expect(egg.isOn).toBe(false);
+      expect(topper.flip).not.toHaveBeenCalled();
+      expect(saved).toEqual([]);
+      topper.load.mockImplementation(async () => true);
+      fiveTaps(egg);
+      await flush();
+      expect(egg.isOn).toBe(true);
+    });
+
+    it('with the star already up it does nothing', () => {
+      const { h, topper } = hooks();
+      const egg = new StarEgg(new Session(), h, false);
+      egg.off();
+      expect(topper.flip).not.toHaveBeenCalled();
+      expect(saved).toEqual([]);
+    });
+  });
 });

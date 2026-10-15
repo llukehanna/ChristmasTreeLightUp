@@ -1,6 +1,7 @@
 import type { SessionState } from '../api/session';
 import type { User } from '../api/types';
 import { isEditable } from './dom';
+import { LatestPut } from './latest-put';
 
 /**
  * The star-head egg (2026-10-08): five quick taps on the star, or typing "hohoho", swap the star for Luke's head in a
@@ -31,7 +32,7 @@ export class StarTaps {
   }
 }
 
-type KeyLike = Pick<KeyboardEvent, 'key' | 'target' | 'ctrlKey' | 'metaKey' | 'altKey' | 'repeat'>;
+export type KeyLike = Pick<KeyboardEvent, 'key' | 'target' | 'ctrlKey' | 'metaKey' | 'altKey' | 'repeat'>;
 
 /** A word typed anywhere but a field (any case, letters only: other keys are ignored, a 2 s pause starts over). */
 export class TypedWord {
@@ -91,15 +92,17 @@ export class StarEgg {
   private readonly word = new TypedWord('hohoho');
   /** A turn to the head is waiting for the sticker: another toggle meanwhile is ignored. */
   private turning = false;
-  /** The account's copy, latest-wins: the value still to send (null: none), and whether a PUT is out. */
-  private unsent: boolean | null = null;
-  private sending = false;
+  /** The account's copy, latest-wins. */
+  private readonly account: LatestPut;
+  /** Bumped by off(): a turn to the head still waiting for the sticker is dropped. */
+  private seq = 0;
 
   constructor(
     private readonly session: SessionLike,
     private readonly h: EggHooks,
     local: boolean,
   ) {
+    this.account = new LatestPut((on) => h.put(on));
     this.on = starHeadFor(local, session.current);
     h.topper.set(this.on);
     h.mode?.(this.on, 'start');
@@ -146,6 +149,16 @@ export class StarEgg {
     return true;
   }
 
+  /**
+   * Home Alone took over (spec 2026-10-14 §1): back to the star, quietly (no jingle, no toast), and kept so in this
+   * browser and on the account. A turn to the head still waiting for the sticker is dropped.
+   */
+  off(): void {
+    this.seq++;
+    this.turning = false;
+    if (this.on) this.apply(false, this.time(), 'kept');
+  }
+
   private time(): number {
     return this.h.now?.() ?? performance.now();
   }
@@ -157,25 +170,28 @@ export class StarEgg {
   private toggle(now: number): void {
     if (this.turning) return;
     if (this.on) {
-      this.apply(false, now, true);
+      this.apply(false, now, 'loud');
       return;
     }
     this.turning = true;
+    const seq = this.seq;
     void this.h.topper.load().then((ok) => {
+      if (seq !== this.seq) return;
       this.turning = false;
-      if (ok && !this.on) this.apply(true, this.time(), true);
+      if (ok && !this.on) this.apply(true, this.time(), 'loud');
     });
   }
 
-  /** Puts `on` in place: the view, this browser, and (`loud`: the player did it) the account, the jingle and the toast. */
-  private apply(on: boolean, now: number, loud: boolean): void {
+  /** Puts `on` in place: the view and this browser; 'kept' and 'loud' also the account; 'loud' (the player did it) the jingle and the toast. */
+  private apply(on: boolean, now: number, how: 'loud' | 'quiet' | 'kept'): void {
     this.on = on;
     this.h.save(on);
     this.h.topper.flip(on, now);
     this.h.flipped?.();
-    this.h.mode?.(on, loud ? 'loud' : 'quiet');
-    if (!loud) return;
+    this.h.mode?.(on, how === 'loud' ? 'loud' : 'quiet');
+    if (how === 'quiet') return;
     this.send(on);
+    if (how === 'kept') return;
     this.h.sfx.jingle(on);
     this.h.toast(on ? 'Ho ho ho.' : 'Back to the star.');
     this.h.vibrate([10, 50, 18]);
@@ -191,22 +207,7 @@ export class StarEgg {
     if (!user) return;
     // The session's copy follows, so setting the same user again later can't undo it.
     (user as User).starHead = on;
-    this.unsent = on;
-    if (!this.sending) void this.flush();
-  }
-
-  private async flush(): Promise<void> {
-    this.sending = true;
-    while (this.unsent !== null) {
-      const on = this.unsent;
-      this.unsent = null;
-      try {
-        await this.h.put(on);
-      } catch {
-        // offline, or signed out meanwhile
-      }
-    }
-    this.sending = false;
+    this.account.send(on);
   }
 
   /**
@@ -216,19 +217,20 @@ export class StarEgg {
    */
   private onSession(s: SessionState): void {
     if (!s) return;
-    if (this.sending || this.unsent !== null) {
+    if (this.account.pending) {
       (s as User).starHead = this.on;
       return;
     }
     if (s.starHead === this.on) return;
     if (!s.starHead) {
-      this.apply(false, this.time(), false);
+      this.apply(false, this.time(), 'quiet');
       return;
     }
+    const seq = this.seq;
     void this.h.topper.load().then((ok) => {
       // Still what the account says, and the player hasn't turned it meanwhile. A toggle of the player's own waiting for
       // the same sticker lands it instead, loud (its PUT agrees with the account).
-      if (ok && !this.on && !this.turning && this.session.current?.starHead === true) this.apply(true, this.time(), false);
+      if (seq === this.seq && ok && !this.on && !this.turning && this.session.current?.starHead === true) this.apply(true, this.time(), 'quiet');
     });
   }
 }

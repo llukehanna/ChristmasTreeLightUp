@@ -24,6 +24,7 @@ import { Renderer, type BeatFrame } from './render/renderer';
 import { sceneFor, sceneForHour, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
+import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
 import { loadStarHead, saveStarHead } from './store/star-head';
@@ -31,6 +32,7 @@ import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './
 import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
+import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
 import { accountStatsView, deviceStatsView, Results, type StatsView } from './ui/results';
@@ -55,6 +57,13 @@ export interface SecretState {
   /** Win ad-libs asked for (secret mode, a fresh win, effects up, a context) and actually started. */
   adlibsAsked: number;
   adlibsPlayed: number;
+}
+
+/** Home Alone mode as the test probe sees it (src/debug.ts). Later tasks add fields. */
+export interface HomeAloneState {
+  on: boolean;
+  /** The stage's scene id. */
+  scene: string;
 }
 
 export class App {
@@ -120,6 +129,10 @@ export class App {
   private readonly egg: StarEgg;
   /** Secret mode (spec 2026-10-08 secret mode): on exactly while the head tops the tree. */
   private secret = false;
+  /** Home Alone mode (spec 2026-10-14): on exactly while the switch is. */
+  private homeAlone = false;
+  /** Typing "kevin" switches Home Alone mode (src/ui/home-alone.ts). */
+  private readonly alone: HomeAloneSwitch;
   /** The Secret station's win ad-lib. */
   private readonly winSound = new WinSound();
   /** Win ad-libs asked for (every gate passed) and started: the test probe's view. */
@@ -191,6 +204,18 @@ export class App {
         mode: (on, how) => this.setSecret(on, how),
       },
       loadStarHead(),
+    );
+    this.alone = new HomeAloneSwitch(
+      this.session,
+      {
+        save: saveHomeAlone,
+        put: (on) => api.setHomeAlone(on),
+        head: () => this.egg.isOn || this.session.current?.starHead === true,
+        // Inside the completing keydown: the scream needs an unlocked audio context.
+        gesture: () => this.sfx.unlock(),
+        mode: (on, how) => this.setHomeAlone(on, how),
+      },
+      loadHomeAlone(),
     );
   }
 
@@ -773,16 +798,31 @@ export class App {
   private setSecret(on: boolean, how: 'start' | 'loud' | 'quiet'): void {
     const changed = on !== this.secret;
     this.secret = on;
+    // Never both (spec 2026-10-14 §1): the head turns Home Alone off, kept off here and on the account.
+    if (on && this.homeAlone) this.alone.off();
     this.radio.setSecret(on, how === 'loud');
     if (on && changed) {
       this.radio.show.beat.reset();
       this.winSound.preload(this.radio.secretWinSound(), audio.ctx);
     }
     if (how === 'start' || !changed) return;
+    if (!on && this.homeAlone) return; // Home Alone is taking over: it puts its own scene up
     const reduced = this.reduced.matches;
     const sweep = how === 'loud' ? { now: performance.now() + (reduced ? 0 : FLIP_MS / 2), reduced } : null;
     this.pausedDrawn = false;
     this.setScene(this.sceneId, sweep);
+  }
+
+  /**
+   * Home Alone mode (spec 2026-10-14 §1). Never with the head: switching on turns it off (kept off), and secret mode
+   * leaves with it. The radio is never touched here. 'start': the first applySettings puts the scene up.
+   */
+  private setHomeAlone(on: boolean, how: 'start' | 'loud' | 'quiet'): void {
+    const changed = on !== this.homeAlone;
+    this.homeAlone = on;
+    if (on && this.egg.isOn) this.egg.off();
+    if (how === 'start' || !changed) return;
+    this.pausedDrawn = false;
   }
 
   /** Returns whether the scene changed. In secret mode the stage shows the aurora whatever the hour; `id` still drives the radio's suggestion. */
@@ -901,6 +941,8 @@ export class App {
         this.sfx.unlock();
         return;
       }
+      // "kevin" switches Home Alone mode (spec 2026-10-14 §1), under the same rules as "hohoho".
+      if (!this.paused && this.alone.key(e, performance.now())) return;
       if (e.key === 'Escape' && this.paused) {
         e.preventDefault();
         this.resume();
@@ -998,6 +1040,11 @@ export class App {
       on: this.secret, scene: this.renderer.scene.id, sweeping: this.renderer.sweeping, faceTile: f.tile, faceGift: f.gift, faceGarland: f.garland,
       adlibsAsked: this.adlibs.asked, adlibsPlayed: this.adlibs.played,
     };
+  }
+
+  /** Home Alone mode for the test probe: see HomeAloneState. */
+  get homeAloneState(): HomeAloneState {
+    return { on: this.homeAlone, scene: this.renderer.scene.id };
   }
 
   debugSolve(): void {
