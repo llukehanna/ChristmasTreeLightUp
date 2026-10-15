@@ -1,4 +1,4 @@
-import { BOARD_TOP, type AccountStats, type BoardResponse, type BoardRow, type MyGamesResponse, type RecentGame, type User } from '../api/types';
+import { BOARD_TOP, BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardRow, type BoardWindow, type MyGamesResponse, type RecentGame, type User } from '../api/types';
 import { count, esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
 import { G_LOGO, I } from './icons';
 import type { SheetView } from './sheet';
@@ -17,10 +17,41 @@ function rowHtml(r: BoardRow, now: number): string {
     <span class="acct-date">${formatDay(r.finishedAt, now)}</span></li>`;
 }
 
-function boardBody(b: Loadable<BoardResponse>, now: number): string {
+/** The windows as the control and the subtitle name them, and what an empty one says (spec 2026-10-14 §4). */
+const WINDOWS: Record<BoardWindow, { button: string; sub: string; empty: string }> = {
+  today: { button: 'Today', sub: 'Today', empty: 'No runs yet today — be the first.' },
+  week: { button: 'This week', sub: 'This week', empty: 'No runs yet this week.' },
+  all: { button: 'All time', sub: 'All-time', empty: 'No ranked runs yet. Light a tree and be the first.' },
+};
+
+/** The window chosen last in this browser; Today until one is chosen (or when storage is blocked). */
+const WINDOW_KEY = 'aglow.boardWindow';
+export function loadBoardWindow(): BoardWindow {
+  try {
+    const w = localStorage.getItem(WINDOW_KEY);
+    return BOARD_WINDOWS.find((x) => x === w) ?? 'today';
+  } catch {
+    return 'today';
+  }
+}
+export function saveBoardWindow(w: BoardWindow): void {
+  try {
+    localStorage.setItem(WINDOW_KEY, w);
+  } catch {
+    // storage blocked: the choice lasts this page only
+  }
+}
+
+/** Today · This week · All time: toggle buttons (aria-pressed), not tabs, so the tablist's arrow keys stay its own. */
+const windowsHtml = (win: BoardWindow): string =>
+  `<div class="acct-wins" role="group" aria-label="Time window">${BOARD_WINDOWS.map(
+    (w) => `<button type="button" data-act="win-${w}" aria-pressed="${w === win}">${WINDOWS[w].button}</button>`,
+  ).join('')}</div>`;
+
+function boardBody(b: Loadable<BoardResponse>, now: number, win: BoardWindow): string {
   if (b.status === 'loading') return '<p class="acct-note">Loading…</p>';
   if (b.status === 'error') return `<p class="acct-note">Couldn't load the leaderboard.</p><button class="acct-text" type="button" data-act="reload">Try again</button>`;
-  if (!b.data.rows.length) return '<p class="acct-note">No ranked runs yet. Light a tree and be the first.</p>';
+  if (!b.data.rows.length) return `<p class="acct-note">${WINDOWS[win].empty}</p>`;
   return `<ol class="acct-rows">${b.data.rows.map((r) => rowHtml(r, now)).join('')}</ol>`;
 }
 
@@ -110,7 +141,10 @@ function bindTabKeys(list: HTMLElement): void {
   });
 }
 
-/** The leaderboard and Your games: one sheet, two tabs (spec §6, pick 2C). */
+/**
+ * The leaderboard and Your games: one sheet, two tabs (spec §6, pick 2C). The leaderboard shows one window (spec
+ * 2026-10-14), `board` being that window's answer.
+ */
 export function listView(
   tab: ListTab,
   board: Loadable<BoardResponse>,
@@ -118,22 +152,27 @@ export function listView(
   user: User | null | undefined,
   now: number,
   stats: Loadable<AccountStats> = { status: 'loading' },
+  win: BoardWindow = 'all',
 ): SheetView {
   return {
     label: tab === 'board' ? 'Leaderboard' : 'Your games',
     card: false,
     render(inner) {
       const sub =
-        tab === 'board' ? `All-time · ${board.status === 'ready' ? plural(board.data.total, 'ranked run') : 'fastest trees'}` : user?.name ? `${esc(user.name)} · your trees` : 'Not signed in';
+        tab === 'board'
+          ? `${WINDOWS[win].sub} · ${board.status === 'ready' ? plural(board.data.total, 'ranked run') : 'fastest trees'}`
+          : user?.name
+            ? `${esc(user.name)} · your trees`
+            : 'Not signed in';
       inner.innerHTML = `<header class="acct-head">
           <div class="acct-emb">${I.trophy}</div>
           <div class="acct-titles"><h2 class="acct-title">${tab === 'board' ? 'Leaderboard' : 'Your games'}</h2><p class="acct-sub">${sub}</p></div>
           <div class="acct-tabs" role="tablist" aria-label="Leaderboard views">
             <button ${tabAttrs('board', tab)} type="button" data-act="tab-board">Leaderboard</button>
             <button ${tabAttrs('games', tab)} type="button" data-act="tab-games">Your games</button>
-          </div>
+          </div>${tab === 'board' ? windowsHtml(win) : ''}
         </header>
-        <div class="acct-body" id="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${tab === 'board' ? boardBody(board, now) : gamesBody(games, user, now, stats)}</div>
+        <div class="acct-body" id="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${tab === 'board' ? boardBody(board, now, win) : gamesBody(games, user, now, stats)}</div>
         ${tab === 'board' ? `<footer class="acct-pin">${boardPin(board, user, now)}</footer>` : ''}`;
       const list = inner.querySelector<HTMLElement>('[role="tablist"]');
       if (list) bindTabKeys(list);

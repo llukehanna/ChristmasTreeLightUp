@@ -1,10 +1,10 @@
 import { api, ApiError } from '../api/client';
 import { cleanName, isReserved } from '../api/names';
 import type { Session, SessionState } from '../api/session';
-import type { AccountStats, BoardResponse, MyGamesResponse } from '../api/types';
+import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '../api/types';
 import { canSaveName, deleteView, nameView, paintName, signInView, type NameState, type NameStatus, type SignInOptions } from './account-cards';
 import { AccountMenu } from './account-menu';
-import { listView, type ListTab, type Loadable } from './board-sheets';
+import { listView, loadBoardWindow, saveBoardWindow, type ListTab, type Loadable } from './board-sheets';
 import { loadStats as loadDeviceStats, localDay, shownAccountStats } from '../store/stats';
 import { Sheet } from './sheet';
 
@@ -29,7 +29,9 @@ export class Accounts {
   private readonly sheet: Sheet;
   private readonly menu: AccountMenu;
   private tab: ListTab = 'board';
-  private board: Loadable<BoardResponse> = { status: 'loading' };
+  /** The leaderboard's window (spec 2026-10-14 §4), as chosen last in this browser; each window keeps its own answer. */
+  private win: BoardWindow = loadBoardWindow();
+  private readonly boards: Record<BoardWindow, Loadable<BoardResponse>> = { today: { status: 'loading' }, week: { status: 'loading' }, all: { status: 'loading' } };
   private games: Loadable<MyGamesResponse> = { status: 'loading' };
   private stats: Loadable<AccountStats> = { status: 'loading' };
   /** Bumped by each stats load and each session change: only the newest answer is kept. */
@@ -110,7 +112,7 @@ export class Accounts {
   }
 
   private listNow() {
-    return listView(this.tab, this.board, this.games, this.session.current, Date.now(), this.stats);
+    return listView(this.tab, this.boards[this.win], this.games, this.session.current, Date.now(), this.stats, this.win);
   }
 
   /** Redraws the leaderboard or Your games when its data arrives, if that list is still on screen. */
@@ -119,11 +121,13 @@ export class Accounts {
     if (v && !v.card) this.sheet.update(this.listNow());
   }
 
+  /** The shown window's board, into that window's own slot: an answer arriving after a switch never shows in another. */
   private async loadBoard(): Promise<void> {
+    const win = this.win;
     try {
-      this.board = { status: 'ready', data: await api.board() };
+      this.boards[win] = { status: 'ready', data: await api.board(win) };
     } catch {
-      if (this.board.status !== 'ready') this.board = { status: 'error' };
+      if (this.boards[win].status !== 'ready') this.boards[win] = { status: 'error' };
     }
     this.refreshList();
   }
@@ -276,6 +280,15 @@ export class Accounts {
         this.sheet.update(this.listNow());
         this.sheet.body.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
         this.loadTab();
+        break;
+      case 'win-today':
+      case 'win-week':
+      case 'win-all':
+        this.win = act === 'win-today' ? 'today' : act === 'win-week' ? 'week' : 'all';
+        saveBoardWindow(this.win);
+        this.sheet.update(this.listNow());
+        this.sheet.body.querySelector<HTMLElement>('.acct-wins [aria-pressed="true"]')?.focus({ preventScroll: true });
+        void this.loadBoard();
         break;
       case 'reload':
         this.loadTab();

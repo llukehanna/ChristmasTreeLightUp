@@ -365,6 +365,46 @@ test('two runs by the same player both appear in Your games', async ({ page }) =
   expect(((await mine.json()) as { games: unknown[] }).games).toHaveLength(2);
 });
 
+test('the leaderboard opens on Today; This week and All time show their own runs, and the choice is remembered', async ({ page }) => {
+  const player = await asPlayer(page);
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#results .rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
+  const openBoard = async () => {
+    await resumeIfPaused(page);
+    await page.locator('#account-chip').click();
+    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+    return page.getByRole('dialog', { name: 'Leaderboard' });
+  };
+  let board = await openBoard();
+  const windows = board.getByRole('group', { name: 'Time window' });
+  await expect(windows.getByRole('button', { name: 'Today', pressed: true })).toBeVisible();
+  await expect(board.locator('.acct-sub')).toHaveText(/^Today · [\d,]+ ranked runs?$/);
+  // Just finished: in today's list (or pinned below it, if others' runs today push it past the top 50).
+  await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(player.name);
+  await page.keyboard.press('Escape');
+  // Eight days on in this browser: today and this week have no runs at all yet, all time still has this one.
+  await page.clock.setFixedTime(Date.now() + 8 * 86_400_000);
+  board = await openBoard();
+  await expect(board.locator('.acct-body')).toHaveText('No runs yet today — be the first.');
+  await windows.getByRole('button', { name: 'This week' }).click();
+  await expect(windows.getByRole('button', { name: 'This week', pressed: true })).toBeFocused();
+  await expect(board.locator('.acct-sub')).toHaveText('This week · 0 ranked runs');
+  await expect(board.locator('.acct-body')).toHaveText('No runs yet this week.');
+  await expect(board.locator('.acct-pin .acct-me')).toHaveCount(0);
+  await windows.getByRole('button', { name: 'All time' }).click();
+  await expect(board.locator('.acct-sub')).toHaveText(/^All-time · [\d,]+ ranked runs?$/);
+  await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(player.name);
+  await page.keyboard.press('Escape');
+  board = await openBoard();
+  await expect(windows.getByRole('button', { name: 'All time', pressed: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBe('all');
+});
+
 /** This device has a history of its own from before accounts: 7 solved and a 10-day streak up to yesterday. */
 async function seedDeviceHistory(page: Page): Promise<void> {
   await page.addInitScript(() => {

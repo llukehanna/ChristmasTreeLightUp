@@ -79,6 +79,31 @@ describe('api client', () => {
     }
   });
 
+  it("asks for a board window with this browser's day and offset; all time needs neither", async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    const at = new Date(2026, 9, 14, 23, 30);
+    await api.board('today', at);
+    await api.board('week', at);
+    await api.board('all', at);
+    await api.board();
+    expect(fetch.mock.calls.map((c) => c[0])).toEqual([
+      `/api/board?window=today&today=2026-10-14&tz=${at.getTimezoneOffset()}`,
+      `/api/board?window=week&today=2026-10-14&tz=${at.getTimezoneOffset()}`,
+      '/api/board?window=all',
+      '/api/board?window=all',
+    ]);
+  });
+
+  it('after a write, every window is revalidated once: the browser may hold a copy of each', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    await api.finish('g', []);
+    fetch.mockClear();
+    for (const w of ['today', 'today', 'week', 'all', 'week', 'all'] as const) await api.board(w);
+    expect(fetch.mock.calls.map((c) => c[1].cache)).toEqual(['no-cache', 'default', 'no-cache', 'no-cache', 'default', 'default']);
+  });
+
   it('links to sign-in with a return path', () => {
     expect(signInHref('/?x=1')).toBe('/api/auth/google?return=%2F%3Fx%3D1');
   });

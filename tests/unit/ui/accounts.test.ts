@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Session } from '../../../src/api/session';
-import type { AccountStats, MyGamesResponse } from '../../../src/api/types';
+import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '../../../src/api/types';
 
 const calls = vi.hoisted(() => ({
   myStats: vi.fn<() => Promise<AccountStats>>(),
   myGames: vi.fn<() => Promise<MyGamesResponse>>(),
+  board: vi.fn<(w: BoardWindow) => Promise<BoardResponse>>(),
 }));
-vi.mock('../../../src/api/client', async (orig) => ({ ...(await orig<typeof import('../../../src/api/client')>()), api: { myStats: calls.myStats, myGames: calls.myGames } }));
+vi.mock('../../../src/api/client', async (orig) => ({
+  ...(await orig<typeof import('../../../src/api/client')>()),
+  api: { myStats: calls.myStats, myGames: calls.myGames, board: calls.board },
+}));
 
 import { Accounts } from '../../../src/ui/accounts';
 
@@ -37,6 +41,8 @@ beforeEach(() => {
   document.body.innerHTML = '<button id="menu-btn"></button>';
   calls.myStats.mockReset();
   calls.myGames.mockReset().mockResolvedValue(games);
+  calls.board.mockReset().mockResolvedValue({ rows: [], total: 0, you: null });
+  localStorage.clear();
   session = new Session();
   session.set(me);
   accounts = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
@@ -96,4 +102,40 @@ it("an answer in flight when the session changes is dropped, never shown as the 
   next.resolve(stats(3));
   await tick();
   expect(totals()[0]).toBe('3');
+});
+
+const row = (name: string, ms: number) => ({ rank: 1, name, ms, finishedAt: 1, mine: false });
+const pressedWindow = (): string | null | undefined => document.querySelector('.acct-wins [aria-pressed="true"]')?.textContent;
+const names = (): string[] => [...document.querySelectorAll('.acct-body .acct-nm')].map((n) => n.textContent ?? '');
+const clickAct = (act: string): void => document.querySelector<HTMLElement>(`[data-act="${act}"]`)?.click();
+
+it('the leaderboard opens on Today; a window button fetches that window, shows its own answer and is remembered', async () => {
+  const today = deferred<BoardResponse>();
+  const week = deferred<BoardResponse>();
+  calls.board.mockReturnValueOnce(today.promise).mockReturnValueOnce(week.promise);
+  accounts.openBoard();
+  expect(calls.board).toHaveBeenLastCalledWith('today');
+  expect(pressedWindow()).toBe('Today');
+  clickAct('win-week');
+  expect(calls.board).toHaveBeenLastCalledWith('week');
+  expect(pressedWindow()).toBe('This week');
+  expect(localStorage.getItem('aglow.boardWindow')).toBe('week');
+  // The focus stays on the button just pressed across the re-render.
+  expect((document.activeElement as HTMLElement | null)?.dataset.act).toBe('win-week');
+  week.resolve({ rows: [row('Comet', 9_000)], total: 1, you: null });
+  await tick();
+  expect(names()).toEqual(['Comet']);
+  // Today's answer, late: kept for Today, never painted over this week.
+  today.resolve({ rows: [row('Nova', 8_000)], total: 1, you: null });
+  await tick();
+  expect(names()).toEqual(['Comet']);
+  calls.board.mockResolvedValueOnce({ rows: [row('Nova', 8_000)], total: 1, you: null });
+  clickAct('win-today');
+  expect(names()).toEqual(['Nova']); // its own copy at once, while it is fetched again
+  // Another page load opens on the window chosen last.
+  clickAct('win-all');
+  await tick();
+  const again = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  again.openBoard();
+  expect(calls.board).toHaveBeenLastCalledWith('all');
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { expect, it } from 'vitest';
-import type { AccountStats, BoardResponse, MyGamesResponse } from '../../../src/api/types';
-import { listView } from '../../../src/ui/board-sheets';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '../../../src/api/types';
+import { listView, loadBoardWindow, saveBoardWindow, type Loadable } from '../../../src/ui/board-sheets';
 
 const now = new Date(2026, 11, 3, 22, 0).getTime();
 const day = new Date(2026, 11, 1, 20, 0).getTime();
@@ -203,4 +203,72 @@ it('Left and Right arrows (and Home, End) move to the other tab and select it', 
   expect(host.querySelector('#acct-panel')?.getAttribute('aria-labelledby')).toBe('acct-tab-games');
   expect(press('ArrowDown')).toBe(false);
   host.remove();
+});
+
+describe('board windows: Today, This week, All time (spec 2026-10-14 §4)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+  const pressed = (el: HTMLElement) => texts(el, '.acct-wins [aria-pressed="true"]');
+
+  it('a segmented control under the title, on the leaderboard only, the shown window pressed', () => {
+    const el = render('board', { status: 'ready', data: board }, { status: 'loading' }, me, now, undefined, 'week');
+    const group = el.querySelector('.acct-head .acct-wins');
+    expect(group?.getAttribute('role')).toBe('group');
+    expect(group?.getAttribute('aria-label')).toBe('Time window');
+    expect(texts(el, '.acct-wins button')).toEqual(['Today', 'This week', 'All time']);
+    expect([...el.querySelectorAll('.acct-wins button')].map((b) => [b.getAttribute('type'), b.getAttribute('data-act'), b.getAttribute('aria-pressed')])).toEqual([
+      ['button', 'win-today', 'false'],
+      ['button', 'win-week', 'true'],
+      ['button', 'win-all', 'false'],
+    ]);
+    // Not tabs: the tablist's arrow keys still move between Leaderboard and Your games only.
+    expect(el.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(render('games', { status: 'loading' }, { status: 'loading' }, me, now, undefined, 'week').querySelector('.acct-wins')).toBeNull();
+  });
+
+  it('the subtitle follows the window', () => {
+    const sub = (win: BoardWindow, b: Loadable<BoardResponse> = { status: 'ready', data: board }) =>
+      render('board', b, { status: 'loading' }, me, now, undefined, win).querySelector('.acct-sub')?.textContent;
+    expect(sub('today')).toBe('Today · 340 ranked runs');
+    expect(sub('week')).toBe('This week · 340 ranked runs');
+    expect(sub('all')).toBe('All-time · 340 ranked runs');
+    expect(sub('today', { status: 'loading' })).toBe('Today · fastest trees');
+    expect(pressed(render('board', { status: 'loading' }, { status: 'loading' }, me, now, undefined, 'today'))).toEqual(['Today']);
+  });
+
+  it('an empty window says so in its own words', () => {
+    const empty = (win: BoardWindow) =>
+      render('board', { status: 'ready', data: { rows: [], total: 0, you: null } }, { status: 'loading' }, me, now, undefined, win).querySelector('.acct-body .acct-note')?.textContent;
+    expect(empty('today')).toBe('No runs yet today — be the first.');
+    expect(empty('week')).toBe('No runs yet this week.');
+    expect(empty('all')).toBe('No ranked runs yet. Light a tree and be the first.');
+  });
+
+  it('no run of yours in the window: no pinned row; unnamed, the pick-a-name call to action as before', () => {
+    const el = render('board', { status: 'ready', data: { rows: [{ ...board.rows[0] }], total: 1, you: null } }, { status: 'loading' }, me, now, undefined, 'today');
+    expect(el.querySelector('.acct-pin .acct-me')).toBeNull();
+    expect(el.querySelector('.acct-pin-note')?.textContent).toBe('1 ranked run');
+    const nameless = render('board', { status: 'ready', data: board }, { status: 'loading' }, { name: null, isAdmin: false, starHead: false }, now, undefined, 'today');
+    expect(nameless.querySelector('.acct-pin [data-act="name"]')).not.toBeNull();
+  });
+
+  it('the chosen window is remembered in this browser; Today until one is chosen, or when storage fails', () => {
+    expect(loadBoardWindow()).toBe('today');
+    saveBoardWindow('week');
+    expect(localStorage.getItem('aglow.boardWindow')).toBe('week');
+    expect(loadBoardWindow()).toBe('week');
+    saveBoardWindow('all');
+    expect(loadBoardWindow()).toBe('all');
+    localStorage.setItem('aglow.boardWindow', 'month');
+    expect(loadBoardWindow()).toBe('today');
+    const blocked = () => {
+      throw new Error('blocked');
+    };
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(blocked);
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(blocked);
+    expect(loadBoardWindow()).toBe('today');
+    expect(() => saveBoardWindow('week')).not.toThrow();
+  });
 });

@@ -7,6 +7,9 @@ export type { UnrankedReason };
 export const MAX_CLAIMS_PER_REQUEST = 8;
 /** How many runs the leaderboard shows (and Your games counts "in the top"). */
 export const BOARD_TOP = 50;
+/** The leaderboard's windows (spec 2026-10-14): since the viewer's midnight, since their Monday's, or every run. */
+export const BOARD_WINDOWS = ['today', 'week', 'all'] as const;
+export type BoardWindow = (typeof BOARD_WINDOWS)[number];
 
 export interface User {
   /** null until the player picks one. */
@@ -67,12 +70,13 @@ export interface BoardRow {
   mine: boolean;
 }
 
+/** GET /api/board: every number is the window's (its runs, ranks among them, your best in it). */
 export interface BoardResponse {
   /** The top BOARD_TOP runs. */
   rows: BoardRow[];
   /** Ranked runs on the board. */
   total: number;
-  /** Your best run's row when it is outside the top BOARD_TOP. */
+  /** Your best run's row when it is outside the top BOARD_TOP; null with no run in the window. */
   you: BoardRow | null;
 }
 

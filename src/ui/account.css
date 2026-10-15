@@ -142,6 +142,14 @@ body[data-scene='frost'] .acct-scrim { background: radial-gradient(120% 90% at 5
 .acct-tabs { grid-column: 1 / -1; display: flex; margin: 14px 0 8px; padding: 3px; border-radius: 10px; background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(236, 196, 116, 0.18); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35); }
 .acct-tabs button { all: unset; flex: 1; text-align: center; cursor: pointer; padding: 8px 4px; border-radius: 7px; font-size: 12.5px; font-weight: 500; color: #f6e7c8; opacity: 0.78; }
 .acct-tabs button[aria-selected='true'] { opacity: 1; font-weight: 600; background: linear-gradient(180deg, #f6dc98, #d6a24a 60%, #b9822f); color: #2a1206; box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.7), 0 1px 3px rgba(0, 0, 0, 0.4); }
+/* the board's window (Today · This week · All time): a quieter row of pills under the tabs */
+.acct-wins { grid-column: 1 / -1; display: flex; justify-content: center; gap: 6px; margin: 0 0 10px; }
+.acct-wins button {
+  all: unset; cursor: pointer; padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 500; color: #f6e7c8; opacity: 0.72;
+  box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.2); transition: opacity 0.15s, background 0.15s;
+}
+.acct-wins button:hover { opacity: 1; }
+.acct-wins button[aria-pressed='true'] { opacity: 1; font-weight: 600; color: #f3d492; background: rgba(236, 196, 116, 0.16); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.5); }
 
 /* list body and rows */
 .acct-body {

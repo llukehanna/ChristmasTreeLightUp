@@ -1,6 +1,6 @@
 import type { LogEntry } from '../core/log';
 import { localDay } from '../store/stats';
-import type { AccountStats, BoardResponse, ClaimResponse, FinishResult, MeResponse, MyGamesResponse, NameCheck, StarHeadResponse, StartResponse, User } from './types';
+import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type ClaimResponse, type FinishResult, type MeResponse, type MyGamesResponse, type NameCheck, type StarHeadResponse, type StartResponse, type User } from './types';
 
 /** An API failure: the HTTP status (0 when the server couldn't be reached), the Worker's error code and message. */
 export class ApiError extends Error {
@@ -56,18 +56,21 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: strin
 /**
  * The board is the one response the browser may keep (`private, max-age=15`, `Vary: Cookie`): opening it again soon
  * costs no request. After this page changes it (a finish, a claim, a name, signing out or deleting the account), the
- * next board is revalidated, so your new run is never hidden by the browser's copy.
+ * next board of each window is revalidated (the browser may hold a copy of each), so your new run is never hidden by
+ * the browser's copy.
  */
-let boardStale = false;
+const staleWindows = new Set<BoardWindow>();
 async function changesBoard<T>(p: Promise<T>): Promise<T> {
   const r = await p;
-  boardStale = true;
+  for (const w of BOARD_WINDOWS) staleWindows.add(w);
   return r;
 }
-async function board(): Promise<BoardResponse> {
-  const revalidate = boardStale;
-  const r = await request<BoardResponse>('GET', '/api/board', undefined, TIMEOUT_MS, revalidate ? 'no-cache' : 'default');
-  if (revalidate) boardStale = false;
+/** One window of the board (spec 2026-10-14): today and this week are this browser's day and zone, as myStats sends them. */
+async function board(win: BoardWindow = 'all', now: Date = new Date()): Promise<BoardResponse> {
+  const revalidate = staleWindows.has(win);
+  const path = win === 'all' ? '/api/board?window=all' : `/api/board?window=${win}&today=${localDay(now)}&tz=${now.getTimezoneOffset()}`;
+  const r = await request<BoardResponse>('GET', path, undefined, TIMEOUT_MS, revalidate ? 'no-cache' : 'default');
+  if (revalidate) staleWindows.delete(win);
   return r;
 }
 
