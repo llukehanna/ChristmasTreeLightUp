@@ -38,7 +38,8 @@ export const BANDIT_EVERY_MS = 60_000;
 export const BANDIT_ENTER_MS = 3000;
 export const BANDIT_PAUSE_MS = 1200;
 export const BANDIT_WALK_MS = 7000;
-export const BANDIT_STOP = 0.42;
+/** Where they pause (0..1 across the window): off to the left, beside the tree, so the iron lands in plain sight. */
+export const BANDIT_STOP = 0.2;
 export const BANDIT_GAP = 0.12;
 export const IRON_ODDS = 0.25;
 export const IRON_DROP_MS = 350;

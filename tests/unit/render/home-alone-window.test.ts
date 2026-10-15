@@ -2,9 +2,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BANDIT_ENTER_MS, BANDIT_EVERY_MS, BANDIT_IDLE_MS, BANDIT_PAUSE_MS, BANDIT_STOP, BANDIT_WALK_MS, BanditTimer, CUTOUT,
-  CUTOUT_MS, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, WindowGags, banditPose, partyCount, partyPose, type BanditPose, type Pose,
+  CUTOUT_MS, FIG_H, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, WindowGags, banditPose, partyCount, partyPose, type BanditPose, type Pose,
 } from '../../../src/render/home-alone-window';
-import { computeLayout } from '../../../src/render/layout';
+import { GRID } from '../../../src/core/mask';
+import { homeWindow } from '../../../src/render/home-alone-room';
+import { computeLayout, tileCenter } from '../../../src/render/layout';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -63,6 +65,35 @@ describe('the Wet Bandits', () => {
     const end = banditPose(IRON_WALK_MS, true, bp());
     expect(end).toMatchObject({ done: true, alpha: 0 });
     expect(IRON_WALK_MS).toBeLessThan(BANDIT_WALK_MS);
+  });
+
+  it('pause beside the tree, not behind it: the tall one (who takes the iron) clear of every tile, the short one\'s head and shoulders too', () => {
+    // Figure sizes as drawn: the tall one 1.1 × FIG_H of the window high, 0.42 of that wide, plus a 0.12 h rim glow
+    // each side; the short one 0.8 × FIG_H high, 0.6 of that wide; both stand on a track at 0.9 of the window's height.
+    for (const [w, h] of [[1280, 800], [412, 839], [390, 844]]) {
+      const L = computeLayout(w, h, 2);
+      const win = homeWindow(L);
+      const figH = FIG_H * win.h;
+      const track = win.y + 0.9 * win.h;
+      const p = banditPose(BANDIT_ENTER_MS + BANDIT_PAUSE_MS / 2, true, bp());
+      /** The tree's left edge (CSS px) across the screen rows y0..y1: the leftmost tile in any row they touch. */
+      const treeLeft = (y0: number, y1: number): number => {
+        let left = Infinity;
+        for (const i of GRID.ids) {
+          const [x, y] = tileCenter(L, GRID, i);
+          if (y + L.s / 2 > y0 && y - L.s / 2 < y1) left = Math.min(left, x - L.s / 2);
+        }
+        return left;
+      };
+      const tallH = 1.1 * figH;
+      const tallW = 0.42 * tallH;
+      const xt = win.x + p.xTall * win.w;
+      expect(xt - tallW / 2 - 0.12 * tallH).toBeGreaterThanOrEqual(win.x);
+      expect(xt + tallW / 2).toBeLessThan(treeLeft(track - tallH, track));
+      const shortH = 0.8 * figH;
+      const xs = win.x + p.xShort * win.w;
+      expect(xs + (0.6 * shortH) / 2).toBeLessThan(treeLeft(track - shortH, track - shortH / 2));
+    }
   });
 
   it('come after 20 s with no input, at most once per 60 s; input during a walk does not stop it', () => {
