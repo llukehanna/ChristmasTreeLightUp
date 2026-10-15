@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { game, ready, silentWav, stopClock, typeStill, type W } from './helpers';
+import { asPlayer, game, pickName, ready, resumeIfPaused, signInFromChip, silentWav, stopClock, typeStill, waitInteractive, type W } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -134,6 +134,74 @@ test('never with the head: kevin takes the head off, hohoho takes the house away
   await expect.poll(async () => (await house(page)).on).toBe(false);
   expect(await stored(page, 'aglow.homeAlone')).toBeNull();
   await expect.poll(async () => (await house(page)).scene).toBe('aurora');
+});
+
+/** The account as /api/me reports it. */
+const account = (page: Page) =>
+  page.evaluate(async () => ((await (await fetch('/api/me')).json()) as { user: { starHead: boolean; homeAlone?: boolean } | null }).user);
+
+/** Signs a fresh player in and names them; the page is left on the game. */
+async function signedIn(page: Page): Promise<void> {
+  const player = await asPlayer(page);
+  await ready(page);
+  await signInFromChip(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+}
+
+test("signed in with the account's head still loading its sticker, kevin keeps the head off, here and on the account", async ({ page }) => {
+  test.slow(); // a sign-in and two loads
+  await clips(page);
+  await signedIn(page);
+  // The account says head (another device turned it on).
+  expect(await page.evaluate(async () => (await fetch('/api/me/star-head', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"on":true}' })).status)).toBe(200);
+  // A fresh load: /api/me says head, and the sticker is held while kevin is typed.
+  let release = (): void => {};
+  const held = new Promise<void>((r) => (release = r));
+  let asked = false;
+  await page.route('**/star-head.png', async (route) => {
+    asked = true;
+    await held;
+    await route.fallback();
+  });
+  // Not waiting for the load event: the held sticker holds it up.
+  await page.goto('/?test', { waitUntil: 'domcontentloaded' });
+  await waitInteractive(page);
+  await expect.poll(() => asked).toBe(true);
+  expect((await star(page)).head).toBe(false);
+  const off = page.waitForResponse((r) => r.url().endsWith('/api/me/star-head') && r.request().method() === 'PUT');
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).on).toBe(true);
+  expect((await off).status()).toBe(200);
+  release();
+  // The sticker landing never brings the head back, and the account agrees.
+  await page.waitForTimeout(500);
+  expect((await star(page)).head).toBe(false);
+  expect((await house(page)).on).toBe(true);
+  await expect.poll(() => account(page)).toMatchObject({ starHead: false, homeAlone: true });
+});
+
+test('signed in, kevin typed before the first /api/me answers stays on and reaches the account', async ({ page }) => {
+  test.slow();
+  await clips(page);
+  await signedIn(page);
+  expect((await account(page))?.homeAlone).toBe(false);
+  let release = (): void => {};
+  const held = new Promise<void>((r) => (release = r));
+  const me = (url: URL): boolean => url.pathname === '/api/me';
+  await page.route(me, async (route) => {
+    await held;
+    await route.fallback();
+  });
+  await ready(page);
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).on).toBe(true);
+  const put = page.waitForResponse((r) => r.url().endsWith('/api/me/home-alone') && r.request().method() === 'PUT');
+  release();
+  expect((await put).status()).toBe(200);
+  expect((await house(page)).on).toBe(true);
+  await page.unroute(me);
+  await expect.poll(() => account(page)).toMatchObject({ homeAlone: true });
 });
 
 test('forced traps never touch the board or the log; a tap on the tarantula still turns the tile under it', async ({ page }) => {
