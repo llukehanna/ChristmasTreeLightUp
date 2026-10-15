@@ -306,7 +306,7 @@ export class Renderer {
     }
     // Home Alone's window gags, behind the tree (spec 2026-10-14 §3): faded with the house, never during a sweep.
     const ha = homeAloneAlpha(sc, sw, fr);
-    if (ha > 0) this.homeAlone.drawWindow(ctx, L, ha, tier, f.reducedMotion);
+    if (ha > 0) this.homeAlone.drawWindow(ctx, L, ha, f.reducedMotion);
     else if (sc.id !== 'home-alone') this.homeAlone.reset(); // gone (faded out, or switched at once): a walk ends with it
     const fire = leaving ? share(leaving.light === 'fire', sc.light === 'fire', fadeA) : back.light === 'fire' ? 1 : 0;
     if (fire > 0) drawFirelight(ctx, L, now, fire);

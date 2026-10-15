@@ -27,15 +27,9 @@ describe('homeAloneAlpha', () => {
 });
 
 describe('HomeAloneLayer: the window', () => {
-  it('the party runs while the game runs, stands still while paused, and never under reduced motion', () => {
-    const layer = new HomeAloneLayer(garland(), mulberry32(1));
-    run(layer, 1000, gate());
-    expect(layer.partyMs).toBe(1000);
-    run(layer, 1000, gate({ running: false }));
-    expect(layer.partyMs).toBe(1000);
+  it('under reduced motion the room stays still: no bandits ever', () => {
     const still = new HomeAloneLayer(garland(), mulberry32(1));
     run(still, 120_000, gate({ reduced: true }));
-    expect(still.partyMs).toBe(0);
     expect(still.state().bandits).toBe(false);
   });
 
@@ -105,7 +99,7 @@ describe('HomeAloneLayer: the window', () => {
   it('draws nothing under reduced motion', () => {
     const layer = new HomeAloneLayer(garland());
     const c = { save: vi.fn(), drawImage: vi.fn() } as unknown as CanvasRenderingContext2D;
-    layer.drawWindow(c, L, 1, 0, true);
+    layer.drawWindow(c, L, 1, true);
     expect(c.save).not.toHaveBeenCalled();
   });
 });

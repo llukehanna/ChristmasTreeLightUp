@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  BANDIT_ENTER_MS, BANDIT_EVERY_MS, BANDIT_FIG, FIG_PAD, FIG_TRACK, BANDIT_IDLE_MS, BANDIT_PAUSE_MS, BANDIT_STOP, BANDIT_WALK_MS, BanditTimer, CUTOUT,
-  CUTOUT_MS, FIG_H, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, WindowGags, banditPose, partyCount, partyPose, type BanditPose, type Pose,
+  BANDIT_ENTER_MS, BANDIT_EVERY_MS, BANDIT_FIG, FIG_PAD, FIG_TRACK, BANDIT_IDLE_MS, BANDIT_PAUSE_MS, BANDIT_STOP, BANDIT_WALK_MS, BanditTimer, FIG_H, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, WindowGags, banditPose, type BanditPose,
 } from '../../../src/render/home-alone-window';
 import { GRID } from '../../../src/core/mask';
 import { homeWindow } from '../../../src/render/home-alone-room';
@@ -10,36 +9,7 @@ import { computeLayout, tileCenter } from '../../../src/render/layout';
 
 afterEach(() => vi.restoreAllMocks());
 
-const pose = (): Pose => ({ x: 0, lift: 0, lean: 0 });
 const bp = (): BanditPose => ({ xShort: 0, xTall: 0, ironY: 0, crumple: 0, alpha: 0, done: false });
-
-describe('the fake party', () => {
-  it('the cardboard cut-out slides stiffly back and forth: no bob, no lean', () => {
-    expect(partyPose(CUTOUT, 0, pose()).x).toBeCloseTo(0.18);
-    expect(partyPose(CUTOUT, CUTOUT_MS / 2, pose()).x).toBeCloseTo(0.82);
-    expect(partyPose(CUTOUT, CUTOUT_MS, pose()).x).toBeCloseTo(0.18);
-    for (let t = 0; t < 20_000; t += 333) expect(partyPose(CUTOUT, t, pose())).toMatchObject({ lift: 0, lean: 0 });
-  });
-
-  it('the dancers bob and sway as they cross the panes, wrapping round the loop', () => {
-    const xs = new Set<number>();
-    for (let t = 0; t < 9000; t += 250) {
-      for (let k = 0; k < CUTOUT; k++) {
-        const p = partyPose(k, t, pose());
-        expect(p.x).toBeGreaterThanOrEqual(-0.1);
-        expect(p.x).toBeLessThanOrEqual(1.1);
-        expect(p.lift).toBeGreaterThanOrEqual(0);
-        expect(p.lift).toBeLessThanOrEqual(0.05);
-        xs.add(Math.round(p.x * 100));
-      }
-    }
-    expect(xs.size).toBeGreaterThan(20);
-  });
-
-  it('fewer figures on the slower quality tiers', () => {
-    expect([0, 1, 2, 3].map(partyCount)).toEqual([4, 4, 2, 1]);
-  });
-});
 
 describe('the Wet Bandits', () => {
   it('creep in from off the window, pause, and leave the other side by BANDIT_WALK_MS', () => {
@@ -137,15 +107,15 @@ describe('WindowGags', () => {
     const L = computeLayout(1280, 800, 2);
     const g = new WindowGags();
     const names: string[] = [];
-    g.draw(recorder(names), L, 1, 0, 1000, -1, false);
+    g.draw(recorder(names), L, 1, -1, false);
     const baked = made;
     expect(baked).toBeGreaterThan(0);
     expect(names).toContain('clip');
-    expect(names.filter((n) => n === 'drawImage')).toHaveLength(4); // four party figures
+    expect(names.filter((n) => n === 'drawImage')).toHaveLength(0); // no walk, nothing in the window
     names.length = 0;
-    g.draw(recorder(names), L, 1, 0, 1500, 3500, true); // and the bandits, with the iron
+    g.draw(recorder(names), L, 1, 3500, true); // and the bandits, with the iron
     expect(made).toBe(baked);
-    expect(names.filter((n) => n === 'drawImage')).toHaveLength(4 + 3);
+    expect(names.filter((n) => n === 'drawImage')).toHaveLength(3);
   });
 
   it("puts the mullions back over the figures at the layer's alpha (mid cross-fade, a bandit fading too), then alpha 1", () => {
@@ -156,7 +126,7 @@ describe('WindowGags', () => {
       get: (t, k) => (k in t ? t[k] : k === 'fillRect' ? () => bars.push(t.globalAlpha as number) : () => (String(k).startsWith('create') ? { addColorStop() {} } : undefined)),
       set: (t, k, v) => ((t[k] = v), true),
     }) as unknown as CanvasRenderingContext2D;
-    new WindowGags().draw(c, computeLayout(1280, 800, 2), 0.4, 0, 1000, IRON_WALK_MS - 100, true);
+    new WindowGags().draw(c, computeLayout(1280, 800, 2), 0.4, IRON_WALK_MS - 100, true);
     expect(bars.length).toBeGreaterThan(0);
     for (const a of bars) expect(a).toBeCloseTo(0.4);
     expect(state.globalAlpha).toBe(1);

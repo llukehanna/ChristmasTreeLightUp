@@ -29,7 +29,6 @@ export function homeAloneAlpha(scene: Pick<Scene, 'id'>, run: Pick<SweepRun, 'ki
 }
 
 export class HomeAloneLayer {
-  private partyT = 0;
   /** ms into the bandits' walk; −1: none. */
   private walkT = -1;
   private iron = false;
@@ -47,10 +46,6 @@ export class HomeAloneLayer {
     this.spiderEvery = new TrapScheduler(TARANTULA_EVERY, this.rng);
   }
 
-  get partyMs(): number {
-    return this.partyT;
-  }
-
   /** A tap, key, pointer move, wheel or pinch: the bandits' idle clock starts over. */
   input(): void {
     this.timer.input();
@@ -63,7 +58,6 @@ export class HomeAloneLayer {
       this.cancelTraps();
     }
     if (g.reduced || !g.running) return;
-    this.partyT += dt;
     if (this.walkT >= 0) {
       this.walkT += dt;
       if (this.walkT >= (this.iron ? IRON_WALK_MS : BANDIT_WALK_MS)) this.walkT = -1;
@@ -115,9 +109,9 @@ export class HomeAloneLayer {
   }
 
   /** Behind the tree (screen space, CSS px transform). Nothing at all under reduced motion: a still room. */
-  drawWindow(c: CanvasRenderingContext2D, L: Layout, alpha: number, tier: number, reduced: boolean): void {
+  drawWindow(c: CanvasRenderingContext2D, L: Layout, alpha: number, reduced: boolean): void {
     if (reduced || alpha <= 0) return;
-    this.gags.draw(c, L, alpha, tier, this.partyT, this.walkT, this.iron);
+    this.gags.draw(c, L, alpha, this.walkT, this.iron);
   }
 
   /** Over the board (screen space, CSS px transform): the paint can on its rope, the tarantula. */

@@ -6,37 +6,14 @@ import type { Layout } from './layout';
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
-/** A figure's height as a fraction of the window's; feet on a track at FIG_TRACK of its height. */
+/** The unit figure height as a fraction of the window's (the bandits are multiples of it); feet on a track at FIG_TRACK of the window's height. */
 export const FIG_H = 0.4;
 export const FIG_TRACK = 0.9;
 /**
- * The bandits as drawn: height as a multiple of a party figure's (FIG_H), and width over height (the sprite's glass,
+ * The bandits as drawn: height as a multiple of the unit figure height (FIG_H), and width over height (the sprite's glass,
  * before its FIG_PAD of rim glow). The geometry test that keeps them beside the tree reads these.
  */
 export const BANDIT_FIG = { short: { scale: 0.8, aspect: 0.6 }, tall: { scale: 1.1, aspect: 0.42 } } as const;
-
-export const PARTY_LOOP_MS = 9000;
-/** Figure 3 is the cardboard cut-out; 0–2 dance. */
-export const CUTOUT = 3;
-export const CUTOUT_MS = 4200;
-export const partyCount = (tier: number): number => (tier >= 3 ? 1 : tier >= 2 ? 2 : 4);
-
-export interface Pose { x: number; lift: number; lean: number }
-
-/** Figure k at party time t: x 0..1 across the window, lift (fraction of its height), lean (rad). Writes `out`. */
-export function partyPose(k: number, t: number, out: Pose): Pose {
-  if (k === CUTOUT) {
-    const u = (t % CUTOUT_MS) / CUTOUT_MS;
-    out.x = 0.18 + 0.64 * (u < 0.5 ? 2 * u : 2 - 2 * u);
-    out.lift = 0;
-    out.lean = 0;
-    return out;
-  }
-  out.x = -0.1 + 1.2 * ((t / PARTY_LOOP_MS + k / 3) % 1);
-  out.lift = 0.05 * Math.abs(Math.sin(t / 170 + k * 1.3));
-  out.lean = 0.14 * Math.sin(t / 340 + k * 1.7);
-  return out;
-}
 
 export const BANDIT_IDLE_MS = 20_000;
 export const BANDIT_EVERY_MS = 60_000;
@@ -98,33 +75,16 @@ export class BanditTimer {
   }
 }
 
-type Kind = 'dancerA' | 'dancerB' | 'cutout' | 'short' | 'tall' | 'iron';
+type Kind = 'short' | 'tall' | 'iron';
 /** `alpha`: the silhouette's opacity, applied after it is filled (no seams where parts overlap). `glow`: its rim light. */
 interface Shape { color: string; alpha: number; glow: string; aspect: number; head?: readonly [number, number, number]; polys: readonly (readonly number[])[] }
 
-const PARTY = '#0e0604';
 const BANDIT = '#05070f';
-/**
- * Rim light, so the silhouettes read against the night glass and the dark rooftops behind them: the party warm, as if
- * backlit by the room; the bandits cold, lit by the moon and the snow.
- */
-const WARM = 'rgba(255,196,120,.6)';
+/** Rim light, so the silhouettes read against the night glass and the dark rooftops behind them: cold, lit by the moon and the snow. */
 const COLD = 'rgba(190,210,255,.5)';
 /** Room round each sprite for its rim glow, as a fraction of the figure's height. */
 export const FIG_PAD = 0.12;
 const FIGURES: Readonly<Record<Kind, Shape>> = {
-  // Arms up in a V.
-  dancerA: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.62, head: [0, -0.88, 0.085], polys: [
-    [-0.11, -0.76, 0.11, -0.76, 0.14, -0.42, 0.09, -0.4, 0.12, 0, 0.04, 0, 0, -0.3, -0.04, 0, -0.12, 0, -0.09, -0.4, -0.14, -0.42],
-    [-0.1, -0.74, -0.28, -0.99, -0.23, -1, -0.06, -0.7], [0.1, -0.74, 0.28, -0.99, 0.23, -1, 0.06, -0.7],
-  ] },
-  // Arms out, a flared dress.
-  dancerB: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.7, head: [0, -0.88, 0.085], polys: [
-    [-0.09, -0.77, 0.09, -0.77, 0.22, -0.28, -0.22, -0.28], [-0.08, -0.3, -0.03, -0.3, -0.04, 0, -0.09, 0], [0.03, -0.3, 0.08, -0.3, 0.09, 0, 0.04, 0],
-    [-0.08, -0.72, -0.34, -0.66, -0.34, -0.62, -0.08, -0.64], [0.08, -0.72, 0.34, -0.66, 0.34, -0.62, 0.08, -0.64],
-  ] },
-  // The cardboard cut-out: a stiff board on an easel leg.
-  cutout: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.36, head: [0, -0.9, 0.08], polys: [[-0.13, -0.8, 0.13, -0.8, 0.13, -0.06, -0.13, -0.06], [-0.02, -0.4, 0.02, -0.4, 0.16, 0, 0.12, 0]] },
   // Harry: short and stocky, a brimmed hat.
   short: { color: BANDIT, alpha: 1, glow: COLD, aspect: BANDIT_FIG.short.aspect, head: [0, -0.8, 0.1], polys: [
     [-0.16, -0.88, 0.16, -0.88, 0.16, -0.85, -0.16, -0.85], [-0.09, -0.98, 0.09, -0.98, 0.1, -0.88, -0.1, -0.88],
@@ -141,8 +101,8 @@ const FIGURES: Readonly<Record<Kind, Shape>> = {
     [-0.2, -0.55, 0.3, -0.5, 0.3, -0.95, -0.25, -0.95, -0.25, -0.82, 0.17, -0.82, 0.17, -0.62, -0.2, -0.62],
   ] },
 };
-/** Each sprite's height as a multiple of a party figure's. */
-const SCALE: readonly (readonly [Kind, number])[] = [['dancerA', 1], ['dancerB', 1], ['cutout', 1], ['short', BANDIT_FIG.short.scale], ['tall', BANDIT_FIG.tall.scale], ['iron', 0.22]];
+/** Each sprite's height as a multiple of the unit figure height (FIG_H of the window). */
+const SCALE: readonly (readonly [Kind, number])[] = [['short', BANDIT_FIG.short.scale], ['tall', BANDIT_FIG.tall.scale], ['iron', 0.22]];
 
 /** Adds the figure's parts to the current path as subpaths. */
 function trace(x: CanvasRenderingContext2D, f: Shape, part: number): void {
@@ -203,12 +163,11 @@ export class WindowGags {
   private builtFor: Layout | null = null;
   private win: WindowRect | null = null;
   private figH = 0;
-  private readonly pose: Pose = { x: 0, lift: 0, lean: 0 };
   private readonly bandit: BanditPose = { xShort: 0, xTall: 0, ironY: -1, crumple: 0, alpha: 1, done: false };
   private sprites: Partial<Record<Kind, HTMLCanvasElement>> = {};
 
   /** CSS px transform set by the caller. `walkMs` −1: no walk. Clipped to the glass; the mullions go back over the figures. */
-  draw(c: CanvasRenderingContext2D, L: Layout, alpha: number, tier: number, partyMs: number, walkMs: number, iron: boolean): void {
+  draw(c: CanvasRenderingContext2D, L: Layout, alpha: number, walkMs: number, iron: boolean): void {
     if (this.builtFor !== L) this.build(L);
     const win = this.win;
     if (!win || alpha <= 0) return;
@@ -218,12 +177,6 @@ export class WindowGags {
     c.rect(win.x, win.y, win.w, win.h);
     c.clip();
     c.globalAlpha = alpha;
-    const n = partyCount(tier);
-    for (let k = 0; k < n; k++) {
-      const p = partyPose(k, partyMs, this.pose);
-      const s = k === CUTOUT ? this.sprites.cutout : k % 2 ? this.sprites.dancerB : this.sprites.dancerA;
-      this.blit(c, s, win.x + p.x * win.w, track - p.lift * this.figH, this.figH, p.lean, 1);
-    }
     if (walkMs >= 0) {
       const b = banditPose(walkMs, iron, this.bandit);
       c.globalAlpha = alpha * b.alpha;

@@ -98,7 +98,7 @@ it('switched off, the house fades out with a walk still under way; it ends once 
   r.frame(frame(1000));
   r.homeAlone.force('bandits', 1000, r.layout);
   r.setScene(SCENES.midnight, { now: 2000, reduced: false, kind: 'fade' });
-  expect(r.homeAloneShowing).toBe(true); // the app keeps stepping the party while this holds
+  expect(r.homeAloneShowing).toBe(true); // the app keeps stepping the layer while this holds
   r.frame(frame(2000 + FADE_MS / 2));
   expect(r.homeAloneShowing).toBe(true);
   expect(r.homeAlone.state().bandits).toBe(true);
