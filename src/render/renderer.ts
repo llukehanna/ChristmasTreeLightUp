@@ -18,6 +18,7 @@ import { tileGeometry } from './geometry';
 import { Y, computeLayout, tileCenter, type Layout } from './layout';
 import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
+import { PIZZA_PX, PizzaSprite } from './pizza';
 import { drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
 import { Presents } from './presents';
 import { Topper } from './topper';
@@ -90,6 +91,8 @@ export class Renderer {
   private readonly embers = new Embers();
   private readonly current = new Current();
   private readonly confetti = new Confetti();
+  /** Home Alone's confetti: Little Nero's slices (spec 2026-10-14 §6). */
+  private readonly pizza = new PizzaSprite();
   readonly garland = new Garland();
   /** Home Alone mode's window gags and traps (spec 2026-10-14). */
   readonly homeAlone = new HomeAloneLayer(this.garland);
@@ -439,9 +442,16 @@ export class Renderer {
     }
     this.snow.draw(ctx, L, sc, true, motionDt, now, density);
     if (!f.reducedMotion) {
-      // The mini heads' sprite is asked for only while the confetti falls.
-      const heads = secret && this.confetti.count(now, f.winAt, density) > 0;
-      this.confetti.draw(ctx, L, now, f.winAt, density, sc, heads ? this.faces.get('confetti', FACE_CONFETTI_PX * dpr, true) : null);
+      // Secret mode's mini heads or Home Alone's pizza (spec 2026-10-14 §6), asked for only while the confetti falls.
+      const falling = this.confetti.count(now, f.winAt, density) > 0;
+      const sprite = !falling
+        ? null
+        : secret
+          ? this.faces.get('confetti', FACE_CONFETTI_PX * dpr, true)
+          : sc.id === 'home-alone'
+            ? this.pizza.get(PIZZA_PX * dpr)
+            : null;
+      this.confetti.draw(ctx, L, now, f.winAt, density, sc, sprite);
     }
   }
 

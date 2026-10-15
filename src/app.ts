@@ -38,7 +38,7 @@ import { el, isEditable } from './ui/dom';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
-import { accountStatsView, deviceStatsView, Results, type StatsView } from './ui/results';
+import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareImage } from './ui/share';
 import { StarEgg } from './ui/star-egg';
@@ -72,6 +72,8 @@ export interface HomeAloneState extends HomeAloneLayerState {
   /** Clip plays asked for (every gate passed) and started. */
   asked: Record<HomeAloneClip, number>;
   played: Record<HomeAloneClip, number>;
+  /** The results tag shows Home Alone's line. */
+  line: boolean;
 }
 
 export class App {
@@ -422,12 +424,16 @@ export class App {
         if (this.board !== game) return;
         this.sfx.win();
         if (this.secret) this.playWinSound(game);
+        // Home Alone's win (spec 2026-10-14 §6): the filthy animal, on the effects bus; never over a new tree or the mode switched off.
+        if (this.homeAlone) this.sounds.play('filthy-animal', () => this.board === game && this.homeAlone);
       }, delay);
     }
     setTimeout(() => {
       if (this.board !== game || this.starting) return;
       this.prepareShare();
-      this.results.show({ seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: this.statsView() });
+      this.results.show({
+        seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
+      });
     }, delay + 1500);
   }
 
@@ -634,7 +640,7 @@ export class App {
 
   /** Renders the share image from the stage as it is now (the lit tree, identity camera). */
   private prepareShare(): ShareImage {
-    const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, shareInk(this.renderer.scene)));
+    const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, shareInk(this.renderer.scene), this.homeAlone ? HOME_ALONE_LINE : null));
     this.shareImage = image;
     return image;
   }
@@ -854,6 +860,7 @@ export class App {
     this.homeAlone = on;
     if (on && this.egg.isOn) this.egg.off();
     if (on) this.sounds.preload();
+    this.results.setLine(on ? HOME_ALONE_LINE : null); // a tag already up follows the mode (its share image re-renders with the scene)
     if (how === 'start' || !changed) return;
     this.pausedDrawn = false;
     if (!on && this.secret) return; // the head is taking over: its own sweep re-scenes
@@ -1098,6 +1105,7 @@ export class App {
     return {
       on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping, ...this.renderer.homeAlone.state(),
       asked: { ...this.sounds.asked }, played: { ...this.sounds.played },
+      line: document.getElementById('r-merry')?.textContent === HOME_ALONE_LINE,
     };
   }
 

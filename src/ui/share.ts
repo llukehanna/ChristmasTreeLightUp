@@ -25,8 +25,8 @@ function context2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
   return x;
 }
 
-/** 1080×1350 image: blurred scene fill, the player's lit tree, their time and the URL (spec §6, step 7). */
-export async function makeShareImage(stage: HTMLCanvasElement, rect: { x: number; y: number; w: number; h: number }, seconds: number, ink: string): Promise<Blob> {
+/** 1080×1350 image: blurred scene fill, the player's lit tree, their time, Home Alone's `line` if any, and the URL (spec §6, step 7). */
+export async function makeShareImage(stage: HTMLCanvasElement, rect: { x: number; y: number; w: number; h: number }, seconds: number, ink: string, line: string | null = null): Promise<Blob> {
   await document.fonts.load('italic 88px "Instrument Serif"');
   const c = document.createElement('canvas');
   c.width = W;
@@ -69,10 +69,17 @@ export async function makeShareImage(stage: HTMLCanvasElement, rect: { x: number
   x.fillStyle = ink;
   x.textAlign = 'center';
   x.font = 'italic 88px "Instrument Serif"';
-  x.fillText(`Lit in ${formatTime(seconds)}`, W / 2, H - 140);
+  // Home Alone's line (spec 2026-10-14 §6) sits between the time and the address; the time moves up to make room.
+  x.fillText(`Lit in ${formatTime(seconds)}`, W / 2, line ? H - 180 : H - 140);
+  if (line) {
+    x.font = 'italic 46px "Instrument Serif"';
+    x.globalAlpha = 0.92;
+    x.fillText(line, W / 2, H - 122);
+    x.globalAlpha = 1;
+  }
   x.font = '500 24px Inter, sans-serif';
   x.globalAlpha = 0.7;
-  x.fillText('A G L O W   ·   A G L O W . L U K E G H A N N A . C O M', W / 2, H - 80);
+  x.fillText('A G L O W   ·   A G L O W . L U K E G H A N N A . C O M', W / 2, line ? H - 70 : H - 80);
   return new Promise((resolve, reject) =>
     c.toBlob((b) => {
       c.width = c.height = 0;

@@ -27,7 +27,14 @@ export interface ResultsData {
   stats: Stats;
   /** Solved, Average and Day streak as shown. */
   view: StatsView;
+  /** Home Alone mode's line in place of "Merry & bright" (spec 2026-10-14 §6). */
+  line?: string | null;
 }
+
+/** Home Alone mode's line under the time (spec 2026-10-14 §6), on the tag and the share image. */
+export const HOME_ALONE_LINE = 'Keep the change, ya filthy animal.';
+/** The tag's usual words under the time (index.html's #r-merry). */
+export const MERRY = 'Merry & bright';
 
 export class Results {
   private readonly root = el('results');
@@ -45,6 +52,7 @@ export class Results {
     badge.textContent = d.newBest || d.stats.bestSeconds === null ? 'New best' : `Best ${formatTime(d.stats.bestSeconds)}`;
     badge.classList.toggle('quiet', !d.newBest);
     this.setStats(d.view);
+    this.setLine(d.line ?? null);
     this.root.hidden = false;
     requestAnimationFrame(() => requestAnimationFrame(() => this.root.classList.add('show')));
   }
@@ -54,6 +62,12 @@ export class Results {
     el('r-solved').textContent = count(v.solved);
     el('r-avg').textContent = formatTime(Number(v.averageSeconds));
     el('r-streak').textContent = count(v.streak);
+  }
+
+  /** The words under the time: Home Alone's line, or the usual ones. Looked up lazily: older fixtures have no #r-merry. */
+  setLine(line: string | null): void {
+    const m = document.getElementById('r-merry');
+    if (m) m.textContent = line ?? MERRY;
   }
 
   hide(): void {

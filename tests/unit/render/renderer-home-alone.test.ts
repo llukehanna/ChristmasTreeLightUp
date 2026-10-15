@@ -5,6 +5,8 @@ import { GRID } from '../../../src/core/mask';
 import { mulberry32 } from '../../../src/core/rng';
 import { FADE_MS } from '../../../src/render/aurora';
 import { IDENTITY } from '../../../src/render/camera';
+import { CONFETTI_MS } from '../../../src/render/effects';
+import { PizzaSprite } from '../../../src/render/pizza';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
 import { AURORA, HOME_ALONE, SCENES, type Scene } from '../../../src/render/scenes';
 import { VisualState } from '../../../src/render/visual-state';
@@ -110,4 +112,16 @@ it('the traps draw over the board only in the house', () => {
   r.setScene(HOME_ALONE);
   r.frame(frame(1016));
   expect(traps).toHaveBeenCalledTimes(1);
+});
+
+it('a win in the house asks for the pizza slice only while the confetti falls; other scenes never do', () => {
+  const get = vi.spyOn(PizzaSprite.prototype, 'get');
+  const night = setup(SCENES.midnight);
+  night.r.frame(night.frame(3000, { winAt: 1000 }));
+  expect(get).not.toHaveBeenCalled();
+  const house = setup(HOME_ALONE);
+  house.r.frame(house.frame(3000, { winAt: 1000 }));
+  expect(get).toHaveBeenCalledTimes(1);
+  house.r.frame(house.frame(1000 + CONFETTI_MS + 10, { winAt: 1000 }));
+  expect(get).toHaveBeenCalledTimes(1);
 });

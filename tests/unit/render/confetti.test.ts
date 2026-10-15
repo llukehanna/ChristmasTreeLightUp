@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { CONFETTI_COUNT, CONFETTI_MS, Confetti } from '../../../src/render/effects';
 import { computeLayout } from '../../../src/render/layout';
-import { SCENES } from '../../../src/render/scenes';
+import { HOME_ALONE, SCENES } from '../../../src/render/scenes';
 
 it('falls only for a few seconds after the win', () => {
   const c = new Confetti();
@@ -37,4 +37,20 @@ it('secret mode: every gold fleck falls as a mini head, the snow stays snow', ()
   // Only the snow's glows are left: no gold fills and no glints.
   expect(n(heads, 'fillRect')).toBe(n(heads, 'createRadialGradient'));
   expect(n(heads, 'createRadialGradient')).toBeLessThanOrEqual(n(plain, 'createRadialGradient'));
+});
+
+it('Home Alone: every gold fleck tumbles down as a pizza slice, same budget and window', () => {
+  const log = (names: string[]) =>
+    new Proxy({ globalAlpha: 1, globalCompositeOperation: 'source-over' } as Record<string | symbol, unknown>, {
+      get: (t, k) => (k in t ? t[k] : (..._: unknown[]) => (names.push(String(k)), k === 'createRadialGradient' ? { addColorStop() {} } : undefined)),
+      set: (t, k, v) => ((t[k] = v), true),
+    }) as unknown as CanvasRenderingContext2D;
+  const L = computeLayout(1280, 800, 2);
+  const plain: string[] = [];
+  const pizza: string[] = [];
+  new Confetti().draw(log(plain), L, 4000, 1000, 1, HOME_ALONE);
+  new Confetti().draw(log(pizza), L, 4000, 1000, 1, HOME_ALONE, { width: 26, height: 29 } as HTMLCanvasElement);
+  const gold = plain.filter((x) => x === 'fillRect').length - plain.filter((x) => x === 'createRadialGradient').length;
+  expect(pizza.filter((x) => x === 'drawImage')).toHaveLength(gold);
+  expect(new Confetti().count(1000 + CONFETTI_MS + 1, 1000, 1)).toBe(0);
 });

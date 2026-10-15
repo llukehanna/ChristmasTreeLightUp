@@ -438,8 +438,11 @@ export class Confetti {
     return Math.floor(CONFETTI_COUNT * density);
   }
 
-  /** Screen space; leaves a CSS px (`dpr`) transform set. */
-  draw(c: CanvasRenderingContext2D, L: Layout, now: number, winAt: number | null, density: number, sc: Scene, head: HTMLCanvasElement | null = null): void {
+  /**
+   * Screen space; leaves a CSS px (`dpr`) transform set. `sprite`: each gold fleck falls as this instead, turning like a
+   * coin (secret mode's mini heads, Home Alone's pizza).
+   */
+  draw(c: CanvasRenderingContext2D, L: Layout, now: number, winAt: number | null, density: number, sc: Scene, sprite: HTMLCanvasElement | null = null): void {
     const n = this.count(now, winAt, density);
     if (!n || winAt === null) return;
     if (this.seed !== winAt) this.spawn(winAt);
@@ -464,15 +467,15 @@ export class Confetti {
       }
       // A tumbling foil fleck: foreshortened by its flip, brightest when it faces the viewer.
       const face = Math.abs(Math.cos(f.tumble * tt + f.ph));
-      if (head) {
-        // A mini head turning like a coin as it tumbles: foreshortened across, spinning slower than a fleck so the face reads.
+      if (sprite) {
+        // A mini head or a slice turning like a coin as it tumbles: foreshortened across, spinning slower than a fleck so the face reads.
         const hh = size * HEAD_FLECK;
-        const hw = (hh * head.width) / head.height;
+        const hw = (hh * sprite.width) / sprite.height;
         c.translate(x, y);
         c.rotate((f.spin * tt + f.ph) * 0.35);
         c.scale(Math.max(0.12, face), 1);
         c.globalAlpha = a;
-        c.drawImage(head, -hw / 2, -hh / 2, hw, hh);
+        c.drawImage(sprite, -hw / 2, -hh / 2, hw, hh);
         c.globalAlpha = 1;
         continue;
       }

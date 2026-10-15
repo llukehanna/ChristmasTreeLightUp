@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AccountStats } from '../../../src/api/types';
 import { EMPTY_STATS, type Stats } from '../../../src/store/stats';
-import { accountStatsView, deviceStatsView, Results } from '../../../src/ui/results';
+import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results } from '../../../src/ui/results';
 
 const device: Stats = { v: 1, solved: 8, totalSeconds: 800, bestSeconds: 60, bestScore: 44000, streak: 11, longestStreak: 11, lastSolvedDay: '2026-10-08' };
 const account: AccountStats = { userId: 1, solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 41_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-10-08', imported: 300 };
@@ -11,7 +11,7 @@ const noop = (): void => undefined;
 
 beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', () => 0);
-  document.body.innerHTML = `<section id="results" hidden><h2 id="r-time"></h2><div id="r-score"></div><div id="r-badge"></div>
+  document.body.innerHTML = `<section id="results" hidden><h2 id="r-time"></h2><div id="r-merry">Merry &amp; bright</div><div id="r-score"></div><div id="r-badge"></div>
     <b id="r-solved"></b><b id="r-avg"></b><b id="r-streak"></b><button id="r-new"></button><button id="r-share"></button><button id="r-keep"></button></section>`;
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -42,4 +42,14 @@ it('counts of 1,000 and up carry a comma, as in Your games; the device view is t
   // Offline or signed out: the app repaints the device's numbers.
   r.setStats(deviceStatsView(device));
   expect(['r-solved', 'r-avg', 'r-streak'].map(text)).toEqual(['8', '1:40', '11']);
+});
+
+it("Home Alone: the line takes Merry & bright's place under the time, and gives it back", () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  r.show({ seconds: 42, score: 45800, newBest: false, stats: device, view: deviceStatsView(device), line: HOME_ALONE_LINE });
+  expect(text('r-merry')).toBe('Keep the change, ya filthy animal.');
+  r.setLine(null);
+  expect(text('r-merry')).toBe('Merry & bright');
+  r.show({ seconds: 42, score: 45800, newBest: false, stats: device, view: deviceStatsView(device) });
+  expect(text('r-merry')).toBe('Merry & bright');
 });
