@@ -206,10 +206,11 @@ export class Embers {
 
 /* ---------- scene lighting and feedback ---------- */
 
-export function drawFirelight(c: CanvasRenderingContext2D, L: Layout, now: number): void {
+/** The hearth's flickering glow, at `amount` (0..1: a cross-fade brings it in or out). */
+export function drawFirelight(c: CanvasRenderingContext2D, L: Layout, now: number, amount = 1): void {
   const f = 0.5 + 0.5 * (Math.sin(now * 0.0031) * 0.5 + Math.sin(now * 0.0077 + 1) * 0.3 + Math.sin(now * 0.013 + 2) * 0.2);
   c.globalCompositeOperation = 'lighter';
-  radial(c, -L.w * 0.05, L.h * 0.92, L.w * 0.75, [[0, `rgba(255,120,40,${0.2 + f * 0.08})`], [1, 'rgba(255,120,40,0)']]);
+  radial(c, -L.w * 0.05, L.h * 0.92, L.w * 0.75, [[0, `rgba(255,120,40,${(0.2 + f * 0.08) * amount})`], [1, 'rgba(255,120,40,0)']]);
   c.globalCompositeOperation = 'source-over';
 }
 

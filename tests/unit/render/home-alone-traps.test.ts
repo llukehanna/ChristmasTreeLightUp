@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import {
-  CRAWL_MS, PAINT_EVERY, PAINT_IN_MS, PAINT_MS, PAINT_SWING, PaintCan, TARANTULA_SCARE_PX, Tarantula, TrapScheduler, paintCanAngle,
+  CRAWL_MS, PAINT_EVERY, PAINT_IN_MS, PAINT_MS, PAINT_SWING, PaintCan, TARANTULA_SCARE_PX, Tarantula, TrapScheduler, drawPaintCan,
+  paintCanAngle,
 } from '../../../src/render/home-alone-traps';
 import { computeLayout } from '../../../src/render/layout';
 
@@ -28,6 +29,29 @@ describe('the paint can', () => {
     expect(paintCanAngle(PAINT_IN_MS)).toBeCloseTo(0);
     expect(paintCanAngle(PAINT_MS)).toBeCloseTo(PAINT_SWING);
     for (let t = 50; t < PAINT_IN_MS; t += 50) expect(paintCanAngle(t)).toBeLessThan(paintCanAngle(t - 50));
+  });
+
+  it('swings in from the left for a bulb on the right half, mirrored from the right for one on the left half', () => {
+    // Two bulbs the same distance either side of the centre, the rope's far end recorded at the start of the swing.
+    const garland = { geo: { n: 2, size: 14, bulbs: [{ x: 200, y: 90, angle: 0 }, { x: L.w - 200, y: 90, angle: 0 }] }, pickLit: () => 0, knock: () => {}, unknock: () => {} };
+    const end = (bulb: number, t: number): [number, number] => {
+      let at: [number, number] = [NaN, NaN];
+      const c = { beginPath() {}, moveTo() {}, stroke() {}, lineTo: (x: number, y: number) => (at = [x, y]) } as unknown as CanvasRenderingContext2D;
+      const can = new PaintCan();
+      can.start(bulb);
+      can.t = t;
+      drawPaintCan(c, L, can, garland, null);
+      return at;
+    };
+    for (const t of [0, PAINT_IN_MS / 2, PAINT_MS - 100]) {
+      const [lx, ly] = end(0, t);
+      const [rx, ry] = end(1, t);
+      expect(rx).toBeLessThan(L.w - 200); // right half: the can hangs to the bulb's left
+      expect(lx).toBeGreaterThan(200); // left half: to its right, never off the screen's edge
+      expect(lx - 200).toBeCloseTo(L.w - 200 - rx, 6);
+      expect(ly).toBeCloseTo(ry, 6);
+    }
+    expect(end(0, PAINT_IN_MS)[0]).toBeCloseTo(200, 6); // straight down over its bulb at the hit
   });
 
   it('step says "hit" once, at PAINT_IN_MS, then the can is gone by PAINT_MS', () => {

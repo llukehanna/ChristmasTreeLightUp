@@ -4,6 +4,7 @@ import { GRID } from '../../../src/core/mask';
 import { mulberry32 } from '../../../src/core/rng';
 import { floorToys, homeWindow, paintHomeAlone } from '../../../src/render/home-alone-room';
 import { X, Y, computeLayout, type Layout } from '../../../src/render/layout';
+import { giftBounds, placePresents } from '../../../src/render/presents';
 
 const SIZES = [[1280, 800], [1920, 1080], [390, 844], [320, 568], [844, 390]] as const;
 const tiles = (L: Layout) =>
@@ -50,6 +51,21 @@ describe('the floor toys', () => {
         expect(t.y).toBeGreaterThanOrEqual(Y(L, 10.05));
         expect(t.y + t.h).toBeLessThanOrEqual(h);
         for (const r of rects) expect(t.x + t.w <= r.x0 || r.x1 <= t.x || t.y + t.h <= r.y0 || r.y1 <= t.y).toBe(true);
+      }
+    });
+  }
+
+  for (const [w, h] of SIZES) {
+    it(`no toy hides behind a present at ${w}×${h}: each one, turned as drawn, clear of every gift`, () => {
+      const L = computeLayout(w, h, 2);
+      const gifts = placePresents(L, GRID).map(giftBounds);
+      if (w === 1280) expect(gifts.length).toBeGreaterThan(0);
+      for (const t of floorToys(L, GRID)) {
+        // The toy's box rotated about its centre, as paintToy draws it.
+        const ex = (Math.abs(Math.cos(t.rot)) * t.w + Math.abs(Math.sin(t.rot)) * t.h) / 2;
+        const ey = (Math.abs(Math.sin(t.rot)) * t.w + Math.abs(Math.cos(t.rot)) * t.h) / 2;
+        const [cx, cy] = [t.x + t.w / 2, t.y + t.h / 2];
+        for (const g of gifts) expect(cx + ex <= g.x0 || g.x1 <= cx - ex || cy + ey <= g.y0 || g.y1 <= cy - ey, `${t.kind} at ${cx},${cy}`).toBe(true);
       }
     });
   }

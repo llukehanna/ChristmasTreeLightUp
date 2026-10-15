@@ -329,13 +329,43 @@ export class SkySweep {
   /**
    * The scene is changing from `from` to `to`; the caller repaints `bg` after. A sweep runs only with `sweep`, a sized
    * stage and a change into or out of the aurora; a fade (`kind: 'fade'`) with any change of scene, on a sized stage,
-   * not under reduced motion (the house arrives at once). Any other change ends a sweep or fade under way.
+   * not under reduced motion (the house arrives at once). A second fade mid-fade (kevin again) reverses it from where it
+   * stands, as a second sweep mid-sweep does; the head's sweep mid-fade (hohoho) bakes the fade as it stands into the
+   * leaving backdrop and sweeps from that. Any other change ends a sweep or fade under way.
    */
   change(from: Scene, to: Scene, sweep: SceneChange | null, sized: boolean): void {
     const fade = sweep?.kind === 'fade';
     const crossing = fade ? from !== to : (to.id === 'aurora') !== (from.id === 'aurora');
     const dir = to.id === 'aurora' ? 'down' : 'up';
     const run = this.run;
+    if (run && sweep && fade && run.kind === 'fade' && crossing && sized && !sweep.reduced) {
+      // Reverse the fade: the leaving backdrop becomes the arriving one (the caller repaints it), and the clock is set so
+      // the arriving alpha starts at 1 − the alpha it had (a linear fade), so nothing jumps.
+      const a = clamp01((this.lastNow - run.at) / FADE_MS);
+      const arriving = run.from;
+      run.from = this.bg;
+      run.fromScene = from;
+      this.bg = arriving;
+      run.at = this.lastNow - (1 - a) * FADE_MS;
+      return;
+    }
+    if (run && sweep && !fade && run.kind === 'fade' && crossing && sized) {
+      // The head mid-fade: the sky as it stands (the arriving backdrop at its alpha over the leaving one) becomes the
+      // sweep's leaving backdrop, owned by whichever side showed more; the caller repaints `bg` as the aurora's.
+      const a = clamp01((this.lastNow - run.at) / FADE_MS);
+      const c = run.from.getContext('2d');
+      if (c) {
+        c.globalAlpha = a;
+        c.drawImage(this.bg, 0, 0);
+        c.globalAlpha = 1;
+      }
+      if (a >= 0.5) run.fromScene = from;
+      run.at = sweep.now;
+      run.dir = dir;
+      run.reduced = sweep.reduced;
+      run.kind = 'sweep';
+      return;
+    }
     if (run && sweep && !fade && run.kind === 'sweep' && crossing && sized) {
       // Reverse: the leaving backdrop becomes the arriving one, and the clock is mirrored so the cover doesn't jump
       // (easeInOutCubic is symmetric: 1 − e(1 − k) = e(k)).

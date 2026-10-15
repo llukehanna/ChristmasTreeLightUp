@@ -324,6 +324,48 @@ describe('SkySweep fades', () => {
     expect(s.frame(1300 + FADE_MS)).toBeNull();
   });
 
+  it('kevin again mid-fade reverses it from where it stands, with no new canvas', () => {
+    const s = sized(new SkySweep());
+    const night = s.bg;
+    s.change(SCENES.midnight, HOME_ALONE, { now: 1000, reduced: false, kind: 'fade' }, true);
+    const house = s.bg;
+    expect(s.frame(1000 + 0.3 * FADE_MS)?.alpha).toBeCloseTo(0.3);
+    const spy = vi.spyOn(document, 'createElement');
+    s.change(HOME_ALONE, SCENES.midnight, { now: 1000 + 0.3 * FADE_MS + 5, reduced: false, kind: 'fade' }, true);
+    expect(spy).not.toHaveBeenCalled();
+    expect(s.bg).toBe(night); // the night arriving again, over the house leaving
+    expect(s.current).toMatchObject({ kind: 'fade', from: house, fromScene: HOME_ALONE });
+    expect(s.frame(1000 + 0.3 * FADE_MS)?.alpha).toBeCloseTo(0.7); // the house still at 0.3: no jump
+    expect(s.frame(1000 + 0.5 * FADE_MS)?.alpha).toBeCloseTo(0.9);
+    expect(s.frame(1000 + 0.6 * FADE_MS)).toBeNull();
+  });
+
+  it('kevin again mid-fade under reduced motion settles at once', () => {
+    const s = sized(new SkySweep());
+    s.change(SCENES.midnight, HOME_ALONE, { now: 1000, reduced: false, kind: 'fade' }, true);
+    s.frame(1000 + 0.3 * FADE_MS);
+    s.change(HOME_ALONE, SCENES.midnight, { now: 1300, reduced: true, kind: 'fade' }, true);
+    expect(s.current).toBeNull();
+  });
+
+  it("the head mid-fade (hohoho): the sky as it stands becomes the sweep's leaving backdrop, owned by the side showing more", () => {
+    for (const [k, owner] of [[0.3, SCENES.midnight], [0.7, HOME_ALONE]] as const) {
+      const s = sized(new SkySweep());
+      s.change(SCENES.midnight, HOME_ALONE, { now: 1000, reduced: false, kind: 'fade' }, true);
+      const night = s.current?.from;
+      const house = s.bg;
+      s.frame(1000 + k * FADE_MS);
+      const spy = vi.spyOn(document, 'createElement');
+      s.change(HOME_ALONE, AURORA, { now: 2000, reduced: false }, true);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+      // The house was baked over the night at its alpha (in the night's canvas), and the sweep leaves from that.
+      expect(s.current).toMatchObject({ kind: 'sweep', dir: 'down', from: night, fromScene: owner, at: 2000 });
+      expect(s.bg).toBe(house); // repainted as the aurora by the caller
+      expect(s.frame(2000 + SWEEP_MS / 2)?.cover).toBeCloseTo(0.5);
+    }
+  });
+
   it('a resize ends a fade at once', () => {
     const s = sized(new SkySweep());
     s.change(SCENES.frost, HOME_ALONE, { now: 0, reduced: false, kind: 'fade' }, true);

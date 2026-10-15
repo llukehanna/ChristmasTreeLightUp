@@ -6,9 +6,14 @@ import type { Layout } from './layout';
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
-/** A figure's height as a fraction of the window's; feet on a track at TRACK of its height. */
+/** A figure's height as a fraction of the window's; feet on a track at FIG_TRACK of its height. */
 export const FIG_H = 0.4;
-const TRACK = 0.9;
+export const FIG_TRACK = 0.9;
+/**
+ * The bandits as drawn: height as a multiple of a party figure's (FIG_H), and width over height (the sprite's glass,
+ * before its FIG_PAD of rim glow). The geometry test that keeps them beside the tree reads these.
+ */
+export const BANDIT_FIG = { short: { scale: 0.8, aspect: 0.6 }, tall: { scale: 1.1, aspect: 0.42 } } as const;
 
 export const PARTY_LOOP_MS = 9000;
 /** Figure 3 is the cardboard cut-out; 0–2 dance. */
@@ -106,7 +111,7 @@ const BANDIT = '#05070f';
 const WARM = 'rgba(255,196,120,.6)';
 const COLD = 'rgba(190,210,255,.5)';
 /** Room round each sprite for its rim glow, as a fraction of the figure's height. */
-const PAD = 0.12;
+export const FIG_PAD = 0.12;
 const FIGURES: Readonly<Record<Kind, Shape>> = {
   // Arms up in a V.
   dancerA: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.62, head: [0, -0.88, 0.085], polys: [
@@ -121,12 +126,12 @@ const FIGURES: Readonly<Record<Kind, Shape>> = {
   // The cardboard cut-out: a stiff board on an easel leg.
   cutout: { color: PARTY, alpha: 0.82, glow: WARM, aspect: 0.36, head: [0, -0.9, 0.08], polys: [[-0.13, -0.8, 0.13, -0.8, 0.13, -0.06, -0.13, -0.06], [-0.02, -0.4, 0.02, -0.4, 0.16, 0, 0.12, 0]] },
   // Harry: short and stocky, a brimmed hat.
-  short: { color: BANDIT, alpha: 1, glow: COLD, aspect: 0.6, head: [0, -0.8, 0.1], polys: [
+  short: { color: BANDIT, alpha: 1, glow: COLD, aspect: BANDIT_FIG.short.aspect, head: [0, -0.8, 0.1], polys: [
     [-0.16, -0.88, 0.16, -0.88, 0.16, -0.85, -0.16, -0.85], [-0.09, -0.98, 0.09, -0.98, 0.1, -0.88, -0.1, -0.88],
     [-0.2, -0.7, 0.2, -0.7, 0.22, -0.32, 0.12, -0.3, 0.13, 0, 0.03, 0, 0, -0.22, -0.03, 0, -0.13, 0, -0.12, -0.3, -0.22, -0.32],
   ] },
   // Marv: tall and thin, long legs, a beanie.
-  tall: { color: BANDIT, alpha: 1, glow: COLD, aspect: 0.42, head: [0, -0.9, 0.07], polys: [
+  tall: { color: BANDIT, alpha: 1, glow: COLD, aspect: BANDIT_FIG.tall.aspect, head: [0, -0.9, 0.07], polys: [
     [-0.075, -0.95, 0.075, -0.95, 0.06, -1, -0.06, -1],
     [-0.1, -0.82, 0.1, -0.82, 0.11, -0.5, 0.07, -0.48, 0.08, 0, 0.02, 0, 0, -0.4, -0.02, 0, -0.08, 0, -0.07, -0.48, -0.11, -0.5],
   ] },
@@ -137,7 +142,7 @@ const FIGURES: Readonly<Record<Kind, Shape>> = {
   ] },
 };
 /** Each sprite's height as a multiple of a party figure's. */
-const SCALE: readonly (readonly [Kind, number])[] = [['dancerA', 1], ['dancerB', 1], ['cutout', 1], ['short', 0.8], ['tall', 1.1], ['iron', 0.22]];
+const SCALE: readonly (readonly [Kind, number])[] = [['dancerA', 1], ['dancerB', 1], ['cutout', 1], ['short', BANDIT_FIG.short.scale], ['tall', BANDIT_FIG.tall.scale], ['iron', 0.22]];
 
 /** Adds the figure's parts to the current path as subpaths. */
 function trace(x: CanvasRenderingContext2D, f: Shape, part: number): void {
@@ -153,12 +158,12 @@ function trace(x: CanvasRenderingContext2D, f: Shape, part: number): void {
 }
 
 /**
- * One silhouette, `h` device px tall plus PAD of rim glow all round (feet PAD·h above the bottom edge); null without a
- * 2D context. Baked once per layout.
+ * One silhouette, `h` device px tall plus FIG_PAD of rim glow all round (feet FIG_PAD·h above the bottom edge); null
+ * without a 2D context. Baked once per layout.
  */
 function makeFigure(kind: Kind, h: number): HTMLCanvasElement | null {
   const f = FIGURES[kind];
-  const pad = PAD * h;
+  const pad = FIG_PAD * h;
   const c = document.createElement('canvas');
   c.height = Math.round(h + 2 * pad);
   c.width = Math.max(2, Math.round(h * f.aspect + 2 * pad));
@@ -207,7 +212,7 @@ export class WindowGags {
     if (this.builtFor !== L) this.build(L);
     const win = this.win;
     if (!win || alpha <= 0) return;
-    const track = win.y + TRACK * win.h;
+    const track = win.y + FIG_TRACK * win.h;
     c.save();
     c.beginPath();
     c.rect(win.x, win.y, win.w, win.h);
@@ -222,13 +227,13 @@ export class WindowGags {
     if (walkMs >= 0) {
       const b = banditPose(walkMs, iron, this.bandit);
       c.globalAlpha = alpha * b.alpha;
-      this.blit(c, this.sprites.short, win.x + b.xShort * win.w, track, 0.8 * this.figH, 0, 1);
+      this.blit(c, this.sprites.short, win.x + b.xShort * win.w, track, BANDIT_FIG.short.scale * this.figH, 0, 1);
       // The tall one crumples under the iron: squashed, tipping back.
       const xt = win.x + b.xTall * win.w;
       const lean = -0.35 * b.crumple;
       const squash = 1 - 0.55 * b.crumple;
-      const tall = 1.1 * this.figH * squash;
-      this.blit(c, this.sprites.tall, xt, track, 1.1 * this.figH, lean, squash);
+      const tall = BANDIT_FIG.tall.scale * this.figH * squash;
+      this.blit(c, this.sprites.tall, xt, track, BANDIT_FIG.tall.scale * this.figH, lean, squash);
       if (b.ironY >= 0) {
         // It falls to the top of his head, and rides it down as he goes.
         const headX = xt + tall * Math.sin(lean);
@@ -246,12 +251,12 @@ export class WindowGags {
   /** One sprite, feet at (x, y), `h` CSS px tall, leaning `lean` rad about its feet, squashed to `squash` of its height. */
   private blit(c: CanvasRenderingContext2D, s: HTMLCanvasElement | undefined, x: number, y: number, h: number, lean: number, squash: number): void {
     if (!s) return;
-    const H = h * (1 + 2 * PAD); // the sprite's rim glow round the figure
+    const H = h * (1 + 2 * FIG_PAD); // the sprite's rim glow round the figure
     const w = (H * s.width) / s.height;
     c.translate(x, y);
     c.rotate(lean);
     c.scale(1, squash);
-    c.drawImage(s, -w / 2, -h * (1 + PAD), w, H);
+    c.drawImage(s, -w / 2, -h * (1 + FIG_PAD), w, H);
     c.scale(1, 1 / squash);
     c.rotate(-lean);
     c.translate(-x, -y);

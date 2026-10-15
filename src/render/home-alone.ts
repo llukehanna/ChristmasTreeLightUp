@@ -133,9 +133,11 @@ export class HomeAloneLayer {
     if (this.spider.mode) drawTarantula(c, L, this.spider);
   }
 
+  /** A win, a new tree, reduced motion, the house gone: no trap under way, and no bulb still sputtering from one. */
   private cancelTraps(): void {
     this.paint.cancel();
     this.spider.cancel();
+    this.garland.unknock();
   }
 
   private walk(iron: boolean): void {

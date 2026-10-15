@@ -181,6 +181,11 @@ export class Garland {
     this.knockAt = now;
   }
 
+  /** The traps are cleared (a win, a reset): a knocked bulb is back at once, so none sputters into the win blaze. */
+  unknock(): void {
+    this.knockK = -1;
+  }
+
   /** A lit bulb picked by `u` (0..1), or −1 with none lit. No allocation. */
   pickLit(u: number): number {
     let n = 0;

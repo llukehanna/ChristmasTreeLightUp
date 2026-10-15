@@ -41,6 +41,8 @@ const BLOOM: readonly (readonly [number, number, number])[] = [
 const EXPOSURE_DROP = 0.5;
 const EXPOSURE_POW = 1.3;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+/** How much of a feature shows during a fade at `alpha`: the leaving scene's (`had`) at 1 − alpha, the arriving one's (`has`) at alpha. */
+export const share = (had: boolean, has: boolean, alpha: number): number => (had ? 1 - alpha : 0) + (has ? alpha : 0);
 
 /** Secret mode's beat (spec 2026-10-08 secret mode §5): when the last onset landed, how hard (0.3..1), the palette step. */
 export interface BeatFrame {
@@ -261,9 +263,14 @@ export class Renderer {
     const sw = this.sky.current;
     // During a sweep, firelight and embers belong to the non-aurora side of the sky.
     let back = sc;
+    // During a fade, the scene it leaves and the arriving one's alpha (else null and -1).
+    let leaving: Scene | null = null;
+    let fadeA = -1;
     if (fr && sw && sw.kind === 'fade') {
-      // Home Alone's cross-fade (spec 2026-10-14 §1): the old backdrop, the new one over it. The firelight belongs to
-      // whichever side shows more. Leaving the aurora (kevin mid-head), its curtains fade out with its sky.
+      // Home Alone's cross-fade (spec 2026-10-14 §1): the old backdrop, the new one over it. The firelight, embers and
+      // snow of each side fade with it. Leaving the aurora (kevin mid-head), its curtains fade out with its sky.
+      leaving = sw.fromScene;
+      fadeA = fr.alpha;
       ctx.drawImage(sw.from, 0, 0);
       if (sw.fromScene.id === 'aurora') {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -274,7 +281,6 @@ export class Renderer {
       ctx.drawImage(this.sky.bg, 0, 0);
       ctx.globalAlpha = 1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (fr.alpha < 0.5) back = sw.fromScene;
     } else if (fr && sw) {
       if (sw.dir === 'down') back = sw.fromScene;
       // The non-aurora sky in full; the aurora's backdrop and curtains over the covered part; the hem at its edge.
@@ -302,9 +308,15 @@ export class Renderer {
     const ha = homeAloneAlpha(sc, sw, fr);
     if (ha > 0) this.homeAlone.drawWindow(ctx, L, ha, tier, f.reducedMotion);
     else if (sc.id !== 'home-alone') this.homeAlone.reset(); // gone (faded out, or switched at once): a walk ends with it
-    if (back.light === 'fire') drawFirelight(ctx, L, now);
-    if (back.embers && tier < 3) this.embers.draw(ctx, L, motionDt, now);
-    this.snow.draw(ctx, L, sc, false, motionDt, now, density);
+    const fire = leaving ? share(leaving.light === 'fire', sc.light === 'fire', fadeA) : back.light === 'fire' ? 1 : 0;
+    if (fire > 0) drawFirelight(ctx, L, now, fire);
+    const embers = leaving ? share(leaving.embers, sc.embers, fadeA) : back.embers ? 1 : 0;
+    if (embers > 0 && tier < 3) {
+      ctx.globalAlpha = embers;
+      this.embers.draw(ctx, L, motionDt, now);
+      ctx.globalAlpha = 1;
+    }
+    this.drawSnow(sc, leaving, fadeA, false, motionDt, now, density);
 
     // 2. Tree + hover (world space)
     world(ctx, dpr);
@@ -440,7 +452,7 @@ export class Renderer {
       const px = FACE_GARLAND_H * this.garland.geo.size * dpr;
       this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), garlandBob(now, beatAt, beatPower, f.reducedMotion));
     }
-    this.snow.draw(ctx, L, sc, true, motionDt, now, density);
+    this.drawSnow(sc, leaving, fadeA, true, motionDt, now, density);
     if (!f.reducedMotion) {
       // Secret mode's mini heads or Home Alone's pizza (spec 2026-10-14 §6), asked for only while the confetti falls.
       const falling = this.confetti.count(now, f.winAt, density) > 0;
@@ -453,6 +465,24 @@ export class Renderer {
             : null;
       this.confetti.draw(ctx, L, now, f.winAt, density, sc, sprite);
     }
+  }
+
+  /**
+   * Snow (the back or `front` layer): during a fade, the arriving scene's at `alpha` and the `leaving` one's at
+   * 1 − alpha, the flakes moving once.
+   */
+  private drawSnow(sc: Scene, leaving: Scene | null, alpha: number, front: boolean, dt: number, now: number, density: number): void {
+    const ctx = this.ctx;
+    const L = this.layout;
+    if (!leaving) {
+      this.snow.draw(ctx, L, sc, front, dt, now, density);
+      return;
+    }
+    ctx.globalAlpha = alpha;
+    this.snow.draw(ctx, L, sc, front, dt, now, density);
+    ctx.globalAlpha = 1 - alpha;
+    this.snow.draw(ctx, L, leaving, front, sc.snowAlpha ? 0 : dt, now, density);
+    ctx.globalAlpha = 1;
   }
 
   /** Pop intensity + light-show boost + the bottom-to-top win wave (spec §4.5 item 10) + secret mode's beat `pulse`. */

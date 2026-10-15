@@ -162,6 +162,7 @@ export interface KnockTarget {
   readonly geo: Pick<GarlandGeometry, 'bulbs' | 'size' | 'n'>;
   pickLit(u: number): number;
   knock(k: number, now: number): void;
+  unknock(): void;
 }
 
 /* ---------- drawing (screen space, CSS px transform; path ops and the cached can sprite only) ---------- */

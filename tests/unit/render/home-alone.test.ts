@@ -9,7 +9,7 @@ import { computeLayout } from '../../../src/render/layout';
 import { HOME_ALONE, SCENES } from '../../../src/render/scenes';
 
 const L = computeLayout(1280, 800, 2);
-const garland = () => ({ geo: { n: 20, size: 14, bulbs: Array.from({ length: 20 }, (_, k) => ({ x: 40 + k * 60, y: 90, angle: 0 })) }, pickLit: vi.fn(() => 3), knock: vi.fn() });
+const garland = () => ({ geo: { n: 20, size: 14, bulbs: Array.from({ length: 20 }, (_, k) => ({ x: 40 + k * 60, y: 90, angle: 0 })) }, pickLit: vi.fn(() => 3), knock: vi.fn(), unknock: vi.fn() });
 const gate = (over: Partial<HomeAloneGate> = {}): HomeAloneGate => ({ running: true, inPlay: true, reduced: false, ...over });
 const run = (layer: HomeAloneLayer, ms: number, g: HomeAloneGate, from = 0) => {
   for (let t = from; t < from + ms; t += 50) layer.step(t, 50, g, L);
@@ -159,6 +159,35 @@ describe('HomeAloneLayer: the traps', () => {
     expect(layer.state()).toMatchObject({ paint: true, tarantula: 'crawl', tarantulaAt: [expect.any(Number), expect.any(Number)] });
     layer.step(100, 50, gate({ inPlay: false }), L);
     expect(layer.state()).toMatchObject({ paint: false, tarantula: null, tarantulaAt: null });
+  });
+
+  it('a win or a reset mid-knock also brings the knocked bulb back at once: nothing sputters into the win blaze', () => {
+    const knock = garland();
+    const layer = new HomeAloneLayer(knock, mulberry32(4));
+    layer.force('paint', 0, L);
+    for (let t = 0; t <= PAINT_IN_MS; t += 50) layer.step(t, 50, gate(), L);
+    expect(knock.knock).toHaveBeenCalledTimes(1);
+    expect(knock.unknock).not.toHaveBeenCalled();
+    layer.step(PAINT_IN_MS + 100, 50, gate({ inPlay: false }), L); // the win
+    expect(knock.unknock).toHaveBeenCalled();
+    knock.unknock.mockClear();
+    layer.reset();
+    expect(knock.unknock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reduced motion turned on mid-trap cancels both at once, and the knock with them', () => {
+    const knock = garland();
+    const layer = new HomeAloneLayer(knock, mulberry32(4));
+    layer.force('paint', 0, L);
+    layer.force('tarantula', 0, L, [600, 400]);
+    layer.step(50, 50, gate(), L);
+    expect(layer.state()).toMatchObject({ paint: true, tarantula: 'crawl' });
+    layer.step(100, 50, gate({ reduced: true }), L);
+    expect(layer.state()).toMatchObject({ paint: false, tarantula: null, tarantulaAt: null });
+    expect(knock.unknock).toHaveBeenCalled();
+    // And none comes back while it stays on.
+    for (let t = 150; t < 300_000; t += 50) layer.step(t, 50, gate({ reduced: true }), L);
+    expect(layer.state()).toMatchObject({ paint: false, tarantula: null });
   });
 
   it('a tap near the tarantula scares it and says so; the layer never swallows the tap', () => {

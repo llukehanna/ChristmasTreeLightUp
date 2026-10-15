@@ -89,6 +89,14 @@ describe('the paint can knock (Home Alone, spec 2026-10-14 §4)', () => {
     expect(g.amount(2, 10_000 + KNOCK_MS, null, false)).toBe(1);
   });
 
+  it('unknock: a knocked bulb is back to full at once (a win or a reset clears the traps)', () => {
+    const g = lit();
+    g.knock(2, 10_000);
+    g.unknock();
+    expect(g.amount(2, 10_000, null, false)).toBe(1);
+    expect(g.amount(2, 10_000, 10_000, false)).toBe(g.amount(3, 10_000, 10_000, false)); // in the win blaze with the rest
+  });
+
   it('pickLit: −1 with nothing lit, else a lit bulb picked by u', () => {
     const g = new Garland();
     g.layout(1280, 50, 58);

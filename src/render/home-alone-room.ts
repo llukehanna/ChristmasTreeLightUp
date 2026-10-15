@@ -2,6 +2,7 @@ import { GRID, type Grid } from '../core/mask';
 import { mulberry32, type Rng } from '../core/rng';
 import { blurredLayer } from './blur';
 import { X, Y, type Layout } from './layout';
+import { giftBounds, placePresents } from './presents';
 import { HOME_ALONE } from './scenes';
 
 /**
@@ -47,7 +48,8 @@ export const TOY_COLORS = ['#d62828', '#1d4ed8', '#f4b400', '#2e9e4f'] as const;
 
 /**
  * Micro-Machine cars and broken-ornament glints on the floor (seeded, so every frame and resize agrees): below the
- * horizon, on screen, clear of every tile, the tree's base and each other. Three cars and five shards when they fit.
+ * horizon, on screen, clear of every tile, the tree's base, the presents (drawn over the floor, they would hide them)
+ * and each other. Three cars and five shards when they fit.
  */
 export function floorToys(L: Layout, grid: Grid): Toy[] {
   const r = mulberry32(1990);
@@ -56,6 +58,7 @@ export function floorToys(L: Layout, grid: Grid): Toy[] {
     const y0 = Y(L, Math.floor(i / grid.w));
     return { x0, y0, x1: x0 + L.s, y1: y0 + L.s };
   });
+  const gifts = placePresents(L, grid).map(giftBounds);
   const top = Y(L, 10.35);
   const bottom = L.h - 0.35 * L.s;
   const out: Toy[] = [];
@@ -74,6 +77,7 @@ export function floorToys(L: Layout, grid: Grid): Toy[] {
       const toy: Toy = { kind, x, y, w, h, rot: (r() - 0.5) * 0.9, color: palette[Math.floor(r() * palette.length)] };
       if (Math.abs(x + w / 2 - L.ox) < 2.2 * L.s) continue; // the trunk and the rug's centre
       if (!tiles.every((t) => clear(toy, t))) continue;
+      if (!gifts.every((g) => clear(toy, g))) continue;
       if (!out.every((o) => clear(toy, { x0: o.x, y0: o.y, x1: o.x + o.w, y1: o.y + o.h }))) continue;
       out.push(toy);
       break;
