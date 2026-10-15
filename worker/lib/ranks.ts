@@ -12,10 +12,11 @@ export const TOP = BOARD_TOP;
  */
 const inWindow = (since: number, n: number): string => (since > 0 ? ` AND g.finished_at >= ?${n}` : '');
 
-const TOTAL_SQL = `SELECT count(*) AS n ${ON_BOARD}`;
+/** The board runs (in the window from `since`). All time scans games_best (covering); a window seeks games_recent. */
+export const totalSql = (since = 0): string => `SELECT count(*) AS n ${ON_BOARD}${inWindow(since, 1)}`;
 
 function totalStatement(db: Db, since: number) {
-  return since > 0 ? db.prepare(`${TOTAL_SQL}${inWindow(since, 1)}`).bind(since) : db.prepare(TOTAL_SQL);
+  return since > 0 ? db.prepare(totalSql(since)).bind(since) : db.prepare(totalSql());
 }
 
 /** The board runs in the window from `since` (all of them by default). */
@@ -46,7 +47,10 @@ export function bestOf(db: Db, userId: number, since = 0): Promise<BestRun | nul
   return since > 0 ? db.prepare(BEST_SINCE_SQL).bind(userId, since).first<BestRun>() : db.prepare(BEST_SQL).bind(userId).first<BestRun>();
 }
 
-/** The top BOARD_TOP runs (in the window from `since`): fastest, then earliest. Reads games_board (a partial index on ranked runs) in order. */
+/**
+ * The top BOARD_TOP runs (in the window from `since`): fastest, then earliest. All time reads games_board (a partial index
+ * on ranked runs) in order; a window seeks games_recent to its first finish and sorts just the window's runs.
+ */
 export const topSql = (since = 0): string => `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at ${ON_BOARD}${inWindow(since, 1)} ORDER BY g.ms, g.finished_at, g.id LIMIT ${TOP}`;
 export const TOP_SQL = topSql();
 

@@ -3,7 +3,7 @@ import { BOARD_TOP, type BoardResponse, type MyGamesResponse } from '../../src/a
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, boardGrew, cachedTopAndTotal, cachedTotal, resetBoardCache } from '../../worker/lib/board-cache';
-import { BEST_SQL, TOP_SQL, topSql } from '../../worker/lib/ranks';
+import { BEST_SQL, TOP_SQL, topSql, totalSql } from '../../worker/lib/ranks';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
 let db: Db;
@@ -161,7 +161,7 @@ async function fifty(userId: number, at: number): Promise<void> {
 const windowed = async (q: string, cookie?: string): Promise<BoardResponse> => (await (await call(env, 'GET', `/api/board?${q}`, { cookie })).json()) as BoardResponse;
 const msOf = (b: BoardResponse): number[] => b.rows.map((r) => r.ms);
 
-/** The server's clock at noon UTC on `day` (a viewer's today must be within a day of the server's). */
+/** The server's clock at noon UTC on `day` (a viewer's today is clamped to within a day of the server's). */
 const serverOn = (day: string): void => void vi.setSystemTime(new Date(`${day}T12:00:00Z`));
 
 describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
@@ -268,27 +268,52 @@ describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
     expect(await odd.json()).toEqual({ error: 'invalid', message: 'window must be today, week or all.' });
   });
 
-  it("a window's day must be within a day of the server's and its offset a whole quarter hour: no window keys made up", async () => {
+  it("a window's offset must be a whole quarter hour, and a day more than one from the server's is clamped to it: no window keys made up", async () => {
     // Every real viewer's local date is the server's UTC date, or one either side (UTC-12 to UTC+14).
     for (const ok of ['today=2026-10-13&tz=720', 'today=2026-10-15&tz=-840', 'today=2026-10-14&tz=-345', 'today=2026-10-14&tz=570']) {
       for (const w of ['today', 'week']) expect((await call(env, 'GET', `/api/board?window=${w}&${ok}`)).status).toBe(200);
     }
-    for (const bad of ['today=2026-10-12&tz=0', 'today=2026-10-16&tz=0', 'today=2025-10-14&tz=0', 'today=2026-10-14&tz=7', 'today=2026-10-14&tz=-50', 'today=2026-10-14&tz=839']) {
+    for (const bad of ['today=2026-10-14&tz=7', 'today=2026-10-14&tz=-50', 'today=2026-10-14&tz=839', 'today=2020-01-01&tz=7']) {
       for (const w of ['today', 'week']) {
         const res = await call(env, 'GET', `/api/board?window=${w}&${bad}`);
         expect(res.status).toBe(400);
-        expect(await res.json()).toEqual({ error: 'invalid', message: "today must be within a day of the server's and tz a whole quarter hour." });
+        expect(await res.json()).toEqual({ error: 'invalid', message: 'tz must be a whole quarter hour.' });
       }
     }
+    // A device whose clock is days off still sees a board: its day is clamped to the nearest of the server's day ±1.
+    const ana = await user('ana@example.com', 'Meridian');
+    const at = (day: string, hour: number): number => Date.parse(`${day}T${String(hour).padStart(2, '0')}:00:00Z`);
+    await run(ana, 10_000, at('2026-10-13', 1)); // the server's yesterday (Tuesday)
+    await run(ana, 20_000, at('2026-10-14', 1)); // the server's today (Wednesday)
+    await run(ana, 30_000, at('2026-10-15', 1)); // the server's tomorrow (Thursday)
+    for (const [far, near] of [['2026-10-12', '2026-10-13'], ['2025-10-14', '2026-10-13'], ['2026-10-16', '2026-10-15'], ['2027-03-01', '2026-10-15']]) {
+      for (const w of ['today', 'week']) {
+        const res = await call(env, 'GET', `/api/board?window=${w}&today=${far}&tz=0`);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual(await windowed(`window=${w}&today=${near}&tz=0`));
+      }
+    }
+    // Clamped back, today is the server's yesterday on (all three); clamped forward, the server's tomorrow (one).
+    expect(msOf(await windowed('window=today&today=2020-01-01&tz=0'))).toEqual([10_000, 20_000, 30_000]);
+    expect(msOf(await windowed('window=today&today=2031-01-01&tz=0'))).toEqual([30_000]);
     // All time takes no calendar at all; Your games' stats keep their own rules (any real day, any whole minute).
     expect((await call(env, 'GET', '/api/board?window=all&today=2020-01-01&tz=7')).status).toBe(200);
-    await user('ana@example.com', 'Meridian');
     expect((await call(env, 'GET', '/api/me/stats?today=2020-01-01&tz=7', { cookie: await signIn(env, 'ana@example.com') })).status).toBe(200);
   });
 
-  it('reads a window through the board index too', async () => {
-    const plan = JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${topSql(1)}`).bind(1).all()).results);
-    expect(plan).toContain('games_board');
+  it("seeks a window's runs through games_recent (migration 0005); all time's plans are as before", async () => {
+    const plan = async (sql: string, ...bind: number[]): Promise<string[]> =>
+      (await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...bind).all<{ detail: string }>()).results.map((r) => r.detail);
+    const g = (p: string[]): string => p.find((d) => / g /.test(` ${d} `)) ?? '';
+    expect(g(await plan(topSql(1), 1))).toMatch(/^SEARCH g USING INDEX games_recent \(finished_at>\?\)$/);
+    expect(g(await plan(totalSql(1), 1))).toMatch(/^SEARCH g USING INDEX games_recent \(finished_at>\?\)$/);
+    // All time: the top reads games_board in order, the count scans games_best (covering); neither touches games_recent.
+    const top = await plan(TOP_SQL);
+    expect(g(top)).toBe('SCAN g USING INDEX games_board');
+    expect(top.join()).not.toContain('games_recent');
+    const total = await plan(totalSql());
+    expect(g(total)).toBe('SCAN g USING COVERING INDEX games_best');
+    expect(total.join()).not.toContain('games_recent');
   });
 });
 

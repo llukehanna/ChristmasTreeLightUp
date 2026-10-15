@@ -229,8 +229,15 @@ test('play signed out, Save to leaderboard: sign in, pick a name, and the run is
   await expect(board.locator('.acct-row.acct-me')).toContainText(player.name);
   // The rosette's numbers are all-time ones, so it opens All time, at the same place, without making it the remembered window.
   await expect(board.getByRole('group', { name: 'Time window' }).getByRole('button', { name: 'All time', pressed: true })).toBeVisible();
-  await expect(board.locator('.acct-sub')).toHaveText(new RegExp(`^All-time · ${Number(total).toLocaleString('en-US')} ranked runs?$`));
-  await expect(board.locator('.acct-me .acct-rank').first()).toHaveText(rank);
+  // Another project's run can land between the rosette and the board: the board's total is at least the rosette's, and
+  // this run's rank moves down by at most the runs that landed in between.
+  const sub = board.locator('.acct-sub');
+  await expect(sub).toHaveText(/^All-time · [\d,]+ ranked runs?$/);
+  const boardTotal = Number((/([\d,]+) ranked/.exec((await sub.textContent()) ?? '')?.[1] ?? '').replaceAll(',', ''));
+  expect(boardTotal).toBeGreaterThanOrEqual(Number(total));
+  const boardRank = Number(await board.locator('.acct-me .acct-rank').first().textContent());
+  expect(boardRank).toBeGreaterThanOrEqual(Number(rank));
+  expect(boardRank).toBeLessThanOrEqual(Number(rank) + boardTotal - Number(total));
   expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBeNull();
 });
 

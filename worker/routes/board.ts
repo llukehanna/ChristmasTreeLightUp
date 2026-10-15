@@ -14,11 +14,13 @@ function windowStart(q: URLSearchParams): number {
   const w = q.get('window') ?? 'all';
   if (w === 'all') return 0;
   if (w !== 'today' && w !== 'week') throw new HttpError(400, 'invalid', 'window must be today, week or all.');
-  const { today, tz } = viewerDay(q);
-  // Each window is a cache key (board-cache.ts): only a real viewer's calendar makes one. Every viewer's local date is
-  // the server's UTC date or one either side, and every zone in use is a whole quarter hour from UTC.
-  if (Math.abs(today - Math.floor(Date.now() / DAY_MS)) > 1 || tz % 15 !== 0)
-    throw new HttpError(400, 'invalid', "today must be within a day of the server's and tz a whole quarter hour.");
+  const { today: asked, tz } = viewerDay(q);
+  // Each window is a cache key (board-cache.ts): only a real viewer's calendar makes one. Every zone in use is a whole
+  // quarter hour from UTC, and every viewer's local date is the server's UTC date or one either side, so a day further
+  // off (a device with a wrong clock) is clamped to the nearest of those: it still sees a board, and makes no new key.
+  if (tz % 15 !== 0) throw new HttpError(400, 'invalid', 'tz must be a whole quarter hour.');
+  const server = Math.floor(Date.now() / DAY_MS);
+  const today = Math.min(server + 1, Math.max(server - 1, asked));
   const since = localMidnight(w === 'today' ? today : mondayOf(today), tz);
   return since > 0 ? since : 0;
 }
