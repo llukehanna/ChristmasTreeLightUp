@@ -156,6 +156,12 @@ export class Renderer {
     return this.sky.current !== null;
   }
 
+  /** The house is on the stage, or still fading out: its window gags keep moving until it has gone. */
+  get homeAloneShowing(): boolean {
+    const run = this.sky.current;
+    return this.scene.id === 'home-alone' || (run !== null && run.kind === 'fade' && run.fromScene.id === 'home-alone');
+  }
+
   /** Top of the star (CSS px, identity camera). */
   starTop(): number {
     return Y(this.layout, -1.3) - 0.8 * this.layout.s;
@@ -292,6 +298,7 @@ export class Renderer {
     // Home Alone's window gags, behind the tree (spec 2026-10-14 §3): faded with the house, never during a sweep.
     const ha = homeAloneAlpha(sc, sw, fr);
     if (ha > 0) this.homeAlone.drawWindow(ctx, L, ha, tier, f.reducedMotion);
+    else if (sc.id !== 'home-alone') this.homeAlone.reset(); // gone (faded out, or switched at once): a walk ends with it
     if (back.light === 'fire') drawFirelight(ctx, L, now);
     if (back.embers && tier < 3) this.embers.draw(ctx, L, motionDt, now);
     this.snow.draw(ctx, L, sc, false, motionDt, now, density);

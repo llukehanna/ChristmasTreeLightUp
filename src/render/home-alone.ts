@@ -57,7 +57,11 @@ export class HomeAloneLayer {
   }
 
   step(now: number, dt: number, g: HomeAloneGate, L: Layout): void {
-    if (g.reduced) this.cancelTraps(); // switched on mid-trap: a still room has no traps either
+    if (g.reduced) {
+      // Switched on mid-walk or mid-trap: a still room has neither.
+      this.walkT = -1;
+      this.cancelTraps();
+    }
     if (g.reduced || !g.running) return;
     this.partyT += dt;
     if (this.walkT >= 0) {
@@ -94,7 +98,7 @@ export class HomeAloneLayer {
     return this.spider.scare(x, y);
   }
 
-  /** The mode switched off: nothing carries over to the next visit. */
+  /** The house has gone from the stage (the renderer calls it once it has faded out): nothing carries over to the next visit. */
   reset(): void {
     this.walkT = -1;
     this.cancelTraps();
@@ -137,5 +141,6 @@ export class HomeAloneLayer {
   private walk(iron: boolean): void {
     this.walkT = 0;
     this.iron = iron;
+    this.timer.started();
   }
 }

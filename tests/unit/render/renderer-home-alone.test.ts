@@ -81,6 +81,27 @@ it("the window gags draw only in the house, faded with it, never during the head
   expect(draw).not.toHaveBeenCalled();
 });
 
+it('switched off, the house fades out with a walk still under way; it ends once the house has gone', () => {
+  const { r, frame } = setup(HOME_ALONE);
+  r.frame(frame(1000));
+  r.homeAlone.force('bandits', 1000, r.layout);
+  r.setScene(SCENES.midnight, { now: 2000, reduced: false, kind: 'fade' });
+  expect(r.homeAloneShowing).toBe(true); // the app keeps stepping the party while this holds
+  r.frame(frame(2000 + FADE_MS / 2));
+  expect(r.homeAloneShowing).toBe(true);
+  expect(r.homeAlone.state().bandits).toBe(true);
+  r.frame(frame(2000 + FADE_MS + 10));
+  expect(r.homeAloneShowing).toBe(false);
+  expect(r.homeAlone.state().bandits).toBe(false);
+  // Without a fade the house goes at once, and so does the walk.
+  const b = setup(HOME_ALONE);
+  b.r.homeAlone.force('bandits', 0, b.r.layout);
+  b.r.setScene(SCENES.midnight);
+  expect(b.r.homeAloneShowing).toBe(false);
+  b.r.frame(b.frame(1000));
+  expect(b.r.homeAlone.state().bandits).toBe(false);
+});
+
 it('the traps draw over the board only in the house', () => {
   const { r, frame } = setup(SCENES.midnight);
   const traps = vi.spyOn(r.homeAlone, 'drawTraps');

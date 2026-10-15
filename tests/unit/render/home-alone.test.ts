@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import { FADE_MS } from '../../../src/render/aurora';
 import { PAINT_IN_MS } from '../../../src/render/home-alone-traps';
-import { BANDIT_IDLE_MS, BANDIT_WALK_MS, IRON_WALK_MS } from '../../../src/render/home-alone-window';
+import { BANDIT_EVERY_MS, BANDIT_IDLE_MS, BANDIT_WALK_MS, IRON_WALK_MS } from '../../../src/render/home-alone-window';
 import { HomeAloneLayer, homeAloneAlpha, type HomeAloneGate } from '../../../src/render/home-alone';
 import { computeLayout } from '../../../src/render/layout';
 import { HOME_ALONE, SCENES } from '../../../src/render/scenes';
@@ -68,6 +68,38 @@ describe('HomeAloneLayer: the window', () => {
     expect(layer.state().bandits).toBe(false);
     expect(layer.force('iron', 0, L)).toBe(true);
     expect(layer.state().iron).toBe(true);
+  });
+
+  it('input during a walk does not stop it', () => {
+    const layer = new HomeAloneLayer(garland(), () => 0.9);
+    run(layer, BANDIT_IDLE_MS + 100, gate());
+    expect(layer.state().bandits).toBe(true);
+    for (let t = 0; t < 2000; t += 50) {
+      layer.input();
+      layer.step(t, 50, gate(), L);
+    }
+    expect(layer.state().bandits).toBe(true);
+  });
+
+  it('reduced motion turned on mid-walk ends the walk', () => {
+    const layer = new HomeAloneLayer(garland(), () => 0.9);
+    layer.force('iron', 0, L);
+    run(layer, 1000, gate());
+    run(layer, 50, gate({ reduced: true }), 1000);
+    expect(layer.state()).toEqual(expect.objectContaining({ bandits: false, iron: false }));
+  });
+
+  it('a forced walk counts as the last one: no idle walk follows it within BANDIT_EVERY_MS', () => {
+    const layer = new HomeAloneLayer(garland(), () => 0.9);
+    run(layer, BANDIT_IDLE_MS - 1000, gate()); // idle, not yet due
+    layer.force('bandits', 0, L);
+    let next = -1;
+    for (let t = 0; t < BANDIT_EVERY_MS + 1000 && next < 0; t += 50) {
+      const was = layer.state().bandits;
+      layer.step(t, 50, gate(), L);
+      if (!was && layer.state().bandits) next = t;
+    }
+    expect(next).toBeGreaterThanOrEqual(BANDIT_EVERY_MS - 100);
   });
 
   it('draws nothing under reduced motion', () => {

@@ -147,4 +147,18 @@ describe('WindowGags', () => {
     expect(made).toBe(baked);
     expect(names.filter((n) => n === 'drawImage')).toHaveLength(4 + 3);
   });
+
+  it("puts the mullions back over the figures at the layer's alpha (mid cross-fade, a bandit fading too), then alpha 1", () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => recorder([])) as never);
+    const state: Record<string | symbol, unknown> = { globalAlpha: 1, globalCompositeOperation: 'source-over' };
+    const bars: number[] = [];
+    const c = new Proxy(state, {
+      get: (t, k) => (k in t ? t[k] : k === 'fillRect' ? () => bars.push(t.globalAlpha as number) : () => (String(k).startsWith('create') ? { addColorStop() {} } : undefined)),
+      set: (t, k, v) => ((t[k] = v), true),
+    }) as unknown as CanvasRenderingContext2D;
+    new WindowGags().draw(c, computeLayout(1280, 800, 2), 0.4, 0, 1000, IRON_WALK_MS - 100, true);
+    expect(bars.length).toBeGreaterThan(0);
+    for (const a of bars) expect(a).toBeCloseTo(0.4);
+    expect(state.globalAlpha).toBe(1);
+  });
 });

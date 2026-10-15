@@ -680,10 +680,11 @@ export class App {
     // reduced motion too (its gentle pulse).
     const beating = this.secret && this.radio.lightShowActive;
     if (show || beating) this.radio.show.sample(now);
-    if (this.homeAlone) {
+    // Switched off, the house fades out still moving (the renderer resets the layer once it has gone).
+    if (this.homeAlone || this.renderer.homeAloneShowing) {
       const g = this.haGate;
       g.running = !this.paused;
-      g.inPlay = this.live && !this.starting && this.moved && this.winAt === null && !this.paused;
+      g.inPlay = this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null && !this.paused;
       g.reduced = this.reduced.matches;
       this.renderer.homeAlone.step(now, dt, g, this.renderer.layout);
     }
@@ -842,7 +843,6 @@ export class App {
     if (on && this.egg.isOn) this.egg.off();
     if (how === 'start' || !changed) return;
     this.pausedDrawn = false;
-    if (!on) this.renderer.homeAlone.reset();
     if (!on && this.secret) return; // the head is taking over: its own sweep re-scenes
     // The player's own switch cross-fades (instant under reduced motion); a load or sign-in switches at once.
     const reduced = this.reduced.matches;

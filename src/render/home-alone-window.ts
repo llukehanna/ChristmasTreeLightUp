@@ -78,6 +78,11 @@ export class BanditTimer {
     this.idle = 0;
   }
 
+  /** A walk began some other way (the probe's): the next waits BANDIT_EVERY_MS from now. */
+  started(): void {
+    this.since = 0;
+  }
+
   /** `dt` ms more of running time; true when a walk should start now (and it counts from here). */
   step(dt: number, walking: boolean): boolean {
     this.idle += dt;
@@ -221,8 +226,9 @@ export class WindowGags {
       // The tall one crumples under the iron: squashed, tipping back.
       const xt = win.x + b.xTall * win.w;
       const lean = -0.35 * b.crumple;
-      const tall = 1.1 * this.figH * (1 - 0.55 * b.crumple);
-      this.blit(c, this.sprites.tall, xt, track, 1.1 * this.figH, lean, 1 - 0.55 * b.crumple);
+      const squash = 1 - 0.55 * b.crumple;
+      const tall = 1.1 * this.figH * squash;
+      this.blit(c, this.sprites.tall, xt, track, 1.1 * this.figH, lean, squash);
       if (b.ironY >= 0) {
         // It falls to the top of his head, and rides it down as he goes.
         const headX = xt + tall * Math.sin(lean);
@@ -230,8 +236,10 @@ export class WindowGags {
         this.blit(c, this.sprites.iron, headX, win.y + b.ironY * (headY - win.y), 0.22 * this.figH, 0, 1);
       }
     }
-    c.globalAlpha = 1;
+    // The mullions fade with the house (a cross-fade either way), not with a bandit.
+    c.globalAlpha = alpha;
     paintMullions(c, win, L.s);
+    c.globalAlpha = 1;
     c.restore();
   }
 
