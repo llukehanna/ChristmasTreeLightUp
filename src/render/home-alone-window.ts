@@ -19,8 +19,6 @@ export const FIG_TRACK = 0.9;
  */
 export const BANDIT_FIG = { short: { scale: 0.8, aspect: 0.6 }, tall: { scale: 1.1, aspect: 0.42 } } as const;
 
-export const BANDIT_IDLE_MS = 20_000;
-export const BANDIT_EVERY_MS = 60_000;
 export const BANDIT_ENTER_MS = 3000;
 export const BANDIT_PAUSE_MS = 1200;
 export const BANDIT_WALK_MS = 7000;
@@ -55,35 +53,9 @@ export function banditPose(t: number, iron: boolean, out: BanditPose): BanditPos
   return out;
 }
 
-/** The idle clock: running time with no input, and since the last walk began. */
-export class BanditTimer {
-  private idle = 0;
-  private since = Number.POSITIVE_INFINITY;
-
-  constructor(private readonly idleMs = BANDIT_IDLE_MS, private readonly everyMs = BANDIT_EVERY_MS) {}
-
-  input(): void {
-    this.idle = 0;
-  }
-
-  /** A walk began some other way (the probe's): the next waits BANDIT_EVERY_MS from now. */
-  started(): void {
-    this.since = 0;
-  }
-
-  /** `dt` ms more of running time; true when a walk should start now (and it counts from here). */
-  step(dt: number, walking: boolean): boolean {
-    this.idle += dt;
-    this.since += dt;
-    if (walking || this.idle < this.idleMs || this.since < this.everyMs) return false;
-    this.since = 0;
-    return true;
-  }
-}
-
 /* ---------- spec §9: the rotation, Harry's gold tooth and hat on fire, Marv at the glass, the van ---------- */
 
-/** What an idle trigger plays (spec §9.1), one at a time, never the same twice running. */
+/** What the rotation plays (spec §9.1), one at a time, never the same twice running. */
 export type WindowGag = 'walk' | 'tooth' | 'fire';
 export const WINDOW_GAGS: readonly WindowGag[] = ['walk', 'tooth', 'fire'];
 
@@ -91,6 +63,57 @@ export const WINDOW_GAGS: readonly WindowGag[] = ['walk', 'tooth', 'fire'];
 export function nextGag(last: WindowGag | null, r: number): WindowGag {
   if (!last) return WINDOW_GAGS[Math.min(2, Math.floor(r * 3))];
   return WINDOW_GAGS[(WINDOW_GAGS.indexOf(last) + 1 + Math.min(1, Math.floor(r * 2))) % 3];
+}
+
+/** A random span in [range[0], range[1]) for `r` in [0, 1). */
+const span = (range: readonly [number, number], r: number): number => range[0] + r * (range[1] - range[0]);
+
+/**
+ * The rotation's clock (spec §9.1). Switched on by typing (`welcome()`), the walk-by comes WELCOME_MS later, before any
+ * move. Otherwise the first gag comes GAG_FIRST_MS of play after the first move, then each next one GAG_EVERY after the
+ * last one ended: it counts only in-play ms with no gag under way. Idle or not makes no difference.
+ */
+export const WELCOME_MS = 3000;
+export const GAG_FIRST_MS = 8000;
+export const GAG_EVERY = [25_000, 40_000] as const;
+
+export class GagClock {
+  private left = GAG_FIRST_MS;
+  /** ms to the welcome walk; −1: none pending. */
+  private welcomeIn = -1;
+
+  constructor(private readonly rng: () => number) {}
+
+  /** The mode was just switched on by typing: the walk-by in WELCOME_MS of running time, in play or not. */
+  welcome(): void {
+    this.welcomeIn = WELCOME_MS;
+  }
+
+  /** A gag began (by this clock, the welcome or the probe): the next is GAG_EVERY after it ends; no welcome after it. */
+  started(): void {
+    this.welcomeIn = -1;
+    this.left = span(GAG_EVERY, this.rng());
+  }
+
+  /** The house has gone: no welcome pending, and the next visit's first gag GAG_FIRST_MS into play. */
+  reset(): void {
+    this.welcomeIn = -1;
+    this.left = GAG_FIRST_MS;
+  }
+
+  /**
+   * `dt` ms more of running time. `gag`: a window gag under way; `glass`: anything at the glass (a gag or Marv);
+   * `inPlay`: a tree in play. What should start now, if anything: the caller plays it and calls started().
+   */
+  step(dt: number, gag: boolean, glass: boolean, inPlay: boolean): 'welcome' | 'next' | null {
+    if (this.welcomeIn >= 0) {
+      this.welcomeIn = Math.max(0, this.welcomeIn - dt);
+      if (this.welcomeIn === 0 && !glass) return 'welcome';
+    }
+    if (!inPlay || gag) return null;
+    this.left -= dt;
+    return this.left <= 0 && !glass ? 'next' : null;
+  }
 }
 
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t);
@@ -159,9 +182,13 @@ export function firePose(t: number, out: FirePose): FirePose {
 
 export const gagMs = (g: WindowGag, iron: boolean): number => (g === 'tooth' ? TOOTH_MS : g === 'fire' ? FIRE_MS : iron ? IRON_WALK_MS : BANDIT_WALK_MS);
 
-/** Marv at the glass (spec §9.2): his own idle clock, outside the rotation. */
-export const MARV_IDLE_MS = 60_000;
-export const MARV_EVERY_MS = 180_000;
+/**
+ * Marv at the glass (spec §9.2), outside the rotation: after MARV_IDLE_MS with no input, or otherwise MARV_EVERY of play
+ * after the last; never sooner than MARV_GAP_MS after the last, never with a gag at the glass.
+ */
+export const MARV_IDLE_MS = 25_000;
+export const MARV_GAP_MS = 90_000;
+export const MARV_EVERY = [120_000, 180_000] as const;
 export const MARV_IN_MS = 520;
 export const MARV_PRESS_AT = 380;
 export const MARV_PRESS_MS = 380;
@@ -191,8 +218,40 @@ export function marvPose(t: number, out: MarvPose): MarvPose {
   return out;
 }
 
-/** The van (spec §9.3): every 2–4 min in play, ~6 s across; its beam sweeps the room for 1.5 s as it passes the middle. */
-export const VAN_EVERY = [120_000, 240_000] as const;
+export class MarvClock {
+  private idle = 0;
+  private since = Number.POSITIVE_INFINITY;
+  private play: number;
+
+  constructor(private readonly rng: () => number) {
+    this.play = span(MARV_EVERY, this.rng());
+  }
+
+  input(): void {
+    this.idle = 0;
+  }
+
+  /** He came (by this clock or the probe's): the gap and the play clock start over from here. */
+  started(): void {
+    this.since = 0;
+    this.play = span(MARV_EVERY, this.rng());
+  }
+
+  /** `dt` ms more of running time (`inPlay`: of play too); true when he should come now (the caller calls started()). */
+  step(dt: number, glass: boolean, inPlay: boolean): boolean {
+    this.idle += dt;
+    this.since += dt;
+    if (inPlay) this.play -= dt;
+    return !glass && this.since >= MARV_GAP_MS && (this.idle >= MARV_IDLE_MS || this.play <= 0);
+  }
+}
+
+/**
+ * The van (spec §9.3): the first VAN_FIRST of play after the first move, then every VAN_EVERY of play; ~6 s across, its
+ * beam sweeping the room for 1.5 s as it passes the middle.
+ */
+export const VAN_FIRST = [20_000, 40_000] as const;
+export const VAN_EVERY = [60_000, 120_000] as const;
 export const VAN_MS = 6000;
 export const VAN_FROM = -0.25;
 export const VAN_TO = 1.25;

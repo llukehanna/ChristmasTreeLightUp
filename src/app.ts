@@ -919,8 +919,12 @@ export class App {
     const reduced = this.reduced.matches;
     const fade = how === 'loud' && !reduced ? { now: performance.now(), reduced, kind: 'fade' as const } : null;
     if (this.setScene(this.sceneId, fade)) this.refreshShare();
-    // The player's own switch-on screams (spec §5); a load or sign-in is silent.
-    if (on && how === 'loud') this.sounds.play('scream', () => this.homeAlone);
+    // The player's own switch-on screams (spec §5), and Harry and Marv walk by to welcome them (§9.1); a load or
+    // sign-in is silent and still.
+    if (on && how === 'loud') {
+      this.sounds.play('scream', () => this.homeAlone);
+      this.renderer.homeAlone.welcome();
+    }
   }
 
   /**

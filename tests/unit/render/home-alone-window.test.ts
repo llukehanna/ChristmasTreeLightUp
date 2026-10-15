@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  BANDIT_ENTER_MS, BANDIT_EVERY_MS, BANDIT_FIG, FIG_PAD, FIG_TRACK, BANDIT_IDLE_MS, BANDIT_PAUSE_MS, BANDIT_STOP, BANDIT_WALK_MS, BanditTimer, FIG_H, FIRE_DIVE_AT, FIRE_MS, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, TOOTH_GLINT_AT, WindowGags, banditPose, type BanditPose, type GagFrame,
+  BANDIT_ENTER_MS, BANDIT_FIG, FIG_PAD, FIG_TRACK, BANDIT_PAUSE_MS, BANDIT_STOP, BANDIT_WALK_MS, GAG_EVERY, GAG_FIRST_MS, GagClock, MARV_EVERY, MARV_GAP_MS, MARV_IDLE_MS, MarvClock, WELCOME_MS, FIG_H, FIRE_DIVE_AT, FIRE_MS, IRON_DROP_MS, IRON_CRUMPLE_MS, IRON_WALK_MS, TOOTH_GLINT_AT, WindowGags, banditPose, type BanditPose, type GagFrame,
 } from '../../../src/render/home-alone-window';
 import { GRID } from '../../../src/core/mask';
 import { homeWindow } from '../../../src/render/home-alone-room';
@@ -66,23 +66,102 @@ describe('the Wet Bandits', () => {
     }
   });
 
-  it('come after 20 s with no input, at most once per 60 s; input during a walk does not stop it', () => {
-    const t = new BanditTimer();
-    let due = 0;
-    for (let ms = 0; ms < BANDIT_IDLE_MS - 50; ms += 50) if (t.step(50, false)) due++;
-    expect(due).toBe(0);
-    t.input(); // a tap just before: the 20 s start over
-    for (let ms = 0; ms < BANDIT_IDLE_MS - 50; ms += 50) if (t.step(50, false)) due++;
-    expect(due).toBe(0);
-    for (let ms = 0; ms < 100; ms += 50) if (t.step(50, false)) due++;
-    expect(due).toBe(1);
-    // Still idle: the next walk waits for 60 s from the last.
-    let at = -1;
-    for (let ms = 100; ms < BANDIT_EVERY_MS + 1000; ms += 50) if (t.step(50, false) && at < 0) at = ms;
-    expect(at).toBeGreaterThanOrEqual(BANDIT_EVERY_MS - 100);
-    // While a walk is under way, nothing new starts.
-    const busy = new BanditTimer();
-    for (let ms = 0; ms < 200_000; ms += 50) expect(busy.step(50, true)).toBe(false);
+});
+
+/** Steps `clock` in 50 ms frames until it says something (or `max` ms); returns [when, what]. */
+function until(clock: GagClock, max: number, gag = false, glass = false, inPlay = true): [number, 'welcome' | 'next' | null] {
+  for (let ms = 50; ms <= max; ms += 50) {
+    const due = clock.step(50, gag, glass, inPlay);
+    if (due) return [ms, due];
+  }
+  return [-1, null];
+}
+
+describe('the rotation clock (spec §9.1)', () => {
+  it('the numbers: a welcome walk 3 s after switching on, the first gag 8 s into play, then one every 25–40 s', () => {
+    expect(WELCOME_MS).toBe(3000);
+    expect(GAG_FIRST_MS).toBe(8000);
+    expect(GAG_EVERY).toEqual([25_000, 40_000]);
+  });
+
+  it('a page load in the mode: nothing before the first move, however long; the first gag 8 s of play after it, idle or not', () => {
+    const c = new GagClock(() => 0.5);
+    expect(until(c, 300_000, false, false, false)).toEqual([-1, null]);
+    expect(until(c, 20_000)).toEqual([GAG_FIRST_MS, 'next']);
+  });
+
+  it('each next gag GAG_EVERY after the last one ended: only play time with no gag under way counts; it waits for Marv', () => {
+    for (const [r, gap] of [[0, GAG_EVERY[0]], [0.5, (GAG_EVERY[0] + GAG_EVERY[1]) / 2], [0.999, GAG_EVERY[1]]] as const) {
+      const c = new GagClock(() => r);
+      c.started();
+      expect(until(c, 600_000, true)).toEqual([-1, null]); // a gag under way: the clock stands still
+      expect(until(c, 600_000, false, false, false)).toEqual([-1, null]); // between trees, or won: it stands still
+      const [at, due] = until(c, 60_000);
+      expect(due).toBe('next');
+      expect(Math.abs(at - gap)).toBeLessThanOrEqual(50);
+    }
+    const c = new GagClock(() => 0);
+    c.started();
+    expect(until(c, GAG_EVERY[0] + 5000, false, true)).toEqual([-1, null]); // Marv at the glass: it waits for him
+    expect(until(c, 100)).toEqual([50, 'next']);
+  });
+
+  it('welcome(): the walk-by WELCOME_MS later, before any move; it waits for the glass; a gag that starts first, or reset, drops it', () => {
+    const c = new GagClock(() => 0.5);
+    c.welcome();
+    expect(until(c, 10_000, false, false, false)).toEqual([WELCOME_MS, 'welcome']);
+    const busy = new GagClock(() => 0.5);
+    busy.welcome();
+    expect(until(busy, 10_000, false, true, false)).toEqual([-1, null]);
+    expect(until(busy, 100, false, false, false)).toEqual([50, 'welcome']);
+    const forced = new GagClock(() => 0.5);
+    forced.welcome();
+    forced.started();
+    expect(until(forced, 10_000, false, false, false)).toEqual([-1, null]);
+    const gone = new GagClock(() => 0.5);
+    gone.started();
+    gone.welcome();
+    gone.reset(); // the house went: no welcome, and the next visit starts at GAG_FIRST_MS of play
+    expect(until(gone, 20_000)).toEqual([GAG_FIRST_MS, 'next']);
+  });
+});
+
+describe("Marv's clock (spec §9.2)", () => {
+  it('the numbers: after 25 s idle, or else every 2–3 min of play; never within 90 s of the last', () => {
+    expect(MARV_IDLE_MS).toBe(25_000);
+    expect(MARV_GAP_MS).toBe(90_000);
+    expect(MARV_EVERY).toEqual([120_000, 180_000]);
+  });
+
+  /** ms (in 50 ms frames) until he is due, with input every `inputEvery` ms (0: none); −1: not within `max`. */
+  const due = (m: MarvClock, max: number, inPlay: boolean, inputEvery = 0, glass = false): number => {
+    for (let ms = 50; ms <= max; ms += 50) {
+      if (inputEvery && ms % inputEvery === 0) m.input();
+      if (m.step(50, glass, inPlay)) return ms;
+    }
+    return -1;
+  };
+
+  it('idle (in play or not): after 25 s with no input, then at most once per 90 s', () => {
+    for (const inPlay of [false, true]) {
+      const m = new MarvClock(() => 0.999);
+      expect(due(m, MARV_IDLE_MS - 50, inPlay)).toBe(-1);
+      m.input(); // a tap just before: the 25 s start over
+      expect(due(m, MARV_IDLE_MS + 1000, inPlay)).toBe(MARV_IDLE_MS);
+      m.started();
+      expect(due(m, MARV_GAP_MS + 1000, inPlay)).toBe(MARV_GAP_MS);
+    }
+  });
+
+  it('a busy player still gets him every 2–3 min of play (only play time counts); never with a gag at the glass', () => {
+    for (const [r, every] of [[0, MARV_EVERY[0]], [0.999, MARV_EVERY[1]]] as const) {
+      const m = new MarvClock(() => r);
+      expect(due(m, 600_000, false, 5000)).toBe(-1); // off play, never idle: never
+      const at = due(m, 400_000, true, 5000);
+      expect(Math.abs(at - every)).toBeLessThanOrEqual(50);
+    }
+    const m = new MarvClock(() => 0);
+    expect(due(m, 400_000, true, 0, true)).toBe(-1);
   });
 });
 

@@ -2,8 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import { FADE_MS } from '../../../src/render/aurora';
-import { PAINT_IN_MS } from '../../../src/render/home-alone-traps';
-import { BANDIT_EVERY_MS, BANDIT_IDLE_MS, BANDIT_WALK_MS, IRON_WALK_MS } from '../../../src/render/home-alone-window';
+import { PAINT_EVERY, PAINT_IN_MS, TARANTULA_EVERY } from '../../../src/render/home-alone-traps';
+import { BANDIT_WALK_MS, GAG_EVERY, GAG_FIRST_MS, IRON_WALK_MS, WELCOME_MS, gagMs } from '../../../src/render/home-alone-window';
 import { HomeAloneLayer, homeAloneAlpha, type HomeAloneGate } from '../../../src/render/home-alone';
 import { computeLayout } from '../../../src/render/layout';
 import { HOME_ALONE, SCENES } from '../../../src/render/scenes';
@@ -33,29 +33,89 @@ describe('HomeAloneLayer: the window', () => {
     expect(still.state()).toMatchObject({ gag: null, bandits: false, marv: false, van: false });
   });
 
-  it('a window gag comes after 20 s idle (in play or not), and ends by itself', () => {
+  it('a page load in the mode: no gag before the first move; the first 8 s of play after it; it ends by itself', () => {
     const layer = new HomeAloneLayer(garland(), () => 0.9); // never the iron
-    run(layer, BANDIT_IDLE_MS + 100, gate({ inPlay: false }));
+    for (let t = 0; t < 300_000; t += 50) {
+      layer.step(t, 50, gate({ inPlay: false }), L);
+      expect(layer.state().gag).toBeNull();
+    }
+    run(layer, GAG_FIRST_MS - 100, gate());
+    expect(layer.state().gag).toBeNull();
+    run(layer, 200, gate());
     expect(layer.state().gag).not.toBeNull();
     expect(layer.state().iron).toBe(false);
-    run(layer, BANDIT_WALK_MS + 100, gate({ inPlay: false }), BANDIT_IDLE_MS + 100);
+    run(layer, BANDIT_WALK_MS + 100, gate());
     expect(layer.state().gag).toBeNull();
   });
 
-  it('input keeps them away', () => {
-    const layer = new HomeAloneLayer(garland(), () => 0.9);
-    for (let t = 0; t < 60_000; t += 50) {
-      if (t % 10_000 === 0) layer.input();
+  it('a busy player sees them: input never keeps them away, one every 25–40 s after the last ended', () => {
+    const layer = new HomeAloneLayer(garland(), mulberry32(11));
+    const starts: number[] = [];
+    const ends: number[] = [];
+    let was: string | null = null;
+    for (let t = 0; t < 600_000; t += 50) {
+      if (t % 1000 === 0) layer.input();
       layer.step(t, 50, gate(), L);
+      const now = layer.state().gag;
+      if (now && !was) starts.push(t + 50);
+      if (!now && was) ends.push(t + 50);
+      was = now;
     }
-    expect(layer.state().bandits).toBe(false);
+    expect(starts[0]).toBeLessThanOrEqual(GAG_FIRST_MS + 50);
+    // Over 10 min of play: at least one every 47 s (the longest wait, plus the longest gag), give or take Marv.
+    expect(starts.length).toBeGreaterThanOrEqual(11);
+    for (let k = 1; k < starts.length; k++) {
+      const gap = starts[k] - ends[k - 1];
+      expect(gap).toBeGreaterThanOrEqual(GAG_EVERY[0] - 50);
+      expect(gap).toBeLessThanOrEqual(GAG_EVERY[1] + 6000); // Marv at the glass can hold one back by his ~5 s
+    }
+  });
+
+  it('switched on by typing: Harry and Marv walk by ~3 s later, before any move, without the iron; the next one 25–40 s into play after', () => {
+    const layer = new HomeAloneLayer(garland(), () => 0.1); // the iron, if a walk could have it
+    layer.welcome();
+    run(layer, WELCOME_MS - 100, gate({ inPlay: false }));
+    expect(layer.state().gag).toBeNull();
+    run(layer, 200, gate({ inPlay: false }));
+    expect(layer.state()).toMatchObject({ gag: 'walk', bandits: true, iron: false });
+    run(layer, BANDIT_WALK_MS, gate({ inPlay: false }));
+    expect(layer.state().gag).toBeNull();
+    run(layer, 120_000, gate({ inPlay: false }));
+    expect(layer.state().gag).toBeNull();
+    let at = -1;
+    for (let t = 0; t < 60_000 && at < 0; t += 50) {
+      layer.step(t, 50, gate(), L);
+      if (layer.state().gag) at = t + 50;
+    }
+    expect(at).toBeGreaterThanOrEqual(GAG_EVERY[0]);
+    expect(at).toBeLessThanOrEqual(GAG_EVERY[1] + 50);
+    expect(layer.state().gag).not.toBe('walk'); // never twice running
+  });
+
+  it('the welcome walk: frozen while paused, none under reduced motion, none once the house has gone', () => {
+    const paused = new HomeAloneLayer(garland(), () => 0.9);
+    paused.welcome();
+    run(paused, 60_000, gate({ running: false, inPlay: false }));
+    expect(paused.state().gag).toBeNull();
+    run(paused, WELCOME_MS + 50, gate({ inPlay: false }));
+    expect(paused.state().gag).toBe('walk');
+    const still = new HomeAloneLayer(garland(), () => 0.9);
+    still.welcome();
+    run(still, 50, gate({ reduced: true, inPlay: false }));
+    run(still, 60_000, gate({ inPlay: false }));
+    expect(still.state().gag).toBeNull();
+    const gone = new HomeAloneLayer(garland(), () => 0.9);
+    gone.welcome();
+    gone.reset();
+    run(gone, 60_000, gate({ inPlay: false }));
+    expect(gone.state().gag).toBeNull();
   });
 
   it('about 1 walk in 4 brings the iron, which ends it early; force starts either now; reset clears a walk', () => {
     const layer = new HomeAloneLayer(garland(), () => 0.1); // under IRON_ODDS
-    run(layer, BANDIT_IDLE_MS + 100, gate());
+    run(layer, GAG_FIRST_MS + 100, gate());
     expect(layer.state()).toEqual(expect.objectContaining({ bandits: true, iron: true }));
-    run(layer, IRON_WALK_MS + 100, gate(), BANDIT_IDLE_MS + 100);
+    run(layer, IRON_WALK_MS + 100, gate(), GAG_FIRST_MS + 100);
     expect(layer.state().bandits).toBe(false);
     expect(layer.force('bandits', 0, L)).toBe(true);
     expect(layer.state()).toEqual(expect.objectContaining({ bandits: true, iron: false }));
@@ -67,7 +127,7 @@ describe('HomeAloneLayer: the window', () => {
 
   it('input during a gag does not stop it', () => {
     const layer = new HomeAloneLayer(garland(), () => 0.9);
-    run(layer, BANDIT_IDLE_MS + 100, gate());
+    run(layer, GAG_FIRST_MS + 100, gate());
     const gag = layer.state().gag;
     expect(gag).not.toBeNull();
     for (let t = 0; t < 2000; t += 50) {
@@ -85,17 +145,17 @@ describe('HomeAloneLayer: the window', () => {
     expect(layer.state()).toEqual(expect.objectContaining({ bandits: false, iron: false }));
   });
 
-  it('a forced walk counts as the last one: no idle walk follows it within BANDIT_EVERY_MS', () => {
+  it('a forced walk counts as the last one: the next gag waits GAG_EVERY after it ends', () => {
     const layer = new HomeAloneLayer(garland(), () => 0.9);
-    run(layer, BANDIT_IDLE_MS - 1000, gate()); // idle, not yet due
+    run(layer, GAG_FIRST_MS - 1000, gate()); // in play, not yet due
     layer.force('bandits', 0, L);
     let next = -1;
-    for (let t = 0; t < BANDIT_EVERY_MS + 1000 && next < 0; t += 50) {
+    for (let t = 0; t < 120_000 && next < 0; t += 50) {
       const was = layer.state().gag;
       layer.step(t, 50, gate(), L);
       if (!was && layer.state().gag) next = t;
     }
-    expect(next).toBeGreaterThanOrEqual(BANDIT_EVERY_MS - 100);
+    expect(next).toBeGreaterThanOrEqual(gagMs('walk', false) + GAG_EVERY[0] - 100);
   });
 
   it('draws nothing under reduced motion', () => {
@@ -119,11 +179,11 @@ describe('HomeAloneLayer: the traps', () => {
     }
   });
 
-  it('in play the paint can comes within 90 s and knocks the bulb it picked as it arrives', () => {
+  it('in play the paint can comes within 50 s and knocks the bulb it picked as it arrives', () => {
     const knock = garland();
     const layer = new HomeAloneLayer(knock, mulberry32(4));
     let t = 0;
-    while (!layer.state().paint && t < 91_000) {
+    while (!layer.state().paint && t < PAINT_EVERY[1] + 1000) {
       layer.step(t, 50, gate(), L);
       t += 50;
     }
@@ -137,10 +197,10 @@ describe('HomeAloneLayer: the traps', () => {
     expect(t - started).toBeGreaterThanOrEqual(PAINT_IN_MS - 50);
   });
 
-  it('in play the tarantula comes within 120 s', () => {
+  it('in play the tarantula comes within 70 s', () => {
     const layer = new HomeAloneLayer(garland(), mulberry32(4));
     let t = 0;
-    while (layer.state().tarantula === null && t < 121_000) {
+    while (layer.state().tarantula === null && t < TARANTULA_EVERY[1] + 1000) {
       layer.step(t, 50, gate(), L);
       t += 50;
     }

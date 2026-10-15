@@ -5,8 +5,8 @@ import { mulberry32 } from '../../../src/core/rng';
 import { HomeAloneLayer, type HomeAloneGate } from '../../../src/render/home-alone';
 import { homeWindow } from '../../../src/render/home-alone-room';
 import {
-  BANDIT_IDLE_MS, BANDIT_EVERY_MS, BANDIT_STOP, BEAM_MAX, BEAM_MS, FIRE_MS, MARV_EVERY_MS, MARV_IDLE_MS, MARV_MS, TOOTH_GLINT_AT, TOOTH_GLINT_MS,
-  TOOTH_MS, VAN_EVERY, VAN_MS, WINDOW_GAGS, firePose, gagMs, marvBox, marvPose, nextGag, toothPose, vanPose, type FirePose, type MarvPose,
+  BANDIT_STOP, BEAM_MAX, BEAM_MS, FIRE_MS, GAG_EVERY, GAG_FIRST_MS, MARV_EVERY, MARV_GAP_MS, MARV_IDLE_MS, MARV_MS, TOOTH_GLINT_AT, TOOTH_GLINT_MS,
+  TOOTH_MS, VAN_EVERY, VAN_FIRST, VAN_MS, WINDOW_GAGS, firePose, gagMs, marvBox, marvPose, nextGag, toothPose, vanPose, type FirePose, type MarvPose,
   type ToothPose, type VanPose, type WindowGag,
 } from '../../../src/render/home-alone-window';
 import { computeLayout, tileCenter } from '../../../src/render/layout';
@@ -36,13 +36,13 @@ describe('the window rotation (spec §9.1)', () => {
     expect([...seen].sort()).toEqual([...WINDOW_GAGS].sort());
   });
 
-  it('each idle trigger plays one gag, never the last one again; the iron only ever on a walk-by', () => {
+  it('each turn of the rotation plays one gag, never the last one again; the iron only ever on a walk-by', () => {
     const layer = new HomeAloneLayer(garland(), mulberry32(7));
     const played: WindowGag[] = [];
     let t = 0;
     let was: WindowGag | null = null;
     while (played.length < 12 && t < 3_600_000) {
-      layer.step(t, 50, gate({ inPlay: false }), L);
+      layer.step(t, 50, gate(), L);
       t += 50;
       const s = layer.state();
       if (s.gag && s.gag !== was) played.push(s.gag);
@@ -54,7 +54,7 @@ describe('the window rotation (spec §9.1)', () => {
     expect(new Set(played).size).toBe(3);
   });
 
-  it('a forced gag counts as the last: the next idle one is a different gag, BANDIT_EVERY_MS later', () => {
+  it('a forced gag counts as the last: the next one is a different gag, GAG_EVERY after it ends', () => {
     for (const kind of ['tooth', 'fire', 'bandits'] as const) {
       const layer = new HomeAloneLayer(garland(), mulberry32(3));
       layer.force(kind, 0, L);
@@ -63,9 +63,9 @@ describe('the window rotation (spec §9.1)', () => {
       let t = 0;
       let next: WindowGag | null = null;
       let at = -1;
-      while (t < BANDIT_EVERY_MS + 5000) {
+      while (t < 120_000) {
         const busy = layer.state().gag !== null;
-        layer.step(t, 50, gate({ inPlay: false }), L);
+        layer.step(t, 50, gate(), L);
         if (!busy && layer.state().gag) {
           next = layer.state().gag;
           at = t;
@@ -75,7 +75,7 @@ describe('the window rotation (spec §9.1)', () => {
       }
       expect(next).not.toBeNull();
       expect(next).not.toBe(first);
-      expect(at).toBeGreaterThanOrEqual(BANDIT_EVERY_MS - 100);
+      expect(at).toBeGreaterThanOrEqual(gagMs(first ?? 'walk', false) + GAG_EVERY[0] - 100);
     }
   });
 
@@ -192,7 +192,7 @@ describe('Marv at the glass (spec §9.2)', () => {
     expect(marvPose(MARV_MS, mp())).toMatchObject({ done: true, fogAlpha: 0 });
   });
 
-  it('comes after 60 s idle, at most once per 3 min, and input during it does not stop it', () => {
+  it('comes after 25 s idle (in play or not), at most once per 90 s, and input during it does not stop it', () => {
     const layer = new HomeAloneLayer(garland(), mulberry32(5));
     let t = 0;
     let first = -1;
@@ -208,31 +208,53 @@ describe('Marv at the glass (spec §9.2)', () => {
       t += 50;
     }
     expect(layer.state().marv).toBe(true);
-    // Still idle from here on: the next is at least 3 min after the first.
+    // Still idle from here on: the next is 90 s after the first.
     let second = -1;
-    while (t < first + MARV_EVERY_MS + 120_000 && second < 0) {
+    while (t < first + MARV_GAP_MS + 120_000 && second < 0) {
       const was = layer.state().marv;
       layer.step(t, 50, gate({ inPlay: false }), L);
       t += 50;
       if (!was && layer.state().marv) second = t;
     }
-    expect(second - first).toBeGreaterThanOrEqual(MARV_EVERY_MS - 100);
-    expect(MARV_IDLE_MS).toBe(60_000);
-    expect(MARV_EVERY_MS).toBe(180_000);
+    expect(second - first).toBeGreaterThanOrEqual(MARV_GAP_MS - 100);
+    expect(second - first).toBeLessThanOrEqual(MARV_GAP_MS + 100);
+    expect(MARV_IDLE_MS).toBe(25_000);
+    expect(MARV_GAP_MS).toBe(90_000);
   });
 
-  it('input keeps him away; he never plays at the same time as a rotation gag and does not count toward the rotation', () => {
-    const busy = new HomeAloneLayer(garland(), mulberry32(5));
-    for (let t = 0; t < 300_000; t += 50) {
-      if (t % 30_000 === 0) busy.input();
-      busy.step(t, 50, gate(), L);
-      expect(busy.state().marv).toBe(false);
+  it('a busy player still sees him every 2–3 min of play; off play, input keeps him away', () => {
+    const off = new HomeAloneLayer(garland(), mulberry32(5));
+    for (let t = 0; t < 600_000; t += 50) {
+      if (t % 10_000 === 0) off.input();
+      off.step(t, 50, gate({ inPlay: false }), L);
+      expect(off.state().marv).toBe(false);
     }
+    const busy = new HomeAloneLayer(garland(), mulberry32(5));
+    const starts: number[] = [];
+    let was = false;
+    for (let t = 0; t < 900_000; t += 50) {
+      if (t % 5000 === 0) busy.input();
+      busy.step(t, 50, gate(), L);
+      const s = busy.state();
+      expect(s.marv && s.gag !== null).toBe(false);
+      if (s.marv && !was) starts.push(t + 50);
+      was = s.marv;
+    }
+    expect(starts[0]).toBeGreaterThanOrEqual(MARV_EVERY[0]);
+    expect(starts[0]).toBeLessThanOrEqual(MARV_EVERY[1] + 8000); // a gag at the glass can hold him back
+    for (let k = 1; k < starts.length; k++) {
+      expect(starts[k] - starts[k - 1]).toBeGreaterThanOrEqual(MARV_EVERY[0]);
+      expect(starts[k] - starts[k - 1]).toBeLessThanOrEqual(MARV_EVERY[1] + 8000);
+    }
+    expect(starts.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('he never plays at the same time as a rotation gag and does not count toward the rotation', () => {
     const layer = new HomeAloneLayer(garland(), mulberry32(9));
     const order: string[] = [];
     let was = '';
     for (let t = 0; t < 400_000; t += 50) {
-      layer.step(t, 50, gate({ inPlay: false }), L);
+      layer.step(t, 50, gate(), L);
       const s = layer.state();
       expect(s.marv && s.gag !== null).toBe(false);
       const now = s.marv ? 'marv' : (s.gag ?? '');
@@ -298,19 +320,27 @@ describe('the Oh-K Plumbing van (spec §9.3)', () => {
     expect(BEAM_MAX).toBeLessThanOrEqual(0.25);
   });
 
-  it('every 2–4 min while a tree is in play; never before the first move, after the win, paused or under reduced motion', () => {
+  it('the first 20–40 s into play, then every 1–2 min of play; never before the first move, after the win, paused or under reduced motion', () => {
+    expect(VAN_FIRST).toEqual([20_000, 40_000]);
+    expect(VAN_EVERY).toEqual([60_000, 120_000]);
     for (const seed of [1, 2, 3]) {
       const layer = new HomeAloneLayer(garland(), mulberry32(seed));
-      let t = 0;
-      let at = -1;
-      while (t < VAN_EVERY[1] + 1000 && at < 0) {
-        layer.input(); // no idle gags in the way
+      const starts: number[] = [];
+      let was = false;
+      for (let t = 0; t < 600_000; t += 50) {
+        layer.input();
         layer.step(t, 50, gate(), L);
-        t += 50;
-        if (layer.state().van) at = t;
+        const van = layer.state().van;
+        if (van && !was) starts.push(t + 50);
+        was = van;
       }
-      expect(at).toBeGreaterThanOrEqual(VAN_EVERY[0]);
-      expect(at).toBeLessThanOrEqual(VAN_EVERY[1] + 50);
+      expect(starts[0]).toBeGreaterThanOrEqual(VAN_FIRST[0]);
+      expect(starts[0]).toBeLessThanOrEqual(VAN_FIRST[1] + 50);
+      for (let k = 1; k < starts.length; k++) {
+        expect(starts[k] - starts[k - 1]).toBeGreaterThanOrEqual(VAN_EVERY[0]);
+        expect(starts[k] - starts[k - 1]).toBeLessThanOrEqual(VAN_EVERY[1] + 50);
+      }
+      expect(starts.length).toBeGreaterThanOrEqual(5);
     }
     for (const g of [gate({ inPlay: false }), gate({ running: false }), gate({ reduced: true })]) {
       const layer = new HomeAloneLayer(garland(), mulberry32(4));
@@ -340,6 +370,6 @@ describe('frozen while paused', () => {
     run(layer, 1000, gate());
     run(layer, 600_000, gate({ running: false }), 1000);
     expect(layer.state()).toMatchObject({ fire: true, marv: true, van: true });
-    expect(BANDIT_IDLE_MS).toBeLessThan(BANDIT_EVERY_MS);
+    expect(GAG_FIRST_MS).toBeLessThan(GAG_EVERY[0]);
   });
 });

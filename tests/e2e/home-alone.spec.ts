@@ -71,6 +71,22 @@ test('typing kevin brings the house in with a cross-fade and the scream, and lea
   expect(await radio(page)).toEqual(before);
 });
 
+test('typed kevin is welcomed by Harry and Marv walking by within a few seconds, before any move; a reload in the house is not', async ({ page }) => {
+  await clips(page);
+  await ready(page);
+  const log = (await game(page)).log;
+  await typeStill(page, 'kevin');
+  await expect.poll(async () => (await house(page)).gag, { timeout: 8000 }).toBe('walk');
+  expect(await house(page)).toMatchObject({ bandits: true, iron: false });
+  expect((await game(page)).log).toBe(log);
+
+  await expect.poll(() => stored(page, 'aglow.homeAlone')).toBe('true');
+  await ready(page);
+  expect((await house(page)).on).toBe(true);
+  await page.waitForTimeout(5000);
+  expect((await house(page)).gag).toBeNull();
+});
+
 test('typed on a fresh load, before any tap, "kevin" screams: the keydown unlocks the audio; the radio is left alone', async ({ page }) => {
   await clips(page);
   // Every AudioContext the page makes, and its state just after (the page's evaluate calls count as gestures, so the

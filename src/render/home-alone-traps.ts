@@ -8,15 +8,18 @@ const TAU = Math.PI * 2;
 /** The traps' size unit (CSS px): the tile size, but never so small on a phone that the can and the spider are specks. */
 export const trapUnit = (L: Pick<Layout, 's'>): number => Math.max(L.s, 30);
 
-export const PAINT_EVERY = [45_000, 90_000] as const;
-export const TARANTULA_EVERY = [60_000, 120_000] as const;
+export const PAINT_EVERY = [30_000, 50_000] as const;
+export const TARANTULA_EVERY = [40_000, 70_000] as const;
 
-/** A trap's next turn, in in-play ms (the caller steps it only while a tree is in play and the game runs). */
+/**
+ * A trap's next turn, in in-play ms (the caller steps it only while a tree is in play and the game runs): the first
+ * `first` in (by default `range`), then every `range`.
+ */
 export class TrapScheduler {
   private left: number;
 
-  constructor(private readonly range: readonly [number, number], private readonly rng: () => number) {
-    this.left = this.next();
+  constructor(private readonly range: readonly [number, number], private readonly rng: () => number, first: readonly [number, number] = range) {
+    this.left = first[0] + this.rng() * (first[1] - first[0]);
   }
 
   /** `dt` ms more of in-play time; true when the trap is due (and the next one is armed). */

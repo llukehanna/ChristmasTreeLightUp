@@ -1,7 +1,7 @@
 import type { SweepFrame, SweepRun } from './aurora';
 import { PAINT_EVERY, PaintCan, TARANTULA_EVERY, Tarantula, TrapScheduler, drawPaintCan, drawTarantula, makePaintCan, type KnockTarget } from './home-alone-traps';
 import {
-  BanditTimer, IRON_ODDS, MARV_EVERY_MS, MARV_IDLE_MS, MARV_MS, TOOTH_GLINT_AT, VAN_EVERY, VAN_MS, WindowGags, gagMs, nextGag, vanPose,
+  GagClock, IRON_ODDS, MARV_MS, MarvClock, TOOTH_GLINT_AT, VAN_EVERY, VAN_FIRST, VAN_MS, WindowGags, gagMs, nextGag, vanPose,
   type GagFrame, type VanPose, type WindowGag,
 } from './home-alone-window';
 import type { Layout } from './layout';
@@ -46,8 +46,8 @@ export class HomeAloneLayer {
   private readonly frame: GagFrame = { gag: null, t: -1, iron: false, marvT: -1, vanT: -1, vanDir: 1 };
   private lastGag: WindowGag | null = null;
   private dings = 0;
-  private readonly timer = new BanditTimer();
-  private readonly marvTimer = new BanditTimer(MARV_IDLE_MS, MARV_EVERY_MS);
+  private readonly clock: GagClock;
+  private readonly marvClock: MarvClock;
   private readonly van: VanPose = { x: 0, beam: -1, done: false };
   private readonly vanEvery: TrapScheduler;
   private readonly gags = new WindowGags();
@@ -63,13 +63,19 @@ export class HomeAloneLayer {
   constructor(private readonly garland: KnockTarget, private readonly rng: () => number = Math.random) {
     this.paintEvery = new TrapScheduler(PAINT_EVERY, this.rng);
     this.spiderEvery = new TrapScheduler(TARANTULA_EVERY, this.rng);
-    this.vanEvery = new TrapScheduler(VAN_EVERY, this.rng);
+    this.vanEvery = new TrapScheduler(VAN_EVERY, this.rng, VAN_FIRST);
+    this.clock = new GagClock(this.rng);
+    this.marvClock = new MarvClock(this.rng);
   }
 
-  /** A tap, key, pointer move, wheel or pinch: the window's idle clocks start over. */
+  /** A tap, key, pointer move, wheel or pinch: Marv's idle clock starts over (the rotation doesn't wait for idle). */
   input(): void {
-    this.timer.input();
-    this.marvTimer.input();
+    this.marvClock.input();
+  }
+
+  /** The player just switched the mode on (typed): Harry and Marv walk by in WELCOME_MS, before any move (spec §9.1). */
+  welcome(): void {
+    this.clock.welcome();
   }
 
   step(now: number, dt: number, g: HomeAloneGate, L: Layout): void {
@@ -77,6 +83,7 @@ export class HomeAloneLayer {
       // Switched on mid-gag or mid-trap: a still room has none.
       this.clearWindow();
       this.cancelTraps();
+      this.clock.reset();
     }
     if (g.reduced || !g.running) return;
     const f = this.frame;
@@ -96,12 +103,16 @@ export class HomeAloneLayer {
       f.marvT += dt;
       if (f.marvT >= MARV_MS) f.marvT = -1;
     }
-    // One thing at the glass at a time: the rotation and Marv each wait for the other (spec §9.1–9.2).
+    // One thing at the glass at a time: the rotation and Marv each wait for the other (spec §9.1–9.2). The rotation
+    // runs on play time (the welcome on running time); Marv on idle time, or failing that on play time.
     const busy = f.gag !== null || f.marvT >= 0;
-    if (this.timer.step(dt, busy)) {
+    const due = this.clock.step(dt, f.gag !== null, busy, g.inPlay);
+    const marvDue = this.marvClock.step(dt, busy, g.inPlay);
+    if (due === 'welcome') this.play('walk', false);
+    else if (due === 'next') {
       const gag = nextGag(this.lastGag, this.rng());
       this.play(gag, gag === 'walk' && this.rng() < IRON_ODDS);
-    } else if (this.marvTimer.step(dt, busy)) this.marv();
+    } else if (marvDue) this.marv();
     // Traps and the van: only while a tree is in play (spec §4, §9.3); a win (or a new tree) clears any under way at once.
     if (!g.inPlay) {
       this.cancelTraps();
@@ -143,6 +154,7 @@ export class HomeAloneLayer {
   reset(): void {
     this.clearWindow();
     this.cancelTraps();
+    this.clock.reset();
   }
 
   state(): HomeAloneLayerState {
@@ -202,19 +214,19 @@ export class HomeAloneLayer {
     this.frame.marvT = -1;
   }
 
-  /** A window gag now; it counts as the last one, for the rotation and the idle clock. */
+  /** A window gag now; it counts as the last one, for the rotation and its clock. */
   private play(gag: WindowGag, iron: boolean): void {
     const f = this.frame;
     f.gag = gag;
     f.t = 0;
     f.iron = iron;
     this.lastGag = gag;
-    this.timer.started();
+    this.clock.started();
   }
 
   private marv(): void {
     this.frame.marvT = 0;
-    this.marvTimer.started();
+    this.marvClock.started();
   }
 
   private startVan(): void {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import {
-  CRAWL_MS, PAINT_EVERY, PAINT_IN_MS, PAINT_MS, PAINT_SWING, PaintCan, TARANTULA_SCARE_PX, Tarantula, TrapScheduler, drawPaintCan,
+  CRAWL_MS, PAINT_EVERY, PAINT_IN_MS, PAINT_MS, PAINT_SWING, PaintCan, TARANTULA_EVERY, TARANTULA_SCARE_PX, Tarantula, TrapScheduler, drawPaintCan,
   paintCanAngle,
 } from '../../../src/render/home-alone-traps';
 import { computeLayout } from '../../../src/render/layout';
@@ -20,6 +20,23 @@ describe('TrapScheduler', () => {
       expect(t - prev).toBeLessThanOrEqual(PAINT_EVERY[1] + 50);
       prev = t;
     }
+  });
+
+  it('a first range of its own comes first (the van: soon after the first move), then the usual range', () => {
+    for (const r of [0, 0.5, 0.999]) {
+      const s = new TrapScheduler([60_000, 120_000], () => r, [20_000, 40_000]);
+      const at: number[] = [];
+      for (let t = 0; t < 200_000 && at.length < 2; t += 50) if (s.step(50)) at.push(t + 50);
+      expect(at[0]).toBeGreaterThanOrEqual(20_000);
+      expect(at[0]).toBeLessThanOrEqual(40_000 + 50);
+      expect(at[1] - at[0]).toBeGreaterThanOrEqual(60_000);
+      expect(at[1] - at[0]).toBeLessThanOrEqual(120_000 + 50);
+    }
+  });
+
+  it('the paint can every 30–50 s of play, the tarantula every 40–70 s (spec §4)', () => {
+    expect(PAINT_EVERY).toEqual([30_000, 50_000]);
+    expect(TARANTULA_EVERY).toEqual([40_000, 70_000]);
   });
 });
 
