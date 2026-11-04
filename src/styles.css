@@ -158,10 +158,6 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
   box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.75), 0 0 0 1px rgba(255, 230, 160, 0.55), 0 0 20px rgba(255, 190, 90, 0.4);
 }
 
-.pause { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; cursor: pointer; outline: none; }
-.pause .big { font-family: 'Instrument Serif', serif; font-style: italic; font-size: 38px; }
-.pause small { display: block; margin-top: 8px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.6; }
-
 /* ---------- results: gift tag ---------- */
 .results {
   position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom)); transform: translate(-50%, 24px);

@@ -209,6 +209,89 @@ test('the pause button stops the clock, and resuming continues it without turnin
   await expect(btn).toBeHidden({ timeout: 4000 });
 });
 
+test('Escape pauses and Escape resumes', async ({ page }) => {
+  await ready(page);
+  const time = page.locator('#time');
+  await expect(time).not.toHaveText('0:00', { timeout: 3000 });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#pause')).toBeVisible();
+  await settle(page);
+  const frozen = (await time.textContent()) ?? '';
+  await page.waitForTimeout(1000);
+  await expect(time).toHaveText(frozen);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#pause')).toBeHidden();
+  await expect(time).not.toHaveText(frozen, { timeout: 3000 });
+});
+
+test('P still toggles', async ({ page }) => {
+  await ready(page);
+  await page.keyboard.press('p');
+  await expect(page.locator('#pause')).toBeVisible();
+  await page.keyboard.press('p');
+  await expect(page.locator('#pause')).toBeHidden();
+});
+
+test('Escape in the settings dialog closes the dialog and does not pause', async ({ page }) => {
+  await ready(page);
+  await page.click('#menu-btn');
+  await expect(page.locator('#menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#menu')).toBeHidden();
+  await page.waitForTimeout(300);
+  await expect(page.locator('#pause')).toBeHidden();
+});
+
+test('a key typed in an input does not pause', async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.id = 'probe-input';
+    document.body.append(input);
+    input.focus();
+  });
+  await page.keyboard.press('p');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  await expect(page.locator('#pause')).toBeHidden();
+  await expect(page.locator('#probe-input')).toHaveValue('p');
+});
+
+test('a win under the pause lifts it', async ({ page }) => {
+  await ready(page);
+  // Solve every tile but the one that needs the most turns, then queue that tile's turns and pause during the spin.
+  const last = await page.evaluate(async () => {
+    const a = (window as unknown as W).__aglow;
+    const rot = (b: number): number => (b & 1 ? 8 : 0) | (b & 8 ? 2 : 0) | (b & 2 ? 4 : 0) | (b & 4 ? 1 : 0);
+    const turns = (b: number, want: number): number => {
+      let n = 0;
+      for (let x = b; x !== want && n < 4; x = rot(x)) n++;
+      return n;
+    };
+    const s = a.state();
+    const need = a.ids.map((i) => turns(s.bits[i], s.solution[i]));
+    const worst = need.indexOf(Math.max(...need));
+    a.ids.forEach((id, k) => {
+      if (k !== worst) for (let n = 0; n < need[k]; n++) setTimeout(() => a.tap(id), n * 150);
+    });
+    await new Promise((r) => setTimeout(r, 4 * 150 + 400));
+    return { id: a.ids[worst], turns: need[worst] };
+  });
+  expect(last.turns).toBeGreaterThanOrEqual(2);
+  expect((await state(page)).won).toBe(false);
+  // The last tile's turns queue behind one another; P arrives in the same task, mid-spin.
+  const pausedMidSpin = await page.evaluate((l) => {
+    const a = (window as unknown as W).__aglow;
+    for (let n = 0; n < l.turns; n++) a.tap(l.id);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true }));
+    return !document.getElementById('pause')!.hidden;
+  }, last);
+  expect(pausedMidSpin).toBe(true);
+  await expect(page.locator('#results')).toBeVisible({ timeout: 8000 });
+  await expect(page.locator('#pause')).toBeHidden();
+  expect((await state(page)).won).toBe(true);
+});
+
 test('right-clicking a tile turns it counter-clockwise', async ({ page }) => {
   await ready(page);
   const i = await middleTile(page);

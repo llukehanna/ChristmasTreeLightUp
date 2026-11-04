@@ -45,6 +45,7 @@ import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type Stats
 import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { everyWhileVisible } from './ui/visible';
 import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareImage } from './ui/share';
+import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
 
@@ -175,6 +176,8 @@ export class App {
   /** Mr. Hector (spec 2026-10-14 §9.4): which clip a Home Alone win says, and his glare beside the tag. */
   private readonly hector = new HectorDesk();
   private readonly glare = new HectorGlare(() => el('results'), hectorImageUrl());
+  /** The pause: the window frosts over (#pause is its host). */
+  private readonly frost = new FrostPause(el('pause'));
   private glares = 0;
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
@@ -1104,9 +1107,11 @@ export class App {
       }
       // "kevin" switches Home Alone mode (spec 2026-10-14 §1), under the same rules as "hohoho".
       if (!this.paused && this.alone.key(e, performance.now())) return;
-      if (e.key === 'Escape' && this.paused) {
+      if (e.key === 'Escape') {
+        // Escape pauses and resumes, like P (pause() checks canPause: nothing to pause at the reveal or after the win).
         e.preventDefault();
-        this.resume();
+        if (this.paused) this.resume();
+        else this.pause(true);
       } else if ((e.key === 'p' || e.key === 'P') && !e.repeat) {
         e.preventDefault();
         if (this.paused) this.resume();
@@ -1156,7 +1161,8 @@ export class App {
     this.paused = on;
     this.pausedDrawn = false;
     document.body.classList.toggle('paused', on);
-    el('pause').hidden = !on;
+    if (on) this.frost.show(this.reduced.matches);
+    else this.frost.hide();
     for (const sel of ['.hud', '#menu', '#radio-panel', '#account-menu']) {
       const node = document.querySelector<HTMLElement>(sel);
       if (node) node.inert = on;
