@@ -96,8 +96,11 @@ test('solving shows the results card and sharing copies to the clipboard', async
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.addInitScript(() => Object.defineProperty(navigator, 'canShare', { value: undefined }));
   await ready(page);
+  const tapped = Date.now();
   await page.evaluate(() => (window as unknown as W).__aglow.solve());
-  await expect(page.locator('#results')).toBeVisible({ timeout: 8000 });
+  // The win lands the moment the last turn does: the tag is up well inside 1.2 s (silence means a light is still dark).
+  await expect(page.locator('#results')).toBeVisible({ timeout: 1200 });
+  expect(Date.now() - tapped).toBeLessThan(1200);
   await expect(page.locator('#r-time')).toHaveText(/^Lit in \d+:\d\d$/);
   await page.click('#r-share');
   await expect(page.locator('#toast')).toHaveText(/image copied/i);

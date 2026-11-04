@@ -47,6 +47,9 @@ import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareIma
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
 
+/** A win hurries the flow still in flight this much, and the results tag follows this long after the last bulb. */
+const LAST_WAVE_SPEEDUP = 4;
+const RESULTS_DELAY_MS = 500;
 const INTRO_KEY = 'aglow.seenIntro';
 
 /** Secret mode as the test probe sees it (src/debug.ts). */
@@ -439,7 +442,11 @@ export class App {
     this.presentWin(now, this.won, true);
   }
 
-  /** The win's staging: the tree lights up, then (1.5 s after the last bulb) the results tag. */
+  /**
+   * The win's staging. A live win lands at once: the light still travelling hurries along and the sound and the confetti
+   * start now, so silence means a light is still dark. The results tag follows RESULTS_DELAY_MS later. A restore after a
+   * reload keeps the tree's own last-lit time.
+   */
   private presentWin(now: number, won: WonRun, sound: boolean): void {
     this.menu.close();
     this.radioPanel.close();
@@ -448,10 +455,13 @@ export class App {
     this.camera = IDENTITY;
     el('zoom-reset').hidden = true;
     this.lastSeconds = won.seconds;
-    this.winAt = this.vis.lastLitAt(this.board);
+    if (sound) {
+      this.vis.hurry(now, LAST_WAVE_SPEEDUP);
+      this.winAt = now;
+    } else this.winAt = this.vis.lastLitAt(this.board);
     this.busy(this.winAt + CONFETTI_MS);
     const game = this.board;
-    const delay = Math.max(0, this.winAt - now);
+    const delay = sound ? 0 : Math.max(0, this.winAt - now);
     // A live win in Home Alone mode says one clip (spec 2026-10-14 §6, §9.4), and an unverified one brings Hector.
     if (sound) this.hector.begin(won.newBest);
     if (sound) {
@@ -471,7 +481,7 @@ export class App {
       });
       this.hector.tagShown();
       this.hectorStep();
-    }, delay + 1500);
+    }, delay + RESULTS_DELAY_MS);
   }
 
   /**

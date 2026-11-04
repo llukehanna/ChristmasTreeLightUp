@@ -82,6 +82,13 @@ export class VisualState {
     this.flashes = this.flashes.filter((f) => now - f.t <= FLASH_MS);
   }
 
+  /** The tiles still to light (litStart after `now`) come `factor` times sooner: the last wave of a win, hurried. */
+  hurry(now: number, factor: number): void {
+    for (let i = 0; i < this.litStart.length; i++) {
+      if (this.litStart[i] > now) this.litStart[i] = now + (this.litStart[i] - now) / factor;
+    }
+  }
+
   /** When the last tile finishes filling (used to time the win sequence). */
   lastLitAt(board: Board): number {
     let m = 0;

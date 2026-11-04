@@ -66,3 +66,12 @@ describe('VisualState flow timing', () => {
     expect(v.settleScale(5, 2000)).toBe(1);
   });
 });
+
+describe('VisualState.hurry', () => {
+  it('hurry: tiles still to light come four times sooner; lit ones are untouched', () => {
+    const v = new VisualState(4);
+    v.litStart.splice(0, 4, 100, 1000, 1400, -1);
+    v.hurry(1000, 4);
+    expect(v.litStart).toEqual([100, 1000, 1100, -1]);
+  });
+});
