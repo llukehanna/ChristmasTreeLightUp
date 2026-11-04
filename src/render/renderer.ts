@@ -65,6 +65,8 @@ export interface FrameInput {
   extraBulb?: (tile: number) => number;
   /** Light show (Plan 2): low-band energy 0..1 that breathes the ground pool and star. */
   ambient?: number;
+  /** A calm frame (ambient motion only, drawn at a reduced rate): its long interval says nothing about the device. */
+  calm?: boolean;
   /** Secret mode while music drives it: the nod, the bulb pulse, the palette step and the garland face's bob. */
   beat?: BeatFrame;
 }
@@ -214,7 +216,8 @@ export class Renderer {
     const workStart = performance.now();
     this.draw(f);
     // The rAF interval catches GPU-bound devices; the work time lets a steady 30 Hz cap (iOS Low Power Mode) pass.
-    this.quality.sample(f.dt, performance.now() - workStart);
+    // A calm frame's interval is by design (28 ms or more), so it must not read as a slow device.
+    if (!f.calm) this.quality.sample(f.dt, performance.now() - workStart);
   }
 
   private draw(f: FrameInput): void {

@@ -732,9 +732,11 @@ export class App {
 
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
-    // Ambient-only frames draw at 30 Hz. Never calm: while paused, while the post-win light show runs, or while secret
-    // mode's beat is on (they follow the music, so they keep the full rate).
-    const calm = now >= this.busyUntil && !this.paused && !this.lightShowOn && !(this.secret && this.radio.lightShowActive);
+    // Ambient-only frames draw at 30 Hz. Never calm: while paused, during a sky sweep or a topper flip (the player
+    // caused them), while the post-win light show runs, or while secret mode's beat is on (they follow the music).
+    const calm =
+      now >= this.busyUntil && !this.paused && !this.lightShowOn && !(this.secret && this.radio.lightShowActive) &&
+      !this.renderer.sweeping && !this.renderer.topper.needsFrame(now);
     if (!frameDue(now - this.lastFrame, calm)) return;
     const dt = Math.min(50, now - (this.lastFrame || now));
     this.lastFrame = now;
@@ -767,7 +769,7 @@ export class App {
       this.renderer.homeAlone.step(now, dt, g, this.renderer.layout);
     }
     this.renderer.frame({
-      board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover,
+      board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover, calm,
       revealAt: this.run.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
       extraBulb: show ? (i) => this.radio.show.extraBulb(Math.floor(i / GRID.w), now) : undefined,
       ambient: show ? this.radio.show.low : 0,
@@ -805,10 +807,15 @@ export class App {
       hover: (x, y) => {
         this.renderer.homeAlone.input();
         const [wx, wy] = toWorld(this.camera, x, y);
-        this.hover = tileAt(this.renderer.layout, GRID, wx, wy);
+        const hover = tileAt(this.renderer.layout, GRID, wx, wy);
+        if (hover !== this.hover) this.busy(performance.now());
+        this.hover = hover;
         stage.style.cursor = this.hover >= 0 && this.winAt === null ? 'pointer' : 'default';
       },
-      leave: () => (this.hover = -1),
+      leave: () => {
+        if (this.hover >= 0) this.busy(performance.now());
+        this.hover = -1;
+      },
       zoom: (f, fx, fy) => {
         this.renderer.homeAlone.input();
         if (this.winAt === null) this.setCamera(zoomAt(this.camera, f, fx, fy));
