@@ -1110,6 +1110,8 @@ export class App {
       if (e.key === 'Escape') {
         // Escape pauses and resumes, like P (pause() checks canPause: nothing to pause at the reveal or after the win).
         e.preventDefault();
+        // A held key repeats keydown: only the first press toggles (as for P).
+        if (e.repeat) return;
         if (this.paused) this.resume();
         else this.pause(true);
       } else if ((e.key === 'p' || e.key === 'P') && !e.repeat) {

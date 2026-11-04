@@ -224,6 +224,29 @@ test('Escape pauses and Escape resumes', async ({ page }) => {
   await expect(time).not.toHaveText(frozen, { timeout: 3000 });
 });
 
+test('a held Escape toggles the pause once, not at key-repeat rate', async ({ page }) => {
+  await ready(page);
+  const repeats = await page.evaluate(() => {
+    const press = (repeat: boolean) => {
+      const e = new KeyboardEvent('keydown', { key: 'Escape', repeat, bubbles: true, cancelable: true });
+      document.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    press(false);
+    return [press(true), press(true), press(true), press(true)];
+  });
+  expect(repeats).toEqual([true, true, true, true]); // the repeats are swallowed
+  await expect(page.locator('#pause')).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page.locator('#pause')).toBeVisible(); // still paused: the repeats did not resume it
+  // A repeat alone never pauses.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#pause')).toBeHidden();
+  await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', repeat: true, bubbles: true, cancelable: true })));
+  await page.waitForTimeout(300);
+  await expect(page.locator('#pause')).toBeHidden();
+});
+
 test('P still toggles', async ({ page }) => {
   await ready(page);
   await page.keyboard.press('p');

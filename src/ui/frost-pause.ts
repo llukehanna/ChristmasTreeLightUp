@@ -54,7 +54,10 @@ export class FrostPause {
   private raf = 0;
   private clearTimer: ReturnType<typeof setTimeout> | undefined;
   private glass: Glass | null = null;
-  private down: { lx: number; ly: number; moved: number } | null = null;
+  /** The glass is up but its tab is hidden: nothing is drawn until the page is visible again. */
+  private unpainted = false;
+  /** The press in progress: where it began, the stroke's last point, and whether it has gone far enough to be a wipe. */
+  private down: { sx: number; sy: number; lx: number; ly: number; wiping: boolean } | null = null;
   /** The press that just ended wiped the glass, so the click that follows it is not a tap to resume. */
   private wiped = false;
 
@@ -94,7 +97,9 @@ export class FrostPause {
       } catch {
         /* a synthetic pointer has nothing to capture */
       }
-      this.down = { lx: e.clientX * g.k, ly: e.clientY * g.k, moved: 0 };
+      const x = e.clientX * g.k;
+      const y = e.clientY * g.k;
+      this.down = { sx: x, sy: y, lx: x, ly: y, wiping: false };
     });
     host.addEventListener('pointermove', (e) => {
       const g = this.glass;
@@ -102,8 +107,9 @@ export class FrostPause {
       if (!g || !d) return;
       const x = e.clientX * g.k;
       const y = e.clientY * g.k;
-      d.moved += Math.hypot(x - d.lx, y - d.ly);
-      if (d.moved < WIPE_MOVE * g.k) return;
+      // A wipe is a press that has got WIPE_MOVE away from where it began (net, so a jittery tap stays a tap).
+      if (!d.wiping && Math.hypot(x - d.sx, y - d.sy) < WIPE_MOVE * g.k) return;
+      d.wiping = true;
       g.stroke(d.lx, d.ly, x, y);
       d.lx = x;
       d.ly = y;
@@ -112,8 +118,13 @@ export class FrostPause {
     const end = (): void => {
       const d = this.down;
       this.down = null;
-      if (d && this.glass && d.moved >= WIPE_MOVE * this.glass.k) this.wiped = true;
+      if (d?.wiping) this.wiped = true;
     };
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !this.unpainted || !this.isOpen) return;
+      this.unpainted = false;
+      this.paint(true);
+    });
     host.addEventListener('pointerup', end);
     host.addEventListener('pointercancel', end);
   }
@@ -135,7 +146,9 @@ export class FrostPause {
     host.classList.toggle('reduced', reduced);
     this.caption.classList.remove('dim');
     host.hidden = false;
-    this.paint(reduced);
+    // A hidden tab does no work: the glass is painted (its ferns already grown) when the page is next visible.
+    if (document.hidden) this.unpainted = true;
+    else this.paint(reduced);
     // The frame with opacity 0 must be styled before .show, or the fade-in has nothing to start from.
     void host.offsetWidth;
     host.classList.add('show');
@@ -145,6 +158,7 @@ export class FrostPause {
   hide(): void {
     if (!this.isOpen) return;
     this.isOpen = false;
+    this.unpainted = false;
     this.down = null;
     this.wiped = false;
     this.glass = null;

@@ -2,11 +2,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CAPTION_DELAY_MS, CAPTION_FADE_MS, CLEAR_MS, FERNS_MS, FROST_IN_MS, FrostPause } from '../../../src/ui/frost-pause';
 
+let drawn = 0;
 beforeEach(() => {
+  drawn = 0;
   vi.useFakeTimers();
   // jsdom has no canvas 2D context: every call on this one does nothing.
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
-    get: (t, k) => (k in t ? t[k] : k === 'measureText' ? () => ({ width: 100 }) : k === 'createImageData' ? () => ({ data: new Uint8ClampedArray(256 * 256 * 4) }) : () => (String(k).startsWith('create') ? { addColorStop() {} } : undefined)),
+    get: (t, k) => (k in t ? t[k] : k === 'fillRect' || k === 'drawImage' || k === 'clearRect' ? () => void drawn++ : k === 'measureText' ? () => ({ width: 100 }) : k === 'createImageData' ? () => ({ data: new Uint8ClampedArray(256 * 256 * 4) }) : () => (String(k).startsWith('create') ? { addColorStop() {} } : undefined)),
     set: (t, k, v) => ((t[k] = v), true),
   });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
@@ -96,4 +98,55 @@ it('a wipe drag does not count as a click that resumes', () => {
   ev('pointerup', 10, 10);
   host().dispatchEvent(new Event('click', { bubbles: true }));
   expect(clicks).toBe(1);
+});
+
+it('a tap whose jitter adds up past 6 px but nets under it still clicks through', () => {
+  const f = new FrostPause(host());
+  f.show(false);
+  let clicks = 0;
+  host().addEventListener('click', () => clicks++);
+  const ev = (type: string, x: number, y: number) => host().dispatchEvent(Object.assign(new Event(type, { bubbles: true }), { clientX: x, clientY: y, pointerId: 1 }));
+  host().setPointerCapture = () => undefined;
+  ev('pointerdown', 100, 100);
+  for (const [x, y] of [[103, 100], [100, 100], [103, 100], [100, 100], [103, 100], [101, 100]]) ev('pointermove', x, y); // 15 px travelled, never 6 px away
+  ev('pointerup', 101, 100);
+  host().dispatchEvent(new Event('click', { bubbles: true }));
+  expect(clicks).toBe(1);
+});
+
+it('show() in a hidden tab draws nothing; it paints once the page is visible', () => {
+  let hidden = true;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  try {
+    const f = new FrostPause(host());
+    f.show(false);
+    vi.advanceTimersByTime(1000);
+    expect(f.open).toBe(true);
+    expect(host().classList.contains('show')).toBe(true);
+    expect(drawn).toBe(0);
+    hidden = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(drawn).toBeGreaterThan(0);
+    const after = drawn;
+    document.dispatchEvent(new Event('visibilitychange')); // only once
+    expect(drawn).toBe(after);
+  } finally {
+    delete (document as unknown as Record<string, unknown>).hidden;
+  }
+});
+
+it('closing the glass while the tab is hidden leaves nothing to paint later', () => {
+  let hidden = true;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  try {
+    const f = new FrostPause(host());
+    f.show(false);
+    f.hide();
+    vi.advanceTimersByTime(CLEAR_MS);
+    hidden = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(drawn).toBe(0);
+  } finally {
+    delete (document as unknown as Record<string, unknown>).hidden;
+  }
 });
