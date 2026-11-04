@@ -1,7 +1,7 @@
 import type { SweepFrame, SweepRun } from './sky-sweep';
-import { PAINT_EVERY, PaintCan, TARANTULA_EVERY, Tarantula, TrapScheduler, drawPaintCan, drawTarantula, makePaintCan, type KnockTarget } from './home-alone-traps';
+import { PAINT_EVERY, PaintCan, TARANTULA_EVERY, Tarantula, TrapScheduler, drawPaintCan, drawTarantula, makePaintCan, scurryMs, type KnockTarget } from './home-alone-traps';
 import {
-  GagClock, IRON_ODDS, MARV_MS, MarvClock, TOOTH_GLINT_AT, VAN_EVERY, VAN_FIRST, VAN_MS, WindowGags, gagMs, nextGag, vanPose,
+  GagClock, IRON_ODDS, MARV_MS, MarvClock, TOOTH_GLINT_AT, VAN_EVERY, VAN_FIRST, VAN_MS, WELCOME_MS, WindowGags, gagMs, nextGag, vanPose,
   type GagFrame, type VanPose, type WindowGag,
 } from './home-alone-window';
 import type { Layout } from './layout';
@@ -76,6 +76,16 @@ export class HomeAloneLayer {
   /** The player just switched the mode on (typed): Harry and Marv walk by in WELCOME_MS, before any move (spec §9.1). */
   welcome(): void {
     this.clock.welcome();
+  }
+
+  /** How long the welcome moves for from `welcome()`: the wait, then the walk-by. The app holds the full frame rate that long. */
+  welcomeMs(): number {
+    return WELCOME_MS + gagMs('walk', false);
+  }
+
+  /** The longest a scurry takes to leave the stage on `L` (after `scare()` said true). */
+  scurryMs(L: Layout): number {
+    return scurryMs(L);
   }
 
   step(now: number, dt: number, g: HomeAloneGate, L: Layout): void {

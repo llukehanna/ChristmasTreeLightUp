@@ -7,4 +7,9 @@ export class Toast {
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => this.node.classList.remove('show'), ms);
   }
+  /** Takes the toast away now, whatever is left of its time. */
+  hide(): void {
+    clearTimeout(this.timer);
+    this.node.classList.remove('show');
+  }
 }

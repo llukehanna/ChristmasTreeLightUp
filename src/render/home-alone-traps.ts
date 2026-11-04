@@ -84,6 +84,9 @@ export const CRAWL_MS = [6000, 8000] as const;
 export const TARANTULA_SCARE_PX = 40;
 export const SCURRY_PX_S = 1400;
 
+/** The longest a scurry lasts on layout `L`: across the whole stage, and out past the margin where it ends. */
+export const scurryMs = (L: Pick<Layout, 'w' | 'h' | 's'>): number => ((Math.hypot(L.w, L.h) + 2 * trapUnit(L)) / SCURRY_PX_S) * 1000;
+
 export class Tarantula {
   mode: 'crawl' | 'scurry' | null = null;
   readonly pos = { x: 0, y: 0, heading: 0 };

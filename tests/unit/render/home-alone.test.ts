@@ -254,6 +254,19 @@ describe('HomeAloneLayer: the traps', () => {
     expect(layer.state().tarantula).toBe('scurry');
   });
 
+  it('says how long the player-started motions run, so the app can hold the full frame rate for them', () => {
+    const layer = new HomeAloneLayer(garland(), mulberry32(4));
+    expect(layer.welcomeMs()).toBe(WELCOME_MS + BANDIT_WALK_MS);
+    // A scurry leaves the stage in under a second, and never outlasts the bound.
+    layer.force('tarantula', 0, L, [600, 400]);
+    layer.scare(610, 405);
+    let ms = 0;
+    while (layer.state().tarantula === 'scurry' && ms < 10_000) layer.step(ms, 16, gate(), L), (ms += 16);
+    expect(ms).toBeGreaterThan(0);
+    expect(layer.scurryMs(L)).toBeGreaterThanOrEqual(ms - 16);
+    expect(layer.scurryMs(L)).toBeLessThan(2000);
+  });
+
   it('forcing the paint can with nothing lit still swings at the middle bulb', () => {
     const knock = { ...garland(), pickLit: vi.fn(() => -1) };
     const layer = new HomeAloneLayer(knock, mulberry32(4));

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { Menu } from '../../../src/ui/menu';
+import { Menu, NEW_TREE_CONFIRM_MS } from '../../../src/ui/menu';
 import { DEFAULT_SETTINGS } from '../../../src/store/settings';
 
 beforeEach(() => {
@@ -63,4 +63,26 @@ it('the Keyboard shortcuts row closes the menu, then asks for the key card', () 
   (document.getElementById('keys-row') as HTMLButtonElement).click();
   expect(menu.isOpen).toBe(false);
   expect(onKeys).toHaveBeenCalledTimes(1);
+});
+
+it('the confirm window is NEW_TREE_CONFIRM_MS (3,000 ms), which the N toast shares', () => {
+  expect(NEW_TREE_CONFIRM_MS).toBe(3000);
+  const { menu, onNewTree } = make(true);
+  menu.requestNewTree();
+  vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS - 10);
+  expect(menu.requestNewTree()).toBe('started');
+  expect(onNewTree).toHaveBeenCalledTimes(1);
+  const late = make(true);
+  late.menu.requestNewTree();
+  vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS + 10);
+  expect(late.menu.requestNewTree()).toBe('armed');
+});
+
+it('opening the menu tells the host first (it closes whatever would sit over the menu)', () => {
+  const order: string[] = [];
+  const menu = new Menu({ ...DEFAULT_SETTINGS }, {
+    onChange: () => {}, onNewTree: () => {}, needsConfirm: () => false, onOpen: () => order.push(menu.isOpen ? 'open' : 'before'),
+  });
+  menu.open();
+  expect(order).toEqual(['before']);
 });

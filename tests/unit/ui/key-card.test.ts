@@ -127,6 +127,12 @@ it('is off until it has a width, and 200 gives the slim card', () => {
 const C = (width: 244 | 200 | 0, dock: 'centre' | 'high' = 'centre') => ({ width, dock });
 const NONE = Infinity; // no room for that dock at all
 
+it('cardFit: a touch-only device gets no card at any width', () => {
+  expect(cardFit(1440, 100, 100, true)).toEqual(C(0));
+  expect(cardFit(1440, 100, 100, false)).toEqual(C(244));
+  expect(cardFit(2000, NONE, 100, true)).toEqual(C(0));
+});
+
 it('cardFit, centred: 244 when it clears the tree by 12 px, else 200; always off below 900 px', () => {
   expect(cardFit(1440, 1180, NONE)).toEqual(C(244)); // 1196 - 1180 = 16
   expect(cardFit(1440, 1184, NONE)).toEqual(C(244)); // exactly 12

@@ -49,3 +49,26 @@ export const CALM_AFTER_MS = 1200;
 
 /** Whether a frame is due `sinceLastMs` after the last one drawn. Busy frames are never skipped (no cap at any refresh rate). */
 export const frameDue = (sinceLastMs: number, calm: boolean): boolean => !calm || sinceLastMs >= CALM_FRAME_MS;
+
+/** What decides whether the main loop's frame may be a calm (30 Hz) one. */
+export interface CalmState {
+  now: number;
+  /** Full rate holds until this time (the player's last motion plus CALM_AFTER_MS). */
+  busyUntil: number;
+  paused: boolean;
+  /** The post-win light show, or secret mode's beat, is running: they follow the music, frame by frame. */
+  musicDriven: boolean;
+  /** A sky sweep is under way. */
+  sweeping: boolean;
+  /** A topper flip (or a sticker still loading) needs frames. */
+  topperNeedsFrame: boolean;
+}
+
+/**
+ * Whether the frame is ambient-only (so at most one every CALM_FRAME_MS). A sweep or a flip is the player's and never
+ * calm. While paused the stage is a single blurred frame (the frost animates on its own rAF only while it moves), so
+ * a paused loop is calm: it wakes at 30 Hz at most, not at every vsync. Otherwise calm needs the grace period over and
+ * no music driving the frames.
+ */
+export const isCalm = (c: CalmState): boolean =>
+  !c.sweeping && !c.topperNeedsFrame && (c.paused || (c.now >= c.busyUntil && !c.musicDriven));

@@ -346,6 +346,8 @@ test('N mid-run asks once, then starts', async ({ page }) => {
   expect(await solutionKey(page)).toBe(before); // asked, not started
   await page.keyboard.press('N');
   await expect.poll(() => solutionKey(page)).not.toBe(before);
+  // The toast's job is done once the new tree starts: it must not linger over it.
+  await expect(page.locator('#toast')).not.toHaveClass(/show/);
 });
 
 test('N typed in an input does nothing', async ({ page }) => {

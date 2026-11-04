@@ -18,11 +18,11 @@ import { bindInput } from './input';
 import { Radio } from './radio/radio';
 import type { WinSound } from './radio/win-sound';
 import type { HomeAloneClip, HomeAloneSounds, KevinCall } from './audio/home-alone-sounds';
-import { loadEggs, type EggModules } from './eggs/load';
+import { EGGS_BOOT_WAIT_MS, loadEggs, settledWithin, type EggModules } from './eggs/load';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { CONFETTI_MS, starCenter } from './render/effects';
 import { tileAt, tileCenter, treeRightEdge } from './render/layout';
-import { CALM_AFTER_MS, frameDue } from './render/quality';
+import { CALM_AFTER_MS, frameDue, isCalm } from './render/quality';
 import { Renderer, type BeatFrame } from './render/renderer';
 import type { SceneChange } from './render/sky-sweep';
 import type { HomeAloneGate, HomeAloneLayerState, TrapKind } from './render/home-alone';
@@ -37,9 +37,9 @@ import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './
 import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
-import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard } from './ui/key-card';
+import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
 import { HomeAloneSwitch } from './ui/home-alone';
-import { Menu } from './ui/menu';
+import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
@@ -141,6 +141,8 @@ export class App {
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)');
   /** The radio panel's breakpoint (radio.css): below it the panel is a bottom sheet. */
   private readonly phone = matchMedia('(max-width: 600px)');
+  /** A touch tablet: no Tab key and no pointer to hover, so no key card, hint or settings row. */
+  private readonly touchOnly = matchMedia(TOUCH_ONLY_QUERY);
   /** The post-win light show drew this frame (read by the test probe). */
   lightShowOn = false;
   private readonly toast = new Toast(el('toast'));
@@ -217,6 +219,8 @@ export class App {
       onOpen: () => {
         this.radioPanel.close();
         this.accounts.closeMenu();
+        // A pinned key card would sit over the open menu (it docks at the same edge).
+        this.keyCard.close();
       },
       onKeys: () => this.keyCard.pin(),
     });
@@ -312,26 +316,38 @@ export class App {
       });
     });
     void document.fonts?.ready.then(() => this.fitHud());
+    this.touchOnly.addEventListener?.('change', () => this.fitKeyCard());
     this.bindControls();
     this.bindLifecycle();
     everyWhileVisible(() => this.refreshAutoScene(), 60_000);
-    // With a saved mode the account's answer (which can switch a mode) waits for the eggs, so it lands after the saved
-    // mode's start, as it did when the eggs were in the main chunk.
-    void (this.eggsAtBoot ? this.requestEggs().then(() => this.session.load()) : this.session.load());
-    void this.boot();
+    // With a saved mode the first frame and the account's answer (which can switch a mode) wait for the eggs, so they
+    // land after the saved mode's start, as they did when the eggs were in the main chunk. The wait is bounded: a load
+    // that stalls must not leave a blank stage. The mode's 'start' switch then stays queued, and attachEggs brings the
+    // scene up when the chunk lands.
+    const eggsReady = this.eggsAtBoot ? settledWithin(this.requestEggs(), EGGS_BOOT_WAIT_MS) : Promise.resolve(true);
+    void eggsReady.then(() => this.session.load());
+    void this.boot(eggsReady);
   }
 
-  /** The first tree: a saved game resumes; otherwise a new one starts (online when the server answers in time). */
-  private async boot(): Promise<void> {
-    // A saved mode is up from the first frame: the eggs first. (Its 'start' switch, made in the constructor, has already
-    // asked for them.)
-    if (this.eggsAtBoot) await this.requestEggs();
-    const now = performance.now();
+  /**
+   * The first tree: a saved game resumes; otherwise a new one starts (online when the server answers in time). With a
+   * saved mode the tree waits for `eggsReady` (bounded, see start()), but its fetch runs meanwhile.
+   */
+  private async boot(eggsReady: Promise<boolean>): Promise<void> {
     const saved = loadGame(GRID);
     const returning = takeReturn();
-    if (saved?.won && saved.online && (saved.won.result === null || returning === saved.online.gameId)) {
-      this.restoreWin(saved, saved.won, now, returning === saved.online.gameId);
-    } else if (saved && !saved.won) {
+    const restoreWin = saved?.won && saved.online && (saved.won.result === null || returning === saved.online.gameId);
+    const resume = !restoreWin && saved && !saved.won;
+    if (saved && !restoreWin && !resume) clearGame();
+    // The tree's fetch starts now, beside the eggs' load; nothing is shown until the eggs are in (or have run out of time).
+    const fetching = restoreWin || resume ? undefined : this.fetchTree();
+    // A saved mode is up from the first frame: the eggs first. (Its 'start' switch, made in the constructor, has already
+    // asked for them.)
+    await eggsReady;
+    const now = performance.now();
+    if (saved?.won && restoreWin) {
+      this.restoreWin(saved, saved.won, now, returning === saved.online?.gameId);
+    } else if (saved && resume) {
       this.beginGame(now, new Board(GRID, saved.state), saved.elapsedMs, saved);
       this.moved = true;
       this.toast.show(`Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`, 2600);
@@ -340,8 +356,7 @@ export class App {
       // Saved during the final turn: the restored board is already solved, so finish the win properly.
       if (this.board.lighting.count === GRID.ids.length) this.handle(this.board.settleWin(), now);
     } else {
-      if (saved) clearGame();
-      await this.freshTree();
+      await this.freshTree(fetching);
     }
     if (!this.board.won) this.showIntro();
     requestAnimationFrame((t) => this.loop(t));
@@ -439,18 +454,22 @@ export class App {
     this.busyUntil = Math.max(this.busyUntil, until + CALM_AFTER_MS);
   }
 
-  /** A new tree: from the server's seed when it answers within 1.5 s, else a local tree (unranked "offline"). */
-  private async freshTree(): Promise<void> {
+  /** The server's seed when it answers within 1.5 s, else nothing (a local tree, unranked "offline"). Marks the start under way. */
+  private async fetchTree(): Promise<{ board: Board | null; online: OnlineRun | null }> {
     this.starting = true;
-    let online: OnlineRun | null = null;
-    let board: Board | null = null;
     try {
       const s = await api.start();
-      board = seededBoard(s.seed, s.genVersion);
-      if (board) online = { gameId: s.id, seed: s.seed, genVersion: s.genVersion, claim: s.claim };
+      const board = seededBoard(s.seed, s.genVersion);
+      if (board) return { board, online: { gameId: s.id, seed: s.seed, genVersion: s.genVersion, claim: s.claim } };
     } catch {
       // Unreachable, slow, rate-limited (429) or not configured: play a local tree. Play is never blocked.
     }
+    return { board: null, online: null };
+  }
+
+  /** A new tree: from the server's seed (`fetching`, already under way, or asked for now), else a local one. */
+  private async freshTree(fetching: Promise<{ board: Board | null; online: OnlineRun | null }> = this.fetchTree()): Promise<void> {
+    const { board, online } = await fetching;
     this.starting = false;
     this.beginGame(performance.now(), board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
   }
@@ -462,6 +481,8 @@ export class App {
     this.results.hide();
     this.glare?.cancel();
     el('corner-new').hidden = true;
+    // "Press N again" has done its job: it must not linger over the new tree.
+    this.toast.hide();
     void this.freshTree();
   }
 
@@ -550,11 +571,7 @@ export class App {
     this.fitKeyCard();
     el('zoom-reset').hidden = true;
     this.lastSeconds = won.seconds;
-    if (sound) {
-      this.vis.hurry(now, LAST_WAVE_SPEEDUP);
-      this.sfx.hurryChimes(LAST_WAVE_SPEEDUP);
-      this.winAt = now;
-    } else this.winAt = this.vis.lastLitAt(this.board);
+    this.winAt = sound ? now : this.vis.lastLitAt(this.board);
     this.busy(this.winAt + CONFETTI_MS);
     const game = this.board;
     const delay = sound ? 0 : Math.max(0, this.winAt - now);
@@ -578,6 +595,11 @@ export class App {
       this.hector?.tagShown();
       this.hectorStep();
     }, delay + RESULTS_DELAY_MS);
+    // Last, once the win's state is all set: the light still travelling and its chimes come along faster.
+    if (sound) {
+      this.vis.hurry(now, LAST_WAVE_SPEEDUP);
+      this.sfx.hurryChimes(LAST_WAVE_SPEEDUP);
+    }
   }
 
   /**
@@ -842,11 +864,14 @@ export class App {
 
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
-    // Ambient-only frames draw at 30 Hz. Never calm: while paused, during a sky sweep or a topper flip (the player
-    // caused them), while the post-win light show runs, or while secret mode's beat is on (they follow the music).
-    const calm =
-      now >= this.busyUntil && !this.paused && !this.lightShowOn && !(this.secret && this.radio.lightShowActive) &&
-      !this.renderer.sweeping && !this.renderer.topper.needsFrame(now);
+    // Ambient-only frames draw at 30 Hz. Never calm: during a sky sweep or a topper flip (the player caused them), and,
+    // unpaused, while the player's motion settles, the post-win light show runs, or secret mode's beat is on (they
+    // follow the music). A paused loop is calm: one blurred frame, so no wake at every vsync.
+    const calm = isCalm({
+      now, busyUntil: this.busyUntil, paused: this.paused, sweeping: this.renderer.sweeping,
+      topperNeedsFrame: this.renderer.topper.needsFrame(now),
+      musicDriven: this.lightShowOn || (this.secret && this.radio.lightShowActive),
+    });
     if (!frameDue(now - this.lastFrame, calm)) return;
     const dt = Math.min(50, now - (this.lastFrame || now));
     this.lastFrame = now;
@@ -971,7 +996,8 @@ export class App {
     }
     // A tap by the tarantula sends it scurrying (spec 2026-10-14 §4); the tap itself goes on to the game unchanged. Not
     // a tap that only closed a menu or resumed from pause: that one never reached the stage.
-    this.renderer.homeAlone?.scare(x, y);
+    const house = this.renderer.homeAlone;
+    if (house?.scare(x, y)) this.busy(now + house.scurryMs(this.renderer.layout)); // the scurry is the player's: full rate
     const [wx, wy] = toWorld(this.camera, x, y);
     // The star is not a tile: its taps go to the egg and never reach the board, the log or the clock.
     if (onStar(this.renderer.layout, wx, wy)) {
@@ -1070,7 +1096,9 @@ export class App {
     // sign-in is silent and still.
     if (on && how === 'loud') {
       this.sounds?.play('scream', () => this.homeAlone);
-      this.renderer.homeAlone?.welcome();
+      const house = this.renderer.homeAlone;
+      house?.welcome();
+      if (house) this.busy(performance.now() + house.welcomeMs()); // the walk-by they asked for: full rate
     }
   }
 
@@ -1161,7 +1189,7 @@ export class App {
     const centreBottom = L.h / 2 + CARD_HEIGHT / 2;
     const highTop = Math.ceil(this.renderer.garland.geo.bottom) + CARD_HIGH_GAP;
     const highEdge = highTop + CARD_HEIGHT <= L.h - CARD_HIGH_GAP ? treeRightEdge(L, highTop + CARD_HEIGHT) : Infinity;
-    const f = cardFit(L.w, treeRightEdge(L, centreBottom), highEdge);
+    const f = cardFit(L.w, treeRightEdge(L, centreBottom), highEdge, this.touchOnly.matches);
     this.keyCard.fit(f.width, f.dock, highTop);
   }
 
@@ -1268,7 +1296,7 @@ export class App {
       } else if ((e.key === 'n' || e.key === 'N') && !e.repeat && !this.paused && !this.starting) {
         // N is the New tree button: mid-run the first press only asks (the menu's 3 s confirm), the second starts.
         e.preventDefault();
-        if (this.menu.requestNewTree() === 'armed') this.toast.show('Press N again for a new tree', 3000);
+        if (this.menu.requestNewTree() === 'armed') this.toast.show('Press N again for a new tree', NEW_TREE_CONFIRM_MS);
       }
     });
   }

@@ -45,7 +45,7 @@ describe('chimeSteps (no flat repeats)', () => {
 function fakeAudio(now = 0) {
   const oscs: { when: number; stopped: number | null; gain: { disconnected: boolean } | null; hz: number }[] = [];
   const mk = () => ({ connect: vi.fn(), disconnect: vi.fn(), setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn(), value: 0 });
-  const state = { now };
+  const state = { now, stopThrows: false };
   const ctx = {
     state: 'running',
     sampleRate: 8000,
@@ -73,6 +73,7 @@ function fakeAudio(now = 0) {
           rec.when = w;
         },
         stop: (w: number) => {
+          if (state.stopThrows && w <= state.now) throw new Error('InvalidStateError'); // the cancel's stop(), not a bell's own
           rec.stopped = w;
         },
       };
@@ -129,13 +130,33 @@ describe('Sfx.hurryChimes', () => {
     expect(live()).toEqual([100]);
   });
 
-  it('only hurries the most recent wave, and does nothing before any sound', () => {
+  it('hurries every wave still on its way, and does nothing before any sound', () => {
     const { live } = fakeAudio(0);
     const sfx = new Sfx();
     sfx.hurryChimes(4); // no wave yet: a no-op
     sfx.wave(1, [{ delayMs: 400, step: 0 }]);
     sfx.wave(1, [{ delayMs: 800, step: 0 }]);
+    expect(live()).toEqual([400, 800]); // the second wave leaves the first one's bell ringing in
     sfx.hurryChimes(4);
-    expect(live()).toEqual([200, 400]); // the earlier wave's bell is not touched; the latest wave's 800 became 200
+    expect(live()).toEqual([100, 200]); // both re-timed
+  });
+
+  it("a wave drops the earlier waves' bells that have already started from the list", () => {
+    const { state, live } = fakeAudio(0);
+    const sfx = new Sfx();
+    sfx.wave(1, [{ delayMs: 100, step: 0 }]);
+    state.now = 0.5; // that bell has rung
+    sfx.wave(1, [{ delayMs: 400, step: 0 }]);
+    sfx.hurryChimes(4);
+    expect(live()).toEqual([100, 600]); // the rung bell stays as it was; the new one (900) comes at 500 + 400/4
+  });
+
+  it('a bell whose cancel throws is re-timed all the same, and the call does not throw', () => {
+    const { state, live } = fakeAudio(0);
+    const sfx = new Sfx();
+    sfx.wave(1, [{ delayMs: 400, step: 0 }]);
+    state.stopThrows = true; // a second stop() throws, as in a browser that insists
+    expect(() => sfx.hurryChimes(4)).not.toThrow();
+    expect(live().includes(100)).toBe(true);
   });
 });

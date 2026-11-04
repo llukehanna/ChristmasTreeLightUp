@@ -12,6 +12,9 @@ export interface MenuHandlers {
   onKeys?(): void;
 }
 
+/** How long the first New tree press (or N) stays armed for the confirming second one. The N toast lasts as long. */
+export const NEW_TREE_CONFIRM_MS = 3000;
+
 export class Menu {
   private readonly root = el('menu');
   private readonly button = el('menu-btn');
@@ -97,9 +100,9 @@ export class Menu {
       this.h.onNewTree();
       return 'started';
     }
-    this.armedUntil = now + 3000;
+    this.armedUntil = now + NEW_TREE_CONFIRM_MS;
     this.render();
-    window.setTimeout(() => this.render(), 3050);
+    window.setTimeout(() => this.render(), NEW_TREE_CONFIRM_MS + 50);
     return 'armed';
   }
 

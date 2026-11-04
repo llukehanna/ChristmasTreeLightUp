@@ -107,6 +107,29 @@ test('a load in the house waits for the eggs before its first tree: the house is
   await expect(page.locator('body')).toHaveAttribute('data-scene', 'home-alone');
 });
 
+test('a stalled eggs chunk cannot hold a saved-mode boot: the tree plays after a short wait, and the house comes up when the chunk lands', async ({ page }) => {
+  const errors = pageErrors(page);
+  await clips(page);
+  const eggs = await holdEggs(page); // never answers until released
+  await page.addInitScript(() => localStorage.setItem('aglow.homeAlone', 'true'));
+  await page.goto('/?test');
+  await expect.poll(() => eggs.state.asked).toBe(1);
+  await waitInteractive(page); // the boot gave up waiting (about 2.5 s) and carried on
+  expect(await house(page)).toMatchObject({ on: false });
+  const before = (await game(page)).log;
+  await page.evaluate(() => {
+    const a = (window as unknown as W).__aglow;
+    a.tap(a.ids[0]);
+  });
+  await expect.poll(async () => (await game(page)).log).toBeGreaterThan(before);
+  eggs.release();
+  await expect.poll(async () => (await house(page)).scene).toBe('home-alone');
+  expect((await house(page)).on).toBe(true);
+  await expect(page.locator('body')).toHaveAttribute('data-scene', 'home-alone');
+  expect(eggs.state.asked).toBe(1);
+  expect(errors).toEqual([]);
+});
+
 test('eggs that fail to load show no error: the tree plays on without the house, and a later k is harmless', async ({ page }) => {
   const errors = pageErrors(page);
   await clips(page);

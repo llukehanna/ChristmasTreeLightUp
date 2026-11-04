@@ -48,3 +48,21 @@ export function loadEggs(): Promise<EggModules> {
   });
   return p;
 }
+
+/** How long a saved mode's boot waits for the eggs before it carries on without them. */
+export const EGGS_BOOT_WAIT_MS = 2500;
+
+/**
+ * Resolves true as soon as `p` settles (resolved or rejected), or false after `ms` if it has not: a load that stalls
+ * (a dynamic `import()` that never answers) must not hold the first tree back. `p` is left running either way.
+ */
+export function settledWithin(p: Promise<unknown>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    const done = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    p.then(done, done);
+  });
+}

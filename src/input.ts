@@ -18,12 +18,20 @@ interface Pt {
   dragging: boolean;
 }
 
+/** A Mac (and so Ctrl+click is its right click). Read from userAgentData where there is one, else navigator.platform. */
+export function onMac(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return /mac/i.test(nav.userAgentData?.platform || nav.platform || '');
+}
+
 /**
  * Mouse: rotate on pointerdown (instant): left button clockwise, right button counter-clockwise (the browser's context
- * menu is off on the stage only). Touch/pen: rotate on a quick, still tap; two fingers pinch-zoom
+ * menu is off on the stage only). On a Mac, Ctrl+click is a right click (`mac`, injectable for tests). A right press
+ * while the left button is already held arrives as a pointermove carrying button 2: it turns back too. Touch/pen: rotate on a quick, still tap; two fingers pinch-zoom
  * and pan; one-finger drags pan while zoomed (spec §6.1). Trackpad pinch arrives as ctrl+wheel.
  */
-export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
+export function bindInput(el: HTMLElement, h: InputHandlers, mac: boolean = onMac()): () => void {
   const pts = new Map<number, Pt>();
   let pinched = false;
   let lastDist = 0;
@@ -33,7 +41,7 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
 
   const down = (e: PointerEvent) => {
     if (e.pointerType === 'mouse') {
-      if (e.button === 0) h.tap(e.clientX, e.clientY, 1);
+      if (e.button === 0) h.tap(e.clientX, e.clientY, mac && e.ctrlKey ? -1 : 1);
       else if (e.button === 2) h.tap(e.clientX, e.clientY, -1);
       return;
     }
@@ -50,6 +58,7 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
   const move = (e: PointerEvent) => {
     if (e.pointerType === 'mouse') {
       h.hover(e.clientX, e.clientY);
+      if (e.button === 2) h.tap(e.clientX, e.clientY, -1);
       return;
     }
     const p = pts.get(e.pointerId);

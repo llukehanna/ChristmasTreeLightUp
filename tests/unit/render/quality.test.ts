@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest';
-import { QualityGovernor, frameDue } from '../../../src/render/quality';
+import { describe, expect, it } from 'vitest';
+import { QualityGovernor, frameDue, isCalm, type CalmState } from '../../../src/render/quality';
 
 it('drops a tier after ~1s of slow frames and recovers after ~5s of fast ones', () => {
   const q = new QualityGovernor();
@@ -54,4 +54,29 @@ it('calm frames come at most every 28 ms', () => {
   expect(frameDue(27.9, true)).toBe(false);
   expect(frameDue(28, true)).toBe(true);
   expect(frameDue(33.3, true)).toBe(true);
+});
+
+describe('isCalm', () => {
+  const idle: CalmState = { now: 10_000, busyUntil: 5000, paused: false, musicDriven: false, sweeping: false, topperNeedsFrame: false };
+
+  it('an idle, unpaused tree is calm', () => expect(isCalm(idle)).toBe(true));
+  it('is not calm while the player\'s motion settles', () => expect(isCalm({ ...idle, busyUntil: 10_001 })).toBe(false));
+  it('is not calm while music drives the frames (the light show, the beat)', () => expect(isCalm({ ...idle, musicDriven: true })).toBe(false));
+
+  it('a paused loop is calm even inside the grace period or with music', () => {
+    expect(isCalm({ ...idle, paused: true, busyUntil: 99_999, musicDriven: true })).toBe(true);
+  });
+
+  it('a sky sweep or a topper flip is never calm, paused or not', () => {
+    for (const paused of [false, true]) {
+      expect(isCalm({ ...idle, paused, sweeping: true })).toBe(false);
+      expect(isCalm({ ...idle, paused, topperNeedsFrame: true })).toBe(false);
+    }
+  });
+
+  it('a calm paused loop is held to 30 Hz by frameDue', () => {
+    const calm = isCalm({ ...idle, paused: true });
+    expect(frameDue(8.3, calm)).toBe(false);
+    expect(frameDue(28, calm)).toBe(true);
+  });
 });

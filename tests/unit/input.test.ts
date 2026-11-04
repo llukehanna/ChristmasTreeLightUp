@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bindInput, type InputHandlers } from '../../src/input';
+import { bindInput, onMac, type InputHandlers } from '../../src/input';
 
 /** jsdom has no PointerEvent: a MouseEvent carries the button and position, pointerType is added on top. */
-function pointer(type: string, init: { button?: number; pointerType?: string; x?: number; y?: number } = {}): MouseEvent {
-  const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: init.button ?? 0, clientX: init.x ?? 0, clientY: init.y ?? 0 });
+function pointer(type: string, init: { button?: number; pointerType?: string; x?: number; y?: number; ctrlKey?: boolean } = {}): MouseEvent {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: init.button ?? 0, clientX: init.x ?? 0, clientY: init.y ?? 0, ctrlKey: init.ctrlKey ?? false });
   Object.defineProperty(e, 'pointerType', { value: init.pointerType ?? 'mouse' });
   Object.defineProperty(e, 'pointerId', { value: 1 });
   return e;
@@ -29,6 +29,35 @@ describe('bindInput', () => {
     stage.dispatchEvent(pointer('pointerdown', { button: 0, x: 10, y: 20 }));
     stage.dispatchEvent(pointer('pointerdown', { button: 2, x: 30, y: 40 }));
     expect(h.tap.mock.calls).toEqual([[10, 20, 1], [30, 40, -1]]);
+  });
+
+  it('on a Mac, Ctrl+click is a right click: counter-clockwise', () => {
+    unbind();
+    unbind = bindInput(stage, h as unknown as InputHandlers, true);
+    stage.dispatchEvent(pointer('pointerdown', { button: 0, ctrlKey: true, x: 10, y: 20 }));
+    stage.dispatchEvent(pointer('pointerdown', { button: 0, x: 11, y: 21 }));
+    expect(h.tap.mock.calls).toEqual([[10, 20, -1], [11, 21, 1]]);
+  });
+
+  it('elsewhere Ctrl+click stays a left click', () => {
+    unbind();
+    unbind = bindInput(stage, h as unknown as InputHandlers, false);
+    stage.dispatchEvent(pointer('pointerdown', { button: 0, ctrlKey: true, x: 10, y: 20 }));
+    expect(h.tap.mock.calls).toEqual([[10, 20, 1]]);
+  });
+
+  it('a right press while the left is held (a pointermove with button 2) turns back', () => {
+    stage.dispatchEvent(pointer('pointerdown', { button: 0, x: 10, y: 20 }));
+    stage.dispatchEvent(pointer('pointermove', { button: 2, x: 12, y: 22 }));
+    expect(h.tap.mock.calls).toEqual([[10, 20, 1], [12, 22, -1]]);
+    expect(h.hover).toHaveBeenCalledWith(12, 22);
+  });
+
+  it('a plain mouse move (button -1) only hovers, and a touch move never turns', () => {
+    stage.dispatchEvent(pointer('pointermove', { button: -1, x: 3, y: 4 }));
+    stage.dispatchEvent(pointer('pointermove', { pointerType: 'touch', button: 2, x: 3, y: 4 }));
+    expect(h.tap).not.toHaveBeenCalled();
+    expect(h.hover).toHaveBeenCalledTimes(1);
   });
 
   it('the middle button does nothing', () => {
@@ -65,5 +94,26 @@ describe('bindInput', () => {
     const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
     stage.dispatchEvent(e);
     expect(e.defaultPrevented).toBe(false);
+  });
+});
+
+describe('onMac', () => {
+  const platform = (value: string) => vi.spyOn(navigator, 'platform', 'get').mockReturnValue(value);
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Object.defineProperty(navigator, 'userAgentData', { value: undefined, configurable: true });
+  });
+
+  it('reads navigator.platform', () => {
+    platform('MacIntel');
+    expect(onMac()).toBe(true);
+    platform('Win32');
+    expect(onMac()).toBe(false);
+  });
+
+  it('prefers userAgentData.platform where there is one', () => {
+    platform('Win32');
+    Object.defineProperty(navigator, 'userAgentData', { value: { platform: 'macOS' }, configurable: true });
+    expect(onMac()).toBe(true);
   });
 });

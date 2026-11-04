@@ -55,6 +55,8 @@ export const CARD_CLEAR = 12;
 export const CARD_HEIGHT = 314;
 /** Docked high, the card's top stands this far under the garland's lowest bulb. */
 export const CARD_HIGH_GAP = 20;
+/** The media query for a device with no hover and a coarse pointer: a touch tablet, which gets no card. */
+export const TOUCH_ONLY_QUERY = '(hover: none) and (pointer: coarse)';
 /** Below this window width there is no card at all. */
 export const CARD_MIN_VIEWPORT = 900;
 
@@ -70,10 +72,11 @@ export interface CardFit {
  * Which card fits, and where. `centreEdge` and `highEdge` are the tree's right edge (CSS px) over the card's own band
  * when it is vertically centred and when it is docked high, under the garland where the tree is narrow (Infinity: no
  * room for that dock). A card must stand CARD_CLEAR px right of the edge. Tried in order: centred wide, centred slim,
- * high wide, high slim; else width 0 (no card, no hint, and Tab keeps its usual job). Always 0 below 900 px.
+ * high wide, high slim; else width 0 (no card, no hint, and Tab keeps its usual job). Always 0 below 900 px, and on
+ * a touch-only device (`touchOnly`: a tablet has no Tab key to hold or mouse to point with, however wide it is).
  */
-export function cardFit(viewportW: number, centreEdge: number, highEdge: number): CardFit {
-  if (viewportW >= CARD_MIN_VIEWPORT) {
+export function cardFit(viewportW: number, centreEdge: number, highEdge: number, touchOnly = false): CardFit {
+  if (viewportW >= CARD_MIN_VIEWPORT && !touchOnly) {
     for (const [dock, edge] of [['centre', centreEdge], ['high', highEdge]] as const)
       for (const w of [CARD_WIDE, CARD_SLIM] as const) if (viewportW - w - edge >= CARD_CLEAR) return { width: w, dock };
   }

@@ -103,7 +103,7 @@ function sleighBell(ctx: AudioContext, out: AudioNode, when: number, velocity: n
 /** Synthesized game sounds (spec §5.1). No audio files. */
 export class Sfx {
   private volume = 0.8;
-  /** The latest wave's chimes, kept so a win can hurry the ones still to ring. */
+  /** The chimes of the waves still travelling, kept so a win can hurry the ones yet to ring. */
   private chimes: { when: number; semitones: number; velocity: number; cancel: () => void }[] = [];
   /** Called whenever a game sound plays (Plan 2 ducks the music with it). */
   onSound: (() => void) | null = null;
@@ -185,17 +185,19 @@ export class Sfx {
     src.start(t);
     const rung = bulbs.slice(0, 14);
     const steps = chimeSteps(rung.map((b) => b.step));
-    this.chimes = rung.map((b, k) => {
+    const rungChimes = rung.map((b, k) => {
       const when = t + Math.max(0, b.delayMs) / 1000;
       const semitones = chimeSemitone(steps[k]);
       const velocity = 1 - k * 0.03;
       return { when, semitones, velocity, cancel: bell(ctx, out, when, semitones, velocity) };
     });
+    // Earlier waves' bells that have not started yet stay: a win hurries every wave still on its way.
+    this.chimes = [...this.chimes.filter((c) => c.when > t), ...rungChimes];
   }
 
   /**
-   * The win hurries the light still travelling: the latest wave's bells that have not started yet come `factor` times
-   * sooner (measured from now), so the chimes keep up with the tree. A bell already ringing is left alone.
+   * The win hurries the light still travelling: the bells of every wave on its way that have not started yet come
+   * `factor` times sooner (measured from now), so the chimes keep up with the tree. A bell already ringing is left alone.
    */
   hurryChimes(factor: number): void {
     const ctx = audio.ctx;
@@ -204,7 +206,11 @@ export class Sfx {
     const now = ctx.currentTime;
     this.chimes = this.chimes.map((c) => {
       if (c.when <= now) return c;
-      c.cancel();
+      try {
+        c.cancel();
+      } catch {
+        // A browser that throws on a second stop() must not strand the win: the bell is re-timed all the same.
+      }
       const when = now + (c.when - now) / factor;
       return { ...c, when, cancel: bell(ctx, out, when, c.semitones, c.velocity) };
     });

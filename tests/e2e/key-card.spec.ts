@@ -43,6 +43,38 @@ test('the settings row closes the menu and pins the card', async ({ page }) => {
   await expect(page.locator('.key-card.show')).toHaveCount(0);
 });
 
+test('opening the settings menu takes a pinned card away', async ({ page }) => {
+  await ready(page);
+  await page.locator('#keys-hint').click();
+  await expect(card(page)).toHaveClass(/pinned/);
+  await page.locator('#menu-btn').click();
+  await expect(page.locator('#menu')).toBeVisible();
+  await expect(page.locator('.key-card.show')).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.classList.contains('keys-on'))).toBe(false);
+  // Escape closes the menu (not a card that is no longer there), and the game is not paused by it.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#menu')).toBeHidden();
+});
+
+test.describe('a touch tablet', () => {
+  test.use({ viewport: { width: 1280, height: 900 }, hasTouch: true, isMobile: true });
+
+  test('gets no card, no hint and no settings row, however wide', async ({ page }) => {
+    await ready(page);
+    expect(await page.evaluate(() => matchMedia('(hover: none) and (pointer: coarse)').matches)).toBe(true);
+    await expect(page.locator('#keys-hint')).toBeHidden();
+    await page.locator('#menu-btn').tap();
+    await expect(page.locator('#menu')).toBeVisible();
+    await expect(page.locator('#keys-row')).toBeHidden();
+    const prevented = await page.evaluate(() => {
+      const e = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+      document.body.dispatchEvent(e);
+      return e.defaultPrevented;
+    });
+    expect(prevented).toBe(false);
+  });
+});
+
 test('inside the menu Tab still moves focus and the card stays away', async ({ page }) => {
   await ready(page);
   await page.locator('#menu-btn').click();

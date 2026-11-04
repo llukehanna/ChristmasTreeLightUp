@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { expect, it } from 'vitest';
-import { loadEggs, type EggModules } from '../../../src/eggs/load';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadEggs, settledWithin, type EggModules } from '../../../src/eggs/load';
 
 /** Every key of EggModules, checked both ways by the compiler (a missing or extra key fails typecheck). */
 const KEYS: Record<keyof EggModules, true> = {
@@ -49,4 +49,42 @@ it('resolves an object with every key of EggModules, each a loaded module', asyn
   expect(eggs.pizza.PizzaSprite).toBeTypeOf('function');
   // Still the same promise once settled.
   expect(await loadEggs()).toBe(eggs);
+});
+
+describe('settledWithin', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('resolves true when the promise resolves in time', async () => {
+    vi.useFakeTimers();
+    let done!: () => void;
+    const p = new Promise<void>((r) => (done = r));
+    const r = settledWithin(p, 2500);
+    done();
+    await expect(r).resolves.toBe(true);
+  });
+
+  it('resolves true when the promise rejects in time (a failed load carries on too)', async () => {
+    vi.useFakeTimers();
+    await expect(settledWithin(Promise.reject(new Error('offline')), 2500)).resolves.toBe(true);
+  });
+
+  it('resolves false after the timeout when the promise never settles', async () => {
+    vi.useFakeTimers();
+    const r = settledWithin(new Promise(() => {}), 2500);
+    let settled: boolean | null = null;
+    void r.then((v) => (settled = v));
+    await vi.advanceTimersByTimeAsync(2499);
+    expect(settled).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(false);
+  });
+
+  it('a late settle after the timeout changes nothing', async () => {
+    vi.useFakeTimers();
+    let done!: () => void;
+    const r = settledWithin(new Promise<void>((res) => (done = res)), 100);
+    await vi.advanceTimersByTimeAsync(100);
+    done();
+    await expect(r).resolves.toBe(false);
+  });
 });
