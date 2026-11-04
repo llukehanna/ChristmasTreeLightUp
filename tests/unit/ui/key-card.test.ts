@@ -124,14 +124,40 @@ it('is off until it has a width, and 200 gives the slim card', () => {
   expect(card().classList.contains('slim')).toBe(false);
 });
 
-it('cardFit: 244 when it clears the tree by 12 px, else 200, else off; always off below 900 px', () => {
-  expect(cardFit(1440, 1180)).toBe(244); // 1196 - 1180 = 16
-  expect(cardFit(1440, 1184)).toBe(244); // exactly 12
-  expect(cardFit(1440, 1185)).toBe(200); // 244 is 11 short, 200 clears (1240)
-  expect(cardFit(1440, 1228)).toBe(200); // exactly 12 for the slim card
-  expect(cardFit(1440, 1229)).toBe(0);
-  expect(cardFit(899, 100)).toBe(0);
-  expect(cardFit(900, 100)).toBe(244);
-  expect(cardFit(1100, 880)).toBe(200); // 244 would start at 856, inside the tree; 200 starts at 900
-  expect(cardFit(1100, 900)).toBe(0);
+const C = (width: 244 | 200 | 0, dock: 'centre' | 'high' = 'centre') => ({ width, dock });
+const NONE = Infinity; // no room for that dock at all
+
+it('cardFit, centred: 244 when it clears the tree by 12 px, else 200; always off below 900 px', () => {
+  expect(cardFit(1440, 1180, NONE)).toEqual(C(244)); // 1196 - 1180 = 16
+  expect(cardFit(1440, 1184, NONE)).toEqual(C(244)); // exactly 12
+  expect(cardFit(1440, 1185, NONE)).toEqual(C(200)); // 244 is 11 short, 200 clears (1240)
+  expect(cardFit(1440, 1228, NONE)).toEqual(C(200)); // exactly 12 for the slim card
+  expect(cardFit(1440, 1229, NONE)).toEqual(C(0));
+  expect(cardFit(899, 100, 100)).toEqual(C(0));
+  expect(cardFit(900, 100, NONE)).toEqual(C(244));
+  expect(cardFit(1100, 880, NONE)).toEqual(C(200)); // 244 would start at 856, inside the tree; 200 starts at 900
+  expect(cardFit(1100, 900, NONE)).toEqual(C(0));
+});
+
+it('cardFit, docked high: tried when neither centred width clears, 244 first, then 200, then off', () => {
+  // Centred is blocked (edge 1300 at 1440); high has the narrower top of the tree.
+  expect(cardFit(1440, 1300, 1100)).toEqual(C(244, 'high'));
+  expect(cardFit(1440, 1300, 1228)).toEqual(C(200, 'high'));
+  expect(cardFit(1440, 1300, 1229)).toEqual(C(0));
+  // Centred wins whenever it fits, even slim, ahead of a wide card docked high.
+  expect(cardFit(1440, 1185, 900)).toEqual(C(200));
+  expect(cardFit(1440, 1100, 900)).toEqual(C(244));
+  // Below 900 px there is no card in either dock.
+  expect(cardFit(850, 900, 100)).toEqual(C(0));
+});
+
+it('a high card is told where its top is, and a centred one drops that', () => {
+  const k = make();
+  k.fit(244, 'high', 132);
+  k.show();
+  expect(card().classList.contains('high')).toBe(true);
+  expect(card().style.getPropertyValue('--kc-top')).toBe('132px');
+  k.fit(200, 'centre');
+  expect(card().classList.contains('high')).toBe(false);
+  expect(card().classList.contains('slim')).toBe(true);
 });

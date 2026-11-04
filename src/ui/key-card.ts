@@ -53,25 +53,39 @@ export const CARD_SLIM = 200;
 export const CARD_CLEAR = 12;
 /** Its height (px), the same at both widths: the band of the screen it covers, centred. */
 export const CARD_HEIGHT = 314;
+/** Docked high, the card's top stands this far under the garland's lowest bulb. */
+export const CARD_HIGH_GAP = 20;
 /** Below this window width there is no card at all. */
 export const CARD_MIN_VIEWPORT = 900;
 
 export type CardWidth = typeof CARD_WIDE | typeof CARD_SLIM | 0;
 
+export type CardDock = 'centre' | 'high';
+export interface CardFit {
+  width: CardWidth;
+  dock: CardDock;
+}
+
 /**
- * Which card fits: the wide one if its left edge stands CARD_CLEAR px right of the tree (`treeRight`, CSS px, at the
- * card's band), else the slim one, else none (0: no card, no hint, and Tab keeps its usual job).
+ * Which card fits, and where. `centreEdge` and `highEdge` are the tree's right edge (CSS px) over the card's own band
+ * when it is vertically centred and when it is docked high, under the garland where the tree is narrow (Infinity: no
+ * room for that dock). A card must stand CARD_CLEAR px right of the edge. Tried in order: centred wide, centred slim,
+ * high wide, high slim; else width 0 (no card, no hint, and Tab keeps its usual job). Always 0 below 900 px.
  */
-export function cardFit(viewportW: number, treeRight: number): CardWidth {
-  if (viewportW < CARD_MIN_VIEWPORT) return 0;
-  for (const w of [CARD_WIDE, CARD_SLIM] as const) if (viewportW - w - treeRight >= CARD_CLEAR) return w;
-  return 0;
+export function cardFit(viewportW: number, centreEdge: number, highEdge: number): CardFit {
+  if (viewportW >= CARD_MIN_VIEWPORT) {
+    for (const [dock, edge] of [['centre', centreEdge], ['high', highEdge]] as const)
+      for (const w of [CARD_WIDE, CARD_SLIM] as const) if (viewportW - w - edge >= CARD_CLEAR) return { width: w, dock };
+  }
+  return { width: 0, dock: 'centre' };
 }
 
 export class KeyCard {
   private root: HTMLElement | null = null;
   private pinned = false;
   private width: CardWidth = 0;
+  private dock: CardDock = 'centre';
+  private highTop = 0;
 
   constructor(private readonly host: HTMLElement) {
     // Off until the app has measured the tree and said what fits.
@@ -103,11 +117,23 @@ export class KeyCard {
    * What fits beside the tree now (see cardFit): sets the card's width, or with 0 takes the card away: an open one
    * closes (pinned and keys-on cleared, so a later Escape is not swallowed) and the hint and settings row hide.
    */
-  fit(width: CardWidth): void {
+  fit(width: CardWidth, dock: CardDock = 'centre', highTop = 0): void {
     this.width = width;
+    this.dock = dock;
+    this.highTop = highTop;
     document.body.classList.toggle('keys-off', width === 0);
     if (width === 0) this.close();
-    this.root?.classList.toggle('slim', width === CARD_SLIM);
+    this.style();
+  }
+
+  /** The width and dock on the element: slim or wide, centred or docked high with its top at `highTop` px. */
+  private style(): void {
+    const r = this.root;
+    if (!r) return;
+    r.classList.toggle('slim', this.width === CARD_SLIM);
+    r.classList.toggle('high', this.dock === 'high');
+    if (this.dock === 'high') r.style.setProperty('--kc-top', `${this.highTop}px`);
+    else r.style.removeProperty('--kc-top');
   }
 
   /** True while it is pinned open (Tab keyup then leaves it alone). */
@@ -144,7 +170,7 @@ export class KeyCard {
     const r = (this.root ??= this.build());
     this.pinned = pin;
     r.classList.toggle('pinned', pin);
-    r.classList.toggle('slim', this.width === CARD_SLIM);
+    this.style();
     r.removeAttribute('aria-hidden');
     // Starts from its tucked-away spot even on first showing, so the slide plays.
     void r.offsetWidth;

@@ -37,7 +37,7 @@ import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './
 import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
-import { CARD_HEIGHT, cardFit, KeyCard } from './ui/key-card';
+import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard } from './ui/key-card';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
@@ -1048,14 +1048,19 @@ export class App {
   }
 
   /**
-   * The key card takes the room right of the tree: wide if it stands clear of the tree's edge at its rows, else slim,
-   * else it (and its hint) stay away. Run on every resize and when the camera moves (a zoomed tree has no card).
+   * The key card takes the room right of the tree, never over it: centred if it stands clear of the tree's edge across
+   * its band (wide, else slim); failing that docked high, its top just under the garland where the tree is narrow
+   * (wide, else slim); failing that it and its hint stay away. Run on every resize and when the camera moves (a zoomed
+   * tree has no card).
    */
   private fitKeyCard(): void {
     const L = this.renderer.layout;
-    const zoomed = isZoomed(this.camera);
-    const bottom = L.h / 2 + CARD_HEIGHT / 2;
-    this.keyCard.fit(zoomed ? 0 : cardFit(L.w, treeRightEdge(L, bottom)));
+    if (isZoomed(this.camera)) return this.keyCard.fit(0);
+    const centreBottom = L.h / 2 + CARD_HEIGHT / 2;
+    const highTop = Math.ceil(this.renderer.garland.geo.bottom) + CARD_HIGH_GAP;
+    const highEdge = highTop + CARD_HEIGHT <= L.h - CARD_HIGH_GAP ? treeRightEdge(L, highTop + CARD_HEIGHT) : Infinity;
+    const f = cardFit(L.w, treeRightEdge(L, centreBottom), highEdge);
+    this.keyCard.fit(f.width, f.dock, highTop);
   }
 
   /** A run in progress in the house: the moment for "Kevin!". */

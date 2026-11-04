@@ -18,6 +18,9 @@
   transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s;
 }
 .key-card.pinned { pointer-events: auto; }
+/* Docked high: its top just under the garland (set by the app as --kc-top), where the tree is narrow. */
+.key-card.high { top: var(--kc-top, 120px); transform: translate(calc(100% + 24px), 0); }
+.key-card.high.show { transform: none; }
 .kc-card {
   position: relative;
   padding: 26px 18px 16px 30px;

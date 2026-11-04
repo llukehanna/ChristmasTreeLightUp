@@ -75,7 +75,7 @@ test('a pinned card that stops fitting closes, and Escape then pauses as usual',
   await ready(page);
   await page.locator('#keys-hint').click();
   await expect(card(page)).toHaveClass(/pinned/);
-  await page.setViewportSize({ width: 1280, height: 900 }); // the tree now reaches where the card would start
+  await page.setViewportSize({ width: 800, height: 900 }); // below 900 px there is no card
   await expect(page.locator('.key-card.show')).toHaveCount(0);
   expect(await page.evaluate(() => document.body.classList.contains('keys-on'))).toBe(false);
   await expect(page.locator('#keys-hint')).toBeHidden();
@@ -84,23 +84,25 @@ test('a pinned card that stops fitting closes, and Escape then pauses as usual',
   await expect.poll(() => page.evaluate(() => document.body.classList.contains('paused'))).toBe(true);
 });
 
-test('the card clears the tree: its left edge stands at least 12 px right of the foliage', async ({ page }) => {
-  for (const [w, h] of [[1600, 900], [1440, 900], [1440, 780]]) {
+test('the card clears the tree and the garland, centred or docked high, at laptop and desktop sizes', async ({ page }) => {
+  for (const [w, h] of [[1600, 900], [1440, 900], [1440, 780], [1280, 900], [1100, 900], [960, 900], [1710, 1112]]) {
     await page.setViewportSize({ width: w, height: h });
     await ready(page);
     await page.keyboard.down('Tab');
     await expect(card(page)).toHaveClass(/show/);
-    const { left, edge } = await page.evaluate(() => {
+    const { left, edge, top, garland } = await page.evaluate(() => {
       const c = document.querySelector('.key-card')!.getBoundingClientRect();
+      const garland = parseFloat(document.body.style.getPropertyValue('--garland-bottom'));
       const a = (window as unknown as { __aglow: { ids: number[]; tileCenter(i: number): [number, number] } }).__aglow;
       let maxTile = 0;
       for (const i of a.ids) {
         const [x, y] = a.tileCenter(i);
         if (y >= c.top && y <= c.bottom) maxTile = Math.max(maxTile, x);
       }
-      return { left: c.left, edge: maxTile };
+      return { left: c.left, edge: maxTile, top: c.top, garland };
     });
     expect(left - edge).toBeGreaterThanOrEqual(12);
+    expect(top).toBeGreaterThanOrEqual(garland); // never over the garland's bulbs either
     await page.keyboard.up('Tab');
   }
 });
