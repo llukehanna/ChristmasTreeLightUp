@@ -13,6 +13,12 @@ export interface Flash {
   t: number;
 }
 
+/** A bulb popping: when (absolute ms) and on which tile. */
+export interface BulbPop {
+  at: number;
+  tile: number;
+}
+
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 /** Animation timestamps layered on top of the board's logical state (spec §4.5). */
@@ -28,8 +34,8 @@ export class VisualState {
     this.settleAt = new Array<number>(size).fill(-Infinity);
   }
 
-  /** Schedules the flow for newly lit tiles (parent before child). Returns absolute bulb-pop times, sorted. */
-  onLightingChanged(board: Board, newlyLit: readonly number[], lost: readonly number[], now: number, withFlashes: boolean): number[] {
+  /** Schedules the flow for newly lit tiles (parent before child). Returns each end tile's bulb pop (absolute time and tile), sorted by time. */
+  onLightingChanged(board: Board, newlyLit: readonly number[], lost: readonly number[], now: number, withFlashes: boolean): BulbPop[] {
     const fresh = new Set(newlyLit);
     const { order, parent, entry } = board.lighting;
     for (const i of order) {
@@ -46,8 +52,8 @@ export class VisualState {
     }
     return newlyLit
       .filter((i) => degree(board.solution[i]) === 1)
-      .map((i) => this.litStart[i] + TILE_FILL_MS)
-      .sort((a, b) => a - b);
+      .map((i) => ({ at: this.litStart[i] + TILE_FILL_MS, tile: i }))
+      .sort((a, b) => a.at - b.at);
   }
 
   /** Call with the board already relit. An unpowered tile drops its leftover fade (it would glow in its new orientation). */

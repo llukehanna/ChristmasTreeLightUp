@@ -30,10 +30,20 @@ describe('VisualState flow timing', () => {
   it('returns sorted bulb-pop times for every newly lit end tile', () => {
     const b = solved();
     const v = new VisualState(GRID.w * GRID.h);
-    const times = v.onLightingChanged(b, b.lighting.order, [], 0, false);
-    expect(times).toHaveLength(GRID.ids.filter((i) => degree(solution[i]) === 1).length);
+    const pops = v.onLightingChanged(b, b.lighting.order, [], 0, false);
+    const ends = GRID.ids.filter((i) => degree(solution[i]) === 1);
+    expect(pops).toHaveLength(ends.length);
+    const times = pops.map((p) => p.at);
     expect([...times].sort((x, y) => x - y)).toEqual(times);
     expect(v.flashes).toHaveLength(0);
+  });
+  it('returns the tile alongside each bulb-pop time', () => {
+    const b = solved();
+    const v = new VisualState(GRID.w * GRID.h);
+    const pops = v.onLightingChanged(b, b.lighting.order, [], 500, false);
+    const ends = GRID.ids.filter((i) => degree(solution[i]) === 1);
+    expect(pops.map((p) => p.tile).sort((x, y) => x - y)).toEqual(ends);
+    for (const p of pops) expect(p.at).toBe(v.litStart[p.tile] + TILE_FILL_MS);
   });
   it('fills, then fades lost tiles over FADE_MS', () => {
     const b = solved();

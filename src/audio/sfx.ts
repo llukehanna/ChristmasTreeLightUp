@@ -3,8 +3,21 @@ import { audio } from './context';
 const PENTATONIC = [0, 2, 4, 7, 9];
 const G4 = 392;
 
-/** k-th chime of a wave: G-major pentatonic, rising an octave every five notes. */
+/** Step k of the chime scale: G-major pentatonic, rising an octave every five steps. */
 export const chimeSemitone = (k: number): number => PENTATONIC[k % 5] + 12 * Math.floor(k / 5);
+
+/** The chime step for a bulb on tile row `row` of `rows`: the bottom row is step 0, the top row step 9 (two octaves). */
+export function chimeStep(row: number, rows: number): number {
+  const up = (rows - 1 - row) / Math.max(1, rows - 1);
+  return Math.round(9 * Math.min(1, Math.max(0, up)));
+}
+
+/** The steps a wave actually plays: a bell that would repeat the one before it plays one step higher instead. */
+export function chimeSteps(steps: readonly number[]): number[] {
+  const played: number[] = [];
+  for (const s of steps) played.push(played.length && s === played[played.length - 1] ? s + 1 : s);
+  return played;
+}
 
 function noise(ctx: AudioContext, seconds: number, shape: (x: number) => number): AudioBuffer {
   const len = Math.max(1, Math.floor(ctx.sampleRate * seconds));
@@ -18,7 +31,8 @@ function noise(ctx: AudioContext, seconds: number, shape: (x: number) => number)
 export const starTapSemitone = (k: number): number => chimeSemitone(7 + k);
 
 /** Four sine partials, fast attack, slow decay (`ring` scales the decay: below 1 for a short tick). */
-function bell(ctx: AudioContext, out: AudioNode, when: number, semitones: number, velocity: number, ring = 1): void {
+function bell(ctx: AudioContext, out: AudioNode, when: number, semitones: number, velocity: number, ring = 1): () => void {
+  const parts: [OscillatorNode, GainNode][] = [];
   const f = G4 * 2 ** (semitones / 12);
   for (const [mul, gain, d] of [
     [1, 1, 1.5],
@@ -38,7 +52,15 @@ function bell(ctx: AudioContext, out: AudioNode, when: number, semitones: number
     g.connect(out);
     o.start(when);
     o.stop(when + decay + 0.05);
+    parts.push([o, g]);
   }
+  /** Silences the bell for good (used to re-time one that has not started yet). */
+  return () => {
+    for (const [o, g] of parts) {
+      g.disconnect();
+      o.stop(ctx.currentTime);
+    }
+  };
 }
 
 /** A sleigh bell's inharmonic partials: [ratio, gain, decay s]. */
@@ -81,6 +103,8 @@ function sleighBell(ctx: AudioContext, out: AudioNode, when: number, velocity: n
 /** Synthesized game sounds (spec §5.1). No audio files. */
 export class Sfx {
   private volume = 0.8;
+  /** The latest wave's chimes, kept so a win can hurry the ones still to ring. */
+  private chimes: { when: number; semitones: number; velocity: number; cancel: () => void }[] = [];
   /** Called whenever a game sound plays (Plan 2 ducks the music with it). */
   onSound: (() => void) | null = null;
 
@@ -135,8 +159,11 @@ export class Sfx {
     n.start(t);
   }
 
-  /** A connection landed: noise swell scaled by size, then one chime per bulb at its pop time (max 14). */
-  wave(tilesLit: number, bulbDelaysMs: readonly number[]): void {
+  /**
+   * A connection landed: noise swell scaled by size, then one chime per bulb at its pop time (max 14). Each bell's pitch
+   * is its `step` on the chime scale, so a wave climbing the tree plays a rising line.
+   */
+  wave(tilesLit: number, bulbs: readonly { delayMs: number; step: number }[]): void {
     const a = this.begin();
     if (!a) return;
     const { ctx, out } = a;
@@ -156,7 +183,31 @@ export class Sfx {
     lp.connect(g);
     g.connect(out);
     src.start(t);
-    bulbDelaysMs.slice(0, 14).forEach((ms, k) => bell(ctx, out, t + Math.max(0, ms) / 1000, chimeSemitone(k), 1 - k * 0.03));
+    const rung = bulbs.slice(0, 14);
+    const steps = chimeSteps(rung.map((b) => b.step));
+    this.chimes = rung.map((b, k) => {
+      const when = t + Math.max(0, b.delayMs) / 1000;
+      const semitones = chimeSemitone(steps[k]);
+      const velocity = 1 - k * 0.03;
+      return { when, semitones, velocity, cancel: bell(ctx, out, when, semitones, velocity) };
+    });
+  }
+
+  /**
+   * The win hurries the light still travelling: the latest wave's bells that have not started yet come `factor` times
+   * sooner (measured from now), so the chimes keep up with the tree. A bell already ringing is left alone.
+   */
+  hurryChimes(factor: number): void {
+    const ctx = audio.ctx;
+    if (!ctx || !audio.sfx || !(factor > 0)) return;
+    const out = audio.sfx;
+    const now = ctx.currentTime;
+    this.chimes = this.chimes.map((c) => {
+      if (c.when <= now) return c;
+      c.cancel();
+      const when = now + (c.when - now) / factor;
+      return { ...c, when, cancel: bell(ctx, out, when, c.semitones, c.velocity) };
+    });
   }
 
   /** A tap on the star (`k` 0..3 for taps 1–4): a short, high bell tick with a glassy click, rising each tap. */

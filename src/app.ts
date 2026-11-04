@@ -13,7 +13,7 @@ import { Run } from './core/run';
 import { formatTime, scoreFor, wholeSeconds } from './core/score';
 import { seededBoard } from './core/seeded';
 import { audio } from './audio/context';
-import { Sfx } from './audio/sfx';
+import { chimeStep, Sfx } from './audio/sfx';
 import { bindInput } from './input';
 import { Radio } from './radio/radio';
 import { WinSound } from './radio/win-sound';
@@ -416,9 +416,13 @@ export class App {
         case 'lightingChanged': {
           // Connection flashes (burst + ring): not under reduced motion, and not for filament, whose flow is the whole show.
           const flashes = !this.reduced.matches && this.renderer.style !== 'filament';
-          const bulbs = this.vis.onLightingChanged(this.board, e.newlyLit, e.lost, now, flashes);
+          const pops = this.vis.onLightingChanged(this.board, e.newlyLit, e.lost, now, flashes);
           this.busy(Math.max(now, this.vis.lastLitAt(this.board)));
-          if (e.newlyLit.length && !this.paused) this.sfx.wave(e.newlyLit.length, bulbs.map((t) => t - now));
+          if (e.newlyLit.length && !this.paused) {
+            // Pitch follows height: the bottom of the tree rings lowest, so a wave climbing the tree plays a rising line.
+            const chimes = pops.map((p) => ({ delayMs: p.at - now, step: chimeStep(Math.floor(p.tile / GRID.w), GRID.h) }));
+            this.sfx.wave(e.newlyLit.length, chimes);
+          }
           break;
         }
         case 'won':
@@ -466,6 +470,7 @@ export class App {
     this.lastSeconds = won.seconds;
     if (sound) {
       this.vis.hurry(now, LAST_WAVE_SPEEDUP);
+      this.sfx.hurryChimes(LAST_WAVE_SPEEDUP);
       this.winAt = now;
     } else this.winAt = this.vis.lastLitAt(this.board);
     this.busy(this.winAt + CONFETTI_MS);
