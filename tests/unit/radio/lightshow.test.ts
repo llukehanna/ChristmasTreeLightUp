@@ -11,6 +11,24 @@ it('splits spectrum energy into low / mid / high bands (0..1)', () => {
   expect(e.high).toBe(0);
 });
 
+it('smooths the high band (2–8 kHz) toward 1 over about 10 samples, leaving the low band near 0', () => {
+  const bins = new Uint8Array(512);
+  for (let i = 47; i < 186; i++) bins[i] = 255; // 2–8 kHz at 43 Hz per bin
+  const analyser = {
+    frequencyBinCount: 512,
+    fftSize: 1024,
+    context: { sampleRate: 44_032, createAnalyser: () => { throw new Error('no tap'); } },
+    getByteFrequencyData: (out: Uint8Array) => out.set(bins),
+    getFloatFrequencyData: (out: Float32Array) => out.fill(-90),
+  } as unknown as AnalyserNode;
+  const show = new LightShow(() => analyser);
+  expect(show.high).toBe(0);
+  for (let k = 0; k < 10; k++) show.sample(k * 17);
+  expect(show.high).toBeGreaterThan(0.85);
+  expect(show.high).toBeLessThanOrEqual(1);
+  expect(show.low).toBeLessThan(0.05);
+});
+
 it('detects beats as low-energy jumps, with a cooldown', () => {
   const d = new BeatDetector();
   let beats = 0;

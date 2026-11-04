@@ -65,6 +65,8 @@ export interface FrameInput {
   extraBulb?: (tile: number) => number;
   /** Light show (Plan 2): low-band energy 0..1 that breathes the ground pool and star. */
   ambient?: number;
+  /** Light show: high-band energy 0..1 that speeds the fairy twinkle and the filament sparkle rate. */
+  highs?: number;
   /** A calm frame (ambient motion only, drawn at a reduced rate): its long interval says nothing about the device. */
   calm?: boolean;
   /** Secret mode while music drives it: the nod, the bulb pulse, the palette step and the garland face's bob. */
@@ -256,7 +258,9 @@ export class Renderer {
     const pulse = f.beat ? beatPulse(now - f.beat.at, f.beat.strength, f.reducedMotion) : 0;
     const nb = sc.bulbs.length;
     this.topper.nod(beatAt, beatPower);
-    if (style === 'filament' && tier < 2) this.current.step(board, vis, now, f.dt);
+    const highs = f.highs ?? 0;
+    const twinkle = 1 + 1.5 * highs;
+    if (style === 'filament' && tier < 2) this.current.step(board, vis, now, f.dt, 1 + 2 * highs);
     else this.current.clear();
 
     // 1. Background (screen space) + dynamic back layers. Secret mode adds the aurora's curtains; a sweep brings them in or out.
@@ -371,7 +375,7 @@ export class Renderer {
       g.save();
       g.translate(cx, cy);
       g.scale(k, k);
-      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, flicker });
+      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkle });
       if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i, pulse) * alpha, s);
       g.restore();
       if (q >= 1 && board.lighting.lit[i] && !won) drawFrontier(g, board, L, i, now, sc, false);
@@ -431,7 +435,7 @@ export class Renderer {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(k, k);
-      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker });
+      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkle });
       if (degree(board.solution[i]) === 1 && q >= 1) {
         const amt = this.bulbAmount(f, i, pulse) * alpha;
         const face = i === faceTile ? this.faces.get('ornament', facePx, true) : null;

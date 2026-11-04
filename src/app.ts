@@ -793,6 +793,7 @@ export class App {
       revealAt: this.run.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
       extraBulb: show ? (i) => this.radio.show.extraBulb(Math.floor(i / GRID.w), now) : undefined,
       ambient: show ? this.radio.show.low : 0,
+      highs: show ? this.radio.show.high : 0,
       // While secret mode is on: the onset only while beating, the palette step held through a music pause.
       beat: this.secret ? fillBeatFrame(this.beat, this.radio.show.beat, beating, this.reduced.matches) : undefined,
     });

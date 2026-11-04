@@ -142,6 +142,8 @@ function sounding(bins: Uint8Array): boolean {
 export class LightShow {
   beatAt = -Infinity;
   low = 0;
+  /** The high band (2–8 kHz), smoothed like `low`: speeds the fairy lights' twinkle and the filament's sparkle rate. */
+  high = 0;
   /** Secret mode's beat (src/radio/beat.ts), fed the onset flux of the beat tap's float spectrum, before and after the win. */
   readonly beat = new BeatTracker();
   private readonly detector = new BeatDetector();
@@ -166,6 +168,7 @@ export class LightShow {
     a.getByteFrequencyData(this.bins);
     const e = bandEnergies(this.bins, a.context.sampleRate / a.fftSize);
     this.low = this.low * 0.8 + e.low * 0.2;
+    this.high = this.high * 0.8 + e.high * 0.2;
     if (this.detector.update(e.low, now)) this.beatAt = now;
     this.sampleBeat(this.beatTap(a), a, now);
   }

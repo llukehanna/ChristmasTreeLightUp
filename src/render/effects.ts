@@ -67,13 +67,14 @@ export class Current {
     this.sparks.length = 0;
   }
 
-  step(board: Board, vis: VisualState, now: number, dt: number): void {
+  /** `rate` scales how often sparks enter (the light show's highs raise it); 1 is the usual pace. */
+  step(board: Board, vis: VisualState, now: number, dt: number, rate = 1): void {
     const root = board.grid.root;
     const { lit, parent } = board.lighting;
     const ready = lit[root] && vis.litStart[root] >= 0 && now > vis.litStart[root] + TILE_FILL_MS;
-    if (ready && this.sparks.length < SPARKS.max && now - this.lastSpawn > SPARKS.everyMs) {
+    if (ready && this.sparks.length < SPARKS.max && now - this.lastSpawn > SPARKS.everyMs / rate) {
       // Jittered spawn times so the shimmer never reads as a metronome.
-      this.lastSpawn = now + (Math.random() - 0.5) * SPARKS.everyMs * 0.6;
+      this.lastSpawn = now + (Math.random() - 0.5) * (SPARKS.everyMs / rate) * 0.6;
       const spark = this.enter(board, root, D, SPARKS.speedMin + Math.random() * (SPARKS.speedMax - SPARKS.speedMin));
       spark.phase = Math.random() * TAU;
       this.sparks.push(spark);

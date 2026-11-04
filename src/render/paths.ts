@@ -10,9 +10,14 @@ export interface LitArgs {
   seed: number;
   now: number;
   flicker: number;
+  /** Time-scale multiplier on the fairy lights' twinkle (1 = as always; the light show raises it with the highs). */
+  twinkle: number;
 }
 
 const TAU = Math.PI * 2;
+
+/** A fairy light's twinkle phase: `twinkle` scales how fast time runs through it (`seed` is the tile's, `pSeed` the light's). */
+export const twinklePhase = (now: number, seed: number, pSeed: number, twinkle: number): number => now * 0.0035 * twinkle + pSeed * 2.3 + seed;
 const dot = (c: CanvasRenderingContext2D, x: number, y: number, r: number) => {
   c.beginPath();
   c.arc(x, y, r, 0, TAU);
@@ -117,7 +122,7 @@ export function drawLitGlow(c: CanvasRenderingContext2D, prims: readonly Prim[],
     strokePrims(c, prims, a.q, s);
     c.fillStyle = sc.glow;
     for (const p of pointsAlong(prims, a.q, 0.2)) {
-      c.globalAlpha = a.alpha * (0.7 + 0.3 * Math.sin(a.now * 0.0035 + p.seed * 2.3 + a.seed));
+      c.globalAlpha = a.alpha * (0.7 + 0.3 * Math.sin(twinklePhase(a.now, a.seed, p.seed, a.twinkle)));
       dot(c, p.x * s, p.y * s, s * 0.11);
     }
   } else {
@@ -153,7 +158,7 @@ export function drawLitCore(c: CanvasRenderingContext2D, prims: readonly Prim[],
     strokePrims(c, prims, a.q, s);
     c.fillStyle = sc.core;
     for (const p of pointsAlong(prims, a.q, 0.2)) {
-      c.globalAlpha = a.alpha * (0.75 + 0.25 * Math.sin(a.now * 0.0035 + p.seed * 2.3 + a.seed));
+      c.globalAlpha = a.alpha * (0.75 + 0.25 * Math.sin(twinklePhase(a.now, a.seed, p.seed, a.twinkle)));
       dot(c, p.x * s, p.y * s, s * 0.058);
     }
     c.globalAlpha = a.alpha;
