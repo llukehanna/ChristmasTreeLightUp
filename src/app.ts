@@ -477,7 +477,7 @@ export class App {
       if (this.board !== game || this.starting) return;
       this.prepareShare();
       this.results.show({
-        seconds: won.seconds, score: won.score, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
+        seconds: won.seconds, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
       });
       this.hector.tagShown();
       this.hectorStep();

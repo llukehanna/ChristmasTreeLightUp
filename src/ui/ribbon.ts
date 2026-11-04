@@ -110,7 +110,7 @@ const CONTROLS = ['rib-ros', 'rib-ribbon', 'rib-retry'];
 const FALLBACK = 'button.rib-ros, .rib-retry, .rib-ribbon';
 
 /**
- * Draws `m` onto the results tag, replacing what was there; null clears it. The tag's own time, score and stats are
+ * Draws `m` onto the results tag, replacing what was there; null clears it. The tag's own time and stats are
  * untouched (only its best pill hides beside a rosette). Server numbers are coerced and every piece of text goes in as
  * text. Keyboard focus on the ribbon stays on the ribbon across redraws: on the same control when it is still there,
  * else on the control that replaced it, else on the line (and on to the next control when one comes back).

@@ -21,7 +21,6 @@ export const accountStatsView = (a: AccountStats): StatsView => ({
 
 export interface ResultsData {
   seconds: number;
-  score: number;
   newBest: boolean;
   /** This device's stats: the badge's best. */
   stats: Stats;
@@ -47,7 +46,6 @@ export class Results {
 
   show(d: ResultsData): void {
     el('r-time').textContent = `Lit in ${formatTime(d.seconds)}`;
-    el('r-score').textContent = `Score ${d.score.toLocaleString('en-US')}`;
     const badge = el('r-badge');
     badge.textContent = d.newBest || d.stats.bestSeconds === null ? 'New best' : `Best ${formatTime(d.stats.bestSeconds)}`;
     badge.classList.toggle('quiet', !d.newBest);

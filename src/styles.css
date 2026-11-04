@@ -191,7 +191,6 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 .results.show { opacity: 1; transform: translate(-50%, 0); }
 .results h2 { margin: 0; font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400; font-size: 40px; line-height: 1.05; color: #7d1420; }
 .results .merry { margin-top: 2px; font: italic 400 17px 'Instrument Serif', serif; color: #9a6a2a; }
-.results .score { margin-top: 8px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.6; }
 .results .badge {
   display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;
   background: linear-gradient(180deg, #c8323b, #9a1a26); color: #fff3de; box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35);

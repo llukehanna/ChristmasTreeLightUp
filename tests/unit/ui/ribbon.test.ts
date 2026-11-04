@@ -57,7 +57,7 @@ describe('ribbonModel', () => {
 
 function tag(): HTMLElement {
   document.body.innerHTML = `<section class="results" id="results"><h2 id="r-time">Lit in 1:21</h2><div class="merry" id="r-merry">Merry &amp; bright</div>
-    <div class="score" id="r-score">Score 41,900</div><div class="stats"></div><div class="actions"><button id="r-new">New tree</button></div></section>`;
+    <div class="stats"></div><div class="actions"><button id="r-new">New tree</button></div></section>`;
   const root = document.getElementById('results');
   if (!root) throw new Error('no tag');
   return root;
@@ -142,7 +142,7 @@ describe('renderRibbon', () => {
     renderRibbon(root, null, h);
     expect(root.querySelectorAll('.rib, .rib-line')).toHaveLength(0);
     expect(root.querySelector('#r-time')?.textContent).toBe('Lit in 1:21');
-    expect(root.querySelector('#r-score')?.textContent).toBe('Score 41,900');
+    expect(root.querySelector('#r-score')).toBeNull();
   });
 
   it('big boards: the count shortens on the rosette (its label has it in full), and a long rank gets a smaller numeral', () => {

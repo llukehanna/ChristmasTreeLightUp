@@ -197,7 +197,7 @@ test('play signed out, Save to leaderboard: sign in, pick a name, and the run is
   await expect(results.locator('.rib-line')).toHaveText(/^Would place #\d+ of [\d,]+ runs?$/);
   // The tag itself reads as before.
   await expect(results.locator('#r-time')).toHaveText(/^Lit in \d+:\d\d$/);
-  await expect(results.locator('#r-score')).toHaveText(/^Score [\d,]+$/);
+  await expect(results.locator('#r-score')).toHaveCount(0);
   await results.getByRole('button', { name: 'Save to leaderboard' }).click();
   const card = page.getByRole('dialog', { name: 'Sign in' });
   await expect(card).toContainText(/Your \d+:\d\d\.\d is waiting on this device\./);
