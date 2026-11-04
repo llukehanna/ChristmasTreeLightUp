@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { EGGS } from '../../../src/eggs/eggs';
 import { Renderer } from '../../../src/render/renderer';
 import { AURORA, SCENES } from '../../../src/render/scenes';
 
@@ -34,11 +35,12 @@ afterEach(() => {
 
 it('the faces are laid out only in secret mode, never asked for in the other scenes', () => {
   const r = new Renderer(document.createElement('canvas'));
+  r.attachEggs(EGGS); // the eggs have loaded (src/eggs/load.ts)
   vi.spyOn(r.topper, 'image', 'get').mockReturnValue({ naturalWidth: 240, naturalHeight: 256 } as HTMLImageElement);
-  const get = vi.spyOn(r.faces, 'get');
+  const get = vi.spyOn(r.faces!, 'get');
   r.setScene(SCENES.midnight);
   r.resize(390, 844, 2);
-  expect(r.faces.ready).toBe(true);
+  expect(r.faces!.ready).toBe(true);
   expect(r.faceInfo()).toEqual({ tile: -1, gift: -1, garland: -1 });
   expect(get).not.toHaveBeenCalled();
 

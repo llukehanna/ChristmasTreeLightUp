@@ -1,3 +1,6 @@
+// The gap lives with the light show, which restarts its flux after one too: the tracker is an egg, the show is not.
+import { RESTART_GAP_MS } from './lightshow';
+
 /**
  * Secret mode's beat (spec 2026-10-08 secret mode §5.1): onsets in the light show's spectral flux (onsetFlux, in dB of
  * rise), found as a jump over a short moving average with a time constant (so 30 Hz and 60 Hz frames agree), a 250 ms
@@ -21,8 +24,8 @@ export const BEAT = {
   peakMin: 1.25,
 } as const;
 
-/** A gap longer than this between samples (a hidden tab, music paused) starts the warm-up again: the average is stale. */
-export const RESTART_GAP_MS = 1000;
+/** A gap longer than this between samples (a hidden tab, music paused) starts the warm-up again (the light show's own). */
+export { RESTART_GAP_MS };
 
 /**
  * A beat's strength from its flux `e` against the recent beats' peak, on a log scale: 0.3 at the floor, 1 at the peak,

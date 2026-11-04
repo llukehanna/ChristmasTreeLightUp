@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BEAT } from '../../../src/radio/beat';
+import { BEAT, BeatTracker } from '../../../src/radio/beat';
 import { BEAT_FFT, BEAT_SMOOTHING, BeatDetector, FLUX, LightShow, TAP_DEAD_MS, bandEnergies, binHi, binLo, onsetFlux } from '../../../src/radio/lightshow';
 
 it('splits spectrum energy into low / mid / high bands (0..1)', () => {
@@ -201,14 +201,16 @@ describe('LightShow: secret mode’s beat', () => {
     let now = 0;
     const r = fakeRadio(() => (now % 500 < 1000 / 60 ? kick : rest));
     const show = new LightShow(() => r.radio);
+    const beat = new BeatTracker(); // the eggs have loaded
+    show.beat = beat;
     const beats: number[] = [];
     for (let k = 0; k < 240; k++) {
       now = (k * 1000) / 60;
-      const at = show.beat.at;
+      const at = beat.at;
       show.sample(now);
-      if (show.beat.at !== at) beats.push(now);
+      if (beat.at !== at) beats.push(now);
     }
-    return { beats, show, r };
+    return { beats, beat, r };
   }
 
   it('hangs its own analyser off the radio’s, once: 2048 points, light smoothing', () => {
@@ -221,10 +223,10 @@ describe('LightShow: secret mode’s beat', () => {
   });
 
   it('finds a kick over a held 808 on its first frame, every time, and nothing between', () => {
-    const { beats, show } = kicks(spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -23 : held808(hz))), spectrum(held808));
+    const { beats, beat } = kicks(spectrum((hz) => (inBand(hz, FLUX.kickBand) ? -23 : held808(hz))), spectrum(held808));
     expect(beats).toHaveLength(7); // 500 … 3500: the kick at 0 is in the warm-up
     for (const [k, t] of beats.entries()) expect(Math.abs(t - 500 * (k + 1))).toBeLessThanOrEqual(1000 / 60);
-    expect(show.beat.strong).toBe(7); // equal kicks: each is the song's peak
+    expect(beat.strong).toBe(7); // equal kicks: each is the song's peak
   });
 
   it('finds the kicks in a loud master, through the limiter’s duck', () => {
@@ -265,11 +267,26 @@ describe('LightShow: secret mode’s beat', () => {
     expect(two.connect).toHaveBeenCalledWith(two.made[0]);
   });
 
+  it('before the eggs load (no tracker) it still samples its bands and its own beats', () => {
+    const { r, show } = (() => {
+      let now = 0;
+      const r = fakeRadio(() => (now % 500 < 1000 / 60 ? spectrum(() => -23) : spectrum(quiet)));
+      const show = new LightShow(() => r.radio);
+      for (let k = 0; k < 120; k++) show.sample((now = (k * 1000) / 60));
+      return { r, show };
+    })();
+    expect(show.beat).toBeNull();
+    expect(r.made).toHaveLength(1); // the beat tap and its flux run as before: a tracker handed over later picks up at once
+    expect(Number.isFinite(show.low)).toBe(true);
+  });
+
   it('starts the flux afresh after a gap: a stale spectrum is no beat', () => {
     let db = spectrum(quiet);
     const r = fakeRadio(() => db);
     const show = new LightShow(() => r.radio);
-    const update = vi.spyOn(show.beat, 'update');
+    const beat = new BeatTracker();
+    show.beat = beat;
+    const update = vi.spyOn(beat, 'update');
     for (let t = 0; t <= 1000; t += 1000 / 60) show.sample(t);
     db = spectrum(() => -20); // the music back, much louder, after the tab was hidden
     show.sample(4000);

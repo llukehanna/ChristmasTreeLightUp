@@ -7,3 +7,6 @@ export const MUSIC_BOX_ID = 'music-box';
 export const CELESTA_ID = 'celesta';
 /** The Secret station (spec 2026-10-08 secret mode §4.1): listed in the game only in secret mode; the only station that may carry a win ad-lib. */
 export const SECRET_ID = 'secret';
+
+/** The sources only secret mode plays. */
+export const isSecretSource = (id: string | null): boolean => id === SECRET_ID || id === CELESTA_ID;

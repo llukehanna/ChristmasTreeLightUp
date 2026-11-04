@@ -6,12 +6,12 @@ import { CAROLS } from './carols';
 import { loadCatalog } from './catalog';
 import { parseEmbed, type Embed } from './embed';
 import { Fireplace } from './fireplace';
-import { SECRET_ID } from './ids';
+import { isSecretSource, SECRET_ID } from './ids';
 import { LightShow } from './lightshow';
 import { CELESTA, MusicBox } from './musicbox';
 import { RadioPlayer, type RemoteAction } from './player';
 import type { Station, Track } from './schema';
-import { isSecretSource, SECRET_OFF, secretStep, type RadioSnapshot, type SecretEvent, type SecretState } from './secret';
+import type { RadioSnapshot, SecretEvent, SecretState, secretStep } from './secret';
 
 export type SourceKind = 'station' | 'musicbox' | 'celesta' | 'fireplace' | 'embed';
 
@@ -46,7 +46,9 @@ export class Radio {
   private readonly musicbox = new MusicBox();
   /** Secret mode's fallback when the Secret station can't play. */
   private readonly celesta = new MusicBox(CAROLS, Math.random, CELESTA);
-  private secret: SecretState = SECRET_OFF;
+  private secret: SecretState = { on: false, saved: null };
+  /** Secret mode's hold on the radio (src/radio/secret.ts, an egg): handed over once the eggs have loaded. */
+  private secretStep: typeof secretStep | null = null;
   /** Switched on by hand before the catalog arrived: play the Secret station (or the celesta) when it does. */
   private pendingSecret = false;
   /** The player's first move has been handled (it may come after secret mode already primed the bus). */
@@ -134,8 +136,21 @@ export class Radio {
     this.player.prime();
   }
 
-  /** Secret mode switched. `autoplay`: by the player's own hand, so the Secret station plays (unless muted). */
+  /** The eggs have loaded (src/eggs/load.ts): secret mode can take the radio over from now on. */
+  attachSecret(step: typeof secretStep): void {
+    this.secretStep = step;
+  }
+
+  /**
+   * Secret mode switched. `autoplay`: by the player's own hand, so the Secret station plays (unless muted). The app
+   * switches it on only once the eggs have loaded; before then it is off, and off again changes nothing.
+   */
   setSecret(on: boolean, autoplay: boolean): void {
+    const secretStep = this.secretStep;
+    if (!secretStep) {
+      if (!on) this.onChange?.();
+      return;
+    }
     const e: SecretEvent = on
       ? { type: 'on', autoplay, muted: this.settings.volume <= 0, current: this.snapshotNow() }
       : { type: 'off', playingSecret: this.playingSecret(), musicOn: this.settings.on };
@@ -492,7 +507,7 @@ export class Radio {
   /** The listener's own choice: secret mode no longer puts the old source back over it. */
   private choice(): void {
     const held = this.secret.saved !== null;
-    this.secret = secretStep(this.secret, { type: 'choice' }).state;
+    if (this.secretStep) this.secret = this.secretStep(this.secret, { type: 'choice' }).state; // never on before it loads
     this.pendingSecret = false;
     if (held) saveRadioSettings(this.settings); // the live settings are the listener's own again: persist them
   }

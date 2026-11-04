@@ -115,6 +115,30 @@ export async function typeStill(page: Page, word: string, keepStopped = false): 
   if (!keepStopped) await page.clock.resume();
 }
 
+/**
+ * The eggs' chunk (src/eggs/load.ts), held until `release()`; with `state.fail` set, its requests fail instead. `state.asked`
+ * counts the requests for it.
+ */
+export async function holdEggs(page: Page, fail = false): Promise<{ release: () => void; state: { asked: number; fail: boolean } }> {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const state = { asked: 0, fail };
+  await page.route('**/assets/eggs-*.js', async (r) => {
+    state.asked++;
+    if (state.fail) return r.abort();
+    await held;
+    return r.fallback();
+  });
+  return { release, state };
+}
+
+/** Uncaught errors on the page, from now on. */
+export function pageErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  return errors;
+}
+
 /** Seconds of 8 kHz mono silence as a WAV: a track Playwright's Chromium can play (it has no AAC). */
 export function silentWav(seconds = 2, rate = 8000): Buffer {
   const n = seconds * rate;

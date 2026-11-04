@@ -1,4 +1,4 @@
-import { NOD_DIP, NOD_SQUASH, nodPulse } from './beat-fx';
+import type * as BeatFx from './beat-fx';
 import { drawStarBody, easeOutBack, foil, ignitePop, STAR_V, type StarState } from './effects';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
@@ -254,6 +254,8 @@ export class Topper {
   /** Secret mode's beat: when the last one landed and how hard (spec 2026-10-08 secret mode §5.3). */
   private nodAt = Number.NEGATIVE_INFINITY;
   private nodPower = 0;
+  /** The nod's shape (src/render/beat-fx.ts, an egg): until it has loaded there is no beat to nod to. */
+  private nodFx: Pick<typeof BeatFx, 'nodPulse' | 'NOD_DIP' | 'NOD_SQUASH'> | null = null;
   /** The last frame was drawn under reduced motion (a flip then starts from the face the crossfade shows). */
   private reduced = false;
   /** The sticker has just loaded: a paused stage needs one more frame to show it. */
@@ -359,6 +361,12 @@ export class Topper {
     this.p.now = Number.NaN;
   }
 
+  /** Secret mode's nod, once the eggs have loaded (src/eggs/load.ts). */
+  attachBeat(fx: Pick<typeof BeatFx, 'nodPulse' | 'NOD_DIP' | 'NOD_SQUASH'>): void {
+    this.nodFx = fx;
+    this.p.now = Number.NaN;
+  }
+
   /** The beat for this frame (none: -Infinity, 0). The head dips and returns on each one, never under reduced motion. */
   nod(at: number, strength: number): void {
     if (at === this.nodAt && strength === this.nodPower) return;
@@ -408,9 +416,10 @@ export class Topper {
     p.won = won;
     p.on = st.on;
     p.cx = X(L, 0);
-    const nod = reduced ? 0 : this.nodPower * nodPulse(now - this.nodAt);
-    p.cy = Y(L, STAR_V) - (flip ? TOSS * L.s * flip.toss : 0) + NOD_DIP * L.s * nod;
-    p.k = ignitePop(st, won) * boop * (flip ? 1 + GROW * flip.toss : 1) * (1 - NOD_SQUASH * nod);
+    const fx = this.nodFx;
+    const nod = reduced || !fx ? 0 : this.nodPower * fx.nodPulse(now - this.nodAt);
+    p.cy = Y(L, STAR_V) - (flip ? TOSS * L.s * flip.toss : 0) + (fx ? fx.NOD_DIP * L.s * nod : 0);
+    p.k = ignitePop(st, won) * boop * (flip ? 1 + GROW * flip.toss : 1) * (fx ? 1 - fx.NOD_SQUASH * nod : 1);
     p.angle = angle;
     p.flip = flip;
     p.fade = fade ?? -1;

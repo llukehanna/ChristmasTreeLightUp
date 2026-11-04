@@ -2,7 +2,8 @@ import type { Page } from '@playwright/test';
 import type { TrapKind } from '../../src/render/home-alone';
 import { expect, test } from './fixtures';
 import {
-  asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, silentWav, solveByTapping, stopClock, typeStill, waitInteractive, type W,
+  asPlayer, game, holdEggs, onlineTree, pageErrors, pickName, ready, resumeIfPaused, signInFromChip, silentWav, solveByTapping, stopClock, typeStill,
+  waitInteractive, type W,
 } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
@@ -69,6 +70,62 @@ test('typing kevin brings the house in with a cross-fade and the scream, and lea
   expect((await house(page)).on).toBe(false);
   expect(await stored(page, 'aglow.homeAlone')).toBeNull();
   expect(await radio(page)).toEqual(before);
+});
+
+test('kevin typed before the eggs have loaded: the house comes in when they land, with its scream, and nothing errs', async ({ page }) => {
+  const errors = pageErrors(page);
+  const asked = await clips(page);
+  const eggs = await holdEggs(page);
+  await ready(page);
+  await typeStill(page, 'kevin');
+  await expect.poll(() => eggs.state.asked).toBe(1);
+  // The switch has its word (kept in this browser); the house waits for its code.
+  expect(await stored(page, 'aglow.homeAlone')).toBe('true');
+  expect(await house(page)).toMatchObject({ on: false, played: NO_CLIPS });
+  expect((await house(page)).scene).not.toBe('home-alone');
+  eggs.release();
+  await expect.poll(async () => (await house(page)).scene).toBe('home-alone');
+  expect((await house(page)).on).toBe(true);
+  await expect(page.locator('body')).toHaveAttribute('data-scene', 'home-alone');
+  await expect.poll(async () => (await house(page)).played.scream, { timeout: 30_000 }).toBe(1);
+  expect(asked).toContain('/effects/home-alone/scream.mp3');
+  expect(eggs.state.asked).toBe(1); // loaded once, whoever asked
+  expect(errors).toEqual([]);
+});
+
+test('a load in the house waits for the eggs before its first tree: the house is up from the start', async ({ page }) => {
+  await clips(page);
+  const eggs = await holdEggs(page);
+  await page.addInitScript(() => localStorage.setItem('aglow.homeAlone', 'true'));
+  await page.goto('/?test');
+  await expect.poll(() => eggs.state.asked).toBe(1);
+  await page.waitForTimeout(500);
+  expect((await board(page)).interactive).toBe(false);
+  eggs.release();
+  await waitInteractive(page);
+  expect(await house(page)).toMatchObject({ on: true, scene: 'home-alone', fading: false });
+  await expect(page.locator('body')).toHaveAttribute('data-scene', 'home-alone');
+});
+
+test('eggs that fail to load show no error: the tree plays on without the house, and a later k is harmless', async ({ page }) => {
+  const errors = pageErrors(page);
+  await clips(page);
+  const eggs = await holdEggs(page, true);
+  await ready(page);
+  await typeStill(page, 'kevin');
+  await expect.poll(() => eggs.state.asked).toBeGreaterThan(0);
+  expect(await house(page)).toMatchObject({ on: false });
+  const before = (await game(page)).log;
+  await page.evaluate(() => {
+    const a = (window as unknown as W).__aglow;
+    a.tap(a.ids[0]);
+  });
+  await expect.poll(async () => (await game(page)).log).toBeGreaterThan(before);
+  // The app asks again; Chromium answers a failed dynamic import from its module map, so the house stays away.
+  await page.keyboard.press('k');
+  await page.waitForTimeout(300);
+  expect((await house(page)).on).toBe(false);
+  expect(errors).toEqual([]);
 });
 
 test('typed kevin is welcomed by Harry and Marv walking by within a few seconds, before any move; a reload in the house is not', async ({ page }) => {

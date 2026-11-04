@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { computeLayout } from '../../../src/render/layout';
 import { SCENES } from '../../../src/render/scenes';
+import * as beatFx from '../../../src/render/beat-fx';
 import { NOD_DIP, NOD_MS } from '../../../src/render/beat-fx';
 import { BURST_MS, FADE_MS, FLIP_MS, Topper } from '../../../src/render/topper';
 
@@ -201,6 +202,7 @@ describe('reduced motion', () => {
 describe('the nod (secret mode)', () => {
   it('dips the head on a beat and brings it back; never under reduced motion', async () => {
     const t = new Topper();
+    t.attachBeat(beatFx);
     t.set(true);
     await t.load();
     const y = (reduced: boolean, at: number, now: number): number => {
@@ -213,5 +215,18 @@ describe('the nod (secret mode)', () => {
     expect(y(false, 5000 - 0.3 * NOD_MS, 5000) - rest).toBeCloseTo(NOD_DIP * L.s, 5);
     expect(y(false, 5000 - NOD_MS, 5000)).toBeCloseTo(rest, 5);
     expect(y(true, 5000 - 0.3 * NOD_MS, 5000)).toBeCloseTo(rest, 5);
+  });
+
+  it('before the eggs load there is no nod: a beat leaves the head where it is', async () => {
+    const t = new Topper();
+    t.set(true);
+    await t.load();
+    const y = (at: number): number => {
+      const calls: Call[] = [];
+      t.nod(at, 1);
+      t.draw(recorder(calls), L, sc, dim, false, 0, 5000, null, false, 2);
+      return calls.find((c) => c.name === 'translate')?.args[1] as number;
+    };
+    expect(y(5000 - 0.3 * NOD_MS)).toBeCloseTo(y(Number.NEGATIVE_INFINITY), 5);
   });
 });

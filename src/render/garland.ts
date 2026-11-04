@@ -1,5 +1,4 @@
 import { mix, rgba, shade } from './color';
-import { FACE_GARLAND_H } from './faces';
 import type { Scene } from './scenes';
 
 /**
@@ -9,6 +8,9 @@ import type { Scene } from './scenes';
  */
 
 const TAU = Math.PI * 2;
+
+/** Secret mode's garland face: the head's height, in bulb sizes (spec 2026-10-08 secret mode §3). */
+export const FACE_GARLAND_H = 1.15;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const smooth = (a: number, b: number, v: number) => {
   const t = clamp01((v - a) / (b - a));

@@ -7,6 +7,7 @@ import { Aurora, FADE_MS } from '../../../src/render/aurora';
 import { IDENTITY } from '../../../src/render/camera';
 import { CONFETTI_MS, Snowfall } from '../../../src/render/effects';
 import { PizzaSprite } from '../../../src/render/pizza';
+import { EGGS } from '../../../src/eggs/eggs';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
 import { AURORA, HOME_ALONE, SCENES, type Scene } from '../../../src/render/scenes';
 import { VisualState } from '../../../src/render/visual-state';
@@ -53,6 +54,7 @@ afterEach(() => {
 /** A solved tree, every tile lit long ago (not won), on a 1280×800 stage. Tasks 3, 4 and 6 add tests that reuse it. */
 function setup(scene: Scene = HOME_ALONE) {
   const r = new Renderer(document.createElement('canvas'));
+  r.attachEggs(EGGS); // the eggs have loaded (src/eggs/load.ts)
   r.setScene(scene);
   r.resize(1280, 800, 2);
   const solved = Board.random(GRID, mulberry32(7));
@@ -64,6 +66,37 @@ function setup(scene: Scene = HOME_ALONE) {
   });
   return { r, frame };
 }
+
+it('before the eggs load the egg layers are null and every frame draws without them; attaching them repaints the room', () => {
+  const r = new Renderer(document.createElement('canvas'));
+  expect([r.homeAlone, r.faces]).toEqual([null, null]);
+  r.resize(1280, 800, 2);
+  const solved = Board.random(GRID, mulberry32(7));
+  const board = new Board(GRID, { solution: [...solved.solution], bits: [...solved.solution], colors: [...solved.colors] });
+  const vis = new VisualState(GRID.cells.length);
+  vis.onLightingChanged(board, board.lighting.order, [], 0, false);
+  const f = (now: number, over: Partial<FrameInput> = {}): FrameInput => ({
+    board, vis, now, dt: 16, camera: IDENTITY, hover: -1, revealAt: -100_000, winAt: null, reducedMotion: false, ...over,
+  });
+  // Every scene, a win's confetti and a beat: nothing reaches for an egg that isn't there.
+  for (const sc of [...Object.values(SCENES), AURORA, HOME_ALONE]) {
+    r.setScene(sc);
+    expect(() => r.frame(f(3000, { winAt: 1000, beat: { at: 2900, strength: 1, hue: 1 } }))).not.toThrow();
+  }
+  expect(r.faceInfo()).toEqual({ tile: -1, gift: -1, garland: -1 });
+  const draw = vi.spyOn(Aurora.prototype, 'draw');
+  const window = vi.spyOn(EGGS.homeAlone.HomeAloneLayer.prototype, 'drawWindow');
+  const room = vi.spyOn(EGGS.homeAloneRoom, 'paintHomeAlone');
+  r.attachEggs(EGGS);
+  expect(r.homeAlone).not.toBeNull();
+  expect(r.faces).not.toBeNull();
+  expect(room).toHaveBeenCalledTimes(1); // the house was up already: its room is painted now
+  r.frame(f(4000));
+  expect(window).toHaveBeenCalledTimes(1);
+  r.setScene(AURORA);
+  r.frame(f(4016));
+  expect(draw).toHaveBeenCalledTimes(1);
+});
 
 it('the house fades in over FADE_MS, then the sky settles; reduced motion asks for no fade', () => {
   const { r, frame } = setup(SCENES.midnight);
@@ -79,7 +112,7 @@ it('the house fades in over FADE_MS, then the sky settles; reduced motion asks f
 
 it("the window gags draw only in the house, faded with it, never during the head's sweep", () => {
   const { r, frame } = setup(SCENES.midnight);
-  const draw = vi.spyOn(r.homeAlone, 'drawWindow');
+  const draw = vi.spyOn(r.homeAlone!, 'drawWindow');
   r.frame(frame(1000));
   expect(draw).not.toHaveBeenCalled();
   r.setScene(HOME_ALONE, { now: 2000, reduced: false, kind: 'fade' });
@@ -96,27 +129,27 @@ it("the window gags draw only in the house, faded with it, never during the head
 it('switched off, the house fades out with a walk still under way; it ends once the house has gone', () => {
   const { r, frame } = setup(HOME_ALONE);
   r.frame(frame(1000));
-  r.homeAlone.force('bandits', 1000, r.layout);
+  r.homeAlone!.force('bandits', 1000, r.layout);
   r.setScene(SCENES.midnight, { now: 2000, reduced: false, kind: 'fade' });
   expect(r.homeAloneShowing).toBe(true); // the app keeps stepping the layer while this holds
   r.frame(frame(2000 + FADE_MS / 2));
   expect(r.homeAloneShowing).toBe(true);
-  expect(r.homeAlone.state().bandits).toBe(true);
+  expect(r.homeAlone!.state().bandits).toBe(true);
   r.frame(frame(2000 + FADE_MS + 10));
   expect(r.homeAloneShowing).toBe(false);
-  expect(r.homeAlone.state().bandits).toBe(false);
+  expect(r.homeAlone!.state().bandits).toBe(false);
   // Without a fade the house goes at once, and so does the walk.
   const b = setup(HOME_ALONE);
-  b.r.homeAlone.force('bandits', 0, b.r.layout);
+  b.r.homeAlone!.force('bandits', 0, b.r.layout);
   b.r.setScene(SCENES.midnight);
   expect(b.r.homeAloneShowing).toBe(false);
   b.r.frame(b.frame(1000));
-  expect(b.r.homeAlone.state().bandits).toBe(false);
+  expect(b.r.homeAlone!.state().bandits).toBe(false);
 });
 
 it('the traps draw over the board only in the house, and never under reduced motion', () => {
   const { r, frame } = setup(SCENES.midnight);
-  const traps = vi.spyOn(r.homeAlone, 'drawTraps');
+  const traps = vi.spyOn(r.homeAlone!, 'drawTraps');
   r.frame(frame(1000));
   expect(traps).not.toHaveBeenCalled();
   r.setScene(HOME_ALONE);
@@ -210,7 +243,7 @@ it("leaving the aurora (kevin during the head) its curtains draw under the fade;
 
 it('kevin again mid-fade turns the house back from where it stands: the window fades out from its alpha', () => {
   const { r, frame } = setup(SCENES.midnight);
-  const win = vi.spyOn(r.homeAlone, 'drawWindow');
+  const win = vi.spyOn(r.homeAlone!, 'drawWindow');
   r.setScene(HOME_ALONE, { now: 1000, reduced: false, kind: 'fade' });
   r.frame(frame(1000 + 0.3 * FADE_MS));
   expect(win.mock.calls.at(-1)?.[2]).toBeCloseTo(0.3);
@@ -225,7 +258,7 @@ it('kevin again mid-fade turns the house back from where it stands: the window f
 
 it("the head mid-fade (hohoho): the head's sweep takes over from the sky as it stands, and the window goes with the house", () => {
   const { r, frame } = setup(SCENES.midnight);
-  const win = vi.spyOn(r.homeAlone, 'drawWindow');
+  const win = vi.spyOn(r.homeAlone!, 'drawWindow');
   r.setScene(HOME_ALONE, { now: 1000, reduced: false, kind: 'fade' });
   r.frame(frame(1000 + 0.6 * FADE_MS));
   win.mockClear();
@@ -234,5 +267,5 @@ it("the head mid-fade (hohoho): the head's sweep takes over from the sky as it s
   expect(r.homeAloneShowing).toBe(false); // a sweep never shows the window gags: the walk ends with them
   r.frame(frame(1700));
   expect(win).not.toHaveBeenCalled();
-  expect(r.homeAlone.state().bandits).toBe(false);
+  expect(r.homeAlone!.state().bandits).toBe(false);
 });

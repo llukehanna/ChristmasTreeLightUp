@@ -7,6 +7,7 @@ import { Fireplace } from '../../../src/radio/fireplace';
 import { MusicBox } from '../../../src/radio/musicbox';
 import { RadioPlayer } from '../../../src/radio/player';
 import { Radio } from '../../../src/radio/radio';
+import { secretStep } from '../../../src/radio/secret';
 import { DEFAULT_RADIO, loadRadioSettings, saveRadioSettings } from '../../../src/store/radio-settings';
 
 const track = (id: string) => ({ id, url: `/a/${id}.m4a`, title: id, artist: '', credit: 'CC0', duration: 10 });
@@ -385,12 +386,32 @@ it('a paused station that becomes unavailable is let go, so play starts somethin
 });
 
 describe('secret mode (spec §4.4)', () => {
+  /** The eggs have loaded (src/eggs/load.ts): the app hands the radio secret mode's step before it switches it on. */
+  const eggs = (r: Radio): Radio => {
+    r.attachSecret(secretStep);
+    return r;
+  };
+  const secretReady = async (): Promise<Radio> => eggs(await ready());
+
+  it('before the eggs load: off again only tells the panel; on is left to the app, which waits for them', async () => {
+    served = WITH_SECRET;
+    const r = await ready();
+    const changed = vi.fn();
+    r.onChange = changed;
+    r.setSecret(false, false);
+    expect(changed).toHaveBeenCalledOnce();
+    r.setSecret(true, true);
+    expect(r.view()).toMatchObject({ secretMode: false });
+    expect(r.view().station?.id).not.toBe('secret');
+    eggs(r).setSecret(true, true);
+    expect(r.view()).toMatchObject({ secretMode: true });
+  });
   /** Music Box and the celesta need a real context: record their start instead. */
   const boxes = () => vi.spyOn(MusicBox.prototype, 'start').mockImplementation(() => undefined);
 
   it('never lists the Secret station, and says whether secret mode is on', async () => {
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     expect(r.view().stations.map((s) => s.id)).toEqual(['christmas-jazz', 'christmas-classics']);
     expect(r.view()).toMatchObject({ secretMode: false, secretStation: { id: 'secret' } });
     r.setSecret(true, false);
@@ -401,7 +422,7 @@ describe('secret mode (spec §4.4)', () => {
   it('by hand: plays the Secret station (never remembered), and switching off restores what played', async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.select('christmas-jazz');
     r.setSecret(true, true);
     expect(r.view().station?.id).toBe('secret');
@@ -414,7 +435,7 @@ describe('secret mode (spec §4.4)', () => {
   it('with no playable Secret station, plays the celesta; off restores the silence it found', async () => {
     fakeAudio();
     const start = boxes();
-    const r = await ready();
+    const r = await secretReady();
     r.setSecret(true, true);
     expect(r.view().kind).toBe('celesta');
     expect(start).toHaveBeenCalledTimes(1);
@@ -426,7 +447,7 @@ describe('secret mode (spec §4.4)', () => {
   it('a muted radio, or a quiet switch, plays nothing', async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.setSecret(true, false);
     expect(r.view().kind).toBeNull();
     r.setSecret(false, false);
@@ -441,7 +462,7 @@ describe('secret mode (spec §4.4)', () => {
     let open!: () => void;
     gate = new Promise<void>((res) => (open = res));
     const prime = vi.spyOn(RadioPlayer.prototype, 'prime');
-    const r = new Radio();
+    const r = eggs(new Radio());
     r.primeSecret();
     r.setSecret(true, true);
     expect(prime).toHaveBeenCalled();
@@ -453,7 +474,7 @@ describe('secret mode (spec §4.4)', () => {
   it("the listener's own pick wins: switching off no longer restores", async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.select('christmas-jazz');
     r.setSecret(true, true);
     r.select('christmas-classics');
@@ -464,7 +485,7 @@ describe('secret mode (spec §4.4)', () => {
   it('off with a secret source and nothing saved: moves on to the preferred source', async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.setScene('frost');
     r.setSecret(true, false);
     r.select('secret');
@@ -478,7 +499,7 @@ describe('secret mode (spec §4.4)', () => {
     fakeAudio();
     boxes();
     served = { version: 1, stations: [station('secret')] };
-    const r = await ready();
+    const r = await secretReady();
     r.playPause();
     expect(r.view().kind).toBe('musicbox');
     r.playPause();
@@ -490,7 +511,7 @@ describe('secret mode (spec §4.4)', () => {
   it('select("secret") only works in secret mode; select("celesta") never', async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.select('secret');
     r.select('celesta');
     expect(r.view().kind).toBeNull();
@@ -503,7 +524,7 @@ describe('secret mode (spec §4.4)', () => {
     fakeAudio();
     boxes();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.setSecret(true, true);
     (r as unknown as { player: RadioPlayer }).player.onUnavailable?.(true);
     expect(r.view().kind).toBe('celesta');
@@ -512,7 +533,7 @@ describe('secret mode (spec §4.4)', () => {
   it('switched on and off before the first move: the first move still starts the music', async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.primeSecret();
     r.setSecret(true, true);
     r.setSecret(false, true);
@@ -524,7 +545,7 @@ describe('secret mode (spec §4.4)', () => {
   it('the first move never interrupts what secret mode started', async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.primeSecret();
     r.setSecret(true, true);
     r.firstGesture();
@@ -533,7 +554,7 @@ describe('secret mode (spec §4.4)', () => {
 
   it('hands out the Secret station win ad-lib', async () => {
     served = { version: 1, stations: [{ ...station('secret'), winSound: '/w.mp3' }] };
-    const r = await ready();
+    const r = await secretReady();
     expect(r.secretWinSound()).toBe('/w.mp3');
   });
 
@@ -544,7 +565,7 @@ describe('secret mode (spec §4.4)', () => {
     gate = new Promise<void>((res) => (open = res));
     const prime = vi.spyOn(RadioPlayer.prototype, 'prime');
     const unlock = vi.spyOn(audio, 'unlock');
-    const r = new Radio();
+    const r = eggs(new Radio());
     r.setSecret(true, false); // a load in secret mode
     r.select('secret');
     expect(prime).toHaveBeenCalled();
@@ -557,14 +578,14 @@ describe('secret mode (spec §4.4)', () => {
     saveRadioSettings({ ...DEFAULT_RADIO, on: false, source: 'christmas-classics' });
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.setSecret(true, true);
     expect(r.view().station?.id).toBe('secret');
     expect(loadRadioSettings()).toMatchObject({ on: false, source: 'christmas-classics' });
     r.setVolume(0.5); // other settings still persist
     expect(loadRadioSettings()).toMatchObject({ on: false, source: 'christmas-classics', volume: 0.5 });
     // A reload during secret mode: the egg switches it back on quietly; the first move and switch-off play nothing.
-    const again = await ready();
+    const again = await secretReady();
     again.setSecret(true, false);
     again.firstGesture();
     again.setSecret(false, false);
@@ -575,7 +596,7 @@ describe('secret mode (spec §4.4)', () => {
   it("the listener's own pick is persisted at once, even while a snapshot was held", async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.select('christmas-jazz');
     r.setSecret(true, true);
     r.select('christmas-classics');
@@ -585,7 +606,7 @@ describe('secret mode (spec §4.4)', () => {
   it('play/pause is a choice too: switching off no longer restores', async () => {
     fakeAudio();
     served = WITH_SECRET;
-    const r = await ready();
+    const r = await secretReady();
     r.setScene('frost');
     r.playPause(); // the frost suggestion, christmas-classics (not remembered)
     r.setScene('fireside');
@@ -603,7 +624,7 @@ describe('secret mode (spec §4.4)', () => {
     served = WITH_SECRET;
     let open!: () => void;
     gate = new Promise<void>((res) => (open = res));
-    const r = new Radio();
+    const r = eggs(new Radio());
     r.firstGesture(); // fireside suggests christmas-jazz: waits for the catalog
     r.primeSecret();
     r.setSecret(true, true);
@@ -619,7 +640,7 @@ describe('secret mode (spec §4.4)', () => {
     for (const source of ['celesta', 'secret']) {
       saveRadioSettings({ ...DEFAULT_RADIO, source });
       fakeAudio();
-      const r = await ready();
+      const r = await secretReady();
       r.firstGesture();
       expect(r.view().station?.id, source).toBe('christmas-jazz');
     }
@@ -627,7 +648,7 @@ describe('secret mode (spec §4.4)', () => {
 
   it('duck(hold) keeps the music down for the hold, then eases back', async () => {
     const { ctx, gain } = fakeAudio();
-    const r = await ready();
+    const r = await secretReady();
     r.firstGesture();
     ctx.currentTime = 3;
     const before = gain.calls.length;
@@ -643,7 +664,7 @@ describe('secret mode (spec §4.4)', () => {
 
   it("a later, shorter duck never ends an ad-lib's hold early; one that outlasts it extends it", async () => {
     const { ctx, gain } = fakeAudio();
-    const r = await ready();
+    const r = await secretReady();
     r.firstGesture();
     ctx.currentTime = 3;
     r.duck(2.5); // the ad-lib: held down until 5.53, back up by 5.78
@@ -670,7 +691,7 @@ describe('secret mode (spec §4.4)', () => {
 
   it('a volume change ends any hold: the next duck is its own length again', async () => {
     const { ctx, gain } = fakeAudio();
-    const r = await ready();
+    const r = await secretReady();
     r.firstGesture();
     ctx.currentTime = 3;
     r.duck(2.5);

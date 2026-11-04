@@ -1,10 +1,12 @@
 import { D, L, U } from '../core/dirs';
 import { hexRgb, mix, rgba, shade } from './color';
-import { FACE_ORNAMENT_H } from './faces';
 import { GLINT_NEAR, GLINT_WIDE, type PathStyle } from './paths';
 import type { Scene } from './scenes';
 
 const TAU = Math.PI * 2;
+
+/** Secret mode's face ornament: the head's height, in tiles (spec 2026-10-08 secret mode §3). */
+export const FACE_ORNAMENT_H = 0.56;
 
 /** Angle from the bulb toward its wire (the socket side). */
 export const bulbAngle = (b: number): number => (b & U ? -Math.PI / 2 : b & D ? Math.PI / 2 : b & L ? Math.PI : 0);

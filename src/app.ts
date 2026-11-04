@@ -16,15 +16,15 @@ import { audio } from './audio/context';
 import { chimeStep, Sfx } from './audio/sfx';
 import { bindInput } from './input';
 import { Radio } from './radio/radio';
-import { WinSound } from './radio/win-sound';
-import { HomeAloneSounds, KevinCall, hectorImageUrl, type HomeAloneClip } from './audio/home-alone-sounds';
+import type { WinSound } from './radio/win-sound';
+import type { HomeAloneClip, HomeAloneSounds, KevinCall } from './audio/home-alone-sounds';
+import { loadEggs, type EggModules } from './eggs/load';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { CONFETTI_MS, starCenter } from './render/effects';
 import { tileAt, tileCenter, treeRightEdge } from './render/layout';
-import { fillBeatFrame } from './render/beat-frame';
 import { CALM_AFTER_MS, frameDue } from './render/quality';
 import { Renderer, type BeatFrame } from './render/renderer';
-import type { SceneChange } from './render/aurora';
+import type { SceneChange } from './render/sky-sweep';
 import type { HomeAloneGate, HomeAloneLayerState, TrapKind } from './render/home-alone';
 import { sceneFor, sceneForHour, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
@@ -41,7 +41,7 @@ import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard } from './ui/key-card';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
-import { HectorDesk, HectorGlare } from './ui/hector';
+import type { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
 import { everyWhileVisible } from './ui/visible';
@@ -89,6 +89,21 @@ export interface HomeAloneState extends HomeAloneLayerState {
   /** Mr. Hector's glare (spec §9.4) is on screen now, and the glares called for on this page (shown or not). */
   hector: boolean;
   glares: number;
+}
+
+/** Home Alone's layer as the probe sees it before the eggs have loaded: nothing on screen. */
+const NO_LAYER: HomeAloneLayerState = {
+  gag: null, bandits: false, iron: false, tooth: false, fire: false, marv: false, van: false, beam: false, dings: 0, paint: false,
+  tarantula: null, tarantulaAt: null,
+};
+const noClips = (): Record<HomeAloneClip, number> => ({
+  scream: 0, kevin: 0, 'filthy-animal': 0, 'hector-credit-card': 0, 'hector-mistaken': 0, 'hector-love': 0,
+});
+
+/** Calls `fn` when the browser is idle (soon, where it can't say). */
+function whenIdle(fn: () => void): void {
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 3000 });
+  else setTimeout(fn, 200);
 }
 
 export class App {
@@ -164,19 +179,27 @@ export class App {
   private readonly haGate: HomeAloneGate = { running: false, inPlay: false, reduced: false };
   /** Typing "kevin" switches Home Alone mode (src/ui/home-alone.ts). */
   private readonly alone: HomeAloneSwitch;
+  /**
+   * The eggs (src/eggs/load.ts): Home Alone, secret mode and the faces load on first use, or before the first frame
+   * when a saved mode needs them. Until then the parts below that come from them are null.
+   */
+  private eggs: EggModules | null = null;
+  /** A mode saved in this browser (the house, or the head and its secret mode) needs the eggs from the first frame. */
+  private readonly eggsAtBoot = loadHomeAlone() || loadStarHead();
+  /** The load under way or done (null: not asked for yet, or it failed and the next ask tries again). */
+  private eggsLoading: Promise<void> | null = null;
+  /** Switches to an egg made before the eggs had loaded, in order: they take effect when the load resolves. */
+  private readonly waiting: (() => void)[] = [];
   /** The Secret station's win ad-lib. */
-  private readonly winSound = new WinSound();
+  private winSound: WinSound | null = null;
   /** Win ad-libs asked for (every gate passed) and started: the test probe's view. */
   private readonly adlibs = { asked: 0, played: 0 };
   /** Home Alone's clips, on the effects bus (spec 2026-10-14 §5). */
-  private readonly sounds = new HomeAloneSounds(
-    () => ({ ctx: audio.ctx, out: audio.sfx, volume: this.settings.effectsVolume }),
-    (seconds) => this.radio.duck(seconds),
-  );
-  private readonly kevin = new KevinCall();
+  private sounds: HomeAloneSounds | null = null;
+  private kevin: KevinCall | null = null;
   /** Mr. Hector (spec 2026-10-14 §9.4): which clip a Home Alone win says, and his glare beside the tag. */
-  private readonly hector = new HectorDesk();
-  private readonly glare = new HectorGlare(() => el('results'), hectorImageUrl());
+  private hector: HectorDesk | null = null;
+  private glare: HectorGlare | null = null;
   /** The pause: the window frosts over (#pause is its host). */
   private readonly frost = new FrostPause(el('pause'));
   private readonly keyCard = new KeyCard(document.body);
@@ -226,8 +249,6 @@ export class App {
       onSound?.();
       this.radio.duck();
     };
-    // Harry's gold tooth (spec 2026-10-14 §9.1): a synth ding on the effects bus, silent with the effects volume at 0.
-    this.renderer.homeAlone.onDing = () => this.sfx.ding();
     // A 401 on any signed-in call means the session is gone: sign out locally (spec §5.4).
     setUnauthorizedHandler(() => this.session.set(null));
     this.session.subscribe(() => this.accountChanged());
@@ -294,12 +315,17 @@ export class App {
     this.bindControls();
     this.bindLifecycle();
     everyWhileVisible(() => this.refreshAutoScene(), 60_000);
-    void this.session.load();
+    // With a saved mode the account's answer (which can switch a mode) waits for the eggs, so it lands after the saved
+    // mode's start, as it did when the eggs were in the main chunk.
+    void (this.eggsAtBoot ? this.requestEggs().then(() => this.session.load()) : this.session.load());
     void this.boot();
   }
 
   /** The first tree: a saved game resumes; otherwise a new one starts (online when the server answers in time). */
   private async boot(): Promise<void> {
+    // A saved mode is up from the first frame: the eggs first. (Its 'start' switch, made in the constructor, has already
+    // asked for them.)
+    if (this.eggsAtBoot) await this.requestEggs();
     const now = performance.now();
     const saved = loadGame(GRID);
     const returning = takeReturn();
@@ -319,6 +345,62 @@ export class App {
     }
     if (!this.board.won) this.showIntro();
     requestAnimationFrame((t) => this.loop(t));
+    // Otherwise the eggs load once the first tree takes taps and the browser has a moment.
+    setTimeout(() => whenIdle(() => void this.requestEggs()), Math.max(0, this.interactiveAt - performance.now()));
+  }
+
+  /**
+   * Loads the eggs, once (src/eggs/load.ts); resolves when they are in place and any switch made meanwhile has taken
+   * effect. A failed load shows nothing: the eggs stay off (the switches keep waiting), and the next ask (a key, a tap on
+   * the star) asks again.
+   */
+  private requestEggs(): Promise<void> {
+    if (this.eggs) return Promise.resolve();
+    this.eggsLoading ??= loadEggs().then(
+      (e) => this.attachEggs(e),
+      () => {
+        this.eggsLoading = null;
+      },
+    );
+    return this.eggsLoading;
+  }
+
+  /** The eggs have loaded: their parts come into being, then the switches that waited for them take effect, in order. */
+  private attachEggs(e: EggModules): void {
+    if (this.eggs) return;
+    this.eggs = e;
+    this.renderer.attachEggs(e);
+    // Harry's gold tooth (spec 2026-10-14 §9.1): a synth ding on the effects bus, silent with the effects volume at 0.
+    if (this.renderer.homeAlone) this.renderer.homeAlone.onDing = () => this.sfx.ding();
+    this.radio.attachSecret(e.secret.secretStep);
+    this.radio.show.beat = new e.beat.BeatTracker();
+    this.winSound = new e.winSound.WinSound();
+    this.sounds = new e.homeAloneSounds.HomeAloneSounds(
+      () => ({ ctx: audio.ctx, out: audio.sfx, volume: this.settings.effectsVolume }),
+      (seconds) => this.radio.duck(seconds),
+    );
+    this.kevin = new e.homeAloneSounds.KevinCall();
+    this.hector = new e.hector.HectorDesk();
+    this.glare = new e.hector.HectorGlare(() => el('results'), e.homeAloneSounds.hectorImageUrl());
+    const waiting = this.waiting.splice(0);
+    for (const run of waiting) run();
+    // A 'start' switch leaves the scene to the first applySettings, which has been and gone: put it up now (a load,
+    // so at once). A switch by hand has already brought its scene in with its sweep or fade.
+    if (waiting.length) {
+      this.pausedDrawn = false;
+      if (this.setScene(this.sceneId)) this.refreshShare();
+    }
+  }
+
+  /**
+   * A switch to an egg before the eggs have loaded waits for them (and asks for them); so does any switch after one
+   * that is waiting, so they keep their order. Switching off what was never on needs nothing: it goes ahead.
+   */
+  private waitForEggs(on: boolean, run: () => void): boolean {
+    if (this.eggs || (!on && this.waiting.length === 0)) return false;
+    this.waiting.push(run);
+    void this.requestEggs();
+    return true;
   }
 
   /* ---------- game lifecycle ---------- */
@@ -332,8 +414,8 @@ export class App {
     this.returning = false;
     this.accountStats = null;
     this.statsSeq++;
-    this.hector.end();
-    this.glare.cancel();
+    this.hector?.end();
+    this.glare?.cancel();
     this.setOutcome(null);
     this.vis = new VisualState(GRID.w * GRID.h);
     this.winAt = null;
@@ -378,7 +460,7 @@ export class App {
     clearGame();
     // The old tree stays on screen until the new one is ready (1.5 s at most), without its results card.
     this.results.hide();
-    this.glare.cancel();
+    this.glare?.cancel();
     el('corner-new').hidden = true;
     void this.freshTree();
   }
@@ -477,13 +559,13 @@ export class App {
     const game = this.board;
     const delay = sound ? 0 : Math.max(0, this.winAt - now);
     // A live win in Home Alone mode says one clip (spec 2026-10-14 §6, §9.4), and an unverified one brings Hector.
-    if (sound) this.hector.begin(won.newBest);
+    if (sound) this.hector?.begin(won.newBest);
     if (sound) {
       setTimeout(() => {
         if (this.board !== game) return;
         this.sfx.win();
         if (this.secret) this.playWinSound(game);
-        this.hector.soundDue();
+        this.hector?.soundDue();
         this.hectorStep();
       }, delay);
     }
@@ -493,7 +575,7 @@ export class App {
       this.results.show({
         seconds: won.seconds, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
       });
-      this.hector.tagShown();
+      this.hector?.tagShown();
       this.hectorStep();
     }, delay + RESULTS_DELAY_MS);
   }
@@ -504,14 +586,16 @@ export class App {
    * Hector's glare with one of his lines. A clip never plays over a new tree or with the mode switched off.
    */
   private hectorStep(): void {
-    const s = this.hector.step(this.homeAlone, this.outcome);
+    // No desk before the eggs have loaded: the mode is off until then, and a win out of the mode says nothing.
+    const s = this.hector?.step(this.homeAlone, this.outcome);
+    if (!s) return;
     if (s.glare) {
       this.glares++;
-      this.glare.show(this.reduced.matches);
+      this.glare?.show(this.reduced.matches);
     }
     if (s.clip) {
       const game = this.board;
-      this.sounds.play(s.clip, () => this.board === game && this.homeAlone);
+      this.sounds?.play(s.clip, () => this.board === game && this.homeAlone);
     }
   }
 
@@ -522,14 +606,15 @@ export class App {
   private playWinSound(game: Board): void {
     const url = this.radio.secretWinSound();
     const ctx = audio.ctx;
-    if (!url || !ctx || !audio.sfx || this.settings.effectsVolume <= 0) return;
+    const winSound = this.winSound; // there whenever secret mode is: it waits for the eggs
+    if (!url || !ctx || !audio.sfx || this.settings.effectsVolume <= 0 || !winSound) return;
     this.adlibs.asked++;
     // Decoded late (up to WIN_SOUND_LATE_MS), it must not talk over a new tree, or a world switched back.
     const still = (): boolean => this.board === game && this.secret;
-    void this.winSound.play(url, ctx, audio.sfx, undefined, still).then((played) => {
+    void winSound.play(url, ctx, audio.sfx, undefined, still).then((played) => {
       if (!played) return;
       this.adlibs.played++;
-      this.radio.duck(this.winSound.lastDurationS);
+      this.radio.duck(winSound.lastDurationS);
     });
   }
 
@@ -714,7 +799,7 @@ export class App {
 
   private keepWatching(): void {
     this.results.hide();
-    this.glare.cancel();
+    this.glare?.cancel();
     el('corner-new').hidden = false;
   }
 
@@ -785,14 +870,19 @@ export class App {
     // reduced motion too (its gentle pulse).
     const beating = this.secret && this.radio.lightShowActive;
     if (show || beating) this.radio.show.sample(now);
-    // Switched off, the house fades out still moving (the renderer resets the layer once it has gone).
-    if (this.homeAlone || this.renderer.homeAloneShowing) {
+    // Switched off, the house fades out still moving (the renderer resets the layer once it has gone). No layer before
+    // the eggs have loaded, and no house either: the mode waits for them.
+    const house = this.renderer.homeAlone;
+    if (house && (this.homeAlone || this.renderer.homeAloneShowing)) {
       const g = this.haGate;
       g.running = !this.paused;
       g.inPlay = this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null && !this.paused;
       g.reduced = this.reduced.matches;
-      this.renderer.homeAlone.step(now, dt, g, this.renderer.layout);
+      house.step(now, dt, g, this.renderer.layout);
     }
+    // Secret mode's beat comes with the eggs (secret mode waits for them).
+    const eggs = this.eggs;
+    const tracker = this.radio.show.beat;
     this.renderer.frame({
       board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover, calm,
       revealAt: this.run.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
@@ -800,7 +890,7 @@ export class App {
       ambient: show ? this.radio.show.low : 0,
       highs: show ? this.radio.show.high : 0,
       // While secret mode is on: the onset only while beating, the palette step held through a music pause.
-      beat: this.secret ? fillBeatFrame(this.beat, this.radio.show.beat, beating, this.reduced.matches) : undefined,
+      beat: this.secret && eggs && tracker ? eggs.beatFrame.fillBeatFrame(this.beat, tracker, beating, this.reduced.matches) : undefined,
     });
   }
 
@@ -831,7 +921,7 @@ export class App {
     bindInput(stage, {
       tap: (x, y, dir) => this.tap(x, y, dir),
       hover: (x, y) => {
-        this.renderer.homeAlone.input();
+        this.renderer.homeAlone?.input();
         const [wx, wy] = toWorld(this.camera, x, y);
         const hover = tileAt(this.renderer.layout, GRID, wx, wy);
         if (hover !== this.hover) this.busy(performance.now());
@@ -843,11 +933,11 @@ export class App {
         this.hover = -1;
       },
       zoom: (f, fx, fy) => {
-        this.renderer.homeAlone.input();
+        this.renderer.homeAlone?.input();
         if (this.winAt === null) this.setCamera(zoomAt(this.camera, f, fx, fy));
       },
       pan: (dx, dy) => {
-        this.renderer.homeAlone.input();
+        this.renderer.homeAlone?.input();
         if (this.winAt === null) this.setCamera(panBy(this.camera, dx, dy));
       },
     });
@@ -859,7 +949,7 @@ export class App {
 
   private tap(x: number, y: number, dir: Turn): void {
     const now = performance.now();
-    this.renderer.homeAlone.input();
+    this.renderer.homeAlone?.input();
     this.sfx.unlock();
     if (this.menu.isOpen) {
       this.menu.close();
@@ -881,11 +971,15 @@ export class App {
     }
     // A tap by the tarantula sends it scurrying (spec 2026-10-14 §4); the tap itself goes on to the game unchanged. Not
     // a tap that only closed a menu or resumed from pause: that one never reached the stage.
-    this.renderer.homeAlone.scare(x, y);
+    this.renderer.homeAlone?.scare(x, y);
     const [wx, wy] = toWorld(this.camera, x, y);
     // The star is not a tile: its taps go to the egg and never reach the board, the log or the clock.
     if (onStar(this.renderer.layout, wx, wy)) {
-      if (dir === 1) this.egg.tap(now); // a right-click on the star does nothing: only a left tap counts toward the egg
+      if (dir === 1) {
+        // Only a left tap counts toward the egg (a right-click on the star does nothing); the first starts the eggs loading.
+        if (!this.eggs) void this.requestEggs();
+        this.egg.tap(now);
+      }
       return;
     }
     const i = tileAt(this.renderer.layout, GRID, wx, wy);
@@ -899,8 +993,8 @@ export class App {
     // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
     this.radio.firstGesture();
     // A page loaded in secret mode had no audio context (or catalog) to preload the ad-lib with: once both exist. Once per URL.
-    if (this.secret) this.winSound.preload(this.radio.secretWinSound(), audio.ctx);
-    if (this.homeAlone) this.sounds.preload(); // a page loaded in the mode had no audio context to preload with
+    if (this.secret) this.winSound?.preload(this.radio.secretWinSound(), audio.ctx);
+    if (this.homeAlone) this.sounds?.preload(); // a page loaded in the mode had no audio context to preload with
     this.handle(this.run.tap(i, now, Date.now(), dir), now);
   }
 
@@ -919,7 +1013,7 @@ export class App {
     this.pausedDrawn = false;
     if (persist) saveSettings(s);
     this.sfx.setVolume(s.effectsVolume);
-    if (this.homeAlone) this.sounds.preload(); // the effects volume may just have come up
+    if (this.homeAlone) this.sounds?.preload(); // the effects volume may just have come up
     const restyle = s.pathStyle !== this.renderer.style;
     if (restyle) this.renderer.setStyle(s.pathStyle);
     const rescene = this.setScene(s.scene === 'auto' ? sceneForHour(new Date().getHours()) : s.scene);
@@ -932,14 +1026,15 @@ export class App {
    * sign-in, a sticker that failed): at once, and nothing starts. The egg's `flipped` re-renders the share image.
    */
   private setSecret(on: boolean, how: 'start' | 'loud' | 'quiet'): void {
+    if (this.waitForEggs(on, () => this.setSecret(on, how))) return;
     const changed = on !== this.secret;
     this.secret = on;
     // Never both (spec 2026-10-14 §1): the head turns Home Alone off, kept off here and on the account.
     if (on && this.homeAlone) this.alone.off();
     this.radio.setSecret(on, how === 'loud');
     if (on && changed) {
-      this.radio.show.beat.reset();
-      this.winSound.preload(this.radio.secretWinSound(), audio.ctx);
+      this.radio.show.beat?.reset();
+      this.winSound?.preload(this.radio.secretWinSound(), audio.ctx);
     }
     if (how === 'start' || !changed) return;
     if (!on && this.homeAlone) return; // Home Alone is taking over: it puts its own scene up
@@ -954,14 +1049,15 @@ export class App {
    * leaves with it. The radio is never touched here. 'start': the first applySettings puts the scene up.
    */
   private setHomeAlone(on: boolean, how: 'start' | 'loud' | 'quiet'): void {
+    if (this.waitForEggs(on, () => this.setHomeAlone(on, how))) return;
     const changed = on !== this.homeAlone;
     this.homeAlone = on;
     // Also while the account's head is still loading (not on yet): off() drops it and tells the account.
     if (on) this.egg.off();
     if (on) {
-      this.sounds.preload();
-      this.glare.preload();
-    } else this.glare.cancel();
+      this.sounds?.preload();
+      this.glare?.preload();
+    } else this.glare?.cancel();
     this.results.setLine(on ? HOME_ALONE_LINE : null); // a tag already up follows the mode (its share image re-renders with the scene)
     if (how === 'start' || !changed) return;
     this.pausedDrawn = false;
@@ -973,8 +1069,8 @@ export class App {
     // The player's own switch-on screams (spec §5), and Harry and Marv walk by to welcome them (§9.1); a load or
     // sign-in is silent and still.
     if (on && how === 'loud') {
-      this.sounds.play('scream', () => this.homeAlone);
-      this.renderer.homeAlone.welcome();
+      this.sounds?.play('scream', () => this.homeAlone);
+      this.renderer.homeAlone?.welcome();
     }
   }
 
@@ -1092,13 +1188,14 @@ export class App {
     document.addEventListener('visibilitychange', () => {
       const now = Date.now();
       if (document.hidden) {
-        this.kevin.hide(now);
+        this.kevin?.hide(now);
         return;
       }
       // No run yet while the first tree loads (a tab shown during the load).
       const board = this.run?.board;
       const still = () => !document.hidden && this.run?.board === board && this.runInHouse();
-      void this.kevin.show(now, this.runInHouse(), () => this.sounds.playResumed('kevin', still));
+      // (No call before the eggs have loaded: the house waits for them, so no run was in it.)
+      void this.kevin?.show(now, this.runInHouse(), () => this.sounds?.playResumed('kevin', still) ?? false);
     });
     addEventListener('pagehide', () => {
       if (!this.live || this.starting || this.winAt !== null) return;
@@ -1135,11 +1232,13 @@ export class App {
     });
     addEventListener('blur', () => this.keyCard.hide());
     document.addEventListener('keydown', (e) => {
-      this.renderer.homeAlone.input();
+      this.renderer.homeAlone?.input();
       // The settings and radio dialogs handle their own Escape (and mark it handled). Keys never reach the game while
       // the menu is open, or while focus is inside the radio panel; the desktop popover stays open while you play, so
       // with focus back on the game (or nowhere) P still pauses.
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.hasFocus || this.accounts.blocksKeys || isEditable(e.target)) return;
+      // The first letter of an egg's word ("hohoho", "kevin") starts loading the eggs, if they aren't in yet.
+      if (!this.paused && !this.eggs && (e.key === 'h' || e.key === 'H' || e.key === 'k' || e.key === 'K')) void this.requestEggs();
       // "hohoho" swaps the topper, as five taps on the star do (not under the pause overlay, like the taps).
       if (!this.paused && this.egg.key(e, performance.now())) {
         this.sfx.unlock();
@@ -1267,18 +1366,18 @@ export class App {
   /** Home Alone mode for the test probe: see HomeAloneState. */
   get homeAloneState(): HomeAloneState {
     return {
-      on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping, ...this.renderer.homeAlone.state(),
-      asked: { ...this.sounds.asked }, played: { ...this.sounds.played },
+      on: this.homeAlone, scene: this.renderer.scene.id, fading: this.renderer.sweeping, ...(this.renderer.homeAlone?.state() ?? NO_LAYER),
+      asked: { ...(this.sounds?.asked ?? noClips()) }, played: { ...(this.sounds?.played ?? noClips()) },
       line: document.getElementById('r-merry')?.textContent === HOME_ALONE_LINE,
       shares: this.shareSeen.n, shareLine: this.shareSeen.line,
-      hector: this.glare.showing, glares: this.glares,
+      hector: this.glare?.showing ?? false, glares: this.glares,
     };
   }
 
   /** The probe's way to a trap or gag now (the mode on, motion allowed); false if it couldn't. */
   forceTrap(kind: TrapKind, at?: [number, number]): boolean {
     if (!this.homeAlone || this.reduced.matches) return false;
-    return this.renderer.homeAlone.force(kind, performance.now(), this.renderer.layout, at);
+    return this.renderer.homeAlone?.force(kind, performance.now(), this.renderer.layout, at) ?? false;
   }
 
   debugSolve(): void {

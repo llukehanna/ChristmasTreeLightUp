@@ -1,4 +1,4 @@
-import type { SweepFrame, SweepRun } from './aurora';
+import type { SweepFrame, SweepRun } from './sky-sweep';
 import { PAINT_EVERY, PaintCan, TARANTULA_EVERY, Tarantula, TrapScheduler, drawPaintCan, drawTarantula, makePaintCan, type KnockTarget } from './home-alone-traps';
 import {
   GagClock, IRON_ODDS, MARV_MS, MarvClock, TOOTH_GLINT_AT, VAN_EVERY, VAN_FIRST, VAN_MS, WindowGags, gagMs, nextGag, vanPose,

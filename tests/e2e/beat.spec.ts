@@ -72,16 +72,22 @@ const MIXES: Mix[] = [
 ];
 const SECS = 8;
 
-let bundle = '';
-test.beforeAll(async () => {
+/** `entry` as one script that sets `window[name]`. */
+async function iife(entry: string, name: string): Promise<string> {
   const out = await build({
     configFile: false,
     logLevel: 'silent',
-    build: { write: false, minify: false, lib: { entry: 'src/radio/lightshow.ts', formats: ['iife'], name: 'AglowBeat', fileName: 'beat' } },
+    build: { write: false, minify: false, lib: { entry, formats: ['iife'], name, fileName: name } },
   });
   const first = Array.isArray(out) ? out[0] : out;
   if (!('output' in first)) throw new Error('vite build returned a watcher');
-  bundle = first.output[0].type === 'chunk' ? first.output[0].code : '';
+  return first.output[0].type === 'chunk' ? first.output[0].code : '';
+}
+
+/** The light show, and secret mode's tracker (an egg the app hands the show once the eggs have loaded). */
+let bundles: string[] = [];
+test.beforeAll(async () => {
+  bundles = [await iife('src/radio/lightshow.ts', 'AglowBeat'), await iife('src/radio/beat.ts', 'AglowTracker')];
 });
 
 interface Run {
@@ -93,10 +99,11 @@ interface Run {
 
 async function run(page: Page, mix: Mix, fps: number): Promise<Run> {
   await page.goto('about:blank');
-  await page.addScriptTag({ content: bundle });
+  for (const content of bundles) await page.addScriptTag({ content });
   return page.evaluate(
     async ({ mix, fps, secs }) => {
-      const { LightShow } = (window as unknown as { AglowBeat: typeof import('../../src/radio/lightshow') }).AglowBeat;
+      const w = window as unknown as { AglowBeat: typeof import('../../src/radio/lightshow'); AglowTracker: typeof import('../../src/radio/beat') };
+      const { LightShow } = w.AglowBeat;
       const sr = 48000;
       const ctx = new OfflineAudioContext(1, sr * secs, sr);
       const bus = ctx.createGain();
@@ -127,6 +134,8 @@ async function run(page: Page, mix: Mix, fps: number): Promise<Run> {
       an.smoothingTimeConstant = 0.6;
       out.connect(an);
       const show = new LightShow(() => an);
+      const tracker = new w.AglowTracker.BeatTracker();
+      show.beat = tracker;
 
       const noise = ctx.createBuffer(1, sr, sr);
       const nd = noise.getChannelData(0);
@@ -316,9 +325,9 @@ async function run(page: Page, mix: Mix, fps: number): Promise<Run> {
       for (let i = 1; i < secs * fps; i++) {
         const at = Math.min(secs - 0.01, i / fps + 0.0137 + jitter());
         void ctx.suspend(at).then(() => {
-          const before = show.beat.at;
+          const before = tracker.at;
           show.sample(at * 1000);
-          if (show.beat.at !== before) beats.push({ t: show.beat.at, strength: show.beat.strength });
+          if (tracker.at !== before) beats.push({ t: tracker.at, strength: tracker.strength });
           void ctx.resume();
         });
       }

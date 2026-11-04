@@ -1,4 +1,7 @@
-import { BeatTracker, RESTART_GAP_MS } from './beat';
+import type { BeatTracker } from './beat';
+
+/** A gap longer than this between samples (a hidden tab, music paused) starts the warm-up again: the average is stale. */
+export const RESTART_GAP_MS = 1000;
 
 /** The post-win show's low band (Hz). */
 export const LOW_BAND = [20, 150] as const;
@@ -144,8 +147,11 @@ export class LightShow {
   low = 0;
   /** The high band (2–8 kHz), smoothed like `low`: speeds the fairy lights' twinkle and the filament's sparkle rate. */
   high = 0;
-  /** Secret mode's beat (src/radio/beat.ts), fed the onset flux of the beat tap's float spectrum, before and after the win. */
-  readonly beat = new BeatTracker();
+  /**
+   * Secret mode's beat (src/radio/beat.ts), fed the onset flux of the beat tap's float spectrum, before and after the win.
+   * An egg: null until the eggs have loaded (src/eggs/load.ts), and secret mode is never on before then.
+   */
+  beat: BeatTracker | null = null;
   private readonly detector = new BeatDetector();
   private bins = new Uint8Array(0);
   /** The beat tap: its own analyser hung off the radio's (which it was made for), or the radio's if it can't be had. */
@@ -188,7 +194,8 @@ export class LightShow {
     this.lastAt = now;
     t.getFloatFrequencyData(this.db);
     if (t !== a) this.watchTap(a, now);
-    this.beat.update(onsetFlux(this.db, this.prev, this.sorted, binHz), now);
+    const flux = onsetFlux(this.db, this.prev, this.sorted, binHz);
+    this.beat?.update(flux, now);
   }
 
   /** A tap that stays silent while the radio's analyser hears music is never run (a browser quirk): use the radio's. */

@@ -6,6 +6,7 @@ import { mulberry32 } from '../../../src/core/rng';
 import { beatPulse, garlandBob, NOD_MS } from '../../../src/render/beat-fx';
 import * as bulbs from '../../../src/render/bulbs';
 import { IDENTITY } from '../../../src/render/camera';
+import { EGGS } from '../../../src/eggs/eggs';
 import { Renderer, type BeatFrame, type FrameInput } from '../../../src/render/renderer';
 import { AURORA } from '../../../src/render/scenes';
 import { VisualState } from '../../../src/render/visual-state';
@@ -49,6 +50,7 @@ afterEach(() => {
 /** A solved tree, every tile lit long ago (but not won), in secret mode. */
 function setup() {
   const r = new Renderer(document.createElement('canvas'));
+  r.attachEggs(EGGS); // the eggs have loaded (src/eggs/load.ts)
   r.setScene(AURORA);
   r.resize(390, 844, 2);
   const rng = mulberry32(7);

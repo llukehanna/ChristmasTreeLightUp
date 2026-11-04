@@ -1,8 +1,8 @@
 import type { Board } from '../core/board';
 import { degree } from '../core/dirs';
 import { GRID } from '../core/mask';
-import { Aurora, SkySweep, type SceneChange } from './aurora';
-import { beatPulse, garlandBob } from './beat-fx';
+import type { EggModules } from '../eggs/load';
+import type { Aurora } from './aurora';
 import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
 import type { Camera } from './camera';
@@ -10,20 +10,21 @@ import {
   Confetti, Current, Embers, SPARKS, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
   drawHover, drawSourceCore, drawSourceGlow, drawStarGlow, easeSnap, starState,
 } from './effects';
-import { FaceSprites } from './face-sprites';
-import { FACE_CONFETTI_PX, FACE_GARLAND_H, FACE_ORNAMENT_H, faceBulbTile, faceGarlandIndex } from './faces';
-import { Garland } from './garland';
-import { HomeAloneLayer, homeAloneAlpha } from './home-alone';
+import type { FaceSprites } from './face-sprites';
+import { FACE_ORNAMENT_H } from './bulbs';
+import { FACE_GARLAND_H, Garland } from './garland';
+import type { HomeAloneLayer } from './home-alone';
 import { tileGeometry } from './geometry';
 import { Y, computeLayout, tileCenter, type Layout } from './layout';
 import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
-import { PIZZA_PX, PizzaSprite } from './pizza';
+import type { PizzaSprite } from './pizza';
 import { TwinkleClock, drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
 import { Presents } from './presents';
 import { Topper } from './topper';
 import { QualityGovernor } from './quality';
 import { SCENES, type Scene } from './scenes';
+import { SkySweep, type SceneChange } from './sky-sweep';
 import { TILE_FILL_MS, type VisualState } from './visual-state';
 
 const GLOW_SCALE = 0.5;
@@ -86,8 +87,10 @@ export class Renderer {
   private readonly g: CanvasRenderingContext2D;
   /** The scene's backdrop (`sky.bg`), and the sky sweep when secret mode is switched by hand (spec 2026-10-08 secret mode §2.4). */
   private readonly sky = new SkySweep();
+  /** The eggs (src/eggs/load.ts), once loaded: until then their layers below are null and draw nothing. */
+  private eggs: EggModules | null = null;
   /** Secret mode's curtains (spec 2026-10-08 secret mode §2). */
-  private readonly aurora = new Aurora();
+  private aurora: Aurora | null = null;
   private readonly tree = document.createElement('canvas');
   layout: Layout = computeLayout(1, 1, 1);
   scene: Scene = SCENES.fireside;
@@ -99,15 +102,15 @@ export class Renderer {
   private readonly twinkle = new TwinkleClock();
   private readonly confetti = new Confetti();
   /** Home Alone's confetti: Little Nero's slices (spec 2026-10-14 §6). */
-  private readonly pizza = new PizzaSprite();
+  private pizza: PizzaSprite | null = null;
   readonly garland = new Garland();
   /** Home Alone mode's window gags and traps (spec 2026-10-14). */
-  readonly homeAlone = new HomeAloneLayer(this.garland);
+  homeAlone: HomeAloneLayer | null = null;
   private readonly presents = new Presents();
   /** The star on top, or the star-head egg's sticker (src/render/topper.ts). */
   readonly topper = new Topper();
   /** Secret mode's faces, from the topper's sticker (spec 2026-10-08 secret mode §3). */
-  readonly faces = new FaceSprites(() => this.topper.image);
+  faces: FaceSprites | null = null;
   /** The presents and garland were last laid out with the faces. */
   private faced = false;
   /** The face ornament's tile, worked out once per tree. */
@@ -123,6 +126,21 @@ export class Renderer {
     // Opaque: the background covers every pixel, so the compositor needn't blend the stage with the page.
     this.ctx = ctx2d(canvas, { alpha: false });
     this.g = ctx2d(this.glow);
+  }
+
+  /**
+   * The eggs have loaded: their layers come into being (the app switches an egg on only after this). A stage already
+   * laid out is painted again, so a scene put up meanwhile gets its room and its faces.
+   */
+  attachEggs(e: EggModules): void {
+    if (this.eggs) return;
+    this.eggs = e;
+    this.aurora = new e.aurora.Aurora();
+    this.pizza = new e.pizza.PizzaSprite();
+    this.homeAlone = new e.homeAlone.HomeAloneLayer(this.garland);
+    this.faces = new e.faceSprites.FaceSprites(() => this.topper.image);
+    this.topper.attachBeat(e.beatFx);
+    if (this.sized) this.repaint();
   }
 
   /** `chromeBottom`: lowest edge of the wordmark and HUD in CSS px (the garland hangs below it). */
@@ -197,22 +215,27 @@ export class Renderer {
   }
 
   private repaint(): void {
-    paintBackground(ctx2d(this.sky.bg), this.layout, this.scene);
+    paintBackground(ctx2d(this.sky.bg), this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
     paintTree(ctx2d(this.tree), this.layout, this.scene);
     this.layFaces();
   }
 
   /** Presents and garland: in secret mode, once the sticker has loaded, with the face paper and the face bulb. */
   private layFaces(): void {
-    const faces = this.secret && this.faces.ready ? this.faces : null;
+    const faces = this.readyFaces();
     this.presents.layout(this.layout, GRID, this.scene, faces);
-    this.garland.paint(this.scene, this.layout.dpr, faces ? faceGarlandIndex(this.garland.geo) : -1);
+    this.garland.paint(this.scene, this.layout.dpr, faces && this.eggs ? this.eggs.faces.faceGarlandIndex(this.garland.geo) : -1);
     this.faced = faces !== null;
+  }
+
+  /** The faces, in secret mode with the sticker loaded (and the eggs: the faces are one); else null. */
+  private readyFaces(): FaceSprites | null {
+    return this.secret && this.faces?.ready ? this.faces : null;
   }
 
   /** Where the faces are (the e2e probe): the ornament's tile, the present and the garland bulb, or -1. */
   faceInfo(): { tile: number; gift: number; garland: number } {
-    return { tile: this.secret && this.faces.ready ? this.faceTile : -1, gift: this.presents.faceIndex, garland: this.garland.face };
+    return { tile: this.readyFaces() ? this.faceTile : -1, gift: this.presents.faceIndex, garland: this.garland.face };
   }
 
   frame(f: FrameInput): void {
@@ -240,23 +263,28 @@ export class Renderer {
     const world = (c: CanvasRenderingContext2D, k: number) => c.setTransform(k * cam.scale, 0, 0, k * cam.scale, k * cam.tx, k * cam.ty);
 
     vis.prune(now);
+    // The eggs' layers (null until the eggs have loaded: no egg is on before then, so none is drawn).
+    const eggs = this.eggs;
+    const aurora = this.aurora;
+    const homeAlone = this.homeAlone;
     // Secret mode's faces: lay the presents and garland out again once the sticker arrives; one ornament per tree.
     const secret = this.secret;
-    if (secret && !this.faced && this.faces.ready) this.layFaces();
+    const faces = this.readyFaces();
+    if (faces && !this.faced) this.layFaces();
     // …and plain again if the faces can no longer be drawn (a lost 2D context), rather than a bulb with no glass.
-    else if (this.faced && !(secret && this.faces.ready)) this.layFaces();
-    if (secret && board !== this.faceBoard) {
+    else if (this.faced && !faces) this.layFaces();
+    if (secret && eggs && board !== this.faceBoard) {
       this.faceBoard = board;
-      this.faceTile = faceBulbTile(board.solution, GRID.ids);
+      this.faceTile = eggs.faces.faceBulbTile(board.solution, GRID.ids);
     }
-    const faceTile = secret && this.faces.ready ? this.faceTile : -1;
+    const faceTile = faces ? this.faceTile : -1;
     const facePx = FACE_ORNAMENT_H * s * dpr * cam.scale;
     // On the beat (spec 2026-10-08 secret mode §5.3); no palette step under reduced motion.
     const beatAt = f.beat ? f.beat.at : Number.NEGATIVE_INFINITY;
     const beatPower = f.beat ? f.beat.strength : 0;
     const hue = f.beat && !f.reducedMotion ? f.beat.hue : 0;
     // The beat's flash is the same for every lit bulb: worked out once a frame.
-    const pulse = f.beat ? beatPulse(now - f.beat.at, f.beat.strength, f.reducedMotion) : 0;
+    const pulse = f.beat && eggs ? eggs.beatFx.beatPulse(now - f.beat.at, f.beat.strength, f.reducedMotion) : 0;
     const nb = sc.bulbs.length;
     this.topper.nod(beatAt, beatPower);
     const highs = f.highs ?? 0;
@@ -281,16 +309,17 @@ export class Renderer {
       leaving = sw.fromScene;
       fadeA = fr.alpha;
       ctx.drawImage(sw.from, 0, 0);
-      if (sw.fromScene.id === 'aurora') {
+      if (sw.fromScene.id === 'aurora' && aurora) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        this.aurora.draw(ctx, L, now, tier, f.reducedMotion);
+        aurora.draw(ctx, L, now, tier, f.reducedMotion);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
       ctx.globalAlpha = fr.alpha;
       ctx.drawImage(this.sky.bg, 0, 0);
       ctx.globalAlpha = 1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    } else if (fr && sw) {
+    } else if (fr && sw && aurora) {
+      // (A sweep only ever starts with the eggs loaded: the head's switch waits for them.)
       if (sw.dir === 'down') back = sw.fromScene;
       // The non-aurora sky in full; the aurora's backdrop and curtains over the covered part; the hem at its edge.
       ctx.drawImage(sw.dir === 'down' ? sw.from : this.sky.bg, 0, 0);
@@ -298,25 +327,25 @@ export class Renderer {
       const y = fr.cover * L.h;
       if (y > 0 && fr.alpha > 0) {
         ctx.save();
-        this.aurora.clipSky(ctx, L, y, fr.edge, now);
+        aurora.clipSky(ctx, L, y, fr.edge, now);
         ctx.globalAlpha = fr.alpha;
         // Device pixels, 1:1 (the clip survives the transform change): no resampling at fractional DPRs.
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.drawImage(sw.dir === 'down' ? this.sky.bg : sw.from, 0, 0);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        this.aurora.draw(ctx, L, now, tier, f.reducedMotion, fr.alpha);
+        aurora.draw(ctx, L, now, tier, f.reducedMotion, fr.alpha);
         ctx.restore();
       }
-      this.aurora.drawSeam(ctx, L, y, fr.edge, now);
+      aurora.drawSeam(ctx, L, y, fr.edge, now);
     } else {
       ctx.drawImage(this.sky.bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (this.secret) this.aurora.draw(ctx, L, now, tier, f.reducedMotion);
+      if (this.secret) aurora?.draw(ctx, L, now, tier, f.reducedMotion);
     }
     // Home Alone's window gags, behind the tree (spec 2026-10-14 §3): faded with the house, never during a sweep.
-    const ha = homeAloneAlpha(sc, sw, fr);
-    if (ha > 0) this.homeAlone.drawWindow(ctx, L, ha, f.reducedMotion);
-    else if (sc.id !== 'home-alone') this.homeAlone.reset(); // gone (faded out, or switched at once): a walk ends with it
+    const ha = eggs && homeAlone ? eggs.homeAlone.homeAloneAlpha(sc, sw, fr) : 0;
+    if (ha > 0) homeAlone?.drawWindow(ctx, L, ha, f.reducedMotion);
+    else if (sc.id !== 'home-alone') homeAlone?.reset(); // gone (faded out, or switched at once): a walk ends with it
     const fire = leaving ? share(leaving.light === 'fire', sc.light === 'fire', fadeA) : back.light === 'fire' ? 1 : 0;
     if (fire > 0) drawFirelight(ctx, L, now, fire);
     const embers = leaving ? share(leaving.embers, sc.embers, fadeA) : back.embers ? 1 : 0;
@@ -362,7 +391,7 @@ export class Renderer {
       ctx.scale(k, k);
       drawUnlit(ctx, tileGeometry(shown, 0), s, sc, style);
       if (isBulb) {
-        const face = i === faceTile ? this.faces.get('ornament', facePx, false) : null;
+        const face = i === faceTile && faces ? faces.get('ornament', facePx, false) : null;
         if (face) drawFaceBulb(ctx, shown, 0, s, sc, face, angle);
         else drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style);
       }
@@ -439,7 +468,7 @@ export class Renderer {
       drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkleT });
       if (degree(board.solution[i]) === 1 && q >= 1) {
         const amt = this.bulbAmount(f, i, pulse) * alpha;
-        const face = i === faceTile ? this.faces.get('ornament', facePx, true) : null;
+        const face = i === faceTile && faces ? faces.get('ornament', facePx, true) : null;
         if (face) drawFaceBulb(ctx, board.bits[i], amt, s, sc, face);
         else drawBulb(ctx, board.bits[i], sc.bulbs[(board.colors[i] + hue) % nb], amt, s, sc, style);
         if (!f.reducedMotion) drawBulbGlint(ctx, now - (vis.litStart[i] + TILE_FILL_MS), s);
@@ -456,22 +485,22 @@ export class Renderer {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.garland.drawLit(ctx, sc, now, f.winAt, f.reducedMotion);
     // Home Alone's van headlights sweeping the room (spec 2026-10-14 §9.3), then its traps (§4): over the board, decoration only.
-    if (ha > 0) this.homeAlone.drawBeam(ctx, L, ha, f.reducedMotion);
-    if (sc.id === 'home-alone' && !f.reducedMotion) this.homeAlone.drawTraps(ctx, L);
-    if (secret) {
+    if (ha > 0) homeAlone?.drawBeam(ctx, L, ha, f.reducedMotion);
+    if (sc.id === 'home-alone' && !f.reducedMotion) homeAlone?.drawTraps(ctx, L);
+    if (secret && eggs && this.faces) {
       const px = FACE_GARLAND_H * this.garland.geo.size * dpr;
-      this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), garlandBob(now, beatAt, beatPower, f.reducedMotion));
+      this.garland.drawFace(ctx, now, f.winAt, f.reducedMotion, this.faces.get('garland', px, true), this.faces.get('garland', px, false), eggs.beatFx.garlandBob(now, beatAt, beatPower, f.reducedMotion));
     }
     this.drawSnow(sc, leaving, fadeA, true, motionDt, now, density);
     if (!f.reducedMotion) {
       // Secret mode's mini heads or Home Alone's pizza (spec 2026-10-14 §6), asked for only while the confetti falls.
       const falling = this.confetti.count(now, f.winAt, density) > 0;
-      const sprite = !falling
+      const sprite = !falling || !eggs
         ? null
         : secret
-          ? this.faces.get('confetti', FACE_CONFETTI_PX * dpr, true)
+          ? (this.faces?.get('confetti', eggs.faces.FACE_CONFETTI_PX * dpr, true) ?? null)
           : sc.id === 'home-alone'
-            ? this.pizza.get(PIZZA_PX * dpr)
+            ? (this.pizza?.get(eggs.pizza.PIZZA_PX * dpr) ?? null)
             : null;
       this.confetti.draw(ctx, L, now, f.winAt, density, sc, sprite);
     }

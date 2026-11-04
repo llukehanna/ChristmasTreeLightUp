@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { ready, silentWav, tapStarStill, type W } from './helpers';
+import { holdEggs, pageErrors, ready, silentWav, tapStarStill, type W } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -85,6 +85,26 @@ test('by hand: the aurora sweeps in, the Secret station is listed and plays, the
   await page.click('#radio-pill');
   await expect(page.locator('#radio-panel .st[data-id="fireplace"]')).toHaveAttribute('aria-current', 'true');
   await expect(page.locator('#radio-panel .st[data-id="secret"]')).toHaveCount(0);
+});
+
+test('five taps before the eggs have loaded: the head flips at once, and the aurora and the Secret station come when they land', async ({ page }) => {
+  const errors = pageErrors(page);
+  await stations(page, [SECRET]);
+  await pinRadio(page, { source: 'fireplace' });
+  const eggs = await holdEggs(page);
+  await ready(page);
+  await tapTile(page);
+  await expect.poll(async () => (await radio(page)).kind).toBe('fireplace');
+  await fiveTaps(page);
+  await expect.poll(() => page.evaluate(() => (window as unknown as W).__aglow.star().head)).toBe(true);
+  expect(await secret(page)).toMatchObject({ on: false });
+  expect((await radio(page)).kind).toBe('fireplace');
+  eggs.release();
+  await expect.poll(async () => (await secret(page)).scene).toBe('aurora');
+  expect((await secret(page)).on).toBe(true);
+  await expect.poll(async () => (await radio(page)).source).toBe('secret');
+  await expect.poll(async () => (await secret(page)).faceTile).toBeGreaterThanOrEqual(0);
+  expect(errors).toEqual([]);
 });
 
 test('with no Secret station, switching on plays the celesta, and switching off brings back the silence it found', async ({ page }) => {

@@ -2,7 +2,6 @@ import type { Grid } from '../core/mask';
 import { CANVAS_FILTER } from './blur';
 import { hexRgb } from './color';
 import type { FaceSprites } from './face-sprites';
-import { faceGiftIndex } from './faces';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
 
@@ -31,6 +30,19 @@ export const PAPERS: readonly Paper[] = [
 
 /** Secret mode's present (spec 2026-10-08 secret mode §3.2): midnight-indigo paper printed with Luke's head, an ice ribbon. */
 export const FACE_PAPER: Paper = { base: '#22275e', ribbon: '#d8ecff', pattern: 'face', ink: '#22275e' };
+
+/** The present in face paper (secret mode §3): the one with the largest front face (the first on a tie); -1 with none. */
+export function faceGiftIndex(gifts: readonly { w: number; h: number }[]): number {
+  let best = -1;
+  let area = -1;
+  gifts.forEach((g, k) => {
+    if (g.w * g.h > area) {
+      area = g.w * g.h;
+      best = k;
+    }
+  });
+  return best;
+}
 
 /** [u, w, h, dz, paper, bow]: centre offset, width, height and depth-forward in tile units; bow scale. */
 type Spec = readonly [number, number, number, number, number, number];

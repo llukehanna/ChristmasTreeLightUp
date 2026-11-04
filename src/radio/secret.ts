@@ -1,9 +1,9 @@
-import { CELESTA_ID, SECRET_ID } from './ids';
+export { isSecretSource } from './ids';
 
 /**
  * Secret mode's hold on the radio (spec 2026-10-08 secret mode §4.4), as a pure step: switching on by hand saves what
  * the radio was doing and plays the Secret station; switching off puts it back. A listener's own choice in between
- * wins: nothing is restored over it.
+ * wins: nothing is restored over it. An egg (src/eggs/load.ts): the radio is handed `secretStep` once it has loaded.
  */
 
 /** What the radio was doing when secret mode took it over. */
@@ -35,9 +35,6 @@ export type SecretEffect =
 
 export const SECRET_OFF: SecretState = { on: false, saved: null };
 const NONE: SecretEffect = { kind: 'none' };
-
-/** The sources only secret mode plays. */
-export const isSecretSource = (id: string | null): boolean => id === SECRET_ID || id === CELESTA_ID;
 
 export function secretStep(s: SecretState, e: SecretEvent): { state: SecretState; effect: SecretEffect } {
   switch (e.type) {

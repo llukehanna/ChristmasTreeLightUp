@@ -1,13 +1,16 @@
 import { mulberry32, type Rng } from '../core/rng';
 import { blurredLayer } from './blur';
-import { paintHomeAlone } from './home-alone-room';
+import type { paintHomeAlone } from './home-alone-room';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
 
 const TAU = Math.PI * 2;
 
-/** Static scene backdrop, painted once per resize/scene change (spec §4.3). */
-export function paintBackground(c: CanvasRenderingContext2D, L: Layout, sc: Scene): void {
+/**
+ * Static scene backdrop, painted once per resize/scene change (spec §4.3). `house`: Home Alone's room (an egg, from
+ * src/render/home-alone-room.ts), there once the eggs have loaded; the house is never the scene before then.
+ */
+export function paintBackground(c: CanvasRenderingContext2D, L: Layout, sc: Scene, house: typeof paintHomeAlone | null = null): void {
   const r = mulberry32(3);
   const hz = Y(L, 10.05);
   c.setTransform(1, 0, 0, 1, 0, 0);
@@ -25,7 +28,7 @@ export function paintBackground(c: CanvasRenderingContext2D, L: Layout, sc: Scen
   c.fillStyle = gr;
   c.fillRect(0, hz, L.w, L.h - hz);
   // The house has 'fire' light (firelight, warm presents) but a room of its own: its id is checked first.
-  if (sc.id === 'home-alone') paintHomeAlone(c, L, r, hz);
+  if (sc.id === 'home-alone') house?.(c, L, r, hz);
   else if (sc.light === 'moon') paintMoonlit(c, L, r, hz);
   else if (sc.light === 'fire') paintFireside(c, L, r, hz);
   else if (sc.light === 'aurora') paintAurora(c, L, r, hz);
