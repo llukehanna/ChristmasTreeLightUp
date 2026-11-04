@@ -1,5 +1,8 @@
+import type { Turn } from './core/dirs';
+
 export interface InputHandlers {
-  tap(x: number, y: number): void;
+  /** `dir`: 1 clockwise (left click, touch, pen), -1 counter-clockwise (right click). */
+  tap(x: number, y: number, dir: Turn): void;
   hover(x: number, y: number): void;
   leave(): void;
   zoom(factor: number, fx: number, fy: number): void;
@@ -16,7 +19,8 @@ interface Pt {
 }
 
 /**
- * Mouse: rotate on pointerdown (instant). Touch/pen: rotate on a quick, still tap; two fingers pinch-zoom
+ * Mouse: rotate on pointerdown (instant): left button clockwise, right button counter-clockwise (the browser's context
+ * menu is off on the stage only). Touch/pen: rotate on a quick, still tap; two fingers pinch-zoom
  * and pan; one-finger drags pan while zoomed (spec §6.1). Trackpad pinch arrives as ctrl+wheel.
  */
 export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
@@ -29,7 +33,8 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
 
   const down = (e: PointerEvent) => {
     if (e.pointerType === 'mouse') {
-      if (e.button === 0) h.tap(e.clientX, e.clientY);
+      if (e.button === 0) h.tap(e.clientX, e.clientY, 1);
+      else if (e.button === 2) h.tap(e.clientX, e.clientY, -1);
       return;
     }
     el.setPointerCapture?.(e.pointerId);
@@ -71,7 +76,7 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
     if (e.pointerType === 'mouse') return;
     const p = pts.get(e.pointerId);
     pts.delete(e.pointerId);
-    if (p && !pinched && !p.dragging && e.timeStamp - p.t0 < 500) h.tap(p.x0, p.y0);
+    if (p && !pinched && !p.dragging && e.timeStamp - p.t0 < 500) h.tap(p.x0, p.y0, 1);
     if (pts.size < 2) {
       lastDist = 0;
       lastMid = null;
@@ -99,12 +104,15 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
     if (e.pointerType === 'mouse') h.leave();
   };
 
+  const menu = (e: Event) => e.preventDefault();
+
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointermove', move);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', cancel);
   el.addEventListener('pointerleave', leave);
   el.addEventListener('wheel', wheel, { passive: false });
+  el.addEventListener('contextmenu', menu);
   return () => {
     el.removeEventListener('pointerdown', down);
     el.removeEventListener('pointermove', move);
@@ -112,5 +120,6 @@ export function bindInput(el: HTMLElement, h: InputHandlers): () => void {
     el.removeEventListener('pointercancel', cancel);
     el.removeEventListener('pointerleave', leave);
     el.removeEventListener('wheel', wheel);
+    el.removeEventListener('contextmenu', menu);
   };
 }

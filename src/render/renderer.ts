@@ -347,7 +347,7 @@ export class Renderer {
       const [cx, cy] = tileCenter(L, GRID, i);
       const rot = board.rotating.get(i);
       const shown = rot ? rot.from : board.bits[i];
-      const angle = rot ? (Math.PI / 2) * easeSnap(clamp01((now - rot.t0) / board.rotateMs)) : 0;
+      const angle = rot ? rot.dir * (Math.PI / 2) * easeSnap(clamp01((now - rot.t0) / board.rotateMs)) : 0;
       const k = f.reducedMotion ? 1 : vis.settleScale(i, now);
       const isBulb = degree(board.solution[i]) === 1;
       ctx.save();

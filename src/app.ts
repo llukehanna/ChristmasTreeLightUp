@@ -5,6 +5,7 @@ import { Session } from './api/session';
 import type { AccountStats, ClaimResponse, FinishResult } from './api/types';
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
+import type { Turn } from './core/dirs';
 import { CLOCK_TOLERANCE_MS } from './core/judge';
 import type { LogEntry } from './core/log';
 import { GRID } from './core/mask';
@@ -814,7 +815,7 @@ export class App {
   private bindControls(): void {
     const stage = el('stage');
     bindInput(stage, {
-      tap: (x, y) => this.tap(x, y),
+      tap: (x, y, dir) => this.tap(x, y, dir),
       hover: (x, y) => {
         this.renderer.homeAlone.input();
         const [wx, wy] = toWorld(this.camera, x, y);
@@ -842,7 +843,7 @@ export class App {
     el('corner-new').addEventListener('click', () => this.newGame());
   }
 
-  private tap(x: number, y: number): void {
+  private tap(x: number, y: number, dir: Turn): void {
     const now = performance.now();
     this.renderer.homeAlone.input();
     this.sfx.unlock();
@@ -870,15 +871,15 @@ export class App {
     const [wx, wy] = toWorld(this.camera, x, y);
     // The star is not a tile: its taps go to the egg and never reach the board, the log or the clock.
     if (onStar(this.renderer.layout, wx, wy)) {
-      this.egg.tap(now);
+      if (dir === 1) this.egg.tap(now); // a right-click on the star does nothing: only a left tap counts toward the egg
       return;
     }
     const i = tileAt(this.renderer.layout, GRID, wx, wy);
-    if (i >= 0) this.tapTile(i, now);
+    if (i >= 0) this.tapTile(i, now, dir);
   }
 
   /** A tap on tile `i` (also the e2e probe's way in). Turns due finish first: the same order the server's replay uses. */
-  tapTile(i: number, now = performance.now()): void {
+  tapTile(i: number, now = performance.now(), dir: Turn = 1): void {
     if (!this.live || this.starting || this.paused || now < this.interactiveAt) return;
     this.hideIntro();
     // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
@@ -886,7 +887,7 @@ export class App {
     // A page loaded in secret mode had no audio context (or catalog) to preload the ad-lib with: once both exist. Once per URL.
     if (this.secret) this.winSound.preload(this.radio.secretWinSound(), audio.ctx);
     if (this.homeAlone) this.sounds.preload(); // a page loaded in the mode had no audio context to preload with
-    this.handle(this.run.tap(i, now, Date.now()), now);
+    this.handle(this.run.tap(i, now, Date.now(), dir), now);
   }
 
   private setCamera(c: Camera): void {

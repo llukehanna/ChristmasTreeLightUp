@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { rotCW } from '../../src/core/dirs';
+import { rotCCW, rotCW } from '../../src/core/dirs';
 import type { AglowProbe } from '../../src/debug';
 
 type W = Window & { __aglow: AglowProbe };
@@ -207,4 +207,13 @@ test('the pause button stops the clock, and resuming continues it without turnin
   // Nothing to pause after the win.
   await page.evaluate(() => (window as unknown as W).__aglow.solve());
   await expect(btn).toBeHidden({ timeout: 4000 });
+});
+
+test('right-clicking a tile turns it counter-clockwise', async ({ page }) => {
+  await ready(page);
+  const i = await middleTile(page);
+  const before = (await state(page)).bits[i];
+  const [x, y] = await page.evaluate((t) => (window as unknown as W).__aglow.tileCenter(t), i);
+  await page.mouse.click(x, y, { button: 'right' });
+  await expect.poll(async () => (await state(page)).bits[i]).toBe(rotCCW(before));
 });
