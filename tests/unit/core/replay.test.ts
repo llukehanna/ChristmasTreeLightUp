@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Board, ROTATE_MS } from '../../../src/core/board';
 import { REVEAL_MS } from '../../../src/core/clock';
-import { DIRS, OPPOSITE, degree, rotCW } from '../../../src/core/dirs';
+import { DIRS, OPPOSITE, degree, rotCCW, rotCW } from '../../../src/core/dirs';
 import type { LogEntry } from '../../../src/core/log';
 import { GRID, neighbor } from '../../../src/core/mask';
 import { MAX_REPLAY_BFS, replay } from '../../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../../src/core/seeded';
-import { solvingTaps, withPause } from './solver';
+import { asThreeCounterClockwise, shortestTaps, solvingTaps, withPause } from './solver';
 
 const honest = (seed: number, start = 1000, gap = 50): LogEntry[] => {
   const b = seededBoard(seed, GEN_VERSION);
@@ -68,6 +68,40 @@ describe('replay', () => {
     const log = honest(1);
     expect(run(1, [...log, { t: 7001, a: 'p' }])).toMatchObject({ solvedAt: 7260, pausedMs: 259, pauses: 1 });
     expect(run(1, [...log, { t: 9000, a: 'p' }, { t: 9500, a: 'r' }])).toMatchObject({ solvedAt: 7260, pausedMs: 0, pauses: 0 });
+  });
+});
+
+describe('replay: counter-clockwise taps (a = ~tile)', () => {
+  it('turns a tile logged as ~i counter-clockwise', () => {
+    const b = seededBoard(1, GEN_VERSION, true);
+    if (!b) throw new Error('no board');
+    const tile = GRID.ids.find((i) => rotCW(b.bits[i]) !== rotCCW(b.bits[i]));
+    if (tile === undefined) throw new Error('no tile');
+    const before = b.bits[tile];
+    expect(replay(b, [{ t: 1000, a: ~tile }])).toBeNull(); // not solved, but it played
+    expect(b.bits[tile]).toBe(rotCCW(before));
+  });
+
+  it('three counter-clockwise turns in place of each clockwise one settle on the same tree', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const log = asThreeCounterClockwise(honest(seed));
+      const r = run(seed, log);
+      expect(r, `seed ${seed}`).not.toBeNull();
+      expect(r?.tapTimes).toEqual(log.map((e) => e.t));
+    }
+  });
+
+  it('the shortest way round solves too', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const b = seededBoard(seed, GEN_VERSION);
+      if (!b) throw new Error('no board');
+      expect(run(seed, shortestTaps(b)), `seed ${seed}`).not.toBeNull();
+    }
+  });
+
+  it('refuses a tap the board would have dropped, whatever the directions in the queue', () => {
+    const tile = GRID.ids[3];
+    expect(run(1, [1, -1, -1, 1, -1].map((d, k) => ({ t: 2000 + 10 * k, a: d === 1 ? tile : ~tile })))).toBeNull();
   });
 });
 

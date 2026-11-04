@@ -1,4 +1,4 @@
-import { D, DIRS, OPPOSITE, rotCW } from './dirs';
+import { D, DIRS, OPPOSITE, rotBy, type Turn } from './dirs';
 import { generateSolution } from './generate';
 import { neighbor, type Grid } from './mask';
 import type { Rng } from './rng';
@@ -50,14 +50,17 @@ export function computeLighting(g: Grid, bits: readonly number[]): Lighting {
 
 /** Original: 200ms linear. Shortened for a snappier feel (spec §2.7). */
 export const ROTATE_MS = 120;
-/** Rapid taps on a turning tile are buffered into one fluid spin (spec §2.7). */
+/** Rapid taps on a turning tile are buffered into one fluid spin (spec §2.7): at most this many behind the turning one. */
 export const MAX_QUEUE = 3;
 
 export interface Rotation {
   from: number;
   to: number;
   t0: number;
-  queued: number;
+  /** This turn's direction. */
+  dir: Turn;
+  /** Buffered turns, in tap order, each with its own direction. */
+  queue: Turn[];
 }
 
 export interface BoardState {
@@ -110,17 +113,17 @@ export class Board {
     return new Board(grid, { solution, bits: scramble(grid, solution, rng), colors: randomColors(grid, rng) }, ROTATE_MS, headless);
   }
 
-  /** A click/tap on tile `i`. Mid-turn taps are buffered; taps after the win are ignored. */
-  tap(i: number, now: number): BoardEvent[] {
+  /** A click/tap on tile `i`, turning it `dir` (1 clockwise). Mid-turn taps are buffered; taps after the win are ignored. */
+  tap(i: number, now: number, dir: Turn = 1): BoardEvent[] {
     if (this.won || !this.grid.cells[i]) return [];
     const r = this.rotating.get(i);
     if (r) {
-      if (r.queued >= MAX_QUEUE) return []; // dropped: no click or buzz for a tap that does nothing
-      r.queued++;
+      if (r.queue.length >= MAX_QUEUE) return []; // dropped: no click or buzz for a tap that does nothing
+      r.queue.push(dir);
       return [{ type: 'tapBuffered', tile: i }];
     }
     const from = this.bits[i];
-    this.rotating.set(i, { from, to: rotCW(from), t0: now, queued: 0 });
+    this.rotating.set(i, { from, to: rotBy(from, dir), t0: now, dir, queue: [] });
     this.setBits(i, 0); // original: Lb = 0 while turning, so the tile and everything downstream go dark
     return [{ type: 'rotateStarted', tile: i }, ...this.relight()];
   }
@@ -131,8 +134,9 @@ export class Board {
     let finished = false;
     for (const [i, r] of this.rotating) {
       if (now - r.t0 < this.rotateMs) continue;
-      if (r.queued > 0) {
-        this.rotating.set(i, { from: r.to, to: rotCW(r.to), t0: r.t0 + this.rotateMs, queued: r.queued - 1 });
+      if (r.queue.length > 0) {
+        const [dir, ...queue] = r.queue;
+        this.rotating.set(i, { from: r.to, to: rotBy(r.to, dir), t0: r.t0 + this.rotateMs, dir, queue });
       } else {
         this.setBits(i, r.to);
         this.rotating.delete(i);
@@ -175,7 +179,7 @@ export class Board {
       const r = this.rotating.get(i);
       if (!r) return b;
       let x = r.to;
-      for (let k = 0; k < r.queued; k++) x = rotCW(x);
+      for (const dir of r.queue) x = rotBy(x, dir);
       return x;
     });
   }

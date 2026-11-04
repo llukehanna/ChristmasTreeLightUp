@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endsPaused, GameLog, MAX_LOG_ENTRIES, MAX_LOG_MS, parseLog } from '../../../src/core/log';
+import { endsPaused, GameLog, MAX_LOG_ENTRIES, MAX_LOG_MS, parseLog, tapOf } from '../../../src/core/log';
 import { GRID } from '../../../src/core/mask';
 
 describe('parseLog', () => {
@@ -33,6 +33,45 @@ describe('parseLog', () => {
     ];
     for (const v of bad) expect(parseLog(v, GRID), JSON.stringify(v)).toBeNull();
     expect(parseLog(Array.from({ length: MAX_LOG_ENTRIES + 1 }, () => ({ t: 0, a: tile })), GRID)).toBeNull();
+  });
+});
+
+describe('counter-clockwise taps: a = ~tile', () => {
+  const tile = GRID.ids[0];
+  it('parseLog accepts ~i when cell i is a tile, and keeps it as is', () => {
+    expect(GRID.cells[tile]).toBe(true);
+    const log = [{ t: 0, a: ~tile }, { t: 5, a: tile }, { t: 9, a: ~GRID.ids[1] }];
+    expect(parseLog(log, GRID)).toEqual(log);
+    expect(parseLog([{ t: 0, a: ~5 }], GRID)).toEqual(GRID.cells[5] ? [{ t: 0, a: ~5 }] : null);
+  });
+  it('parseLog refuses ~i when cell i is not a tile or not a cell', () => {
+    const bad: unknown[] = [
+      [{ t: 0, a: ~9999 }],
+      [{ t: 0, a: ~GRID.cells.length }],
+      [{ t: 0, a: ~0 }], // -1: the top-left corner is not a tile
+      [{ t: 0, a: -1.5 }],
+      [{ t: 0, a: -Infinity }],
+      [{ t: 0, a: Number.MIN_SAFE_INTEGER }],
+      [{ t: 0, a: -(2 ** 32) + ~tile }], // ~ works on 32 bits: this one would wrap round to ~tile
+      [{ t: 0, a: 2 ** 32 + tile }],
+    ];
+    expect(~(-(2 ** 32) + ~tile)).toBe(tile);
+    expect(GRID.cells[0]).toBe(false);
+    for (const v of bad) expect(parseLog(v, GRID), JSON.stringify(v)).toBeNull();
+  });
+  it('tapOf decodes both directions', () => {
+    expect(tapOf(tile)).toEqual({ tile, dir: 1 });
+    expect(tapOf(~tile)).toEqual({ tile, dir: -1 });
+    expect(tapOf(0)).toEqual({ tile: 0, dir: 1 });
+    expect(tapOf(-1)).toEqual({ tile: 0, dir: -1 });
+  });
+  it('GameLog.tap records a counter-clockwise tap as ~tile, a clockwise one as the tile', () => {
+    const log = new GameLog();
+    log.tap(10, 5, -1);
+    log.tap(11, 5, 1);
+    log.tap(12, 5);
+    expect(log.entries).toEqual([{ t: 10, a: ~5 }, { t: 11, a: 5 }, { t: 12, a: 5 }]);
+    expect(log.entries[0].a).toBe(-6);
   });
 });
 

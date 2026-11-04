@@ -5,7 +5,7 @@ import { MAX_LOG_ENTRIES, parseLog, type LogEntry } from '../../../src/core/log'
 import { GRID } from '../../../src/core/mask';
 import { MAX_REPLAY_BFS, replay } from '../../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../../src/core/seeded';
-import { solvingTaps, withPause } from './solver';
+import { asThreeCounterClockwise, shortestTaps, solvingTaps, withPause } from './solver';
 
 const SEED = 1;
 const honest = (start = 1000, gap = 50, seed = SEED): LogEntry[] => {
@@ -34,6 +34,47 @@ const pausedTimes = (n: number): LogEntry[] => {
   for (let k = 0; k < n; k++) log = withPause(log, 5 + 3 * k, 100);
   return log;
 };
+
+/**
+ * Frozen before counter-clockwise turns existed (seed 1: the scripted solver, 50 ms apart, with a 5 s pause while tile
+ * 26 was turning; queued turns throughout), with the verdict the judge gave it then. It must never change.
+ */
+const OLD_LOG: LogEntry[] = (
+  [
+    [1000,9],[1050,9],[1100,9],[1150,23],[1200,23],[1250,23],[1300,25],[1350,25],[1400,26],[1450,26],[1451,'p'],[6451,'r'],[6501,26],[6551,27],[6601,27],[6651,42],[6701,44],[6751,44],[6801,55],[6851,56],[6901,57],[6951,57],[7001,57],[7051,59],[7101,60],[7151,61],[7201,61],[7251,61],[7301,62],[7351,62],[7401,62],[7451,63],[7501,63],[7551,63],[7601,71],[7651,71],[7701,72],[7751,73],[7801,74],[7851,75],[7901,75],[7951,75],[8001,76],[8051,77],[8101,79],[8151,79],[8201,79],[8251,80],[8301,80],[8351,81],[8401,81],[8451,89],[8501,89],[8551,90],[8601,91],[8651,91],[8701,93],[8751,94],[8801,95],[8851,96],[8901,97],[8951,97],[9001,97],[9051,98],[9101,99],[9151,99],[9201,103],[9251,105],[9301,105],[9351,105],[9401,106],[9451,107],[9501,107],[9551,108],[9601,108],[9651,108],[9701,109],[9751,109],[9801,110],[9851,110],[9901,110],[9951,112],[10001,112],[10051,113],[10101,115],[10151,117],[10201,117],[10251,120],[10301,121],[10351,121],[10401,124],[10451,124],[10501,125],[10551,125],[10601,125],[10651,126],[10701,126],[10751,128],[10801,128],[10851,128],[10901,132],[10951,132],[11001,132],[11051,134],[11101,136],[11151,138],[11201,138],[11251,138],[11301,142],[11351,143],[11401,146],[11451,146],[11501,147],[11551,147],[11601,147],[11651,148],[11701,148],[11751,148],[11801,150],[11851,150],[11901,152],[11951,152],[12001,152],
+  ] as [number, number | 'p' | 'r'][]
+).map(([t, a]) => ({ t, a }));
+
+describe('counter-clockwise turns (a = ~tile)', () => {
+  it('an old clockwise-only log still gives the identical verdict', () => {
+    expect(parseLog(OLD_LOG, GRID)).toEqual(OLD_LOG);
+    expect(solvedAt(OLD_LOG)).toBe(12261);
+    expect(judge({ seed: SEED, genVersion: GEN_VERSION, log: OLD_LOG, serverElapsedMs: 12261 + 300 })).toEqual({ ms: 6361, pausedMs: 5000, pauses: 1, reason: null });
+    expect(judge({ seed: SEED, genVersion: GEN_VERSION, log: OLD_LOG.slice(0, -1), serverElapsedMs: 12261 + 300 })).toBeNull();
+  });
+
+  it('every needed turn made as three counter-clockwise turns of the same tile ranks', () => {
+    for (const seed of [1, 2, 3]) {
+      const log = asThreeCounterClockwise(honest(1000, 50, seed));
+      expect(log.every((e) => typeof e.a === 'number' && e.a < 0)).toBe(true);
+      expect(parseLog(log, GRID)).toEqual(log);
+      expect(judged(log, 300, seed)?.reason, `seed ${seed}`).toBeNull();
+    }
+  });
+
+  it('one counter-clockwise turn in place of three clockwise ones solves with fewer taps', () => {
+    for (const seed of [1, 2, 3]) {
+      const b = seededBoard(seed, GEN_VERSION);
+      if (!b) throw new Error('no board');
+      const short = shortestTaps(b, 1000, 100);
+      const long = honest(1000, 100, seed);
+      expect(short.some((e) => typeof e.a === 'number' && e.a < 0)).toBe(true);
+      expect(short.length).toBeLessThan(long.length);
+      expect(long.length - short.length).toBe(2 * short.filter((e) => typeof e.a === 'number' && e.a < 0).length);
+      expect(judged(short, 300, seed)?.reason, `seed ${seed}`).toBeNull();
+    }
+  });
+});
 
 describe('judge', () => {
   it('ranks an honest run: ms is the span minus pauses minus the reveal', () => {

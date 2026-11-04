@@ -1,6 +1,6 @@
 import type { Board } from './board';
 import { REVEAL_MS } from './clock';
-import type { LogEntry } from './log';
+import { tapOf, type LogEntry } from './log';
 
 export interface Replay {
   /** Log time of the solve: when the turn that lit the whole tree finished. */
@@ -40,7 +40,9 @@ export function replay(board: Board, log: readonly LogEntry[]): Replay | null {
       paused = a === 'p';
       continue;
     }
-    if (paused || solvedAt !== null || t < EARLIEST_TAP_MS || board.tap(a, t).length === 0) return null;
+    if (paused || solvedAt !== null || t < EARLIEST_TAP_MS) return null;
+    const { tile, dir } = tapOf(a); // a clockwise tap is the tile itself, so old logs replay exactly as before
+    if (board.tap(tile, t, dir).length === 0) return null;
     tapTimes.push(t);
   }
   solvedAt ??= board.advanceTo(Number.MAX_SAFE_INTEGER);

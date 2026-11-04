@@ -61,7 +61,7 @@ it('rapid taps on one tile fill the queue and drop the rest, the same on both bo
     const { fast, real } = pair(seed);
     const tile = GRID.ids[seed];
     for (let k = 0; k < 8; k++) step(fast, real, 100 + k, tile); // 1 turning + 3 queued, then 4 dropped
-    expect(fast.rotating.get(tile)?.queued).toBe(3);
+    expect(fast.rotating.get(tile)?.queue).toHaveLength(3);
     for (let t = 100; t <= 100 + 5 * ROTATE_MS; t += 20) step(fast, real, t);
     expect(fast.rotating.size).toBe(0);
   }

@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Board, MAX_QUEUE, ROTATE_MS } from '../../../src/core/board';
 import { REVEAL_MS } from '../../../src/core/clock';
-import { rotCW } from '../../../src/core/dirs';
+import { rotCCW, rotCW, type Turn } from '../../../src/core/dirs';
 import { judge } from '../../../src/core/judge';
 import { GRID } from '../../../src/core/mask';
 import { replay } from '../../../src/core/replay';
@@ -79,9 +79,9 @@ class Page {
   }
 
   /** App.tapTile, between frames: whether the tap went in (and was logged). */
-  tap(i: number): boolean {
+  tap(i: number, dir: Turn = 1): boolean {
     const before = this.run.log.entries.length;
-    this.run.tap(i, this.perf, this.dateNow);
+    this.run.tap(i, this.perf, this.dateNow, dir);
     return this.run.log.entries.length > before;
   }
 
@@ -126,6 +126,16 @@ class Page {
   solveTile(i: number, gap: () => number): void {
     for (let b = this.run.board.settledBits()[i], k = 0; b !== this.run.board.solution[i] && k < 4; b = rotCW(b), k++) {
       expect(this.tap(i)).toBe(true);
+      this.wait(gap());
+    }
+  }
+
+  /** Turns tile i to its solution the short way round (one counter-clockwise turn for three clockwise), `gap()` ms apart. */
+  solveTileShortest(i: number, gap: () => number): void {
+    let k = 0;
+    for (let b = this.run.board.settledBits()[i]; b !== this.run.board.solution[i] && k < 4; b = rotCW(b)) k++;
+    for (const dir of k === 3 ? [-1 as const] : Array.from({ length: k }, () => 1 as const)) {
+      expect(this.tap(i, dir)).toBe(true);
       this.wait(gap());
     }
   }
@@ -209,6 +219,48 @@ describe('Run: the browser logs taps exactly as the server replays them', () => 
       const r = headless && replay(headless, page.run.log.entries);
       expect(r, `seed ${seed}`).not.toBeNull();
       expect(headless?.bits).toEqual(page.run.board.bits);
+    }
+  });
+
+  it('counter-clockwise taps: logged as ~tile, mixed bursts and a reload mid-spin with one queued verify and rank', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const rng = mulberry32(seed * 31);
+      const page = new Page(seed, rng);
+      page.waitInteractive();
+      for (let k = 0; k < 30; k++) {
+        const i = ids[Math.floor(rng() * ids.length)];
+        const burst = 1 + Math.floor(rng() * (MAX_QUEUE + 2));
+        for (let b = 0; b < burst; b++) {
+          page.tap(i, rng() < 0.5 ? 1 : -1);
+          page.wait(rng() < 0.5 ? ROTATE_MS - 0.6 + rng() * 1.2 : 45 + rng() * 60);
+        }
+      }
+      // A left-click spin with right-clicks buffered behind it, then a reload mid-spin (spec Review Focus 2 and 3).
+      page.wait(1000);
+      const tile = ids.find((i) => rotCW(page.run.board.bits[i]) !== rotCCW(page.run.board.bits[i])) ?? -1;
+      const b0 = page.run.board.bits[tile];
+      expect(page.tap(tile, 1)).toBe(true);
+      page.wait(45);
+      expect(page.tap(tile, -1)).toBe(true);
+      page.wait(45);
+      expect(page.tap(tile, -1)).toBe(true);
+      const entries = page.run.log.entries;
+      expect(entries.slice(-3).map((e) => e.a)).toEqual([tile, ~tile, ~tile]);
+      expect(page.run.board.rotating.get(tile)?.queue.length).toBeGreaterThan(0);
+      expect(page.run.board.settledBits()[tile]).toBe(rotCCW(b0));
+      page.reload(1500);
+      expect(page.run.board.bits[tile]).toBe(rotCCW(b0)); // the restored tree is the one the queue would have made
+      page.waitInteractive();
+      for (const i of ids) page.solveTileShortest(i, () => 45 + rng() * 80);
+      page.finish();
+      expect(page.run.log.entries.some((e) => typeof e.a === 'number' && e.a < 0)).toBe(true);
+      const headless = seededBoard(seed, GEN_VERSION, true);
+      const r = headless && replay(headless, page.run.log.entries);
+      expect(r, `seed ${seed}`).not.toBeNull();
+      expect(headless?.bits).toEqual(page.run.board.bits);
+      const v = page.verdict();
+      expect(v?.reason, `seed ${seed}`).toBeNull();
+      expect(Math.abs((v?.ms ?? 0) - page.run.elapsedMs(page.perf)), `seed ${seed}`).toBeLessThan(50);
     }
   });
 

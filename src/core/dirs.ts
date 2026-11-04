@@ -19,6 +19,16 @@ export function rotCW(b: number): number {
   return (b & U ? R : 0) | (b & R ? D : 0) | (b & D ? L : 0) | (b & L ? U : 0);
 }
 
+/** 90° counter-clockwise: U→L, L→D, D→R, R→U. The inverse of rotCW. */
+export function rotCCW(b: number): number {
+  return (b & U ? L : 0) | (b & L ? D : 0) | (b & D ? R : 0) | (b & R ? U : 0);
+}
+
+/** A quarter turn's direction: 1 is clockwise (left click), -1 counter-clockwise (right click). */
+export type Turn = 1 | -1;
+
+export const rotBy = (b: number, t: Turn): number => (t === 1 ? rotCW(b) : rotCCW(b));
+
 export function degree(b: number): number {
   return (b & U ? 1 : 0) + (b & D ? 1 : 0) + (b & L ? 1 : 0) + (b & R ? 1 : 0);
 }

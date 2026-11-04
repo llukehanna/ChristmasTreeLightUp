@@ -1,5 +1,6 @@
 import type { Board, BoardEvent } from './board';
 import { GameClock, REVEAL_MS } from './clock';
+import type { Turn } from './dirs';
 import { GameLog, type LogEntry } from './log';
 
 export interface RunStart {
@@ -72,16 +73,19 @@ export class Run {
     return this.won([...resumed, ...this.advance(now)], now);
   }
 
-  /** A tap on tile `i`: refused while paused, before the reveal ends or after the win. Logged only if the board takes it. */
-  tap(i: number, now: number, epochNow?: number): BoardEvent[] {
+  /**
+   * A tap on tile `i`, turning it `dir` (1 clockwise): refused while paused, before the reveal ends or after the win.
+   * Logged (with its direction) only if the board takes it.
+   */
+  tap(i: number, now: number, epochNow?: number, dir: Turn = 1): BoardEvent[] {
     if (this.pausedNow || now < this.interactiveAt || this.board.won) return [];
     const resumed = this.resumeIfDue(now, epochNow);
     const t = Math.max(this.logNow(now), this.lastLogT());
     const bt = t - this.logOffset;
     const events = [...resumed, ...this.advance(bt)];
     if (this.board.won) return this.won(events, now);
-    const tapped = this.board.tap(i, bt);
-    if (tapped.length) this.log.tap(t, i);
+    const tapped = this.board.tap(i, bt, dir);
+    if (tapped.length) this.log.tap(t, i, dir);
     return [...events, ...tapped];
   }
 

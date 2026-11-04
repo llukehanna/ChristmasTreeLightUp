@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Board, MAX_QUEUE, ROTATE_MS, computeLighting, type BoardEvent } from '../../../src/core/board';
-import { U, degree, rotCW } from '../../../src/core/dirs';
+import { U, degree, rotCCW, rotCW } from '../../../src/core/dirs';
 import { generateSolution } from '../../../src/core/generate';
 import { GRID, neighbor } from '../../../src/core/mask';
 import { mulberry32 } from '../../../src/core/rng';
@@ -55,7 +55,7 @@ describe('Board rotation', () => {
     b.tap(t, 0);
     for (const now of [10, 20, 30]) expect(b.tap(t, now)).toEqual([{ type: 'tapBuffered', tile: t }]);
     expect(b.tap(t, 40)).toEqual([]); // beyond the cap: dropped, so no tick or buzz
-    expect(b.rotating.get(t)?.queued).toBe(MAX_QUEUE);
+    expect(b.rotating.get(t)?.queue).toHaveLength(MAX_QUEUE);
     for (const now of [120, 240, 360]) {
       b.tick(now);
       expect(b.bits[t]).toBe(0);
@@ -71,6 +71,80 @@ describe('Board rotation', () => {
     b.tap(t, 0);
     b.tap(t, 10);
     expect(b.settledBits()[t]).toBe(rotCW(rotCW(solution[t])));
+  });
+});
+
+describe('Board counter-clockwise turns', () => {
+  it('a tap with dir -1 turns from → rotCCW(from)', () => {
+    const b = solved();
+    const t = endTile();
+    expect(b.tap(t, 0, -1)[0]).toEqual({ type: 'rotateStarted', tile: t });
+    expect(b.rotating.get(t)).toEqual({ from: solution[t], to: rotCCW(solution[t]), t0: 0, dir: -1, queue: [] });
+    b.advanceTo(ROTATE_MS);
+    expect(b.bits[t]).toBe(rotCCW(solution[t]));
+    expect(rotCCW(solution[t])).not.toBe(rotCW(solution[t])); // an end tile: the two directions differ
+  });
+  it('defaults to clockwise', () => {
+    const b = solved();
+    const t = endTile();
+    b.tap(t, 0);
+    expect(b.rotating.get(t)).toMatchObject({ to: rotCW(solution[t]), dir: 1, queue: [] });
+  });
+  it('a mixed buffer: each buffered tap keeps its own direction, applied in order', () => {
+    const b = solved();
+    const t = endTile();
+    const b0 = solution[t];
+    b.tap(t, 0, 1);
+    expect(b.tap(t, 10, -1)).toEqual([{ type: 'tapBuffered', tile: t }]);
+    expect(b.tap(t, 20, -1)).toEqual([{ type: 'tapBuffered', tile: t }]);
+    expect(b.rotating.get(t)?.queue).toEqual([-1, -1]);
+    b.advanceTo(1000);
+    expect(b.bits[t]).toBe(rotCCW(rotCCW(rotCW(b0))));
+  });
+  it('a queued turn starts with its own direction (right-click mid left-click spin)', () => {
+    const b = solved();
+    const t = endTile();
+    const b0 = solution[t];
+    b.tap(t, 0, 1);
+    b.tap(t, 10, 1);
+    b.tap(t, 20, -1);
+    b.advanceTo(ROTATE_MS);
+    expect(b.rotating.get(t)).toEqual({ from: rotCW(b0), to: rotCW(rotCW(b0)), t0: ROTATE_MS, dir: 1, queue: [-1] });
+    b.advanceTo(2 * ROTATE_MS);
+    expect(b.rotating.get(t)).toEqual({ from: rotCW(rotCW(b0)), to: rotCW(b0), t0: 2 * ROTATE_MS, dir: -1, queue: [] });
+    expect(b.bits[t]).toBe(0); // still dark between chained turns
+    b.advanceTo(3 * ROTATE_MS);
+    expect(b.rotating.size).toBe(0);
+    expect(b.bits[t]).toBe(rotCW(b0)); // two clockwise, one back: not three clockwise
+    expect(rotCW(b0)).not.toBe(rotCW(rotCW(rotCW(b0))));
+  });
+  it('drops a fourth buffered tap, whatever its direction', () => {
+    const b = solved();
+    const t = endTile();
+    b.tap(t, 0, -1);
+    for (const [now, dir] of [[10, 1], [20, -1], [30, 1]] as const) expect(b.tap(t, now, dir)).toEqual([{ type: 'tapBuffered', tile: t }]);
+    expect(b.tap(t, 40, -1)).toEqual([]);
+    expect(b.tap(t, 50, 1)).toEqual([]);
+    expect(b.rotating.get(t)?.queue).toEqual([1, -1, 1]);
+    b.advanceTo(1000);
+    expect(b.bits[t]).toBe(solution[t]); // -1 + 1 - 1 + 1: back where it began
+  });
+  it('settledBits mid-spin applies the remaining queue with its directions (a save made mid-spin)', () => {
+    const b = solved();
+    const t = endTile();
+    const b0 = solution[t];
+    b.tap(t, 0, 1);
+    b.tap(t, 10, -1);
+    b.tap(t, 20, -1);
+    b.tap(t, 30, -1);
+    expect(b.settledBits()[t]).toBe(rotCCW(rotCCW(b0)));
+    b.advanceTo(ROTATE_MS + 10); // mid second turn: turning -1, two -1 still queued
+    expect(b.rotating.get(t)).toMatchObject({ dir: -1, queue: [-1, -1] });
+    const settled = b.settledBits();
+    expect(settled[t]).toBe(rotCCW(rotCCW(b0)));
+    expect(settled[t]).not.toBe(b0); // all four as clockwise would give b0 back
+    b.advanceTo(10_000);
+    expect(b.bits).toEqual(settled); // the restored tree matches the one played out
   });
 });
 

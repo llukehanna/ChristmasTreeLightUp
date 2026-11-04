@@ -1,7 +1,14 @@
+import type { Turn } from './dirs';
 import type { Grid } from './mask';
 
-/** A tile index (an accepted tap), 'p' (pause) or 'r' (resume). */
+/**
+ * An accepted tap, 'p' (pause) or 'r' (resume). A tap on tile i is i when it turns the tile clockwise and ~i (−i − 1)
+ * when it turns it counter-clockwise, so every clockwise-only log from before counter-clockwise turns reads the same.
+ */
 export type LogAction = number | 'p' | 'r';
+
+/** The tile and direction of a tap's log action (see LogAction). */
+export const tapOf = (a: number): { tile: number; dir: Turn } => (a >= 0 ? { tile: a, dir: 1 } : { tile: ~a, dir: -1 });
 
 export interface LogEntry {
   /** Integer ms since the game's local start (Date.now() − startEpoch), continuous across reloads. */
@@ -14,7 +21,7 @@ export const MAX_LOG_MS = 86_400_000;
 
 /**
  * A log from untrusted JSON, or null: at most 5,000 entries; integer times from 0 to one day that never go backwards;
- * taps on tiles of `grid` only; pauses and resumes strictly alternating, starting with a pause.
+ * taps (either direction) on tiles of `grid` only; pauses and resumes strictly alternating, starting with a pause.
  */
 export function parseLog(value: unknown, grid: Grid): LogEntry[] | null {
   if (!Array.isArray(value) || value.length > MAX_LOG_ENTRIES) return null;
@@ -28,13 +35,18 @@ export function parseLog(value: unknown, grid: Grid): LogEntry[] | null {
     if (a === 'p' || a === 'r') {
       if ((a === 'p') === paused) return null;
       paused = a === 'p';
-    } else if (typeof a !== 'number' || !Number.isInteger(a) || a < 0 || a >= grid.cells.length || !grid.cells[a]) {
+    } else if (typeof a !== 'number' || !Number.isInteger(a) || !isTile(grid, a >= 0 ? a : -a - 1)) {
       return null;
     }
     last = t;
     out.push({ t, a });
   }
   return out;
+}
+
+/** `i` is checked exactly (not as ~a, which wraps at 32 bits), so only a canonical ~tile passes and tapOf then decodes it. */
+function isTile(grid: Grid, i: number): boolean {
+  return i >= 0 && i < grid.cells.length && grid.cells[i];
 }
 
 /** Whether a log's last pause or resume is a pause. */
@@ -70,8 +82,8 @@ export class GameLog {
     return this.dropped;
   }
 
-  tap(t: number, tile: number): void {
-    if (!this.pausedNow) this.push(t, tile);
+  tap(t: number, tile: number, dir: Turn = 1): void {
+    if (!this.pausedNow) this.push(t, dir === 1 ? tile : ~tile);
   }
 
   pause(t: number): void {
