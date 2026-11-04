@@ -47,11 +47,35 @@ const ROWS: { keys: () => string; label: string }[] = [
   { keys: () => cap('Tab', true), label: 'This card' },
 ];
 
+/** The card's two widths (px), and how far it must stand clear of the tree to be shown at all. */
+export const CARD_WIDE = 244;
+export const CARD_SLIM = 200;
+export const CARD_CLEAR = 12;
+/** Its height (px), the same at both widths: the band of the screen it covers, centred. */
+export const CARD_HEIGHT = 314;
+/** Below this window width there is no card at all. */
+export const CARD_MIN_VIEWPORT = 900;
+
+export type CardWidth = typeof CARD_WIDE | typeof CARD_SLIM | 0;
+
+/**
+ * Which card fits: the wide one if its left edge stands CARD_CLEAR px right of the tree (`treeRight`, CSS px, at the
+ * card's band), else the slim one, else none (0: no card, no hint, and Tab keeps its usual job).
+ */
+export function cardFit(viewportW: number, treeRight: number): CardWidth {
+  if (viewportW < CARD_MIN_VIEWPORT) return 0;
+  for (const w of [CARD_WIDE, CARD_SLIM] as const) if (viewportW - w - treeRight >= CARD_CLEAR) return w;
+  return 0;
+}
+
 export class KeyCard {
   private root: HTMLElement | null = null;
   private pinned = false;
+  private width: CardWidth = 0;
 
   constructor(private readonly host: HTMLElement) {
+    // Off until the app has measured the tree and said what fits.
+    document.body.classList.add('keys-off');
     // A pinned card: Escape closes it, and never reaches the pause (the capture phase runs before the game's handler).
     document.addEventListener(
       'keydown',
@@ -68,6 +92,22 @@ export class KeyCard {
   /** True while the card is showing, held or pinned. */
   get open(): boolean {
     return !!this.root?.classList.contains('show');
+  }
+
+  /** True once a width has been given: there is room for the card, and the hint and the settings row show. */
+  get fitted(): boolean {
+    return this.width !== 0;
+  }
+
+  /**
+   * What fits beside the tree now (see cardFit): sets the card's width, or with 0 takes the card away: an open one
+   * closes (pinned and keys-on cleared, so a later Escape is not swallowed) and the hint and settings row hide.
+   */
+  fit(width: CardWidth): void {
+    this.width = width;
+    document.body.classList.toggle('keys-off', width === 0);
+    if (width === 0) this.close();
+    this.root?.classList.toggle('slim', width === CARD_SLIM);
   }
 
   /** True while it is pinned open (Tab keyup then leaves it alone). */
@@ -100,9 +140,11 @@ export class KeyCard {
   }
 
   private reveal(pin: boolean): void {
+    if (!this.fitted) return;
     const r = (this.root ??= this.build());
     this.pinned = pin;
     r.classList.toggle('pinned', pin);
+    r.classList.toggle('slim', this.width === CARD_SLIM);
     r.removeAttribute('aria-hidden');
     // Starts from its tucked-away spot even on first showing, so the slide plays.
     void r.offsetWidth;

@@ -39,3 +39,20 @@ export function tileAt(L: Layout, g: Grid, px: number, py: number): number {
   const i = row * g.w + col;
   return g.cells[i] ? i : -1;
 }
+
+/** Half-width of the foliage envelope at row `v` (covers every tile of the mask), in tile sizes. */
+export const envelope = (v: number): number => Math.min(9.3, 1.3 + Math.max(0, v));
+
+/**
+ * How far the tree reaches right of the centre column at row `v`, in tile sizes: the foliage envelope, or the row's
+ * own tiles if those reach further (the mask grows one tile each side per row to 8.5 from row 7).
+ */
+export const foliageHalfWidth = (v: number): number => Math.max(envelope(v), v < 0 ? 0 : Math.min(8.5, Math.floor(v) + 1.5));
+
+/**
+ * The tree's right-hand edge in CSS px over a screen band ending at `bottom` (identity camera): the tree widens
+ * downward, so the band's bottom is where it reaches furthest.
+ */
+export function treeRightEdge(L: Layout, bottom: number): number {
+  return L.ox + foliageHalfWidth((bottom - L.oy) / L.s) * L.s;
+}

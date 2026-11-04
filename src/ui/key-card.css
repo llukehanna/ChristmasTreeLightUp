@@ -108,13 +108,12 @@ body.paused #keys-hint, body.keys-on #keys-hint, #menu:not([hidden]) ~ #keys-hin
   border: 1px solid rgba(236, 196, 116, 0.45); background: rgba(0, 0, 0, 0.25); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.3);
 }
 
-/* Narrower windows: a slimmer card. */
-@media (max-width: 1099.98px) {
-  .key-card { width: 200px; }
-  .kc-card { padding: 22px 12px 12px 26px; }
-  .kc-k { width: 76px; }
-}
-/* Below 900 px and on phones there is no card: Tab does nothing (App), and nothing here points at it. */
-@media (max-width: 899.98px) {
-  .key-card, #keys-hint, .menu .kb-row { display: none !important; }
-}
+/* Where the tree leaves less room, the card is slimmer (the app picks the width from the tree's edge: cardFit). */
+.key-card.slim { width: 200px; }
+.key-card.slim .kc-card { padding: 22px 12px 12px 26px; }
+.key-card.slim .kc-k { width: 70px; gap: 3px; }
+.key-card.slim .kc-secret { gap: 8px; }
+.key-card.slim .kc-secret .kc-cap { margin-left: 0; }
+.key-card.slim .kc-secret span { font-size: 13px; white-space: nowrap; }
+/* No room beside the tree (or under 900 px, or on a phone): no card, no hint, no settings row. The app sets keys-off. */
+body.keys-off .key-card, body.keys-off #keys-hint, body.keys-off .menu .kb-row { display: none !important; }

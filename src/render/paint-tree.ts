@@ -1,6 +1,6 @@
 import { mulberry32, type Rng } from '../core/rng';
 import { blurredLayer } from './blur';
-import { X, Y, type Layout } from './layout';
+import { envelope, X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
 
 interface NeedlePass {
@@ -17,9 +17,6 @@ const PASSES: readonly NeedlePass[] = [
   { blur: 0.5, bright: 0.9, frac: 0.9, alpha: 0.95, len: 0.97 },
   { blur: 0, bright: 1.15, frac: 0.55, alpha: 0.85, len: 0.9 },
 ];
-
-/** Half-width of the foliage envelope at row `v` (covers every tile of the mask). */
-const envelope = (v: number): number => Math.min(9.3, 1.3 + Math.max(0, v));
 
 /** Procedural fir, painted once per resize/scene change. */
 export function paintTree(c: CanvasRenderingContext2D, L: Layout, sc: Scene): void {

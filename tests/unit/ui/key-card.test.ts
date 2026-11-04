@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest';
-import { KeyCard } from '../../../src/ui/key-card';
+import { cardFit, KeyCard } from '../../../src/ui/key-card';
 
 let host: HTMLElement;
 beforeEach(() => {
@@ -9,12 +9,18 @@ beforeEach(() => {
   host = document.getElementById('host')!;
 });
 
+/** A card with room for the wide width, as on a roomy window. */
+function make(): KeyCard {
+  const k = new KeyCard(host);
+  k.fit(244);
+  return k;
+}
 const card = () => host.querySelector<HTMLElement>('.key-card')!;
 const rows = () => [...host.querySelectorAll('li')].map((li) => li.querySelector('.kc-label')!.textContent);
 const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 
 it('renders the title and the five rows in order, with the secret in the footer', () => {
-  const k = new KeyCard(host);
+  const k = make();
   k.show();
   expect(card().querySelector('.kc-kicker')!.textContent).toBe('From the workshop');
   expect(card().querySelector('h2')!.textContent).toBe('Little helpers');
@@ -26,7 +32,7 @@ it('renders the title and the five rows in order, with the secret in the footer'
 });
 
 it('show() opens it and hide() closes it', () => {
-  const k = new KeyCard(host);
+  const k = make();
   expect(k.open).toBe(false);
   k.show();
   expect(k.open).toBe(true);
@@ -37,7 +43,7 @@ it('show() opens it and hide() closes it', () => {
 });
 
 it('a pinned card survives hide() from a Tab keyup, and Escape closes it', () => {
-  const k = new KeyCard(host);
+  const k = make();
   k.pin();
   expect(k.open).toBe(true);
   k.hide();
@@ -48,7 +54,7 @@ it('a pinned card survives hide() from a Tab keyup, and Escape closes it', () =>
 });
 
 it('Escape on a pinned card is swallowed so the pause never sees it; unpinned, it passes through', () => {
-  const k = new KeyCard(host);
+  const k = make();
   let seen = 0;
   document.addEventListener('keydown', () => seen++);
   k.show();
@@ -62,7 +68,7 @@ it('Escape on a pinned card is swallowed so the pause never sees it; unpinned, i
 });
 
 it('the x button and close() close a pinned card', () => {
-  const k = new KeyCard(host);
+  const k = make();
   k.pin();
   card().querySelector<HTMLButtonElement>('.kc-x')!.click();
   expect(k.open).toBe(false);
@@ -72,7 +78,7 @@ it('the x button and close() close a pinned card', () => {
 });
 
 it('marks the body while it is open (the hint steps aside) and has no "soon" anywhere', () => {
-  const k = new KeyCard(host);
+  const k = make();
   k.show();
   expect(document.body.classList.contains('keys-on')).toBe(true);
   expect(host.textContent!.toLowerCase()).not.toContain('soon');
@@ -82,9 +88,50 @@ it('marks the body while it is open (the hint steps aside) and has no "soon" any
 });
 
 it('builds once, however often it is shown', () => {
-  const k = new KeyCard(host);
+  const k = make();
   k.show();
   k.hide();
   k.show();
   expect(host.querySelectorAll('.key-card')).toHaveLength(1);
+});
+
+it('fit(0) closes an open card, clears pinned and keys-on, and a later Escape is not swallowed', () => {
+  const k = make();
+  k.pin();
+  expect(document.body.classList.contains('keys-on')).toBe(true);
+  k.fit(0);
+  expect(k.open).toBe(false);
+  expect(k.isPinned).toBe(false);
+  expect(document.body.classList.contains('keys-on')).toBe(false);
+  let seen = 0;
+  document.addEventListener('keydown', () => seen++);
+  esc();
+  expect(seen).toBe(1);
+});
+
+it('is off until it has a width, and 200 gives the slim card', () => {
+  const k = new KeyCard(host);
+  k.show();
+  expect(k.open).toBe(false);
+  expect(k.fitted).toBe(false);
+  expect(document.body.classList.contains('keys-off')).toBe(true);
+  k.fit(200);
+  expect(k.fitted).toBe(true);
+  expect(document.body.classList.contains('keys-off')).toBe(false);
+  k.show();
+  expect(card().classList.contains('slim')).toBe(true);
+  k.fit(244);
+  expect(card().classList.contains('slim')).toBe(false);
+});
+
+it('cardFit: 244 when it clears the tree by 12 px, else 200, else off; always off below 900 px', () => {
+  expect(cardFit(1440, 1180)).toBe(244); // 1196 - 1180 = 16
+  expect(cardFit(1440, 1184)).toBe(244); // exactly 12
+  expect(cardFit(1440, 1185)).toBe(200); // 244 is 11 short, 200 clears (1240)
+  expect(cardFit(1440, 1228)).toBe(200); // exactly 12 for the slim card
+  expect(cardFit(1440, 1229)).toBe(0);
+  expect(cardFit(899, 100)).toBe(0);
+  expect(cardFit(900, 100)).toBe(244);
+  expect(cardFit(1100, 880)).toBe(200); // 244 would start at 856, inside the tree; 200 starts at 900
+  expect(cardFit(1100, 900)).toBe(0);
 });

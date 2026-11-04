@@ -20,7 +20,7 @@ import { WinSound } from './radio/win-sound';
 import { HomeAloneSounds, KevinCall, hectorImageUrl, type HomeAloneClip } from './audio/home-alone-sounds';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
 import { CONFETTI_MS, starCenter } from './render/effects';
-import { tileAt, tileCenter } from './render/layout';
+import { tileAt, tileCenter, treeRightEdge } from './render/layout';
 import { fillBeatFrame } from './render/beat-frame';
 import { CALM_AFTER_MS, frameDue } from './render/quality';
 import { Renderer, type BeatFrame } from './render/renderer';
@@ -37,7 +37,7 @@ import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './
 import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
-import { KeyCard } from './ui/key-card';
+import { CARD_HEIGHT, cardFit, KeyCard } from './ui/key-card';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
@@ -180,8 +180,6 @@ export class App {
   /** The pause: the window frosts over (#pause is its host). */
   private readonly frost = new FrostPause(el('pause'));
   private readonly keyCard = new KeyCard(document.body);
-  /** Tab opens the key card from 900 px up; below that (and on phones) it keeps its usual job. */
-  private readonly keysWide = matchMedia('(min-width: 900px)');
   private glares = 0;
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
@@ -344,6 +342,7 @@ export class App {
     this.shareSeen.line = null;
     this.moved = false;
     this.camera = IDENTITY;
+    this.fitKeyCard();
     this.setPaused(false);
     this.results.hide();
     el('corner-new').hidden = true;
@@ -462,6 +461,7 @@ export class App {
     this.accounts.closeMenu();
     this.hideIntro();
     this.camera = IDENTITY;
+    this.fitKeyCard();
     el('zoom-reset').hidden = true;
     this.lastSeconds = won.seconds;
     if (sound) {
@@ -902,6 +902,7 @@ export class App {
     this.busy(performance.now());
     this.camera = clampCamera(c, this.renderer.layout.w, this.renderer.layout.h);
     el('zoom-reset').hidden = !isZoomed(this.camera) || this.winAt !== null;
+    this.fitKeyCard();
   }
 
   /* ---------- settings, scenes, lifecycle ---------- */
@@ -1040,9 +1041,21 @@ export class App {
     this.laidOut = true;
     this.fitHud();
     this.camera = IDENTITY;
+    this.fitKeyCard();
     el('zoom-reset').hidden = true;
     this.pausedDrawn = false; // resizing clears the stage
     this.refreshShare();
+  }
+
+  /**
+   * The key card takes the room right of the tree: wide if it stands clear of the tree's edge at its rows, else slim,
+   * else it (and its hint) stay away. Run on every resize and when the camera moves (a zoomed tree has no card).
+   */
+  private fitKeyCard(): void {
+    const L = this.renderer.layout;
+    const zoomed = isZoomed(this.camera);
+    const bottom = L.h / 2 + CARD_HEIGHT / 2;
+    this.keyCard.fit(zoomed ? 0 : cardFit(L.w, treeRightEdge(L, bottom)));
   }
 
   /** A run in progress in the house: the moment for "Kevin!". */
@@ -1124,8 +1137,8 @@ export class App {
       // "kevin" switches Home Alone mode (spec 2026-10-14 §1), under the same rules as "hohoho".
       if (!this.paused && this.alone.key(e, performance.now())) return;
       if (e.key === 'Tab') {
-        // Tab is the game's only where there is room for the card; elsewhere (and with Shift) it moves focus as usual.
-        if (e.shiftKey || this.paused || !this.keysWide.matches) return;
+        // Tab is the game's only where the card fits beside the tree; elsewhere (and with Shift) it moves focus as usual.
+        if (e.shiftKey || this.paused || !this.keyCard.fitted) return;
         e.preventDefault();
         // Only the first press acts: a held Tab repeats keydown, and a repeat must not reopen what it just closed.
         if (e.repeat) return;
