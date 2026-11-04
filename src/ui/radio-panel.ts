@@ -4,6 +4,7 @@ import { EMBED_PRESETS } from '../radio/embed';
 import { SECRET_ID } from '../radio/ids';
 import type { Radio, RadioView } from '../radio/radio';
 import { el } from './dom';
+import { everyWhileVisible } from './visible';
 
 /** Static markup only: every title, credit and station name is set later with textContent. */
 const ICON = {
@@ -107,7 +108,7 @@ export class RadioPanel {
   private embedSrc = '';
   private pillKey = '';
   private scrubbing = false;
-  private ticker = 0;
+  private stopTicker: (() => void) | null = null;
   /** The bottom-sheet layout (spec §5.3), where the panel is modal and keeps Tab inside it. */
   private readonly phone = window.matchMedia('(max-width: 600px)');
 
@@ -153,7 +154,7 @@ export class RadioPanel {
     this.pill.setAttribute('aria-expanded', 'true');
     this.render();
     // Position and the Music Box carol move without change events: keep the scrubber and times live while open.
-    this.ticker = window.setInterval(() => this.render(), 250);
+    this.stopTicker = everyWhileVisible(() => this.render(), 250);
     this.q('.play').focus({ preventScroll: true });
   }
 
@@ -162,7 +163,8 @@ export class RadioPanel {
     const active = document.activeElement;
     this.panel.hidden = true;
     this.pill.setAttribute('aria-expanded', 'false');
-    window.clearInterval(this.ticker);
+    this.stopTicker?.();
+    this.stopTicker = null;
     this.scrubbing = false;
     // Hand focus back to the pill unless the user has moved it somewhere else on purpose.
     if (!active || active === document.body || this.panel.contains(active)) this.pill.focus({ preventScroll: true });

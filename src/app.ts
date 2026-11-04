@@ -42,6 +42,7 @@ import { RadioPanel } from './ui/radio-panel';
 import { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
+import { everyWhileVisible } from './ui/visible';
 import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareImage } from './ui/share';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
@@ -282,7 +283,7 @@ export class App {
     void document.fonts?.ready.then(() => this.fitHud());
     this.bindControls();
     this.bindLifecycle();
-    setInterval(() => this.refreshAutoScene(), 60_000);
+    everyWhileVisible(() => this.refreshAutoScene(), 60_000);
     void this.session.load();
     void this.boot();
   }
