@@ -98,6 +98,21 @@ it('before the eggs load the egg layers are null and every frame draws without t
   expect(draw).toHaveBeenCalledTimes(1);
 });
 
+it('attaching the eggs over an ordinary scene paints nothing again (the load lands as the run starts)', () => {
+  for (const sc of Object.values(SCENES)) {
+    const r = new Renderer(document.createElement('canvas'));
+    r.setScene(sc);
+    r.resize(1280, 800, 2);
+    const repaint = vi.spyOn(r as unknown as { repaint(): void }, 'repaint');
+    const room = vi.spyOn(EGGS.homeAloneRoom, 'paintHomeAlone');
+    r.attachEggs(EGGS);
+    expect(repaint).not.toHaveBeenCalled();
+    expect(room).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => sink()) as never);
+  }
+});
+
 it('the house fades in over FADE_MS, then the sky settles; reduced motion asks for no fade', () => {
   const { r, frame } = setup(SCENES.midnight);
   r.setScene(HOME_ALONE, { now: 1000, reduced: false, kind: 'fade' });

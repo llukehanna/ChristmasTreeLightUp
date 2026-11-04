@@ -129,8 +129,9 @@ export class Renderer {
   }
 
   /**
-   * The eggs have loaded: their layers come into being (the app switches an egg on only after this). A stage already
-   * laid out is painted again, so a scene put up meanwhile gets its room and its faces.
+   * The eggs have loaded: their layers come into being (the app switches an egg on only after this). Only a stage
+   * already showing an egg's scene (the house's room, the aurora's faces) is painted again: the load usually lands as
+   * the first tree takes taps, and a repaint there would be a burst of work at the start of a run for nothing.
    */
   attachEggs(e: EggModules): void {
     if (this.eggs) return;
@@ -140,7 +141,7 @@ export class Renderer {
     this.homeAlone = new e.homeAlone.HomeAloneLayer(this.garland);
     this.faces = new e.faceSprites.FaceSprites(() => this.topper.image);
     this.topper.attachBeat(e.beatFx);
-    if (this.sized) this.repaint();
+    if (this.sized && (this.secret || this.scene.id === 'home-alone')) this.repaint();
   }
 
   /** `chromeBottom`: lowest edge of the wordmark and HUD in CSS px (the garland hangs below it). */
