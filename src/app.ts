@@ -37,6 +37,7 @@ import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './
 import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
+import { KeyCard } from './ui/key-card';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
@@ -178,6 +179,9 @@ export class App {
   private readonly glare = new HectorGlare(() => el('results'), hectorImageUrl());
   /** The pause: the window frosts over (#pause is its host). */
   private readonly frost = new FrostPause(el('pause'));
+  private readonly keyCard = new KeyCard(document.body);
+  /** Tab opens the key card from 900 px up; below that (and on phones) it keeps its usual job. */
+  private readonly keysWide = matchMedia('(min-width: 900px)');
   private glares = 0;
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
@@ -193,6 +197,7 @@ export class App {
         this.radioPanel.close();
         this.accounts.closeMenu();
       },
+      onKeys: () => this.keyCard.pin(),
     });
     this.radioPanel = new RadioPanel(
       this.radio,
@@ -1094,6 +1099,17 @@ export class App {
       this.resume();
     });
     el('pause-btn').addEventListener('click', () => this.pause(true));
+    // The hint under the HUD pills pins the card; clicking it again, or Escape or Tab, closes it.
+    el('keys-hint').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.keyCard.open) this.keyCard.close();
+      else this.keyCard.pin();
+    });
+    // Tab held shows the card, so its release hides it (a pinned card stays). Not guarded: a release is always safe.
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'Tab') this.keyCard.hide();
+    });
+    addEventListener('blur', () => this.keyCard.hide());
     document.addEventListener('keydown', (e) => {
       this.renderer.homeAlone.input();
       // The settings and radio dialogs handle their own Escape (and mark it handled). Keys never reach the game while
@@ -1107,7 +1123,15 @@ export class App {
       }
       // "kevin" switches Home Alone mode (spec 2026-10-14 §1), under the same rules as "hohoho".
       if (!this.paused && this.alone.key(e, performance.now())) return;
-      if (e.key === 'Escape') {
+      if (e.key === 'Tab') {
+        // Tab is the game's only where there is room for the card; elsewhere (and with Shift) it moves focus as usual.
+        if (e.shiftKey || this.paused || !this.keysWide.matches) return;
+        e.preventDefault();
+        // Only the first press acts: a held Tab repeats keydown, and a repeat must not reopen what it just closed.
+        if (e.repeat) return;
+        if (this.keyCard.isPinned) this.keyCard.close();
+        else this.keyCard.show();
+      } else if (e.key === 'Escape') {
         // Escape pauses and resumes, like P (pause() checks canPause: nothing to pause at the reveal or after the win).
         e.preventDefault();
         // A held key repeats keydown: only the first press toggles (as for P).
@@ -1164,6 +1188,7 @@ export class App {
       this.radioPanel.close();
       this.accounts.closeMenu();
     }
+    if (on) this.keyCard.close();
     this.paused = on;
     this.pausedDrawn = false;
     document.body.classList.toggle('paused', on);

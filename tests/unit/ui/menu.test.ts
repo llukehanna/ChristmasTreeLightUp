@@ -10,6 +10,7 @@ beforeEach(() => {
     <div id="menu" hidden>
       <div class="seg" data-setting="scene"><button data-value="auto"></button></div>
       <button id="new-tree">New tree</button>
+      <button id="keys-row">Keyboard shortcuts</button>
       <input type="range" id="effects-volume" />
       <label id="haptics-row"><input type="checkbox" id="haptics" /></label>
     </div>
@@ -53,4 +54,13 @@ it('the menu button arms and starts through the same flow', () => {
   expect(btn.textContent).toBe('Tap again to start over');
   btn.click();
   expect(onNewTree).toHaveBeenCalledTimes(1);
+});
+
+it('the Keyboard shortcuts row closes the menu, then asks for the key card', () => {
+  const onKeys = vi.fn();
+  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onNewTree: () => {}, needsConfirm: () => false, onKeys });
+  menu.open();
+  (document.getElementById('keys-row') as HTMLButtonElement).click();
+  expect(menu.isOpen).toBe(false);
+  expect(onKeys).toHaveBeenCalledTimes(1);
 });

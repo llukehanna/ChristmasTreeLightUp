@@ -8,6 +8,8 @@ export interface MenuHandlers {
   needsConfirm(): boolean;
   /** The menu is about to open (the app closes the radio panel). */
   onOpen?(): void;
+  /** "Keyboard shortcuts" was chosen: the menu has closed, and the card should stay open. */
+  onKeys?(): void;
 }
 
 export class Menu {
@@ -40,6 +42,11 @@ export class Menu {
     this.haptics.addEventListener('change', () => this.update({ haptics: this.haptics.checked }));
     if (!('vibrate' in navigator)) el('haptics-row').hidden = true;
     this.newTree.addEventListener('click', () => this.requestNewTree());
+    // The card docks where the menu opens, so the menu closes first, then the card is pinned open.
+    document.getElementById('keys-row')?.addEventListener('click', () => {
+      this.close();
+      this.h.onKeys?.();
+    });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !this.root.hidden) {
         e.preventDefault();

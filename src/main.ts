@@ -2,6 +2,7 @@ import './styles.css';
 import './ui/radio.css';
 import './ui/account.css';
 import './ui/frost-pause.css';
+import './ui/key-card.css';
 import { App } from './app';
 import { installDebugHook } from './debug';
 

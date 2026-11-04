@@ -1,0 +1,120 @@
+/* The key card: docked to the right edge, vertically centred, never over the tree. Hold Tab to see it. */
+
+.key-card {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  z-index: 35;
+  width: 244px;
+  transform: translate(calc(100% + 24px), -50%);
+  visibility: hidden;
+  transition: transform 0.18s cubic-bezier(0.5, 0, 0.75, 0), visibility 0s 0.18s;
+  pointer-events: none;
+  filter: drop-shadow(-8px 10px 24px rgba(0, 0, 0, 0.45));
+}
+.key-card.show {
+  transform: translate(0, -50%);
+  visibility: visible;
+  transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s;
+}
+.key-card.pinned { pointer-events: auto; }
+.kc-card {
+  position: relative;
+  padding: 26px 18px 16px 30px;
+  border-radius: 14px 0 0 14px;
+  color: #3a1a0e;
+  background:
+    radial-gradient(120% 60% at 30% 0%, rgba(255, 255, 255, 0.7), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .3 0 0 0 0 .12 0 0 0 .45 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.2'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, #fbf3e3, #efdfc0);
+  box-shadow:
+    inset 0 0 0 6px #fbf3e3,
+    inset 0 0 0 7px rgba(142, 22, 34, 0.5),
+    inset 0 0 0 9px #fbf3e3,
+    inset 0 0 0 9.6px rgba(185, 134, 54, 0.55);
+}
+/* A satin ribbon down the card's outer edge, the bow tied at the top. */
+.kc-ribbon {
+  position: absolute; left: 13px; top: 0; bottom: 0; width: 7px;
+  background: linear-gradient(90deg, #8f5f22, #e2b560 35%, #f6dc98 55%, #b98636);
+  box-shadow: 1px 0 2px rgba(0, 0, 0, 0.25);
+}
+.key-card .kc-bow {
+  position: absolute; left: -7px; top: -14px; width: 54px; height: 34px;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.35));
+}
+.kc-x {
+  all: unset; position: absolute; right: 12px; top: 9px; width: 22px; height: 22px; display: none; place-items: center;
+  border-radius: 50%; cursor: pointer; font: 400 17px/1 Inter, sans-serif; color: rgba(58, 26, 14, 0.55);
+}
+.key-card.pinned .kc-x { display: grid; }
+.kc-x:hover { color: #7d1420; background: rgba(142, 22, 34, 0.08); }
+.kc-x:focus-visible { outline: 2px solid #8e1622; outline-offset: 1px; }
+.kc-kicker {
+  display: block; margin: 0 0 0 4px; font-size: 9px; font-weight: 600; letter-spacing: 0.24em; text-transform: uppercase; color: #9a6a2a;
+}
+.key-card h2 { margin: 2px 0 10px 4px; font: italic 400 25px/1 'Instrument Serif', serif; color: #7d1420; }
+.key-card ul { list-style: none; margin: 0; padding: 0; }
+.key-card li { display: flex; align-items: center; gap: 8px; height: 34px; }
+.kc-k { display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 84px; flex: none; }
+.kc-k i { font: italic 400 13px 'Instrument Serif', serif; color: rgba(58, 26, 14, 0.5); }
+.kc-label { white-space: nowrap; font: italic 400 17px 'Instrument Serif', serif; color: #3a1a0e; }
+.kc-cap {
+  display: inline-grid; place-items: center; min-width: 27px; height: 26px; padding: 0 6px 3px; border-radius: 6px; box-sizing: border-box;
+  font: 600 11px/1 Inter, sans-serif; color: #3a1a0e; letter-spacing: 0.02em;
+  background: linear-gradient(180deg, #fffdf7, #f0e4cc);
+  box-shadow: inset 0 -3px 0 #d8c6a0, inset 0 1px 0 #fff, 0 0 0 1px rgba(120, 80, 30, 0.28), 0 2px 3px rgba(60, 30, 10, 0.25);
+}
+.kc-cap.wide { min-width: 38px; }
+.kc-cap.sealed {
+  color: #f6d58e; font-family: 'Instrument Serif', serif; font-style: italic; font-size: 15px; font-weight: 400;
+  border-radius: 50%; width: 24px; min-width: 24px; height: 24px; padding: 0 0 1px;
+  background: radial-gradient(circle at 36% 30%, #e2505a, #a5121f 50%, #4a040c);
+  box-shadow: inset 0 0 0 2.5px rgba(94, 7, 18, 0.55), inset 0 1px 1px rgba(255, 160, 150, 0.5), 0 2px 3px rgba(60, 10, 10, 0.35);
+}
+.kc-mouse { width: 20px; height: 26px; filter: drop-shadow(0 2px 2px rgba(60, 30, 10, 0.25)); }
+.kc-secret { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed rgba(185, 134, 54, 0.55); }
+.kc-secret .kc-cap { margin-left: 30px; }
+.kc-secret span { font: italic 400 15px 'Instrument Serif', serif; color: rgba(58, 26, 14, 0.55); }
+
+/* The quiet hint under the HUD pills: only there while nothing else is up. */
+#keys-hint {
+  all: unset; position: fixed; z-index: 1;
+  top: calc(26px + 32px + 8px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right));
+  height: 18px; padding: 0 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font: 500 9px/1 Inter, sans-serif; letter-spacing: 0.16em; text-transform: uppercase; color: var(--pill-ink);
+  /* A miniature of the HUD pills, faded right back. */
+  background: linear-gradient(180deg, var(--cran-top), var(--cran)); border: 1px solid var(--goldline);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  opacity: 0.5; transition: opacity 0.2s;
+}
+#keys-hint:hover, #keys-hint:focus-visible { opacity: 0.85; }
+#keys-hint:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+#keys-hint kbd { font: inherit; font-weight: 600; letter-spacing: 0.08em; }
+#keys-hint span { opacity: 0.6; }
+body.paused #keys-hint, body.keys-on #keys-hint, #menu:not([hidden]) ~ #keys-hint, #results:not([hidden]) ~ #keys-hint {
+  opacity: 0; visibility: hidden; pointer-events: none;
+}
+
+/* The settings row. */
+.menu .kb-row {
+  all: unset; display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; cursor: pointer;
+  border-radius: 6px; padding: 2px 2px 2px 0;
+}
+.menu .kb-row:hover span { color: #fff3dc; }
+.menu .kb-row:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
+.menu .kb-row kbd {
+  font: 600 10px/1 Inter, sans-serif; letter-spacing: 0.06em; color: #eccb86; padding: 4px 7px 3px; border-radius: 5px;
+  border: 1px solid rgba(236, 196, 116, 0.45); background: rgba(0, 0, 0, 0.25); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Narrower windows: a slimmer card. */
+@media (max-width: 1099.98px) {
+  .key-card { width: 200px; }
+  .kc-card { padding: 22px 12px 12px 26px; }
+  .kc-k { width: 76px; }
+}
+/* Below 900 px and on phones there is no card: Tab does nothing (App), and nothing here points at it. */
+@media (max-width: 899.98px) {
+  .key-card, #keys-hint, .menu .kb-row { display: none !important; }
+}
