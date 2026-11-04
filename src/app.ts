@@ -1118,6 +1118,10 @@ export class App {
         e.preventDefault();
         if (this.paused) this.resume();
         else this.pause(true);
+      } else if ((e.key === 'n' || e.key === 'N') && !e.repeat && !this.paused && !this.starting) {
+        // N is the New tree button: mid-run the first press only asks (the menu's 3 s confirm), the second starts.
+        e.preventDefault();
+        if (this.menu.requestNewTree() === 'armed') this.toast.show('Press N again for a new tree', 3000);
       }
     });
   }

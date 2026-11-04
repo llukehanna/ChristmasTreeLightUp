@@ -39,7 +39,7 @@ export class Menu {
     this.volume.addEventListener('input', () => this.update({ effectsVolume: Number(this.volume.value) }));
     this.haptics.addEventListener('change', () => this.update({ haptics: this.haptics.checked }));
     if (!('vibrate' in navigator)) el('haptics-row').hidden = true;
-    this.newTree.addEventListener('click', () => this.onNewTree());
+    this.newTree.addEventListener('click', () => this.requestNewTree());
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !this.root.hidden) {
         e.preventDefault();
@@ -79,16 +79,21 @@ export class Menu {
     this.render();
   }
 
-  private onNewTree(): void {
+  /**
+   * A new tree, from the button or the N key. While a run is in progress the first call only arms a 3 s confirm
+   * ('armed'); a second call inside the window, or any call when nothing is at stake, starts the tree ('started').
+   */
+  requestNewTree(): 'started' | 'armed' {
     const now = performance.now();
     if (!this.h.needsConfirm() || now < this.armedUntil) {
       this.close();
       this.h.onNewTree();
-      return;
+      return 'started';
     }
     this.armedUntil = now + 3000;
     this.render();
     window.setTimeout(() => this.render(), 3050);
+    return 'armed';
   }
 
   private update(p: Partial<Settings>): void {

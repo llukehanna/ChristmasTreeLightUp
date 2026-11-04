@@ -323,3 +323,42 @@ test('right-clicking a tile turns it counter-clockwise', async ({ page }) => {
   await page.mouse.click(x, y, { button: 'right' });
   await expect.poll(async () => (await state(page)).bits[i]).toBe(rotCCW(before));
 });
+
+const solutionKey = async (page: Page) => JSON.stringify((await state(page)).solution);
+
+test('N starts a new tree before the first move', async ({ page }) => {
+  await ready(page);
+  const before = await solutionKey(page);
+  await page.keyboard.press('n');
+  await expect.poll(() => solutionKey(page)).not.toBe(before);
+  await expect(page.locator('#toast')).not.toHaveClass(/show/);
+});
+
+test('N mid-run asks once, then starts', async ({ page }) => {
+  await ready(page);
+  await expect(page.locator('#time')).not.toHaveText('0:00', { timeout: 3000 });
+  await page.waitForFunction(() => (window as unknown as W).__aglow.clock().ms > 3200);
+  await tapTile(page, await middleTile(page));
+  const before = await solutionKey(page);
+  await page.keyboard.press('n');
+  await expect(page.locator('#toast')).toHaveText('Press N again for a new tree');
+  await page.waitForTimeout(300);
+  expect(await solutionKey(page)).toBe(before); // asked, not started
+  await page.keyboard.press('N');
+  await expect.poll(() => solutionKey(page)).not.toBe(before);
+});
+
+test('N typed in an input does nothing', async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.id = 'probe-input';
+    document.body.append(input);
+    input.focus();
+  });
+  const before = await solutionKey(page);
+  await page.keyboard.press('n');
+  await page.waitForTimeout(500);
+  expect(await solutionKey(page)).toBe(before);
+  await expect(page.locator('#probe-input')).toHaveValue('n');
+});
