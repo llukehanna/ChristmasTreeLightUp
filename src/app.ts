@@ -18,9 +18,10 @@ import { Radio } from './radio/radio';
 import { WinSound } from './radio/win-sound';
 import { HomeAloneSounds, KevinCall, hectorImageUrl, type HomeAloneClip } from './audio/home-alone-sounds';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
-import { starCenter } from './render/effects';
+import { CONFETTI_MS, starCenter } from './render/effects';
 import { tileAt, tileCenter } from './render/layout';
 import { fillBeatFrame } from './render/beat-frame';
+import { CALM_AFTER_MS, frameDue } from './render/quality';
 import { Renderer, type BeatFrame } from './render/renderer';
 import type { SceneChange } from './render/aurora';
 import type { HomeAloneGate, HomeAloneLayerState, TrapKind } from './render/home-alone';
@@ -109,6 +110,8 @@ export class App {
   /** The test probe's view of the share images: how many this win, and whether the last carries Home Alone's line. */
   private readonly shareSeen = { n: 0, line: null as boolean | null };
   private lastFrame = 0;
+  /** Full frame rate until then: something the player caused is still moving. */
+  private busyUntil = 0;
   private lastTime = '';
   private lastLit = '';
   private lastCanPause = false;
@@ -334,6 +337,12 @@ export class App {
     el('zoom-reset').hidden = true;
     // The source "switches on" as the reveal finishes and the initial connected region flows out.
     this.vis.onLightingChanged(board, board.lighting.order, [], this.interactiveAt - 200, false);
+    this.busy(this.vis.lastLitAt(board));
+  }
+
+  /** Something the player caused is moving until `until`: hold the full frame rate (plus a grace period). */
+  private busy(until: number): void {
+    this.busyUntil = Math.max(this.busyUntil, until + CALM_AFTER_MS);
   }
 
   /** A new tree: from the server's seed when it answers within 1.5 s, else a local tree (unranked "offline"). */
@@ -382,6 +391,7 @@ export class App {
       switch (e.type) {
         case 'rotateStarted':
         case 'tapBuffered':
+          this.busy(now + this.board.rotateMs);
           if (e.type === 'rotateStarted') this.moved = true;
           if (this.paused) break; // a turn finishing under the pause overlay stays silent
           this.sfx.tick();
@@ -395,6 +405,7 @@ export class App {
           // Connection flashes (burst + ring): not under reduced motion, and not for filament, whose flow is the whole show.
           const flashes = !this.reduced.matches && this.renderer.style !== 'filament';
           const bulbs = this.vis.onLightingChanged(this.board, e.newlyLit, e.lost, now, flashes);
+          this.busy(Math.max(now, this.vis.lastLitAt(this.board)));
           if (e.newlyLit.length && !this.paused) this.sfx.wave(e.newlyLit.length, bulbs.map((t) => t - now));
           break;
         }
@@ -437,6 +448,7 @@ export class App {
     el('zoom-reset').hidden = true;
     this.lastSeconds = won.seconds;
     this.winAt = this.vis.lastLitAt(this.board);
+    this.busy(this.winAt + CONFETTI_MS);
     const game = this.board;
     const delay = Math.max(0, this.winAt - now);
     // A live win in Home Alone mode says one clip (spec 2026-10-14 §6, §9.4), and an unverified one brings Hector.
@@ -720,6 +732,10 @@ export class App {
 
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
+    // Ambient-only frames draw at 30 Hz. Never calm: while paused, while the post-win light show runs, or while secret
+    // mode's beat is on (they follow the music, so they keep the full rate).
+    const calm = now >= this.busyUntil && !this.paused && !this.lightShowOn && !(this.secret && this.radio.lightShowActive);
+    if (!frameDue(now - this.lastFrame, calm)) return;
     const dt = Math.min(50, now - (this.lastFrame || now));
     this.lastFrame = now;
     // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
@@ -856,6 +872,7 @@ export class App {
   }
 
   private setCamera(c: Camera): void {
+    this.busy(performance.now());
     this.camera = clampCamera(c, this.renderer.layout.w, this.renderer.layout.h);
     el('zoom-reset').hidden = !isZoomed(this.camera) || this.winAt !== null;
   }

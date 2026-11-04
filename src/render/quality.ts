@@ -38,3 +38,14 @@ export class QualityGovernor {
     return this.tier;
   }
 }
+
+/**
+ * While only ambient motion is moving (snow, twinkle, flicker), frames come at most this often: 30 Hz on a 60 or
+ * 120 Hz display. The puzzle spends most of its time here, while the player thinks.
+ */
+export const CALM_FRAME_MS = 28;
+/** Full rate holds this long after the last thing the player caused, so nothing steps down mid-settle. */
+export const CALM_AFTER_MS = 1200;
+
+/** Whether a frame is due `sinceLastMs` after the last one drawn. Busy frames are never skipped (no cap at any refresh rate). */
+export const frameDue = (sinceLastMs: number, calm: boolean): boolean => !calm || sinceLastMs >= CALM_FRAME_MS;

@@ -69,8 +69,8 @@ export interface FrameInput {
   beat?: BeatFrame;
 }
 
-function ctx2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
-  const x = c.getContext('2d');
+function ctx2d(c: HTMLCanvasElement, opts?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D {
+  const x = c.getContext('2d', opts);
   if (!x) throw new Error('Canvas 2D is unavailable');
   return x;
 }
@@ -115,7 +115,8 @@ export class Renderer {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.ctx = ctx2d(canvas);
+    // Opaque: the background covers every pixel, so the compositor needn't blend the stage with the page.
+    this.ctx = ctx2d(canvas, { alpha: false });
     this.g = ctx2d(this.glow);
   }
 

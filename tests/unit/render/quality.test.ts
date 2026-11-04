@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { QualityGovernor } from '../../../src/render/quality';
+import { QualityGovernor, frameDue } from '../../../src/render/quality';
 
 it('drops a tier after ~1s of slow frames and recovers after ~5s of fast ones', () => {
   const q = new QualityGovernor();
@@ -43,4 +43,15 @@ it('recovers at a normal 60 Hz frame rate', () => {
   expect(q.tier).toBe(1);
   for (let k = 0; k < 320; k++) q.sample(16.7);
   expect(q.tier).toBe(0);
+});
+
+it('draws every frame while busy, at any refresh rate', () => {
+  expect(frameDue(8.3, false)).toBe(true); // 120 Hz: no cap
+  expect(frameDue(16.7, false)).toBe(true);
+});
+it('calm frames come at most every 28 ms', () => {
+  expect(frameDue(16.7, true)).toBe(false);
+  expect(frameDue(27.9, true)).toBe(false);
+  expect(frameDue(28, true)).toBe(true);
+  expect(frameDue(33.3, true)).toBe(true);
 });
