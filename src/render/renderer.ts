@@ -19,7 +19,7 @@ import { Y, computeLayout, tileCenter, type Layout } from './layout';
 import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
 import { PIZZA_PX, PizzaSprite } from './pizza';
-import { drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
+import { TwinkleClock, drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
 import { Presents } from './presents';
 import { Topper } from './topper';
 import { QualityGovernor } from './quality';
@@ -96,6 +96,7 @@ export class Renderer {
   private readonly snow = new Snowfall();
   private readonly embers = new Embers();
   private readonly current = new Current();
+  private readonly twinkle = new TwinkleClock();
   private readonly confetti = new Confetti();
   /** Home Alone's confetti: Little Nero's slices (spec 2026-10-14 §6). */
   private readonly pizza = new PizzaSprite();
@@ -259,7 +260,7 @@ export class Renderer {
     const nb = sc.bulbs.length;
     this.topper.nod(beatAt, beatPower);
     const highs = f.highs ?? 0;
-    const twinkle = 1 + 1.5 * highs;
+    const twinkleT = this.twinkle.step(f.dt, highs);
     if (style === 'filament' && tier < 2) this.current.step(board, vis, now, f.dt, 1 + 2 * highs);
     else this.current.clear();
 
@@ -375,7 +376,7 @@ export class Renderer {
       g.save();
       g.translate(cx, cy);
       g.scale(k, k);
-      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkle });
+      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkleT });
       if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i, pulse) * alpha, s);
       g.restore();
       if (q >= 1 && board.lighting.lit[i] && !won) drawFrontier(g, board, L, i, now, sc, false);
@@ -435,7 +436,7 @@ export class Renderer {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(k, k);
-      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkle });
+      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkleT });
       if (degree(board.solution[i]) === 1 && q >= 1) {
         const amt = this.bulbAmount(f, i, pulse) * alpha;
         const face = i === faceTile ? this.faces.get('ornament', facePx, true) : null;

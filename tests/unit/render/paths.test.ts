@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { D, L, R, U } from '../../../src/core/dirs';
 import { bulbAngle } from '../../../src/render/bulbs';
 import { easeSnap } from '../../../src/render/effects';
-import { PATH_STYLES, neonFlicker, twinklePhase } from '../../../src/render/paths';
+import { PATH_STYLES, TwinkleClock, neonFlicker, twinklePhase } from '../../../src/render/paths';
 
 it('offers exactly the three approved light paths', () => {
   expect(PATH_STYLES).toEqual(['filament', 'fairy', 'neon']);
@@ -22,8 +22,29 @@ it('snap easing ends exactly at 1 with a slight overshoot before', () => {
   expect(easeSnap(1)).toBeCloseTo(1);
   expect(Math.max(...[0.6, 0.7, 0.8, 0.9].map(easeSnap))).toBeGreaterThan(1);
 });
-it('twinkle = 2 advances the fairy twinkle phase twice as fast as twinkle = 1', () => {
-  const at = (now: number, twinkle: number) => twinklePhase(now, 3, 5, twinkle);
-  expect(at(1000, 2) - at(0, 2)).toBeCloseTo(2 * (at(1000, 1) - at(0, 1)));
-  expect(at(1000, 1) - at(0, 1)).toBeCloseTo(1000 * 0.0035);
+it('the twinkle clock runs at real time with no highs, so the show starting changes nothing', () => {
+  const c = new TwinkleClock();
+  for (let k = 0; k < 10; k++) c.step(16, 0);
+  expect(c.t).toBeCloseTo(160);
+});
+it('at highs = 1 the twinkle phase advances 2.5 times as fast as at highs = 0', () => {
+  const slow = new TwinkleClock();
+  const fast = new TwinkleClock();
+  for (let k = 0; k < 60; k++) {
+    slow.step(16, 0);
+    fast.step(16, 1);
+  }
+  expect(twinklePhase(fast.t, 3, 5) - twinklePhase(0, 3, 5)).toBeCloseTo(2.5 * (twinklePhase(slow.t, 3, 5) - twinklePhase(0, 3, 5)));
+});
+it('a sudden highs change from 0 to 1 moves the twinkle phase continuously: no jump over a frame’s worth', () => {
+  const c = new TwinkleClock();
+  c.step(16, 0);
+  const before = twinklePhase(c.t, 3, 5);
+  const after = twinklePhase(c.step(16, 1), 3, 5);
+  expect(after - before).toBeLessThanOrEqual(16 * 2.5 * 0.0035 + 1e-9);
+  expect(after).toBeGreaterThan(before);
+  // A minute in, the phase still steps by a frame's worth, not by now * 0.0035 * dTwinkle.
+  for (let k = 0; k < 3750; k++) c.step(16, 0);
+  const b = twinklePhase(c.t, 3, 5);
+  expect(twinklePhase(c.step(16, 1), 3, 5) - b).toBeLessThanOrEqual(16 * 2.5 * 0.0035 + 1e-9);
 });
