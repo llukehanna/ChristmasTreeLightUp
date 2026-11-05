@@ -3,6 +3,7 @@ import { degree } from '../core/dirs';
 import { GRID } from '../core/mask';
 import type { EggModules } from '../eggs/load';
 import type { Aurora } from './aurora';
+import { paintBackdrop, type Backdrop } from './backdrop';
 import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
 import type { Camera } from './camera';
@@ -93,6 +94,9 @@ export class Renderer {
   private eggs: EggModules | null = null;
   /** Secret mode's curtains (spec 2026-10-08 secret mode §2). */
   private aurora: Aurora | null = null;
+  /** The scene's own room's per-frame parts (the Sash's window snow), and whose they are; null for a painted-once sky. */
+  private backdrop: Backdrop | null = null;
+  private backdropOf: Scene['id'] | null = null;
   private readonly tree = document.createElement('canvas');
   layout: Layout = computeLayout(1, 1, 1);
   scene: Scene = SCENES.fireside;
@@ -233,7 +237,10 @@ export class Renderer {
   }
 
   private repaint(): void {
-    paintBackground(ctx2d(this.sky.bg), this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
+    const bg = ctx2d(this.sky.bg);
+    this.backdrop = paintBackdrop(bg, this.layout, this.scene);
+    this.backdropOf = this.backdrop ? this.scene.id : null;
+    if (!this.backdrop) paintBackground(bg, this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
     const tree = ctx2d(this.tree);
     paintTree(tree, this.layout, this.scene);
     // The decorations go on the tree layer, which is drawn before every wire, glass and bulb: they never cover one.
@@ -364,6 +371,8 @@ export class Renderer {
     } else {
       ctx.drawImage(this.sky.bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // The Sash's snow behind its glass (ambient: it may drop to the calm rate). A sweep or fade (about a second) shows none.
+      if (!sw && this.backdrop && this.backdropOf === sc.id) this.backdrop.back(ctx, now, f.reducedMotion, tier);
       if (this.secret) aurora?.draw(ctx, L, now, tier, f.reducedMotion);
     }
     // Home Alone's window gags, behind the tree (spec 2026-10-14 §3): faded with the house, never during a sweep.
@@ -436,6 +445,12 @@ export class Renderer {
     if (!f.reducedMotion) drawFlashGlows(g, vis, L, now, sc);
     drawSourceGlow(g, L, sc);
     drawGroundPool(g, L, sc, litFrac + (f.ambient ?? 0) * 0.5);
+    if (this.backdrop) {
+      // The room's own light that blooms (the Sash's street lamp), in screen space like the room.
+      g.setTransform(dpr * GLOW_SCALE, 0, 0, dpr * GLOW_SCALE, 0, 0);
+      this.backdrop.glow(g);
+      world(g, dpr * GLOW_SCALE);
+    }
     const st = starState(now, f.winAt, litFrac, f.reducedMotion);
     st.glow *= 1 + (f.ambient ?? 0) * 0.3;
     // A tap on the star, or the topper's flip, flares the halo for a moment (not the topper's own brightness).

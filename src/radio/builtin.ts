@@ -13,4 +13,5 @@ export const SCENE_STATION: Readonly<Record<SceneId, string>> = {
   fireside: 'christmas-jazz',
   midnight: MUSIC_BOX_ID,
   frost: 'christmas-classics',
+  sash: MUSIC_BOX_ID,
 };

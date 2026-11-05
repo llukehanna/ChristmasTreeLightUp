@@ -117,6 +117,17 @@ test('solving shows the results card and sharing copies to the clipboard', async
   await expect(page.locator('#corner-new')).toBeVisible();
 });
 
+test('Sash puts the window up', async ({ page }) => {
+  await ready(page);
+  await page.click('#menu-btn');
+  await page.click('.seg[data-setting="scene"] button[data-value="sash"]');
+  await expect(page.locator('body')).toHaveAttribute('data-scene', 'sash');
+  await expect(page.locator('.seg[data-setting="scene"] button[data-value="sash"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => (window as unknown as W).__aglow.solve());
+  await expect(page.locator('#results')).toBeVisible({ timeout: 1200 });
+});
+
 test('settings persist across reloads', async ({ page }) => {
   await ready(page);
   await page.click('#menu-btn');

@@ -246,8 +246,8 @@ function stubMusicBox() {
   };
 }
 
-it('scenes suggest Jazz by the fire, Classics in the frost and Music Box at midnight', () => {
-  expect(builtin.SCENE_STATION).toEqual({ fireside: 'christmas-jazz', frost: 'christmas-classics', midnight: 'music-box' });
+it('scenes suggest Jazz by the fire, Classics in the frost and Music Box at midnight and by the window', () => {
+  expect(builtin.SCENE_STATION).toEqual({ fireside: 'christmas-jazz', frost: 'christmas-classics', midnight: 'music-box', sash: 'music-box' });
 });
 
 it('has no Piano Carols left: no ids, no bundled fetch', async () => {

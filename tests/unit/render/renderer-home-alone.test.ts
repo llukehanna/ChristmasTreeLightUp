@@ -10,7 +10,9 @@ import { PizzaSprite } from '../../../src/render/pizza';
 import { EGGS } from '../../../src/eggs/eggs';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
 import { AURORA, HOME_ALONE, SCENES, type Scene } from '../../../src/render/scenes';
+import { SWEEP_MS } from '../../../src/render/sky-sweep';
 import { VisualState } from '../../../src/render/visual-state';
+import { Snowfall as WindowSnow } from '../../../src/render/window-kit';
 
 /** Every gradient colour stop drawn, in order (the firelight's strength is in its first stop). */
 let stops: string[] = [];
@@ -44,7 +46,9 @@ function sink(): CanvasRenderingContext2D {
 beforeEach(() => {
   stops = [];
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => sink()) as never);
-  vi.stubGlobal('Path2D', class { moveTo(): void {} lineTo(): void {} });
+  // jsdom has neither: the Sash's glass is a path of panes and an arch, and its snow reuses one matrix.
+  vi.stubGlobal('Path2D', class { moveTo(): void {} lineTo(): void {} rect(): void {} ellipse(): void {} closePath(): void {} addPath(): void {} });
+  vi.stubGlobal('DOMMatrix', class { a = 1; b = 0; c = 0; d = 1; e = 0; f = 0; });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -283,4 +287,28 @@ it("the head mid-fade (hohoho): the head's sweep takes over from the sky as it s
   r.frame(frame(1700));
   expect(win).not.toHaveBeenCalled();
   expect(r.homeAlone!.state().bandits).toBe(false);
+});
+
+it('the window snow is not drawn during a fade or a sweep', () => {
+  const back = vi.spyOn(WindowSnow.prototype, 'back');
+  const { r, frame } = setup(SCENES.midnight);
+  r.frame(frame(1000));
+  expect(back).not.toHaveBeenCalled(); // Midnight has no window
+  r.setScene(SCENES.sash, { now: 2000, reduced: false, kind: 'fade' });
+  r.frame(frame(2000 + FADE_MS / 2));
+  expect(back).not.toHaveBeenCalled();
+  r.frame(frame(2000 + FADE_MS + 10));
+  expect(back).toHaveBeenCalledTimes(1);
+  expect(back.mock.calls[0].slice(1)).toEqual([2000 + FADE_MS + 10, false, r.quality.tier]);
+  // Into the aurora and back out: neither sweep draws it.
+  back.mockClear();
+  r.setScene(AURORA, { now: 4000, reduced: false });
+  r.frame(frame(4000 + SWEEP_MS / 2));
+  r.frame(frame(4000 + SWEEP_MS + 10));
+  r.setScene(SCENES.sash, { now: 7000, reduced: false });
+  r.frame(frame(7000 + SWEEP_MS / 2));
+  expect(r.sweeping).toBe(true);
+  expect(back).not.toHaveBeenCalled();
+  r.frame(frame(7000 + SWEEP_MS + 10));
+  expect(back).toHaveBeenCalledTimes(1);
 });

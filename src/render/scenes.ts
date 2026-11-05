@@ -1,7 +1,7 @@
 import type { PathStyle } from './paths';
 
 /** The menu's scenes. Secret mode's aurora (spec 2026-10-08 secret mode §2) is not one of them. */
-export type SceneId = 'midnight' | 'fireside' | 'frost';
+export type SceneId = 'midnight' | 'fireside' | 'frost' | 'sash';
 export type Rgb = readonly [number, number, number];
 
 /**
@@ -108,6 +108,24 @@ export const SCENES: Readonly<Record<SceneId, Scene>> = {
     socket: '#1b2a24', bulbs: ['#ff6b6b', '#ffcb5c', '#6fc2ff', '#7fe0a0', '#ffa6d4', '#fff3dc'],
     starOff: 'rgba(255,255,255,.35)', starEdge: 'rgba(21,38,31,.35)', hover: '255,225,170',
     snow: '150,172,188', snowAlpha: 0.7, bloom: 0.7, snowDust: true, reflect: false, embers: false,
+  },
+  /**
+   * A dark room behind the tree, a tall arched window and snow falling outside it (src/render/sash.ts paints the room;
+   * the snow is its own, so none falls in the room). The lab's town-square palette: cool, pale unlit wire that reads
+   * on the dark wall.
+   */
+  sash: {
+    id: 'sash', light: 'moon',
+    sky: ['#04050a', '#0a0c14', '#0b0d14'], ground: ['#0c0d13', '#030305'],
+    needleA: [15, 46, 40], needleB: [44, 102, 84], trunk: '#0c0d10',
+    unlit: everyStyle({
+      look: 'plain', wire: 'rgba(195,208,236,.42)', wireW: 0.06, copper: 'rgba(210,155,100,.5)', led: 'rgba(255,232,200,.36)',
+      glass: 'rgba(210,222,255,.12)', glassHi: 'rgba(255,255,255,.34)',
+    }),
+    bulbFrost: 0, core: '#fff4dc', glow: '#ffb862', copperOn: 'rgba(236,178,108,.92)', neon: '#ff9548', neonMid: '#ffc07a',
+    socket: '#6a5434', bulbs: ['#ff4f5e', '#ffc04e', '#58b0ff', '#5fdc90', '#ff96c8', '#fff0d0'],
+    starOff: 'rgba(255,236,205,.05)', starEdge: 'rgba(255,236,205,.32)', hover: '255,212,150',
+    snow: '235,240,255', snowAlpha: 0, bloom: 1, snowDust: false, reflect: true, embers: false,
   },
 };
 
