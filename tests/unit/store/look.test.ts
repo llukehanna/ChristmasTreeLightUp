@@ -1,0 +1,39 @@
+// @vitest-environment jsdom
+import { beforeEach, expect, it } from 'vitest';
+import { NO_DECOR, STARTER_LOOK, loadLook, parseLook, saveLook, worldLook, type Look } from '../../../src/store/look';
+
+beforeEach(() => localStorage.clear());
+
+it('a fresh device gets exactly the starter set', () => {
+  expect(loadLook()).toEqual(STARTER_LOOK);
+  expect(STARTER_LOOK).toMatchObject({ scene: 'fireside', path: 'filament', palette: 'scene', topper: 'snowflake', presents: 'none', decor: NO_DECOR });
+});
+it('a device with v1 settings keeps its scene, path, star and presents; Auto becomes Fireside', () => {
+  localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'auto', pathStyle: 'neon', effectsVolume: 0.5, haptics: false }));
+  expect(loadLook()).toMatchObject({ scene: 'fireside', path: 'neon', topper: 'star', presents: 'game' });
+  expect(JSON.parse(localStorage.getItem('aglow.look')!)).toMatchObject({ path: 'neon' });
+});
+it('a v1 scene other than Auto carries over', () => {
+  localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'frost', pathStyle: 'fairy', effectsVolume: 0.5, haptics: false }));
+  expect(loadLook()).toMatchObject({ scene: 'frost', path: 'fairy' });
+});
+it('a saved look wins over the settings, and round-trips', () => {
+  localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'frost', pathStyle: 'fairy', effectsVolume: 0.5, haptics: false }));
+  const mine: Look = { ...STARTER_LOOK, scene: 'midnight', palette: 'ice', decor: { ...NO_DECOR, beads: true } };
+  saveLook(mine);
+  expect(loadLook()).toEqual(mine);
+});
+it('a bad field falls back alone', () => {
+  expect(parseLook({ ...STARTER_LOOK, palette: 'honey', topper: 'tree', path: 'neon', decor: undefined }))
+    .toEqual({ ...STARTER_LOOK, path: 'neon' });
+  expect(parseLook('junk')).toEqual(STARTER_LOOK);
+});
+it('a bad decor flag falls back alone', () => {
+  expect(parseLook({ ...STARTER_LOOK, decor: { tinsel: true, beads: 'yes' } }).decor).toEqual({ ...NO_DECOR, tinsel: true });
+});
+it('the egg worlds keep the scene, path and topper and drop the rest; Home Alone has the star', () => {
+  const mine: Look = { ...STARTER_LOOK, palette: 'gilded', decor: { ...NO_DECOR, skirt: true }, presents: 'luxe', path: 'neon' };
+  expect(worldLook(mine, null)).toBe(mine);
+  expect(worldLook(mine, 'secret')).toEqual({ ...mine, palette: 'scene', decor: NO_DECOR, presents: 'game' });
+  expect(worldLook(mine, 'home-alone')).toEqual({ ...mine, palette: 'scene', decor: NO_DECOR, presents: 'game', topper: 'star' });
+});

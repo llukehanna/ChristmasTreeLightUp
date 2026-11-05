@@ -19,6 +19,7 @@ import { Y, computeLayout, tileCenter, type Layout } from './layout';
 import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
 import type { PizzaSprite } from './pizza';
+import { STARTER_LOOK, type Dress } from '../store/look';
 import { TwinkleClock, drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
 import { Presents } from './presents';
 import { Topper } from './topper';
@@ -95,6 +96,8 @@ export class Renderer {
   layout: Layout = computeLayout(1, 1, 1);
   scene: Scene = SCENES.fireside;
   style: PathStyle = 'filament';
+  /** What the tree is dressed with, from the look (src/store/look.ts). */
+  private dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: STARTER_LOOK.decor, presents: STARTER_LOOK.presents };
   readonly quality = new QualityGovernor();
   private readonly snow = new Snowfall();
   private readonly embers = new Embers();
@@ -174,6 +177,15 @@ export class Renderer {
   setStyle(style: PathStyle): void {
     this.style = style;
     this.current.clear();
+  }
+
+  /** The tree's dress (palette, topper, decorations, presents). Stored for now; later tasks draw from it. */
+  setDress(d: Dress): void {
+    const same = this.dress.palette === d.palette && this.dress.topper === d.topper && this.dress.presents === d.presents &&
+      (Object.keys(d.decor) as (keyof Dress['decor'])[]).every((k) => this.dress.decor[k] === d.decor[k]);
+    if (same) return;
+    this.dress = d;
+    if (this.sized) this.repaint();
   }
 
   /** Secret mode: the aurora scene is up. */

@@ -26,11 +26,12 @@ import { CALM_AFTER_MS, frameDue, isCalm } from './render/quality';
 import { Renderer, type BeatFrame } from './render/renderer';
 import type { SceneChange } from './render/sky-sweep';
 import type { HomeAloneGate, HomeAloneLayerState, TrapKind } from './render/home-alone';
-import { sceneFor, sceneForHour, type SceneId } from './render/scenes';
+import { sceneFor, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
+import { loadLook, saveLook, worldLook, type Look } from './store/look';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
 import { loadStarHead, saveStarHead } from './store/star-head';
 import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './store/stats';
@@ -44,7 +45,6 @@ import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { renderRibbon, ribbonModel } from './ui/ribbon';
-import { everyWhileVisible } from './ui/visible';
 import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareImage } from './ui/share';
 import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
@@ -113,6 +113,8 @@ export class App {
   /** The tree in play: its board, clock and log, kept in step with the server's replay (src/core/run.ts). */
   private run!: Run;
   private vis!: VisualState;
+  /** Read first: the look migrates from a v1 settings record, which must still hold its scene and path. */
+  private look: Look = loadLook();
   private settings: Settings = loadSettings();
   private stats = loadStats();
   private camera: Camera = IDENTITY;
@@ -214,6 +216,7 @@ export class App {
     this.results = new Results({ onNew: () => this.newGame(), onShare: () => void this.share(), onKeep: () => this.keepWatching() });
     this.menu = new Menu(this.settings, {
       onChange: (s) => this.applySettings(s),
+      onLook: (patch) => this.applyLook({ ...this.look, ...patch }),
       onNewTree: () => this.newGame(),
       needsConfirm: () => this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
       onOpen: () => {
@@ -306,6 +309,7 @@ export class App {
 
   start(): void {
     this.applySettings(this.settings, false);
+    this.applyLook(this.look, false);
     this.resize();
     addEventListener('resize', () => {
       if (this.resizeQueued) return;
@@ -319,7 +323,6 @@ export class App {
     this.touchOnly.addEventListener?.('change', () => this.fitKeyCard());
     this.bindControls();
     this.bindLifecycle();
-    everyWhileVisible(() => this.refreshAutoScene(), 60_000);
     // With a saved mode the first frame and the account's answer (which can switch a mode) wait for the eggs, so they
     // land after the saved mode's start, as they did when the eggs were in the main chunk. The wait is bounded: a load
     // that stalls must not leave a blank stage. The mode's 'start' switch then stays queued, and attachEggs brings the
@@ -401,7 +404,7 @@ export class App {
     this.glare = new e.hector.HectorGlare(() => el('results'), e.homeAloneSounds.hectorImageUrl());
     const waiting = this.waiting.splice(0);
     for (const run of waiting) run();
-    // A 'start' switch leaves the scene to the first applySettings, which has been and gone: put it up now (a load,
+    // A 'start' switch leaves the scene to the first applyLook, which has been and gone: put it up now (a load,
     // so at once). A switch by hand has already brought its scene in with its sweep or fade.
     if (waiting.length) {
       this.pausedDrawn = false;
@@ -1042,14 +1045,33 @@ export class App {
     if (persist) saveSettings(s);
     this.sfx.setVolume(s.effectsVolume);
     if (this.homeAlone) this.sounds?.preload(); // the effects volume may just have come up
-    const restyle = s.pathStyle !== this.renderer.style;
-    if (restyle) this.renderer.setStyle(s.pathStyle);
-    const rescene = this.setScene(s.scene === 'auto' ? sceneForHour(new Date().getHours()) : s.scene);
+  }
+
+  /** The scene and light path, and the dress. A change of either re-renders the share image. */
+  private applyLook(l: Look, persist = true): void {
+    this.look = l;
+    this.menu.syncLook(l);
+    this.pausedDrawn = false;
+    if (persist) saveLook(l);
+    const restyle = l.path !== this.renderer.style;
+    if (restyle) this.renderer.setStyle(l.path);
+    const rescene = this.setScene(l.scene);
+    this.dress();
     if (restyle || rescene) this.refreshShare();
   }
 
+  /** The egg world the stage is in, if any (secret mode and Home Alone keep their own tree). */
+  private get world(): 'secret' | 'home-alone' | null {
+    return this.secret ? 'secret' : this.homeAlone ? 'home-alone' : null;
+  }
+
+  /** Dress the tree: the look, less what the egg world takes away. */
+  private dress(): void {
+    this.renderer.setDress(worldLook(this.look, this.world));
+  }
+
   /**
-   * Secret mode follows the head (spec 2026-10-08 secret mode §1). 'start': the first applySettings puts the scene up.
+   * Secret mode follows the head (spec 2026-10-08 secret mode §1). 'start': the first applyLook puts the scene up.
    * 'loud' (the player's toggle): the sky sweeps from the flip's midpoint and the Secret station plays. 'quiet' (a
    * sign-in, a sticker that failed): at once, and nothing starts. The egg's `flipped` re-renders the share image.
    */
@@ -1057,6 +1079,7 @@ export class App {
     if (this.waitForEggs(on, () => this.setSecret(on, how))) return;
     const changed = on !== this.secret;
     this.secret = on;
+    this.dress();
     // Never both (spec 2026-10-14 §1): the head turns Home Alone off, kept off here and on the account.
     if (on && this.homeAlone) this.alone.off();
     this.radio.setSecret(on, how === 'loud');
@@ -1074,12 +1097,13 @@ export class App {
 
   /**
    * Home Alone mode (spec 2026-10-14 §1). Never with the head: switching on turns it off (kept off), and secret mode
-   * leaves with it. The radio is never touched here. 'start': the first applySettings puts the scene up.
+   * leaves with it. The radio is never touched here. 'start': the first applyLook puts the scene up.
    */
   private setHomeAlone(on: boolean, how: 'start' | 'loud' | 'quiet'): void {
     if (this.waitForEggs(on, () => this.setHomeAlone(on, how))) return;
     const changed = on !== this.homeAlone;
     this.homeAlone = on;
+    this.dress();
     // Also while the account's head is still loading (not on yet): off() drops it and tells the account.
     if (on) this.egg.off();
     if (on) {
@@ -1116,10 +1140,6 @@ export class App {
     document.body.dataset.scene = scene.id;
     this.renderer.setScene(scene, change);
     return true;
-  }
-
-  private refreshAutoScene(): void {
-    if (this.settings.scene === 'auto' && this.setScene(sceneForHour(new Date().getHours()))) this.refreshShare();
   }
 
   /**

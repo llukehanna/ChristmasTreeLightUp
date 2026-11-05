@@ -19,10 +19,15 @@ it('round-trips valid JSON and rejects invalid or corrupt values', () => {
 
 it('falls back to default settings and persists changes', () => {
   expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
-  saveSettings({ ...DEFAULT_SETTINGS, pathStyle: 'neon', scene: 'frost' });
-  expect(loadSettings().pathStyle).toBe('neon');
-  localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'mars' }));
+  saveSettings({ ...DEFAULT_SETTINGS, effectsVolume: 0.3 });
+  expect(loadSettings().effectsVolume).toBe(0.3);
+  localStorage.setItem('aglow.settings', JSON.stringify({ v: 2, effectsVolume: 7 }));
   expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
+});
+
+it('v1 settings load as v2 with the volume and haptics kept', () => {
+  localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'auto', pathStyle: 'neon', effectsVolume: 0.5, haptics: false }));
+  expect(loadSettings()).toEqual({ v: 2, effectsVolume: 0.5, haptics: false });
 });
 
 it('handles storage errors gracefully', () => {

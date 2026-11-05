@@ -1,8 +1,11 @@
+import { STARTER_LOOK, type Look } from '../store/look';
 import type { Settings } from '../store/settings';
 import { el } from './dom';
 
 export interface MenuHandlers {
   onChange(s: Settings): void;
+  /** The scene or the light path was chosen. */
+  onLook(patch: Partial<Look>): void;
   onNewTree(): void;
   /** True while a game is in progress (New tree then needs a second tap). */
   needsConfirm(): boolean;
@@ -21,6 +24,7 @@ export class Menu {
   private readonly newTree = el('new-tree');
   private readonly volume = el<HTMLInputElement>('effects-volume');
   private readonly haptics = el<HTMLInputElement>('haptics');
+  private look: Look = STARTER_LOOK;
   private armedUntil = 0;
 
   constructor(private settings: Settings, private readonly h: MenuHandlers) {
@@ -37,8 +41,9 @@ export class Menu {
       seg.addEventListener('click', (e) => {
         const b = (e.target as HTMLElement).closest('button');
         if (!b?.dataset.value) return;
-        const key = seg.dataset.setting as 'scene' | 'pathStyle';
-        this.update({ [key]: b.dataset.value } as Partial<Settings>);
+        // The scene and the light path belong to the look; the markup keeps `pathStyle`, the look calls it `path`.
+        const key = seg.dataset.setting === 'scene' ? 'scene' : 'path';
+        this.h.onLook({ [key]: b.dataset.value } as Partial<Look>);
       }),
     );
     this.volume.addEventListener('input', () => this.update({ effectsVolume: Number(this.volume.value) }));
@@ -89,6 +94,12 @@ export class Menu {
     this.render();
   }
 
+  /** Keep the scene and path segments pressed in step with the look. */
+  syncLook(l: Look): void {
+    this.look = l;
+    this.render();
+  }
+
   /**
    * A new tree, from the button or the N key. While a run is in progress the first call only arms a 3 s confirm
    * ('armed'); a second call inside the window, or any call when nothing is at stake, starts the tree ('started').
@@ -114,8 +125,8 @@ export class Menu {
 
   private render(): void {
     this.root.querySelectorAll<HTMLElement>('.seg').forEach((seg) => {
-      const key = seg.dataset.setting as 'scene' | 'pathStyle';
-      seg.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === this.settings[key])));
+      const current = seg.dataset.setting === 'scene' ? this.look.scene : this.look.path;
+      seg.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === current)));
     });
     this.volume.value = String(this.settings.effectsVolume);
     this.haptics.checked = this.settings.haptics;

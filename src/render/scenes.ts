@@ -150,10 +150,3 @@ export const HOME_ALONE: Scene = {
 
 /** The scene on screen: the aurora while secret mode is on, the house in Home Alone mode, else the hour's or the menu's. */
 export const sceneFor = (id: SceneId, secret: boolean, homeAlone = false): Scene => (secret ? AURORA : homeAlone ? HOME_ALONE : SCENES[id]);
-
-/** Auto scene by local time: Frost 07–16, Fireside 16–20, Midnight 20–07. */
-export function sceneForHour(hour: number): SceneId {
-  if (hour >= 7 && hour < 16) return 'frost';
-  if (hour >= 16 && hour < 20) return 'fireside';
-  return 'midnight';
-}
