@@ -1,12 +1,15 @@
+import type { TopperKind } from '../store/look';
 import type * as BeatFx from './beat-fx';
 import { drawStarBody, easeOutBack, foil, ignitePop, STAR_V, type StarState } from './effects';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
+import { drawArt, drawArtGlow, prepareArt } from './topper-art';
 
 /**
- * The tree's topper: the star, or (the star-head egg, 2026-10-08) Luke's sticker of his head in a Santa hat. Five quick
- * taps on the star (or typing "hohoho") flip one for the other like a coin. The head follows the star's rules: dim
- * before the win, a little brighter as the tree lights, then it ignites with the star's halo and pop, and sways.
+ * The tree's topper: the look's (the star, a snowflake, an angel or a bow; src/render/topper-art.ts), or (the star-head
+ * egg, 2026-10-08) Luke's sticker of his head in a Santa hat. Five quick taps on the topper (or typing "hohoho") flip
+ * one for the other like a coin. The head follows the star's rules: dim before the win, a little brighter as the tree
+ * lights, then it ignites with the star's halo and pop, and sways.
  */
 
 export const HEAD_SRC = '/star-head.png';
@@ -243,6 +246,8 @@ interface Pose {
 }
 
 export class Topper {
+  /** The look's topper: the face that isn't the head. */
+  private kind: TopperKind = 'star';
   /** The face at rest (where a flip lands). */
   private head = false;
   /** The face a flip (or crossfade) started from. */
@@ -258,7 +263,7 @@ export class Topper {
   private nodFx: Pick<typeof BeatFx, 'nodPulse' | 'NOD_DIP' | 'NOD_SQUASH'> | null = null;
   /** The last frame was drawn under reduced motion (a flip then starts from the face the crossfade shows). */
   private reduced = false;
-  /** The sticker has just loaded: a paused stage needs one more frame to show it. */
+  /** The sticker has just loaded, or the topper changed: a paused stage needs one more frame to show it. */
   private dirty = false;
   private readonly motes: Mote[] = Array.from({ length: BURST_FLECKS + BURST_SPARKLES }, (_, k) => ({
     x0: 0, y0: 0, vx: 0, vy: 0, size: 0, spin: 0, tumble: 0, ph: 0, tone: 0, life: 1, sparkle: k >= BURST_FLECKS,
@@ -280,6 +285,8 @@ export class Topper {
   private readonly tapWob: Wobble = { angle: 0, scale: 1 };
   private readonly landWob: Wobble = { angle: 0, scale: 1 };
   private readonly sway: Sway = { angle: 0, bob: 0 };
+  /** The star's state with a tap's or a flip's flash in its light, for the face that isn't the head. */
+  private readonly bodyState: StarState = { glow: 0, on: 0 };
 
   /** The face at rest: true once the head is (or is landing) on top. */
   get isHead(): boolean {
@@ -328,6 +335,18 @@ export class Topper {
       img.src = HEAD_SRC;
     }
     return this.loading.then((ok) => ok && !this.broken);
+  }
+
+  /** The look's topper (the face the egg flips from). Call prepare after it, so its sprites are ready before a frame. */
+  setKind(k: TopperKind): void {
+    if (k === this.kind) return;
+    this.kind = k;
+    this.dirty = true;
+  }
+
+  /** Builds the current kind's sprites for the layout and scene (on a resize, a scene or a palette change). */
+  prepare(L: Layout, sc: Scene): void {
+    if (this.kind !== 'star') prepareArt(this.kind, L.s, L.dpr, sc);
   }
 
   /** Puts a face on top at once (the stored preference at start). */
@@ -435,16 +454,17 @@ export class Topper {
     const p = this.place(L, st, won, now, reduced);
     const flash = this.flash(now);
     const light = headLight(st, won, litFrac, flash);
+    const body = this.flashed(st, flash);
     this.dirty = false;
     c.save();
     c.translate(p.cx, p.cy);
     c.scale(p.k, p.k);
     if (p.fade >= 0) {
-      this.face(c, L, sc, st, light, flash, now, winAt, reduced, px, this.from, 1 - p.fade, 0, 1);
-      this.face(c, L, sc, st, light, flash, now, winAt, reduced, px, this.head, p.fade, 0, 1);
+      this.face(c, L, sc, body, won, litFrac, light, now, winAt, reduced, px, this.from, 1 - p.fade, 0, 1);
+      this.face(c, L, sc, body, won, litFrac, light, now, winAt, reduced, px, this.head, p.fade, 0, 1);
     } else {
       const sx = p.flip ? p.flip.scaleX : 1;
-      this.face(c, L, sc, st, light, flash, now, winAt, reduced, px, p.head, 1, p.angle, sx);
+      this.face(c, L, sc, body, won, litFrac, light, now, winAt, reduced, px, p.head, 1, p.angle, sx);
       if (p.flip && sx < RIM_FROM) this.rim(c, L.s, p.head && this.ready, sx);
     }
     c.restore();
@@ -453,10 +473,31 @@ export class Topper {
   }
 
   /**
-   * The head's aura on the glow layer (pass 1): its silhouette in the scene's glow colour, which the bloom softens into
-   * a halo hugging the sticker, as bright as the head is lit. The star needs none: its own glow is drawStarGlow's.
+   * The topper's glow on the glow layer (pass 1). The head's aura: its silhouette in the scene's glow colour, which the
+   * bloom softens into a halo hugging the sticker, as bright as the head is lit. The other kinds' own glow
+   * (drawArtGlow), turned and squeezed with the face. The star needs none: its own glow is drawStarGlow's (which the
+   * renderer draws behind every kind).
    */
   drawGlow(g: CanvasRenderingContext2D, L: Layout, sc: Scene, st: StarState, won: boolean, litFrac: number, now: number, winAt: number | null, reduced: boolean, px: number): void {
+    const kind = this.kind;
+    if (kind !== 'star') {
+      const p = this.place(L, st, won, now, reduced);
+      const alpha = p.fade >= 0
+        ? (this.standIn(this.head) ? p.fade : 0) + (this.standIn(this.from) ? 1 - p.fade : 0)
+        : this.standIn(p.head) ? 1 : 0;
+      if (alpha > 0) {
+        g.save();
+        g.translate(p.cx, p.cy);
+        g.scale(p.k, p.k);
+        if (p.fade < 0) {
+          g.rotate(p.angle);
+          g.scale(p.flip ? p.flip.scaleX : 1, 1);
+        }
+        g.globalAlpha = alpha;
+        drawArtGlow(kind, g, L.s, sc, this.flashed(st, this.flash(now)), won, litFrac, now);
+        g.restore();
+      }
+    }
     if (!this.ready || (!this.head && !this.from)) return;
     const p = this.place(L, st, won, now, reduced);
     let alpha = p.fade >= 0 ? (this.head ? p.fade : 0) + (this.from ? 1 - p.fade : 0) : p.head ? 1 : 0;
@@ -485,10 +526,25 @@ export class Topper {
     return HEAD_TOP * s + sway.bob * HEAD_H * s;
   }
 
-  /** One face at the origin (the star's centre), `sx` its width as it turns; `light` is the head's (headLight). */
+  /** The star's state with `flash` in its light (written into one object: a frame allocates nothing). */
+  private flashed(st: StarState, flash: number): StarState {
+    this.bodyState.glow = st.glow;
+    this.bodyState.on = Math.max(st.on, 0.85 * flash);
+    return this.bodyState;
+  }
+
+  /** The face `head` shows the look's topper: it isn't the head, or the sticker can't be had (not one still decoding). */
+  private standIn(head: boolean): boolean {
+    return !head || (this.img ? this.broken : !this.loading);
+  }
+
+  /**
+   * One face at the origin (the star's centre), `sx` its width as it turns. `body` is the star's state with the flash
+   * in it, for the look's topper; `light` is the head's (headLight).
+   */
   private face(
-    c: CanvasRenderingContext2D, L: Layout, sc: Scene, st: StarState, light: number, flash: number, now: number,
-    winAt: number | null, reduced: boolean, px: number, head: boolean, alpha: number, angle: number, sx: number,
+    c: CanvasRenderingContext2D, L: Layout, sc: Scene, body: StarState, won: boolean, litFrac: number, light: number,
+    now: number, winAt: number | null, reduced: boolean, px: number, head: boolean, alpha: number, angle: number, sx: number,
   ): void {
     if (alpha <= 0) return;
     const s = L.s;
@@ -498,10 +554,11 @@ export class Topper {
     c.save();
     c.globalAlpha = alpha;
     if (!sticker || !this.lit || !this.dim) {
-      // The star (or the head's stand-in when the sticker can't be had).
+      // The look's topper (or the head's stand-in when the sticker can't be had).
       c.rotate(angle);
       c.scale(sx, 1);
-      drawStarBody(c, s, sc, Math.max(st.on, 0.85 * flash));
+      if (this.kind === 'star') drawStarBody(c, s, sc, body.on);
+      else drawArt(this.kind, c, s, sc, body, won, litFrac, now);
       c.restore();
       return;
     }
@@ -518,7 +575,7 @@ export class Topper {
     c.restore();
   }
 
-  /** The edge, seen only as the face turns nearly edge-on (`sx` its width): gold for the star, the sticker's white border for the head. */
+  /** The edge, seen only as the face turns nearly edge-on (`sx` its width): gold for the look's topper, the sticker's white border for the head. */
   private rim(c: CanvasRenderingContext2D, s: number, head: boolean, sx: number): void {
     const half = head ? HEAD_H * s * 0.4 : s * 0.66;
     const mid = head ? (HEAD_TOP + HEAD_H / 2) * s : 0;

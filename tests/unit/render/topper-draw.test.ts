@@ -4,7 +4,20 @@ import { computeLayout } from '../../../src/render/layout';
 import { SCENES } from '../../../src/render/scenes';
 import * as beatFx from '../../../src/render/beat-fx';
 import { NOD_DIP, NOD_MS } from '../../../src/render/beat-fx';
-import { BURST_MS, FADE_MS, FLIP_MS, Topper } from '../../../src/render/topper';
+import { drawStarBody } from '../../../src/render/effects';
+import { drawArt } from '../../../src/render/topper-art';
+import { BURST_MS, FADE_MS, FLIP_MS, Topper, WOBBLE_MS } from '../../../src/render/topper';
+import type { TopperKind } from '../../../src/store/look';
+
+// Spies over the real painters: which face a frame drew.
+vi.mock('../../../src/render/effects', async (actual) => {
+  const real = await actual<typeof import('../../../src/render/effects')>();
+  return { ...real, drawStarBody: vi.fn(real.drawStarBody) };
+});
+vi.mock('../../../src/render/topper-art', async (actual) => {
+  const real = await actual<typeof import('../../../src/render/topper-art')>();
+  return { ...real, drawArt: vi.fn(real.drawArt) };
+});
 
 interface Call {
   name: string;
@@ -67,6 +80,8 @@ beforeEach(() => {
   FakeImage.fail = false;
   FakeImage.made = 0;
   vi.stubGlobal('Image', FakeImage);
+  vi.mocked(drawStarBody).mockClear();
+  vi.mocked(drawArt).mockClear();
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => {
     cacheContexts++;
     return canvas2d ? recorder([]) : null;
@@ -228,5 +243,71 @@ describe('the nod (secret mode)', () => {
       return calls.find((c) => c.name === 'translate')?.args[1] as number;
     };
     expect(y(5000 - 0.3 * NOD_MS)).toBeCloseTo(y(Number.NEGATIVE_INFINITY), 5);
+  });
+});
+
+describe('the other toppers', () => {
+  const KINDS: readonly TopperKind[] = ['star', 'snowflake', 'angel', 'bow'];
+
+  it('each kind draws its own art, not the star body', () => {
+    const t = new Topper();
+    t.setKind('snowflake');
+    frame(t, 1000);
+    expect(drawStarBody).not.toHaveBeenCalled();
+    expect(drawArt).toHaveBeenCalled();
+    expect(vi.mocked(drawArt).mock.calls[0][0]).toBe('snowflake');
+  });
+
+  it('a flip from the snowflake to the head shows the snowflake leaving', async () => {
+    const t = new Topper();
+    t.setKind('snowflake');
+    await t.load();
+    t.flip(true, 1000);
+    frame(t, 1000 + FLIP_MS * 0.3);
+    expect(vi.mocked(drawArt).mock.calls.map((c) => c[0])).toEqual(['snowflake']);
+    expect(drawStarBody).not.toHaveBeenCalled();
+    vi.mocked(drawArt).mockClear();
+    log = [];
+    frame(t, 1000 + FLIP_MS * 0.7);
+    expect(drawArt).not.toHaveBeenCalled();
+    expect(calls('drawImage')).toHaveLength(2); // the head's dim and lit stickers
+  });
+
+  it('the burst and the wobble run for every kind', async () => {
+    for (const kind of KINDS) {
+      const t = new Topper();
+      t.setKind(kind);
+      await t.load();
+      t.flip(true, 1000);
+      for (const at of [1000, 1000 + FLIP_MS / 2, 1000 + FLIP_MS - 1]) {
+        expect(t.busy(at), kind).toBe(true);
+        expect(t.needsFrame(at), kind).toBe(true);
+      }
+      log = [];
+      frame(t, 1000 + FLIP_MS / 2 + 200);
+      expect(calls('fillRect').length, kind).toBeGreaterThan(20);
+      t.flip(false, 5000);
+      t.tap(10_000, 3);
+      log = [];
+      frame(t, 10_000 + WOBBLE_MS * 0.2);
+      expect(calls('rotate').some((c) => Math.abs(c.args[0] as number) > 0.01), kind).toBe(true);
+    }
+  });
+
+  it('sprites are built at prepare, never during a frame', () => {
+    const L2 = computeLayout(1100, 760, 2);
+    const make = vi.spyOn(document, 'createElement');
+    const canvases = () => make.mock.calls.filter((c) => c[0] === 'canvas').length;
+    for (const kind of ['snowflake', 'angel', 'bow'] as const) {
+      const t = new Topper();
+      t.setKind(kind);
+      t.prepare(L2, SCENES.frost);
+      const built = canvases();
+      expect(built, kind).toBeGreaterThan(0);
+      t.draw(recorder(log), L2, SCENES.frost, { glow: 1, on: 1 }, true, 1, 5000, 4000, false, 2);
+      t.drawGlow(recorder(log), L2, SCENES.frost, { glow: 1, on: 1 }, true, 1, 5000, 4000, false, 1);
+      expect(canvases(), kind).toBe(built);
+      make.mockClear();
+    }
   });
 });

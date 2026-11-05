@@ -129,6 +129,7 @@ export class Renderer {
     // Opaque: the background covers every pixel, so the compositor needn't blend the stage with the page.
     this.ctx = ctx2d(canvas, { alpha: false });
     this.g = ctx2d(this.glow);
+    this.topper.setKind(this.dress.topper);
   }
 
   /**
@@ -179,12 +180,13 @@ export class Renderer {
     this.current.clear();
   }
 
-  /** The tree's dress (palette, topper, decorations, presents). Stored for now; later tasks draw from it. */
+  /** The tree's dress (palette, topper, decorations, presents). The topper is drawn from it; later tasks draw the rest. */
   setDress(d: Dress): void {
     const same = this.dress.palette === d.palette && this.dress.topper === d.topper && this.dress.presents === d.presents &&
       (Object.keys(d.decor) as (keyof Dress['decor'])[]).every((k) => this.dress.decor[k] === d.decor[k]);
     if (same) return;
     this.dress = d;
+    this.topper.setKind(d.topper);
     if (this.sized) this.repaint();
   }
 
@@ -230,6 +232,7 @@ export class Renderer {
   private repaint(): void {
     paintBackground(ctx2d(this.sky.bg), this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
     paintTree(ctx2d(this.tree), this.layout, this.scene);
+    this.topper.prepare(this.layout, this.scene);
     this.layFaces();
   }
 
