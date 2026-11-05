@@ -52,7 +52,14 @@ beforeEach(() => {
     return canvas2d ? recorder([]) : null;
   }) as unknown as HTMLCanvasElement['getContext']);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+/** jsdom has no matchMedia: a touch screen (no hover, a coarse pointer) or a desktop. */
+const touchScreen = (on: boolean) =>
+  vi.stubGlobal('matchMedia', (q: string) => ({ matches: on && q === '(hover: none) and (pointer: coarse)', media: q, addEventListener: () => undefined, removeEventListener: () => undefined }));
 
 const images = () => log.filter((c) => c.name === 'drawImage');
 
@@ -138,6 +145,28 @@ describe('the topper art', () => {
     expect(made).toBe(tried);
     expect(images()).toHaveLength(0);
     expect(log.some((c) => c.name === 'fill')).toBe(true); // the star's glass
+  });
+
+  it('on a touch screen the sprites have twice the pixels, for a pinch-zoom; still none built during a frame', () => {
+    const make = vi.spyOn(document, 'createElement');
+    const widest = (): [number, number] => {
+      const made = make.mock.results.map((r) => r.value as HTMLCanvasElement).filter((c) => c instanceof HTMLCanvasElement);
+      return [Math.max(...made.map((c) => c.width)), Math.max(...made.map((c) => c.height))];
+    };
+    touchScreen(false);
+    prepareArt('snowflake', size, 2, SCENES.midnight);
+    const [w, h] = widest();
+    expect(w).toBe(2 * size * 2); // the snowflake's box is 2 tiles wide, at dpr 2
+    make.mockClear();
+    touchScreen(true);
+    prepareArt('snowflake', size, 2, SCENES.midnight);
+    expect(widest()).toEqual([2 * w, 2 * h]);
+    make.mockClear();
+    drawArt('snowflake', recorder(log), size, SCENES.midnight, { glow: 1, on: 1 }, true, 1, 0);
+    drawArtGlow('snowflake', recorder(log), size, SCENES.midnight, { glow: 1, on: 1 }, true, 1, 0);
+    expect(make.mock.calls.filter((c) => c[0] === 'canvas')).toHaveLength(0);
+    // …drawn at the same size on the stage: drawImage scales them.
+    expect(images()[0].args.slice(3)).toEqual([2 * size, 2 * size]);
   });
 
   it('a draw before any prepare builds its sprites rather than failing', () => {

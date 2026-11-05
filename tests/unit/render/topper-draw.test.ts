@@ -294,20 +294,23 @@ describe('the other toppers', () => {
     }
   });
 
-  it('sprites are built at prepare, never during a frame', () => {
+  it('sprites are built at prepare, never during a frame, on a desktop and on a touch screen', () => {
     const L2 = computeLayout(1100, 760, 2);
     const make = vi.spyOn(document, 'createElement');
     const canvases = () => make.mock.calls.filter((c) => c[0] === 'canvas').length;
-    for (const kind of ['snowflake', 'angel', 'bow'] as const) {
-      const t = new Topper();
-      t.setKind(kind);
-      t.prepare(L2, SCENES.frost);
-      const built = canvases();
-      expect(built, kind).toBeGreaterThan(0);
-      t.draw(recorder(log), L2, SCENES.frost, { glow: 1, on: 1 }, true, 1, 5000, 4000, false, 2);
-      t.drawGlow(recorder(log), L2, SCENES.frost, { glow: 1, on: 1 }, true, 1, 5000, 4000, false, 1);
-      expect(canvases(), kind).toBe(built);
-      make.mockClear();
+    for (const touch of [false, true]) {
+      vi.stubGlobal('matchMedia', (q: string) => ({ matches: touch, media: q, addEventListener: () => undefined, removeEventListener: () => undefined }));
+      for (const kind of ['snowflake', 'angel', 'bow'] as const) {
+        const t = new Topper();
+        t.setKind(kind);
+        t.prepare(L2, SCENES.frost);
+        const built = canvases();
+        expect(built, `${kind} touch=${touch}`).toBeGreaterThan(0);
+        t.draw(recorder(log), L2, SCENES.frost, { glow: 1, on: 1 }, true, 1, 5000, 4000, false, 2);
+        t.drawGlow(recorder(log), L2, SCENES.frost, { glow: 1, on: 1 }, true, 1, 5000, 4000, false, 1);
+        expect(canvases(), `${kind} touch=${touch}`).toBe(built);
+        make.mockClear();
+      }
     }
   });
 });

@@ -1,4 +1,5 @@
 import type { TopperKind } from '../store/look';
+import { TOUCH_ONLY_QUERY } from '../ui/key-card';
 import { blurredLayer } from './blur';
 import { hexRgb } from './color';
 import { drawStarBody, type StarState } from './effects';
@@ -33,6 +34,14 @@ const AURA_BOX: Record<ArtKind, Box> = {
 };
 /** The glow sprite's resolution against the stage's: the glow layer is half-res, and the bloom softens it anyway. */
 const AURA_RES = 0.5;
+/**
+ * Sprite pixels per device pixel. A touch screen pinch-zooms up to MAX_ZOOM (3×, src/render/camera.ts) and the
+ * sprites are never rebuilt mid-pinch, so there they are built at twice the device's pixels to stay crisp; a desktop
+ * zooms by the wheel at most as far and keeps 1×. Asked at paint time (prepareArt), never per frame.
+ */
+export function zoomHeadroom(): number {
+  return typeof matchMedia === 'function' && matchMedia(TOUCH_ONLY_QUERY).matches ? 2 : 1;
+}
 /** The win's glowing silhouette: strongest for the snowflake and the angel; the bow's velvet stays deep. */
 const EMIT: Record<ArtKind, number> = { bow: 0.12, angel: 0.26, snowflake: 0.32 };
 /** The lab's sprite cache held this many before starting over. */
@@ -625,7 +634,8 @@ function derive(albedo: HTMLCanvasElement, fill: (c: Ctx, w: number, h: number) 
   return cv;
 }
 
-function build(kind: ArtKind, s: number, px: number, sc: Scene): Art {
+/** `px`: sprite pixels per CSS px for the art; `gpx`: for its aura (which needs no zoom headroom: the bloom softens it). */
+function build(kind: ArtKind, s: number, px: number, gpx: number, sc: Scene): Art {
   const box = BOX[kind];
   const [albedo, a] = canvas(box[2] * s * px, box[3] * s * px);
   a.setTransform(px, 0, 0, px, -box[0] * s * px, -box[1] * s * px);
@@ -674,7 +684,6 @@ function build(kind: ArtKind, s: number, px: number, sc: Scene): Art {
   });
   albedo.width = albedo.height = 0;
   const ab = AURA_BOX[kind];
-  const gpx = px * AURA_RES;
   const [aura, g] = canvas(ab[2] * s * gpx, ab[3] * s * gpx);
   g.setTransform(gpx, 0, 0, gpx, -ab[0] * s * gpx, -ab[1] * s * gpx);
   paintAura(kind, g, s, glow);
@@ -687,19 +696,21 @@ function build(kind: ArtKind, s: number, px: number, sc: Scene): Art {
 }
 
 /**
- * Builds (or finds in the cache) `kind`'s sprites for tiles of `s` CSS px at `dpr`, in the scene's light and glow. The
- * camera's zoom never rebuilds them: drawImage scales them. Never throws: without a 2D context the star stands in.
+ * Builds (or finds in the cache) `kind`'s sprites for tiles of `s` CSS px at `dpr` (times zoomHeadroom), in the scene's
+ * light and glow. The camera's zoom never rebuilds them: drawImage scales them. Never throws: without a 2D context the
+ * star stands in.
  */
 export function prepareArt(kind: ArtKind, s: number, dpr: number, sc: Scene): void {
   const q = Math.max(1, Math.round(dpr * 4) / 4);
+  const room = zoomHeadroom();
   lastDpr = q;
-  const key = `${kind}|${Math.round(s * 10)}|${q}|${sc.light}|${sc.glow}`;
+  const key = `${kind}|${Math.round(s * 10)}|${q}|${room}|${sc.light}|${sc.glow}`;
   let set = cache.get(key);
   if (!set) {
     if (cache.size >= CACHE_MAX) cache.clear();
     let art: Art | null = null;
     try {
-      art = build(kind, s, q, sc);
+      art = build(kind, s, q * room, q * AURA_RES, sc);
     } catch {
       // No 2D context for the cache (memory pressure, an old browser): the star, rather than trying every frame.
     }
