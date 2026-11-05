@@ -119,3 +119,28 @@ it('the share image keeps the skirt: with it on the crop reaches its lowest pain
   r.setDress({ ...dress, decor: { ...NO_DECOR, tinsel: true, beads: true, canes: true } });
   expect(bottom()).toBe(off);
 });
+
+it('with no presents the share rectangle is the tree alone', () => {
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: 'game' };
+  const r = new Renderer(document.createElement('canvas'));
+  r.setScene(SCENES.midnight);
+  r.resize(1280, 800, 2);
+  const L = computeLayout(1280, 800, 2);
+  r.setDress(dress);
+  const withGifts = r.treeRect();
+  // The game's presents flank the tree beyond its columns, so they widen the crop.
+  expect(withGifts.w).toBeGreaterThan(21 * L.s * 2);
+
+  r.setDress({ ...dress, presents: 'none' });
+  const tree = r.treeRect();
+  expect(tree.x).toBeCloseTo((L.ox - 10.5 * L.s) * 2);
+  expect(tree.w).toBeCloseTo(21 * L.s * 2);
+  expect(tree.y).toBeCloseTo(Y(L, -2.8) * 2);
+  expect(tree.y + tree.h).toBeCloseTo(Y(L, 10.8) * 2);
+
+  // …and with the skirt on, the tree and its skirt.
+  r.setDress({ ...dress, presents: 'none', decor: { ...NO_DECOR, skirt: true } });
+  const t = r.treeRect();
+  expect(t.x).toBeCloseTo(tree.x);
+  expect(t.y + t.h).toBeCloseTo(skirtBottom(L) * 2);
+});

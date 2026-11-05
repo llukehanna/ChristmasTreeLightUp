@@ -3,7 +3,9 @@ import { CANVAS_FILTER } from './blur';
 import { hexRgb } from './color';
 import type { FaceSprites } from './face-sprites';
 import { X, Y, type Layout } from './layout';
+import { paintSetGift } from './present-sets';
 import type { Scene } from './scenes';
+import type { PresentSet } from '../store/look';
 
 /**
  * Presents under the tree (spec §4.8). Visual only: they never overlap a tile's hit area.
@@ -179,8 +181,8 @@ export function placePresents(L: Layout, grid: Grid): Gift[] {
 
 /* ---------- painting ---------- */
 
-type Pass = 'base' | 'light';
-type Face = 'front' | 'top' | 'side';
+export type Pass = 'base' | 'light';
+export type Face = 'front' | 'top' | 'side';
 
 interface Lighting {
   /** Ambient light colour (0..1 per channel) per face for the base pass. */
@@ -203,7 +205,7 @@ function lighting(sc: Scene): Lighting {
 /** How much of the lit sticker the light pass prints on a gift's front (the base pass's dimmed sticker adds the rest). */
 const PRINT_LIGHT = 0.8;
 
-class Tone {
+export class Tone {
   constructor(private readonly lt: Lighting, private readonly pass: Pass) {}
 
   /** Surface colour `hex` lit on `face`, times `k` (for gradients and specular). */
@@ -512,14 +514,17 @@ export class Presents {
   /** The gift in face paper (secret mode), or -1. */
   faceIndex = -1;
 
-  /** Places and pre-renders the gifts. Call on layout or scene change. `faces`: secret mode, with the sticker loaded. */
-  layout(L: Layout, grid: Grid, sc: Scene, faces: FaceSprites | null = null): void {
+  /**
+   * Places and pre-renders the gifts. Call on layout, scene or set change. `faces`: secret mode, with the sticker loaded.
+   * `set`: 'none' lays out no gifts; Luxe and Kraft paint every box but the face paper (always the game's) in their own.
+   */
+  layout(L: Layout, grid: Grid, sc: Scene, faces: FaceSprites | null = null, set: PresentSet = 'game'): void {
     for (const sp of this.sprites) sp.base.width = sp.light.width = 0;
-    this.gifts = placePresents(L, grid);
+    this.gifts = set === 'none' ? [] : placePresents(L, grid);
     this.faceIndex = faces?.ready ? faceGiftIndex(this.gifts) : -1;
     if (this.faceIndex >= 0) this.gifts[this.faceIndex] = { ...this.gifts[this.faceIndex], paper: FACE_PAPER };
     const lt = lighting(sc);
-    this.sprites = this.gifts.map((g) => this.render(g, L, sc, lt, faces));
+    this.sprites = this.gifts.map((g, i) => this.render(g, i, set, L, sc, lt, faces));
   }
 
   /** Union of the gifts' bounds (CSS px), or null when there are none. */
@@ -546,7 +551,7 @@ export class Presents {
     }
   }
 
-  private render(g: Gift, L: Layout, sc: Scene, lt: Lighting, faces: FaceSprites | null): Sprite {
+  private render(g: Gift, index: number, set: PresentSet, L: Layout, sc: Scene, lt: Lighting, faces: FaceSprites | null): Sprite {
     const b = giftBounds(g);
     const reflect = sc.reflect;
     const pad = 4;
@@ -563,7 +568,10 @@ export class Presents {
       bc.setTransform(dpr, 0, 0, dpr, -x * dpr, -y * dpr);
       // The base pass is the dark ambient (the dimmed sticker); the light pass adds the tree's light (the lit one).
       const print = g.paper.pattern === 'face' && faces ? faces.get('paper', Math.max(8, g.w * 0.26) * 0.78 * dpr, pass === 'light') : null;
-      paintBox(bc, g, new Tone(lt, pass), pass, print);
+      const tone = new Tone(lt, pass);
+      // The face paper is always the game's box: secret mode's gift needs its faces.
+      if ((set === 'luxe' || set === 'kraft') && g.paper.pattern !== 'face') paintSetGift(bc, g, tone, pass, index, set);
+      else paintBox(bc, g, tone, pass, print);
       const [cv, c] = canvas(W, H);
       c.setTransform(dpr, 0, 0, dpr, -x * dpr, -y * dpr);
       if (pass === 'base') contactShadow(c, g, sc);

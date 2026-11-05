@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { EGGS } from '../../../src/eggs/eggs';
 import { Renderer } from '../../../src/render/renderer';
 import { AURORA, SCENES } from '../../../src/render/scenes';
+import { STARTER_LOOK, worldLook } from '../../../src/store/look';
 
 /** A 2D context that accepts everything: the renderer's layout-time painting only needs to run. */
 function sink(): CanvasRenderingContext2D {
@@ -38,6 +39,8 @@ it('the faces are laid out only in secret mode, never asked for in the other sce
   r.attachEggs(EGGS); // the eggs have loaded (src/eggs/load.ts)
   vi.spyOn(r.topper, 'image', 'get').mockReturnValue({ naturalWidth: 240, naturalHeight: 256 } as HTMLImageElement);
   const get = vi.spyOn(r.faces!, 'get');
+  // The app's dress in secret mode: the game's presents (the starter look has none), for the face paper.
+  r.setDress(worldLook(STARTER_LOOK, 'secret'));
   r.setScene(SCENES.midnight);
   r.resize(390, 844, 2);
   expect(r.faces!.ready).toBe(true);

@@ -247,7 +247,7 @@ export class Renderer {
   /** Presents and garland: in secret mode, once the sticker has loaded, with the face paper and the face bulb. */
   private layFaces(): void {
     const faces = this.readyFaces();
-    this.presents.layout(this.layout, GRID, this.scene, faces);
+    this.presents.layout(this.layout, GRID, this.scene, faces, this.dress.presents);
     this.garland.paint(this.scene, this.layout.dpr, faces && this.eggs ? this.eggs.faces.faceGarlandIndex(this.garland.geo) : -1);
     this.faced = faces !== null;
   }

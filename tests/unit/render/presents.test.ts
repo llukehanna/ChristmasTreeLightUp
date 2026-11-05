@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GRID } from '../../../src/core/mask';
+import type { FaceSprites } from '../../../src/render/face-sprites';
 import { computeLayout, tileAt, Y } from '../../../src/render/layout';
-import { giftBounds, placePresents, tileRects } from '../../../src/render/presents';
+import { paintSetGift } from '../../../src/render/present-sets';
+import { FACE_PAPER, giftBounds, placePresents, Presents, tileRects } from '../../../src/render/presents';
+import { SCENES } from '../../../src/render/scenes';
+
+// The real set painter, with its calls noted (a test may silence it to see what the game's own box draws).
+vi.mock('../../../src/render/present-sets', async (actual) => {
+  const real = await actual<typeof import('../../../src/render/present-sets')>();
+  return { ...real, paintSetGift: vi.fn(real.paintSetGift) };
+});
 
 const VIEWPORTS: [number, number][] = [
   [390, 844],
@@ -70,5 +80,116 @@ describe('placePresents', () => {
       }
     }
     expect(bad).toEqual([]);
+  });
+});
+
+/** A 2D context that accepts everything and counts each call by name. */
+function sink(counts: Map<string, number>): CanvasRenderingContext2D {
+  const state: Record<string | symbol, unknown> = { globalAlpha: 1, globalCompositeOperation: 'source-over' };
+  return new Proxy(state, {
+    get(t, k) {
+      if (k in t) return t[k];
+      return () => {
+        counts.set(String(k), (counts.get(String(k)) ?? 0) + 1);
+        if (typeof k === 'string' && k.startsWith('create')) return { addColorStop() {} };
+        return undefined;
+      };
+    },
+    set(t, k, v) {
+      t[k] = v;
+      return true;
+    },
+  }) as unknown as CanvasRenderingContext2D;
+}
+
+describe('present sets', () => {
+  const L = computeLayout(1440, 900, 2);
+  const counts = new Map<string, number>();
+  const paintSet = vi.mocked(paintSetGift);
+  const real = paintSet.getMockImplementation()!;
+  /** The game's box is the only painter of bows by bezier curve here: with the set painter silenced, a curve is its mark. */
+  const curves = (): number => counts.get('bezierCurveTo') ?? 0;
+
+  beforeEach(() => {
+    counts.clear();
+    paintSet.mockClear();
+    paintSet.mockImplementation(real);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => sink(counts)) as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('none lays out no gifts', () => {
+    const p = new Presents();
+    p.layout(L, GRID, SCENES.midnight, null, 'none');
+    expect(p.gifts).toEqual([]);
+    expect(p.bounds()).toBeNull();
+    expect(p.faceIndex).toBe(-1);
+    counts.clear();
+    p.draw(sink(counts), 1);
+    expect([...counts]).toEqual([]);
+    expect(paintSet).not.toHaveBeenCalled();
+  });
+
+  it('none leaves nothing to crash on in secret mode', () => {
+    const faces = { ready: true, get: () => null } as unknown as FaceSprites;
+    const p = new Presents();
+    p.layout(L, GRID, SCENES.midnight, faces, 'none');
+    expect(p.faceIndex).toBe(-1);
+  });
+
+  it('laying out again after none brings the gifts back', () => {
+    const p = new Presents();
+    p.layout(L, GRID, SCENES.midnight, null, 'none');
+    p.layout(L, GRID, SCENES.midnight, null, 'game');
+    expect(p.gifts.length).toBe(6);
+    expect(p.bounds()).not.toBeNull();
+  });
+
+  for (const set of ['luxe', 'kraft'] as const) {
+    it(`${set} paints each box with its own spec, in order`, () => {
+      paintSet.mockImplementation(() => {}); // silence it: any curve left is the game's box
+      const p = new Presents();
+      p.layout(L, GRID, SCENES.midnight, null, set);
+      const n = p.gifts.length;
+      expect(n).toBe(6);
+      // Two passes (base, light) per gift, gift 0..n-1 in order; the box is painted by the set alone.
+      expect(paintSet.mock.calls.map((a) => [a[4], a[3], a[5]])).toEqual(
+        Array.from({ length: n }, (_, i) => [[i, 'base', set], [i, 'light', set]]).flat(),
+      );
+      for (const a of paintSet.mock.calls) expect(a[1]).toBe(p.gifts[a[4]]);
+      expect(curves()).toBe(0);
+    });
+
+    it(`${set} paints something on every one of its six specs, in every light`, () => {
+      for (const sc of [SCENES.midnight, SCENES.fireside, SCENES.frost]) {
+        counts.clear();
+        new Presents().layout(L, GRID, sc, null, set);
+        expect(counts.get('fill') ?? 0).toBeGreaterThan(6 * 2 * 10);
+      }
+    });
+  }
+
+  it('the game set paints the game box and never the set painter', () => {
+    paintSet.mockImplementation(() => {});
+    new Presents().layout(L, GRID, SCENES.midnight, null, 'game');
+    expect(paintSet).not.toHaveBeenCalled();
+    expect(curves()).toBeGreaterThan(0);
+  });
+
+  it('the face paper keeps the game box under any set', () => {
+    const faces = { ready: true, get: () => null } as unknown as FaceSprites;
+    for (const set of ['luxe', 'kraft'] as const) {
+      counts.clear();
+      paintSet.mockClear();
+      paintSet.mockImplementation(() => {});
+      const p = new Presents();
+      p.layout(L, GRID, SCENES.midnight, faces, set);
+      expect(p.faceIndex).toBeGreaterThanOrEqual(0);
+      expect(p.gifts[p.faceIndex].paper).toBe(FACE_PAPER);
+      const painted = new Set(paintSet.mock.calls.map((a) => a[4]));
+      expect([...painted].sort()).toEqual([0, 1, 2, 3, 4, 5].filter((i) => i !== p.faceIndex));
+      // The face gift is the game's box (it draws curves: its bow), though the set painter is silent.
+      expect(curves()).toBeGreaterThan(0);
+    }
   });
 });
