@@ -3,6 +3,7 @@ import { TOUCH_ONLY_QUERY } from '../ui/key-card';
 import { blurredLayer } from './blur';
 import { hexRgb } from './color';
 import { drawStarBody, type StarState } from './effects';
+import { canvas, clamp01, css, mixRgb, TAU } from './paint-util';
 import type { Rgb, Scene } from './scenes';
 
 /**
@@ -46,21 +47,6 @@ export function zoomHeadroom(): number {
 const EMIT: Record<ArtKind, number> = { bow: 0.12, angel: 0.26, snowflake: 0.32 };
 /** The lab's sprite cache held this many before starting over. */
 const CACHE_MAX = 12;
-
-const TAU = Math.PI * 2;
-const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
-const byte = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
-const css = (c: Rgb, a = 1): string => (a >= 1 ? `rgb(${byte(c[0])},${byte(c[1])},${byte(c[2])})` : `rgba(${byte(c[0])},${byte(c[1])},${byte(c[2])},${Math.max(0, a).toFixed(3)})`);
-const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-
-function canvas(w: number, h: number): [HTMLCanvasElement, Ctx] {
-  const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.ceil(w));
-  c.height = Math.max(1, Math.ceil(h));
-  const x = c.getContext('2d');
-  if (!x) throw new Error('Canvas 2D is unavailable');
-  return [c, x];
-}
 
 function radial(c: Ctx, x: number, y: number, r: number, stops: readonly (readonly [number, string])[]): void {
   if (r <= 0) return;

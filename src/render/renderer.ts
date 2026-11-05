@@ -6,6 +6,7 @@ import type { Aurora } from './aurora';
 import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
 import type { Camera } from './camera';
+import { paintDecor } from './decor';
 import {
   Confetti, Current, Embers, SPARKS, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
   drawHover, drawSourceCore, drawSourceGlow, drawStarGlow, easeSnap, starState,
@@ -231,7 +232,12 @@ export class Renderer {
 
   private repaint(): void {
     paintBackground(ctx2d(this.sky.bg), this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
-    paintTree(ctx2d(this.tree), this.layout, this.scene);
+    const tree = ctx2d(this.tree);
+    paintTree(tree, this.layout, this.scene);
+    // The decorations go on the tree layer, which is drawn before every wire, glass and bulb: they never cover one.
+    tree.setTransform(this.layout.dpr, 0, 0, this.layout.dpr, 0, 0);
+    paintDecor(tree, this.layout, this.scene, this.dress.decor);
+    tree.setTransform(1, 0, 0, 1, 0, 0);
     this.topper.prepare(this.layout, this.scene);
     this.layFaces();
   }
