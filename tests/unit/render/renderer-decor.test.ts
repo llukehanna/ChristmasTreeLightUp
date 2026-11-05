@@ -4,6 +4,8 @@ import { Board } from '../../../src/core/board';
 import { GRID } from '../../../src/core/mask';
 import { mulberry32 } from '../../../src/core/rng';
 import { IDENTITY } from '../../../src/render/camera';
+import { skirtBottom } from '../../../src/render/decor';
+import { Y, computeLayout } from '../../../src/render/layout';
 import { drawUnlit } from '../../../src/render/paths';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
 import { SCENES } from '../../../src/render/scenes';
@@ -97,4 +99,23 @@ it('turning the decorations off repaints the tree layer without them', () => {
   r.setDress(dress);
   expect((logs.get(tree) ?? []).some((c) => c.name === 'set:globalCompositeOperation' && c.args[0] === 'destination-over')).toBe(false);
   expect((logs.get(tree) ?? []).some((c) => c.name === 'clearRect')).toBe(true);
+});
+
+it('the share image keeps the skirt: with it on the crop reaches its lowest paint, with it off it is unchanged', () => {
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents };
+  const r = new Renderer(document.createElement('canvas'));
+  r.setScene(SCENES.midnight);
+  r.resize(1280, 800, 2);
+  const L = computeLayout(1280, 800, 2);
+  const bottom = (): number => { const t = r.treeRect(); return t.y + t.h; };
+  // Off: the tree's rows and the presents, as before.
+  const off = bottom();
+  expect(off).toBeGreaterThanOrEqual(Y(L, 10.8) * 2);
+  // On: the fur, its hairs and the floor shadow are inside the crop (the presents alone stop short of them).
+  r.setDress({ ...dress, decor: { ...NO_DECOR, skirt: true } });
+  expect(off).toBeLessThan(skirtBottom(L) * 2);
+  expect(bottom()).toBeGreaterThanOrEqual(skirtBottom(L) * 2 - 1e-6);
+  // The other three hang on the tree and need no more room.
+  r.setDress({ ...dress, decor: { ...NO_DECOR, tinsel: true, beads: true, canes: true } });
+  expect(bottom()).toBe(off);
 });

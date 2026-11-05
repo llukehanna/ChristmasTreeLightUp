@@ -6,7 +6,7 @@ import type { Aurora } from './aurora';
 import { drawBlurred } from './blur';
 import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
 import type { Camera } from './camera';
-import { paintDecor } from './decor';
+import { paintDecor, skirtBottom } from './decor';
 import {
   Confetti, Current, Embers, SPARKS, Snowfall, drawFirelight, drawFlashGlows, drawFlashRings, drawFrontier, drawGroundPool,
   drawHover, drawSourceCore, drawSourceGlow, drawStarGlow, easeSnap, starState,
@@ -219,6 +219,8 @@ export class Renderer {
     let x1 = L.ox + 10.5 * L.s;
     const y0 = Y(L, -2.8);
     let y1 = Y(L, 10.8);
+    // The skirt's fur and floor shadow hang below the tree's own rows.
+    if (this.dress.decor.skirt) y1 = Math.max(y1, skirtBottom(L));
     const gifts = this.presents.bounds();
     if (gifts) {
       x0 = Math.min(x0, gifts.x0 - 0.3 * L.s);

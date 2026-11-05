@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { computeLayout } from '../../../src/render/layout';
-import { paintDecor } from '../../../src/render/decor';
+import { paintDecor, skirtBounds } from '../../../src/render/decor';
 import { SCENES } from '../../../src/render/scenes';
 import { NO_DECOR, type Decor } from '../../../src/store/look';
 
@@ -50,10 +50,14 @@ const L = computeLayout(1280, 800, 2);
 const sc = SCENES.midnight;
 let log: Call[];
 let main: CanvasRenderingContext2D;
+/** Every canvas made for a context during a paint, as sized when its context was asked for. */
+let made: { w: number; h: number }[];
 
 beforeEach(() => {
   log = [];
+  made = [];
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+    made.push({ w: this.width, h: this.height });
     return recorder(log, this);
   } as never);
   vi.stubGlobal('Path2D', FakePath);
@@ -107,5 +111,44 @@ describe('paintDecor', () => {
     expect(log.filter((c) => c.name === 'set:filter')).toEqual([]);
     // The fallback composited the blurred layers instead: a drawImage of a layer onto a context.
     expect(count('drawImage')).toBeGreaterThan(6);
+  });
+
+  describe('layers are only as big as what they hold', () => {
+    const FULL = 2560 * 1600;
+
+    it('no layer it makes is anywhere near the whole canvas', () => {
+      paintDecor(main, L, sc, { tinsel: true, beads: true, canes: true, skirt: true });
+      // Garland shadows, cane shadows, the skirt's surface and its blurs, and the fallback's downsamples: a tier of
+      // garland is the widest, about an eighth of the stage.
+      expect(made.length).toBeGreaterThan(10);
+      for (const m of made) expect(m.w * m.h).toBeLessThan(FULL * 0.25);
+    });
+
+    it('the skirt is painted on a surface the size of its bounds', () => {
+      paintDecor(main, L, sc, only('skirt'));
+      const b = skirtBounds(L);
+      const w = Math.ceil(b.x1 * L.dpr) - Math.floor(b.x0 * L.dpr);
+      const h = Math.ceil(b.y1 * L.dpr) - Math.floor(b.y0 * L.dpr);
+      expect(made[0]).toEqual({ w, h });
+      expect(w * h).toBeLessThan(FULL * 0.1);
+    });
+
+    it('each cane has its own small shadow layer', () => {
+      paintDecor(main, L, sc, only('canes'));
+      const layers = made.filter((m) => m.w * m.h > 0);
+      expect(layers.length).toBeGreaterThanOrEqual(3);
+      for (const m of layers) expect(m.w * m.h).toBeLessThan(FULL * 0.01);
+    });
+  });
+
+  it('the skirt bounds hold its lowest paint: the floor shadow and the fur\'s blurred shadow', () => {
+    const b = skirtBounds(L);
+    const cy = L.oy + 10.22 * L.s;
+    const ry = 0.58 * L.s;
+    const T = 0.15 * L.s;
+    expect(b.y1).toBeGreaterThanOrEqual(cy + ry * 1.35);
+    expect(b.y1).toBeGreaterThanOrEqual(cy + ry * 1.01 + 2.5 * T);
+    expect(b.x0).toBeLessThan(L.ox - 4.2 * L.s * 1.13);
+    expect(b.x1).toBeGreaterThan(L.ox + 4.2 * L.s * 1.13);
   });
 });

@@ -1,6 +1,6 @@
 import { mulberry32, type Rng } from '../core/rng';
 import type { Decor } from '../store/look';
-import { blurredLayer } from './blur';
+import { blurredLayer, clipBox, type Box } from './blur';
 import { hexRgb } from './color';
 import { envelope, X, Y, type Layout } from './layout';
 import { canvas, clamp01, css, mixRgb, smooth, TAU } from './paint-util';
@@ -50,6 +50,12 @@ function decorLit(sc: Scene): Lit {
 
 /** An albedo under a light. */
 const lit = (L: Lit, c: Rgb, k = 1): Rgb => [c[0] * L.amb * L.tint[0] * k, c[1] * L.amb * L.tint[1] * k, c[2] * L.amb * L.tint[2] * k];
+
+/** A blur layer's device-px box: the CSS rectangle padded by three blur radii (the blur's tails), so the layer stays small. */
+function layerBox(L: Layout, x0: number, y0: number, x1: number, y1: number, blur: number): Box {
+  const pad = 3 * blur;
+  return { x: (x0 - pad) * L.dpr, y: (y0 - pad) * L.dpr, w: (x1 - x0 + 2 * pad) * L.dpr, h: (y1 - y0 + 2 * pad) * L.dpr };
+}
 
 /* ---------- drape geometry ---------- */
 
@@ -140,12 +146,24 @@ function tier(v: number, n: number, reach: number, offset = 0): [number, number]
 
 /** Shadow of a garland on the needles: the path, thick and blurred, pushed away from the key light. */
 function garlandShadow(c: Ctx, L: Layout, pts: readonly Pt[], width: number, lt: Lit, dist: number, alpha: number): void {
+  const dx = -lt.kx * dist;
+  const dy = Math.abs(lt.ky) * dist + dist * 0.6;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p.x);
+    y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x);
+    y1 = Math.max(y1, p.y);
+  }
+  const half = width / 2;
+  const box = layerBox(L, x0 + dx - half, y0 + dy - half, x1 + dx + half, y1 + dy + half, width * 0.6);
   blurredLayer(c, L.dpr, width * 0.6, (o) => {
     o.lineCap = 'round';
     o.lineJoin = 'round';
     o.lineWidth = width;
-    const dx = -lt.kx * dist;
-    const dy = Math.abs(lt.ky) * dist + dist * 0.6;
     // Split into runs by visibility so the shadow fades with the garland.
     for (const band of [0.3, 0.65, 1]) {
       o.strokeStyle = `rgba(4,8,6,${(alpha * band).toFixed(3)})`;
@@ -159,7 +177,7 @@ function garlandShadow(c: Ctx, L: Layout, pts: readonly Pt[], width: number, lt:
       }
       o.stroke();
     }
-  });
+  }, box);
 }
 
 /* ---------- tinsel garland: fine antique-gold metallic strands ---------- */
@@ -401,18 +419,19 @@ function paintBeads(c: Ctx, L: Layout, sc: Scene): void {
 
 /* ---------- candy canes: glossy, with a true helical stripe ---------- */
 
+type Line = [number, number][];
+
+/** A cane's shaft diameter in CSS px (the crook radius is 0.095 tile, the shank 0.46). */
+const caneW = (s: number): number => 0.07 * s;
+
 /**
- * A cane hooked over a branch at (x, y), the crook curling toward the tree (`side`: the tree is to the left, -1, or
- * right, +1). Shaded per facet as a lit cylinder with a helical red stripe and a red pinstripe.
+ * The centreline of a cane hooked over a branch at (x, y), from the shank's foot up and over the crook, the crook curling
+ * toward the tree (`side`: the tree is to the left, -1, or right, +1).
  */
-function cane(c: Ctx, L: Layout, x: number, y: number, side: number, lt: Lit): void {
-  const s = L.s;
-  const W = 0.07 * s; // diameter
+function caneLine(s: number, x: number, y: number, side: number): Line {
   const Rk = 0.095 * s; // crook radius
   const len = 0.46 * s;
-  const pitch = W * 2.1;
-  // Centreline from the shank's foot up and over the crook: [x, y, arc length].
-  const line: [number, number][] = [];
+  const line: Line = [];
   for (let k = 0; k <= 40; k++) line.push([x, y + len * (1 - k / 40)]);
   const cx = x + side * Rk;
   for (let k = 1; k <= 48; k++) {
@@ -420,6 +439,44 @@ function cane(c: Ctx, L: Layout, x: number, y: number, side: number, lt: Lit): v
     const a = side > 0 ? Math.PI + (k / 48) * Math.PI * 1.12 : -(k / 48) * Math.PI * 1.12;
     line.push([cx + Math.cos(a) * Rk, y + Math.sin(a) * Rk]);
   }
+  return line;
+}
+
+/**
+ * A cane's contact shadow on the needles: the silhouette, blurred and pushed away from the light. One small layer per
+ * cane (a cane is about a tile across): a single layer for all three would span the tree.
+ */
+function caneShadow(c: Ctx, L: Layout, line: Line, lt: Lit): void {
+  const W = caneW(L.s);
+  const dx = -lt.kx * W * 0.7;
+  const dy = W * 0.75;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const [px, py] of line) {
+    x0 = Math.min(x0, px);
+    y0 = Math.min(y0, py);
+    x1 = Math.max(x1, px);
+    y1 = Math.max(y1, py);
+  }
+  const half = W * 0.55;
+  const box = layerBox(L, x0 + dx - half, y0 + dy - half, x1 + dx + half, y1 + dy + half, W * 0.55);
+  blurredLayer(c, L.dpr, W * 0.55, (o) => {
+    o.strokeStyle = 'rgba(0,6,3,.55)';
+    o.lineWidth = W * 1.05;
+    o.lineCap = 'round';
+    o.lineJoin = 'round';
+    o.beginPath();
+    line.forEach(([px, py], i) => (i ? o.lineTo(px + dx, py + dy) : o.moveTo(px + dx, py + dy)));
+    o.stroke();
+  }, box);
+}
+
+/** One cane's body: shaded per facet as a lit cylinder with a helical red stripe and a red pinstripe. */
+function caneBody(c: Ctx, s: number, line: Line, lt: Lit): void {
+  const W = caneW(s); // diameter
+  const pitch = W * 2.1;
   // Key light in 3D (screen x right, y down, z toward the viewer).
   const L3 = [lt.kx, lt.ky, 0.75];
   const ll = Math.hypot(L3[0], L3[1], L3[2]);
@@ -429,16 +486,6 @@ function cane(c: Ctx, L: Layout, x: number, y: number, side: number, lt: Lit): v
   const ivory: Rgb = [222, 212, 196];
   const red: Rgb = [150, 18, 30];
   const STRIPS = 9;
-  // Contact shadow on the needles: the silhouette, blurred and pushed away from the light.
-  blurredLayer(c, L.dpr, W * 0.55, (o) => {
-    o.strokeStyle = 'rgba(0,6,3,.55)';
-    o.lineWidth = W * 1.05;
-    o.lineCap = 'round';
-    o.lineJoin = 'round';
-    o.beginPath();
-    line.forEach(([px, py], i) => (i ? o.lineTo(px - lt.kx * W * 0.7, py + W * 0.75) : o.moveTo(px - lt.kx * W * 0.7, py + W * 0.75)));
-    o.stroke();
-  });
   c.save();
   c.lineJoin = 'round';
   c.lineWidth = 0.35;
@@ -509,23 +556,55 @@ function paintCanes(c: Ctx, L: Layout, sc: Scene): void {
   // In the outer, lower corner of a row's outermost tile (row r spans |u| ≤ r + 1.5): wires only run from a tile's
   // centre to its edge midpoints, and the bulb sits at the centre, so that corner is always clear. The shank hangs
   // into the stair step below, also clear of the next row's wires and bulbs. Under the wires in any case.
-  for (const [row, side] of [[3, -1], [5, 1], [7, -1]] as const) {
+  const lines = ([[3, -1], [5, 1], [7, -1]] as const).map(([row, side]) => {
     const u = side * (row + 1.45);
     const v = row + 0.78;
     // The crook curls back toward the tree.
-    cane(c, L, X(L, u), Y(L, v), -side, lt);
-  }
+    return caneLine(L.s, X(L, u), Y(L, v), -side);
+  });
+  for (const line of lines) caneShadow(c, L, line, lt);
+  for (const line of lines) caneBody(c, L.s, line, lt);
 }
 
 /* ---------- tree skirt: quilted velvet, faux-fur trim ---------- */
 
-function paintSkirt(c: Ctx, L: Layout, sc: Scene, r: Rng): void {
+/** The skirt's ellipse: centre row, and radii in tiles. The edge wobbles outward by at most WOB (0.014 + 0.009 + 0.004). */
+const SKIRT_V = 10.22;
+const SKIRT_RX = 4.2;
+const SKIRT_RY = 0.58;
+const WOB = 1.027;
+/** The fur tube's thickness, in tiles. */
+const FUR_T = 0.15;
+
+/**
+ * Everything the skirt paints, in CSS px, blur tails included: sideways the edge plus the tube and its hairs and
+ * the fur's shadow; up to the back edge and the tube above it; down to the lower of the velvet's floor shadow (a
+ * radial out to 1.13 radii, set down 0.22 ry) and the fur's blurred shadow (the tube's lower edge, pushed down 0.45 T,
+ * a line 1.1 T wide, and the blur's three radii of T/2). The offscreen it is painted on, and the share image, use it.
+ */
+export function skirtBounds(L: Layout): { x0: number; y0: number; x1: number; y1: number } {
+  const s = L.s;
+  const cx = X(L, 0);
+  const cy = Y(L, SKIRT_V);
+  const rx = SKIRT_RX * s;
+  const ry = SKIRT_RY * s;
+  const T = FUR_T * s;
+  const side = Math.max(rx * WOB + 0.6 * T, rx * 1.13) + 1.5 * T;
+  const down = Math.max(ry * (0.22 + 1.13), ry * WOB * 0.985 + 1.0 * T + 1.5 * T);
+  return { x0: cx - side, y0: cy - ry * WOB - 2 * T, x1: cx + side, y1: cy + down };
+}
+
+/** The lowest CSS-px row the skirt paints (the share image's crop must reach it). */
+export const skirtBottom = (L: Layout): number => skirtBounds(L).y1;
+
+/** `ox`, `oy`: where the surface being painted on starts, in CSS px (it is the skirt's box, not the whole stage). */
+function paintSkirt(c: Ctx, L: Layout, sc: Scene, r: Rng, ox: number, oy: number): void {
   const s = L.s;
   const lt = decorLit(sc);
-  const cx = X(L, 0);
-  const cy = Y(L, 10.22);
-  const rx = 4.2 * s;
-  const ry = 0.58 * s;
+  const cx = X(L, 0) - ox;
+  const cy = Y(L, SKIRT_V) - oy;
+  const rx = SKIRT_RX * s;
+  const ry = SKIRT_RY * s;
   const sq = ry / rx;
   const velvet: Rgb = [118, 14, 44]; // wine, cool enough to stay red under the tree's warm glow
   const day = sc.light === 'day';
@@ -645,7 +724,7 @@ function paintSkirt(c: Ctx, L: Layout, sc: Scene, r: Rng): void {
 function paintFur(c: Ctx, L: Layout, cy: number, ry: number, edge: (a: number, k?: number) => [number, number], lt: Lit, day: boolean, r: Rng): void {
   const s = L.s;
   const fur: Rgb = day ? [240, 236, 228] : [236, 224, 200];
-  const T = 0.15 * s; // tube thickness
+  const T = FUR_T * s; // tube thickness
   const tube = (o: Ctx, k: number) => {
     o.beginPath();
     for (let i = 0; i <= 160; i++) {
@@ -728,16 +807,21 @@ export function paintDecor(c: CanvasRenderingContext2D, L: Layout, sc: Scene, d:
   if (!d.tinsel && !d.beads && !d.canes && !d.skirt) return;
   const r = mulberry32(77);
   if (d.skirt) {
-    // Painted behind what is already on the layer, so the lowest boughs and the trunk sit over its back half.
-    const [cv, o] = canvas(c.canvas.width, c.canvas.height);
-    o.setTransform(L.dpr, 0, 0, L.dpr, 0, 0);
-    paintSkirt(o, L, sc, r);
-    c.save();
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.globalCompositeOperation = 'destination-over';
-    c.drawImage(cv, 0, 0);
-    c.restore();
-    cv.width = 0;
+    // Painted behind what is already on the layer, so the lowest boughs and the trunk sit over its back half. On a
+    // surface of its own, the size of the skirt (in whole device px, so it lands on the pixel grid).
+    const sb = skirtBounds(L);
+    const at = clipBox({ x: sb.x0 * L.dpr, y: sb.y0 * L.dpr, w: (sb.x1 - sb.x0) * L.dpr, h: (sb.y1 - sb.y0) * L.dpr }, c.canvas.width, c.canvas.height);
+    if (at) {
+      const [cv, o] = canvas(at.w, at.h);
+      o.setTransform(L.dpr, 0, 0, L.dpr, 0, 0);
+      paintSkirt(o, L, sc, r, at.x / L.dpr, at.y / L.dpr);
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.globalCompositeOperation = 'destination-over';
+      c.drawImage(cv, at.x, at.y);
+      c.restore();
+      cv.width = 0;
+    }
   }
   if (d.beads) paintBeads(c, L, sc);
   if (d.tinsel) paintTinsel(c, L, sc, r);
