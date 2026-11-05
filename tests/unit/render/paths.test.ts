@@ -2,15 +2,36 @@ import { expect, it } from 'vitest';
 import { D, L, R, U } from '../../../src/core/dirs';
 import { bulbAngle } from '../../../src/render/bulbs';
 import { easeSnap } from '../../../src/render/effects';
-import { PATH_STYLES, TwinkleClock, neonFlicker, twinklePhase } from '../../../src/render/paths';
+import { tileGeometry } from '../../../src/render/geometry';
+import { PATH_STYLES, TwinkleClock, drawLitCore, drawLitGlow, twinklePhase } from '../../../src/render/paths';
+import { SCENES } from '../../../src/render/scenes';
 
 it('offers exactly the three approved light paths', () => {
   expect(PATH_STYLES).toEqual(['filament', 'fairy', 'neon']);
 });
-it('neon stutters on for ~260ms then holds steady', () => {
-  expect(neonFlicker(40)).toBeLessThan(1);
-  expect(neonFlicker(300)).toBe(1);
-  expect(neonFlicker(-5)).toBe(1);
+/** A context that records the line width and alpha of each stroke, and ignores the rest. */
+function strokeLog(): { c: CanvasRenderingContext2D; strokes: { w: number; a: number; style: unknown }[] } {
+  const strokes: { w: number; a: number; style: unknown }[] = [];
+  const state: Record<string, unknown> = { lineWidth: 1, globalAlpha: 1, strokeStyle: '' };
+  const c = new Proxy(state, {
+    get: (t, k: string) => (k === 'stroke' ? () => strokes.push({ w: t.lineWidth as number, a: t.globalAlpha as number, style: t.strokeStyle }) : k in t ? t[k] : () => undefined),
+    set: (t, k: string, v) => ((t[k] = v), true),
+  }) as unknown as CanvasRenderingContext2D;
+  return { c, strokes };
+}
+it('neon is the Soft level: a 0.26 glow at 70%, a 0.16 tube', () => {
+  const sc = SCENES.fireside;
+  const prims = tileGeometry(R | L, R);
+  const args = { q: 1, alpha: 1, seed: 0, now: 0, twinkleT: 0 };
+  const glow = strokeLog();
+  drawLitGlow(glow.c, prims, 100, sc, 'neon', args);
+  expect(glow.strokes[0]).toMatchObject({ w: 26, style: sc.neon });
+  expect(glow.strokes[0].a).toBeCloseTo(0.7);
+  const core = strokeLog();
+  drawLitCore(core.c, prims, 100, sc, 'neon', args);
+  expect(core.strokes.map((s) => s.w)).toEqual([16, 7.5]);
+  expect(core.strokes[0].style).toBe(sc.neonMid);
+  expect(core.strokes[0].a).toBe(1);
 });
 it('points a bulb socket along its wire', () => {
   expect(bulbAngle(U)).toBeCloseTo(-Math.PI / 2);

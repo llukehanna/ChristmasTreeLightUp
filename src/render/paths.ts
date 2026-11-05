@@ -9,7 +9,6 @@ export interface LitArgs {
   alpha: number;
   seed: number;
   now: number;
-  flicker: number;
   /** The twinkle clock (ms): `now` slowed or sped by the light show's highs, see `TwinkleClock`. */
   twinkleT: number;
 }
@@ -43,12 +42,6 @@ export function strokePrims(c: CanvasRenderingContext2D, prims: readonly Prim[],
     if (k > 0) tracePrim(c, p, k, s);
   }
   c.stroke();
-}
-
-/** Neon tubes stutter on like real ones (spec §4.4). */
-export function neonFlicker(sinceLitMs: number): number {
-  if (sinceLitMs < 0 || sinceLitMs > 260) return 1;
-  return [1, 0.15, 0.9, 0.3, 1, 0.6, 1][Math.floor(sinceLitMs / 38)] ?? 1;
 }
 
 /** Daylight treatments (see UnlitLook in scenes.ts): the snow-glint halo and the two-tone body. */
@@ -138,9 +131,10 @@ export function drawLitGlow(c: CanvasRenderingContext2D, prims: readonly Prim[],
       dot(c, p.x * s, p.y * s, s * 0.11);
     }
   } else {
-    c.globalAlpha = a.alpha * a.flicker;
+    // Soft neon: a narrower, dimmer bloom than a full-strength tube, and no turn-on stutter.
+    c.globalAlpha = a.alpha * 0.7;
     c.strokeStyle = sc.neon;
-    c.lineWidth = s * 0.34;
+    c.lineWidth = s * 0.26;
     strokePrims(c, prims, a.q, s);
   }
   c.globalAlpha = a.alpha;
@@ -175,9 +169,8 @@ export function drawLitCore(c: CanvasRenderingContext2D, prims: readonly Prim[],
     }
     c.globalAlpha = a.alpha;
   } else {
-    c.globalAlpha = a.alpha * a.flicker;
     c.strokeStyle = sc.neonMid;
-    c.lineWidth = s * 0.18;
+    c.lineWidth = s * 0.16;
     strokePrims(c, prims, a.q, s);
     c.strokeStyle = sc.core;
     c.lineWidth = s * 0.075;

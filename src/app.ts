@@ -26,6 +26,7 @@ import { CALM_AFTER_MS, frameDue, isCalm } from './render/quality';
 import { Renderer, type BeatFrame } from './render/renderer';
 import type { SceneChange } from './render/sky-sweep';
 import type { HomeAloneGate, HomeAloneLayerState, TrapKind } from './render/home-alone';
+import { withPalette } from './render/palettes';
 import { sceneFor, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
@@ -1134,7 +1135,7 @@ export class App {
    */
   private setScene(id: SceneId, change: SceneChange | null = null): boolean {
     this.radio.setScene(id);
-    const scene = sceneFor(id, this.secret, this.homeAlone);
+    const scene = withPalette(sceneFor(id, this.secret, this.homeAlone), worldLook(this.look, this.world).palette);
     if (id === this.sceneId && this.renderer.scene === scene) return false;
     this.sceneId = id;
     document.body.dataset.scene = scene.id;

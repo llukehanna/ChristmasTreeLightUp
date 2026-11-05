@@ -20,7 +20,7 @@ import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
 import type { PizzaSprite } from './pizza';
 import { STARTER_LOOK, type Dress } from '../store/look';
-import { TwinkleClock, drawLitCore, drawLitGlow, drawUnlit, neonFlicker, type PathStyle } from './paths';
+import { TwinkleClock, drawLitCore, drawLitGlow, drawUnlit, type PathStyle } from './paths';
 import { Presents } from './presents';
 import { Topper } from './topper';
 import { QualityGovernor } from './quality';
@@ -414,11 +414,10 @@ export class Renderer {
       if (alpha <= 0) continue;
       if (q >= 1 && board.lighting.lit[i]) visLit++;
       const prims = tileGeometry(board.bits[i], board.lighting.entry[i]);
-      const flicker = style === 'neon' && !f.reducedMotion ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
       g.save();
       g.translate(cx, cy);
       g.scale(k, k);
-      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkleT });
+      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT });
       if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i, pulse) * alpha, s);
       g.restore();
       if (q >= 1 && board.lighting.lit[i] && !won) drawFrontier(g, board, L, i, now, sc, false);
@@ -474,11 +473,10 @@ export class Renderer {
       const [cx, cy] = tileCenter(L, GRID, i);
       const k = f.reducedMotion ? 1 : vis.settleScale(i, now);
       const prims = tileGeometry(board.bits[i], board.lighting.entry[i]);
-      const flicker = style === 'neon' && !f.reducedMotion ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(k, k);
-      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, flicker, twinkleT });
+      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT });
       if (degree(board.solution[i]) === 1 && q >= 1) {
         const amt = this.bulbAmount(f, i, pulse) * alpha;
         const face = i === faceTile && faces ? faces.get('ornament', facePx, true) : null;
