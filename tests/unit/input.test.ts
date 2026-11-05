@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bindInput, onMac, type InputHandlers } from '../../src/input';
 
 /** jsdom has no PointerEvent: a MouseEvent carries the button and position, pointerType is added on top. */
-function pointer(type: string, init: { button?: number; pointerType?: string; x?: number; y?: number; ctrlKey?: boolean } = {}): MouseEvent {
-  const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: init.button ?? 0, clientX: init.x ?? 0, clientY: init.y ?? 0, ctrlKey: init.ctrlKey ?? false });
+function pointer(type: string, init: { button?: number; buttons?: number; pointerType?: string; x?: number; y?: number; ctrlKey?: boolean } = {}): MouseEvent {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: init.button ?? 0, clientX: init.x ?? 0, clientY: init.y ?? 0, ctrlKey: init.ctrlKey ?? false, buttons: init.buttons ?? 0 });
   Object.defineProperty(e, 'pointerType', { value: init.pointerType ?? 'mouse' });
   Object.defineProperty(e, 'pointerId', { value: 1 });
   return e;
@@ -48,9 +48,18 @@ describe('bindInput', () => {
 
   it('a right press while the left is held (a pointermove with button 2) turns back', () => {
     stage.dispatchEvent(pointer('pointerdown', { button: 0, x: 10, y: 20 }));
-    stage.dispatchEvent(pointer('pointermove', { button: 2, x: 12, y: 22 }));
+    stage.dispatchEvent(pointer('pointermove', { button: 2, buttons: 3, x: 12, y: 22 }));
     expect(h.tap.mock.calls).toEqual([[10, 20, 1], [12, 22, -1]]);
     expect(h.hover).toHaveBeenCalledWith(12, 22);
+  });
+
+  it('releasing the right button while the left is held does not turn back a second time', () => {
+    stage.dispatchEvent(pointer('pointerdown', { button: 0, buttons: 1, x: 10, y: 20 }));
+    stage.dispatchEvent(pointer('pointermove', { button: 2, buttons: 3, x: 12, y: 22 })); // the right press
+    stage.dispatchEvent(pointer('pointermove', { button: 2, buttons: 1, x: 12, y: 22 })); // the right release
+    stage.dispatchEvent(pointer('pointerup', { button: 0, buttons: 0, x: 12, y: 22 }));
+    expect(h.tap.mock.calls.filter((c) => c[2] === -1)).toEqual([[12, 22, -1]]);
+    expect(h.tap).toHaveBeenCalledTimes(2);
   });
 
   it('a plain mouse move (button -1) only hovers, and a touch move never turns', () => {

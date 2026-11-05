@@ -58,7 +58,8 @@ export function bindInput(el: HTMLElement, h: InputHandlers, mac: boolean = onMa
   const move = (e: PointerEvent) => {
     if (e.pointerType === 'mouse') {
       h.hover(e.clientX, e.clientY);
-      if (e.button === 2) h.tap(e.clientX, e.clientY, -1);
+      // The right press while the left is held (buttons has bit 2 set); its release also reports button 2, with the bit clear.
+      if (e.button === 2 && (e.buttons & 2) !== 0) h.tap(e.clientX, e.clientY, -1);
       return;
     }
     const p = pts.get(e.pointerId);

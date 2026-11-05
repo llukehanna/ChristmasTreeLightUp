@@ -331,7 +331,9 @@ export class App {
 
   /**
    * The first tree: a saved game resumes; otherwise a new one starts (online when the server answers in time). With a
-   * saved mode the tree waits for `eggsReady` (bounded, see start()), but its fetch runs meanwhile.
+   * saved mode the tree waits for `eggsReady` (bounded, see start()), and its fetch starts only after that: the server
+   * stamps the run's start when the request arrives and the log's time 0 is beginGame, so the two stay one response apart
+   * (an early answer parked behind the eggs would eat the ranking's clock tolerance).
    */
   private async boot(eggsReady: Promise<boolean>): Promise<void> {
     const saved = loadGame(GRID);
@@ -339,10 +341,10 @@ export class App {
     const restoreWin = saved?.won && saved.online && (saved.won.result === null || returning === saved.online.gameId);
     const resume = !restoreWin && saved && !saved.won;
     if (saved && !restoreWin && !resume) clearGame();
-    // The tree's fetch starts now, beside the eggs' load; nothing is shown until the eggs are in (or have run out of time).
-    const fetching = restoreWin || resume ? undefined : this.fetchTree();
-    // A saved mode is up from the first frame: the eggs first. (Its 'start' switch, made in the constructor, has already
-    // asked for them.)
+    // A new tree is under way from now (N and the saves wait for it), though its request goes out only after the eggs.
+    if (!restoreWin && !resume) this.starting = true;
+    // A saved mode is up from the first frame: the eggs first (in or out of time). Its 'start' switch, made in the
+    // constructor, has already asked for them.
     await eggsReady;
     const now = performance.now();
     if (saved?.won && restoreWin) {
@@ -356,7 +358,7 @@ export class App {
       // Saved during the final turn: the restored board is already solved, so finish the win properly.
       if (this.board.lighting.count === GRID.ids.length) this.handle(this.board.settleWin(), now);
     } else {
-      await this.freshTree(fetching);
+      await this.freshTree();
     }
     if (!this.board.won) this.showIntro();
     requestAnimationFrame((t) => this.loop(t));
@@ -467,9 +469,9 @@ export class App {
     return { board: null, online: null };
   }
 
-  /** A new tree: from the server's seed (`fetching`, already under way, or asked for now), else a local one. */
-  private async freshTree(fetching: Promise<{ board: Board | null; online: OnlineRun | null }> = this.fetchTree()): Promise<void> {
-    const { board, online } = await fetching;
+  /** A new tree: from the server's seed (asked for now), else a local one. */
+  private async freshTree(): Promise<void> {
+    const { board, online } = await this.fetchTree();
     this.starting = false;
     this.beginGame(performance.now(), board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
   }

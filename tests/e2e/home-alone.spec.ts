@@ -130,6 +130,45 @@ test('a stalled eggs chunk cannot hold a saved-mode boot: the tree plays after a
   expect(errors).toEqual([]);
 });
 
+// The server stamps started_at when POST /api/games arrives and the log's time 0 is beginGame: a tree fetched early and
+// then held for the eggs would eat the ranking's 3 s clock tolerance. So the fetch starts only once the eggs have settled.
+test('a saved-mode boot asks the server for its tree only after the eggs have landed', async ({ page }) => {
+  await clips(page);
+  const eggs = await holdEggs(page);
+  const posts: number[] = [];
+  await page.route('**/api/games', (route) => {
+    if (route.request().method() === 'POST') posts.push(Date.now());
+    return route.fallback();
+  });
+  await page.addInitScript(() => localStorage.setItem('aglow.homeAlone', 'true'));
+  await page.goto('/?test');
+  await expect.poll(() => eggs.state.asked).toBe(1);
+  await page.waitForTimeout(1200); // well inside the 2.5 s bound, with the chunk still held
+  expect(posts).toEqual([]);
+  const released = Date.now();
+  eggs.release();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toBeGreaterThanOrEqual(released);
+  await waitInteractive(page);
+});
+
+test('a stalled eggs chunk delays the tree fetch only by the boot bound, not past it', async ({ page }) => {
+  await clips(page);
+  const eggs = await holdEggs(page); // never answers
+  const posts: number[] = [];
+  await page.route('**/api/games', (route) => {
+    if (route.request().method() === 'POST') posts.push(Date.now());
+    return route.fallback();
+  });
+  await page.addInitScript(() => localStorage.setItem('aglow.homeAlone', 'true'));
+  const t0 = Date.now();
+  await page.goto('/?test');
+  await expect.poll(() => posts.length, { timeout: 10_000 }).toBe(1);
+  expect(posts[0] - t0).toBeGreaterThanOrEqual(2300); // after the 2.5 s bound, not alongside the load
+  await waitInteractive(page);
+  eggs.release();
+});
+
 test('eggs that fail to load show no error: the tree plays on without the house, and a later k is harmless', async ({ page }) => {
   const errors = pageErrors(page);
   await clips(page);
