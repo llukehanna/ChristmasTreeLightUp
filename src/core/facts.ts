@@ -1,5 +1,5 @@
 import type { Board, BoardEvent } from './board';
-import { degree, rotBy } from './dirs';
+import { rotBy } from './dirs';
 import { GRID } from './mask';
 import { tapOf, type LogEntry } from './log';
 import { EARLIEST_TAP_MS } from './replay';
@@ -9,8 +9,12 @@ import { seededBoard } from './seeded';
 /** The bits of `RunFacts.feats`, one per feat. */
 export const FEAT = { grand: 1, starLast: 2, neverDark: 4, steady: 8, comeback: 16 } as const;
 
-/** Bulb tiles (one link in the solution) the winning turn must light for the grand switch-on. */
-export const GRAND_BULBS = 40;
+/**
+ * Tiles the winning turn must newly light for the grand switch-on. Tiles of any kind count: a tree has only about 33
+ * bulb tiles (one link in the solution), so asking for 40 bulbs would be near-impossible, while 40 of its 97 tiles
+ * is a real switch-on.
+ */
+export const GRAND_TILES = 40;
 
 /** The star: the tile in row 0 above the source's column. */
 export const STAR_TILE = GRID.sourceX;
@@ -90,7 +94,7 @@ export function runFacts(seed: number, genVersion: number, log: readonly LogEntr
       } else if (e.type === 'won') {
         const last = events[k - 1]; // the winning turn's own lighting event comes just before the win
         if (last?.type !== 'lightingChanged') return;
-        grand = last.newlyLit.filter((i) => degree(board.solution[i]) === 1).length >= GRAND_BULBS;
+        grand = last.newlyLit.length >= GRAND_TILES;
         starLast = last.newlyLit.includes(STAR_TILE);
       }
     });

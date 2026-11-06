@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { Board, computeLighting } from '../../../src/core/board';
 import { REVEAL_MS } from '../../../src/core/clock';
 import { D, degree, rotCCW, rotCW } from '../../../src/core/dirs';
-import { FEAT, GRAND_BULBS, STAR_TILE, minTurnsOf, runFacts } from '../../../src/core/facts';
+import { FEAT, GRAND_TILES, STAR_TILE, minTurnsOf, runFacts } from '../../../src/core/facts';
 import type { LogEntry } from '../../../src/core/log';
 import { GRID } from '../../../src/core/mask';
 import { seededBoard } from '../../../src/core/seeded';
 import { shortestTaps, solvingTaps, withPause } from './solver';
 
-/** An ordinary tree, whose root is already a cross, whose star needs no turn, and with fewer than GRAND_BULBS bulbs. */
+/** An ordinary tree, whose root is already a cross, whose star needs no turn, and whose grid-order solve ends with a small branch lighting. */
 const SEED = 1;
-/** A tree with 40 bulb tiles whose root starts without a link to the source and needs two turns. */
+/** A tree whose root starts without a link to the source and needs two turns. */
 const GRAND_SEED = 156;
 /** A tree whose star tile needs three clockwise turns (one counter-clockwise). */
 const STAR_SEED = 5;
@@ -174,24 +174,27 @@ describe('runFacts: star last', () => {
 });
 
 describe('runFacts: grand switch-on', () => {
-  it('is set when the winning turn lights 40 or more bulb tiles', () => {
+  it('is set when the winning turn lights 40 or more tiles', () => {
     const b = board(GRAND_SEED);
-    expect(GRID.ids.filter((i) => degree(b.solution[i]) === 1).length).toBeGreaterThanOrEqual(GRAND_BULBS);
-    const f = runFacts(GRAND_SEED, 1, lastly(b, GRID.root)); // hold the root's turn to the end
+    expect(b.grid.ids.length).toBeGreaterThanOrEqual(GRAND_TILES);
+    const f = runFacts(GRAND_SEED, 1, lastly(b, GRID.root)); // hold the root's turn to the end: the whole tree lights at once
     expect((f?.feats ?? 0) & FEAT.grand).toBe(FEAT.grand);
   });
 
-  it('is not set when the tree lights bit by bit', () => {
-    const f = runFacts(GRAND_SEED, 1, shortestLog(GRAND_SEED));
-    expect(f).not.toBeNull();
-    expect((f?.feats ?? 0) & FEAT.grand).toBe(0);
+  it('is not set when the tree lights bit by bit and the winning turn lights fewer than 40 tiles', () => {
+    for (const seed of [GRAND_SEED, SEED]) {
+      const f = runFacts(seed, 1, shortestLog(seed));
+      expect(f, `seed ${seed}`).not.toBeNull();
+      expect((f?.feats ?? 0) & FEAT.grand, `seed ${seed}`).toBe(0);
+    }
   });
 
-  it('is out of reach of a tree with fewer bulbs than the threshold', () => {
-    const b = board(SEED);
-    expect(GRID.ids.filter((i) => degree(b.solution[i]) === 1).length).toBeLessThan(GRAND_BULBS);
-    const f = runFacts(SEED, 1, lastly(b, GRID.root));
-    expect((f?.feats ?? 0) & FEAT.grand).toBe(0);
+  it('counts tiles of any kind, not only bulbs: a tree with fewer than 40 bulb tiles still earns it', () => {
+    const b = board(2); // 33 bulb tiles; the root needs one turn
+    expect(GRID.ids.filter((i) => degree(b.solution[i]) === 1).length).toBeLessThan(GRAND_TILES);
+    const f = runFacts(2, 1, lastly(b, GRID.root));
+    expect(f).not.toBeNull();
+    expect((f?.feats ?? 0) & FEAT.grand).toBe(FEAT.grand);
   });
 
   it('a root held to the end lights the star too, never darkens a lit tile and keeps a steady hand: all but the comeback', () => {
