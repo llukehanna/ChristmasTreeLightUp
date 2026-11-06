@@ -34,3 +34,16 @@ export function hasKey(key: string, store: 'local' | 'session' = 'local'): boole
     return false;
   }
 }
+
+/**
+ * Play data: a device holding any of these has played here before. Not 'aglow.look', which loadLook writes on a first
+ * load.
+ */
+export const PLAYED_KEYS = ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio'] as const;
+/** "Save to leaderboard"'s round trip (sessionStorage, src/store/progress.ts): back from Google. */
+export const RETURN_KEY = 'aglow.return';
+
+/** This device has played here before: it holds play data, or this tab is back from Google mid-save. */
+export function hasPlayed(): boolean {
+  return PLAYED_KEYS.some((k) => hasKey(k)) || hasKey(RETURN_KEY, 'session');
+}

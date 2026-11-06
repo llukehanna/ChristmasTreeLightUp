@@ -9,7 +9,7 @@ import { X, Y, type Layout } from '../render/layout';
 import { clamp01, smooth } from '../render/paint-util';
 import { loadHomeAlone } from '../store/home-alone';
 import { loadStarHead } from '../store/star-head';
-import { hasKey, readJSON, writeJSON } from '../store/storage';
+import { hasPlayed, readJSON, writeJSON } from '../store/storage';
 
 export interface OpeningDeps {
   garland(): GarlandGeometry;
@@ -40,13 +40,6 @@ const T = {
 };
 
 const KEY = 'aglow.opened';
-/**
- * Play data: a device holding any of these has played before, so it isn't on a first visit. Not 'aglow.look', which
- * loadLook writes on a first load.
- */
-const PLAYED = ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio'];
-/** "Save to leaderboard"'s round trip (sessionStorage, src/store/progress.ts): back from Google, not a first visit. */
-const RETURNING = 'aglow.return';
 const CLASSES = ['m-open', 'm-o-mark', 'm-o-tag', 'm-o-hud', 'm-o-fast'];
 /** The skip's click follows its pointerup at once; a press that ends in no click is let go after this. */
 const TAIL_MS = 400;
@@ -54,11 +47,12 @@ const TAIL_MS = 400;
 const TAIL_MAX_MS = 3000;
 
 /**
- * First visit: no 'aglow.opened' and no play data, no reduced motion, and no saved egg world (secret head or Home
- * Alone). Read before this page load writes anything (the App asks first thing).
+ * First visit: no 'aglow.opened', never played here (no play data, not back from Google: src/store/storage.ts), no
+ * reduced motion, and no saved egg world (secret head or Home Alone). Read before this page load writes anything (the
+ * App asks first thing).
  */
 export function shouldOpen(): boolean {
-  if (readJSON(KEY, (v): v is true => v === true) || PLAYED.some((k) => hasKey(k)) || hasKey(RETURNING, 'session')) return false;
+  if (readJSON(KEY, (v): v is true => v === true) || hasPlayed()) return false;
   if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
   return !loadStarHead() && !loadHomeAlone();
 }

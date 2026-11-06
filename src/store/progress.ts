@@ -4,7 +4,7 @@ import { parseLog, type LogEntry } from '../core/log';
 import type { Grid } from '../core/mask';
 import { orientationsOf } from '../core/scramble';
 import { isSeed } from '../core/seeded';
-import { readJSON, removeKey, writeJSON } from './storage';
+import { RETURN_KEY, readJSON, removeKey, writeJSON } from './storage';
 
 /** The server game behind the tree on screen. null: a local, unranked ("offline") tree. */
 export interface OnlineRun {
@@ -59,7 +59,6 @@ interface SavedV2 extends Omit<SavedV1, 'v'> {
 }
 
 const KEY = 'aglow.game';
-const RETURN_KEY = 'aglow.return';
 const GAME_ID = /^[A-Za-z0-9_-]{16,64}$/;
 const REASONS: readonly unknown[] = ['anonymous', 'paused', 'too_fast', 'clock'];
 

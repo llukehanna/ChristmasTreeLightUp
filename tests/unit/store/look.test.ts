@@ -2,7 +2,10 @@
 import { beforeEach, expect, it } from 'vitest';
 import { NO_DECOR, STARTER_LOOK, loadLook, parseLook, saveLook, worldLook, type Look } from '../../../src/store/look';
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 it('a fresh device gets exactly the starter set', () => {
   expect(loadLook()).toEqual(STARTER_LOOK);
@@ -12,6 +15,24 @@ it('a device with v1 settings keeps its scene, path, star and presents; Auto bec
   localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'auto', pathStyle: 'neon', effectsVolume: 0.5, haptics: false }));
   expect(loadLook()).toMatchObject({ scene: 'fireside', path: 'neon', topper: 'star', presents: 'game' });
   expect(JSON.parse(localStorage.getItem('aglow.look')!)).toMatchObject({ path: 'neon' });
+});
+it('a device that has played but never saved a setting keeps the star and the presents, at Fireside on filament', () => {
+  const returning: Look = { ...STARTER_LOOK, topper: 'star', presents: 'game' };
+  for (const key of ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio']) {
+    localStorage.clear();
+    localStorage.setItem(key, '{}');
+    expect(loadLook(), key).toEqual(returning);
+  }
+  // Back from Google mid-save ("Save to leaderboard"): a returning player too.
+  localStorage.clear();
+  sessionStorage.setItem('aglow.return', 'g1');
+  expect(loadLook()).toEqual(returning);
+});
+it('nothing saved: the starter look (a saved look alone is no play data)', () => {
+  expect(loadLook()).toEqual(STARTER_LOOK);
+  localStorage.clear();
+  localStorage.setItem('aglow.return', 'g1');
+  expect(loadLook()).toEqual(STARTER_LOOK);
 });
 it('a v1 scene other than Auto carries over', () => {
   localStorage.setItem('aglow.settings', JSON.stringify({ v: 1, scene: 'frost', pathStyle: 'fairy', effectsVolume: 0.5, haptics: false }));
