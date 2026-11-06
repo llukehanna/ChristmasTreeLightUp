@@ -369,7 +369,8 @@ export class App {
     this.bindControls();
     this.bindLifecycle();
     // A first visit opens in the dark, and the first tree waits for the room to light (boot). Never in a tab opened in
-    // the background, where it would play unseen: it waits for a visit that shows it. The first key or press skips it.
+    // the background, where it would play unseen: that visit goes straight to the game, and a later one has the opening
+    // only if this one left no play data behind (src/ui/opening.ts). Until the room is lit, a key or press skips it.
     if (!document.hidden && this.firstVisit) {
       markOpened();
       const now = performance.now();
@@ -1226,8 +1227,8 @@ export class App {
   }
 
   /**
-   * Returns whether the scene changed. In secret mode the stage shows the aurora whatever the hour, in Home Alone mode
-   * the house; `id` still drives the radio's suggestion.
+   * Returns whether the scene changed. In secret mode the stage shows the aurora whatever the look's scene, in Home
+   * Alone mode the house; `id` still drives the radio's suggestion.
    */
   private setScene(id: SceneId, change: SceneChange | null = null): boolean {
     this.radio.setScene(id);

@@ -169,6 +169,9 @@ body.decorating .vignette { opacity: 0; }
 @media (max-width: 600px) {
   .deco {
     top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; height: min(56vh, 520px);
+    /* The footer clears the home indicator, as in the radio sheet (the sheet keeps its height: the stage's frame is
+       sized to it, src/ui/decorate.ts). */
+    padding-bottom: env(safe-area-inset-bottom);
     transform: translateY(calc(100% + 30px));
   }
   .deco-g4 { grid-template-columns: repeat(4, 1fr); gap: 6px; }

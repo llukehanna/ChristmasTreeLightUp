@@ -166,5 +166,5 @@ export const HOME_ALONE: Scene = {
   snow: '255,250,240', snowAlpha: 0, bloom: 1, snowDust: false, reflect: true, embers: false,
 };
 
-/** The scene on screen: the aurora while secret mode is on, the house in Home Alone mode, else the hour's or the menu's. */
+/** The scene on screen: the aurora while secret mode is on, the house in Home Alone mode, else the look's. */
 export const sceneFor = (id: SceneId, secret: boolean, homeAlone = false): Scene => (secret ? AURORA : homeAlone ? HOME_ALONE : SCENES[id]);
