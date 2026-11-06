@@ -273,6 +273,10 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
   .results .hector.still { transition: opacity 0.35s !important; }
 }
 .results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.6; }
+/* The unlock line, under the rank strip, in the tag's own ink; its buttons are links with a 24px target (as Retry). */
+.results .unlock { margin-top: 6px; font-size: 12.5px; color: #7a4a22; }
+.results .unlock b { font-weight: 600; color: #7d1420; }
+.results .unlock button { all: unset; cursor: pointer; display: inline-block; padding: 4px 2px; margin: -4px -2px; font-weight: 600; color: #8e1622; text-decoration: underline; text-underline-offset: 3px; }
 
 .corner { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); right: calc(24px + env(safe-area-inset-right)); }
 

@@ -10,6 +10,21 @@ test('a tree solved by tapping is replayed by the server and saved as an anonymo
   expect(await claimIds(page)).toEqual([id]);
 });
 
+test('a fresh device lights its first tree: the tag says "Unlocked: Tinsel · Try it", and Try it puts tinsel on the tree', async ({ page }) => {
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const line = page.locator('#results .unlock');
+  await expect(line).toHaveText('Unlocked: Tinsel · Try it');
+  const look = () => page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.look') ?? '{}') as { decor?: { tinsel?: boolean } }).decor?.tinsel);
+  expect(await look()).toBe(false);
+  await line.getByRole('button', { name: 'Try it' }).click();
+  await expect.poll(look).toBe(true);
+  // Announced once: it is known now (aglow.unlocks), so the next tag won't say it again.
+  const known = await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.unlocks') ?? '{}') as Record<string, { known: string[] }>).guest?.known);
+  expect(known).toContain('decor:tinsel');
+});
+
 test('each test reaches the Worker from its own client IP (the start limit counts per test)', async ({ page }) => {
   const sent = page.waitForRequest('**/api/games');
   await ready(page);

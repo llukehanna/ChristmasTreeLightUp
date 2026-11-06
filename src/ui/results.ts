@@ -3,6 +3,7 @@ import { formatTime } from '../core/score';
 import { averageSeconds, type Stats } from '../store/stats';
 import { el } from './dom';
 import { count, dailyLabel } from './format';
+import type { UnlockLine } from './unlock-ribbon';
 
 /** The three numbers under the badge: this device's, or (signed in) the account's (spec 2026-10-08 §6.2). */
 export interface StatsView {
@@ -77,6 +78,41 @@ export class Results {
     if (!line) return;
     line.textContent = day ? dailyLabel(day) : '';
     line.hidden = !day;
+  }
+
+  /**
+   * "Unlocked: Bubble lights · Try it", and " · +N more", under the rank strip (renderRibbon puts its line straight after
+   * the words under the time, so this one stays below it); null takes it away. Focus on one of its buttons stays there.
+   */
+  setUnlocks(line: UnlockLine | null, h: { onTry(): void; onMore(): void }): void {
+    const old = this.root.querySelector('.unlock');
+    const active = document.activeElement;
+    const focused = active instanceof HTMLElement && old?.contains(active) ? active.className : null;
+    old?.remove();
+    if (!line) return;
+    const u = document.createElement('div');
+    u.className = 'unlock';
+    const button = (cls: string, text: string, on: () => void): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = cls;
+      b.textContent = text;
+      b.addEventListener('click', on);
+      return b;
+    };
+    const label = document.createElement('b');
+    label.textContent = line.best.label;
+    u.append('Unlocked: ', label, ' · ', button('unlock-try', 'Try it', h.onTry));
+    if (line.more > 0) u.append(' · ', button('unlock-more', `+${line.more} more`, h.onMore));
+    const anchor = this.root.querySelector('.rib-line') ?? document.getElementById('r-merry');
+    if (anchor) anchor.after(u);
+    else this.root.querySelector('.stats')?.before(u);
+    if (focused) u.querySelector<HTMLElement>(`.${focused.split(' ')[0]}`)?.focus({ preventScroll: true });
+  }
+
+  /** The tag is up (shown, not put away). */
+  get isShown(): boolean {
+    return !this.root.hidden;
   }
 
   hide(): void {

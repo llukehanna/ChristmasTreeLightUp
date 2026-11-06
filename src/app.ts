@@ -6,7 +6,7 @@ import type { AccountStats, ClaimResponse, FinishResult, ProgressResponse } from
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
 import type { Turn } from './core/dirs';
-import { itemOf, type ItemId } from './core/catalogue';
+import { itemOf, type ItemDef, type ItemId } from './core/catalogue';
 import { GOALS, pileOf } from './core/goals';
 import { CLOCK_TOLERANCE_MS } from './core/judge';
 import type { LogEntry } from './core/log';
@@ -59,6 +59,7 @@ import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, ty
 import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
+import { tryPatch, UnlockNews } from './ui/unlock-ribbon';
 import { UnlockState } from './unlock-state';
 
 /** A win hurries the flow still in flight this much, and the results tag follows this long after the last bulb. */
@@ -259,12 +260,27 @@ export class App {
   private accountStats: AccountStats | null = null;
   /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
   private statsSeq = 0;
-  /** What the player owns: the look shows only that (the saved look is never changed). A change re-applies the look. */
-  private readonly unlocks = new UnlockState({
-    onChange: () => {
+  /** What the player owns: the look shows only that (the saved look is never changed). A change re-applies the look (news). */
+  private readonly unlocks = new UnlockState({ onChange: () => this.news.changed() });
+  /**
+   * When an unlock shows: never during a run (the look, the pile and the dot wait for its end: ruling R9), and what is
+   * new goes on the results tag (ribbon "Unlocked: … · Try it").
+   */
+  private readonly news = new UnlockNews(this.unlocks, {
+    inRun: () => runInProgress({ live: this.live, moved: this.moved, winAt: this.winAt }),
+    tagUp: () => this.results.isShown,
+    known: () => this.session.current !== undefined,
+    apply: () => {
       this.applyLook(this.look, false);
       this.showDot();
     },
+    ribbon: (line) =>
+      this.results.setUnlocks(line, {
+        onTry: () => {
+          if (line) this.tryItem(line.best);
+        },
+        onMore: () => this.moreUnlocks(),
+      }),
   });
   /** Bumped by each progress fetch, so an older answer (another player's, after a switch) never lands. */
   private progressSeq = 0;
@@ -657,6 +673,7 @@ export class App {
     const now = performance.now();
     this.beginGame(now, board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
     // A new tree ends the run before it: an unlock that waited can show now.
+    this.news.settle();
     this.showDot();
     beginsAway(this.run, document.hidden, now);
     if (this.shouldSave()) this.save(now);
@@ -813,6 +830,8 @@ export class App {
         seconds: won.seconds, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
         daily: this.dailyDay,
       });
+      // The run is over: an unlock held through it shows now, and what is new goes on the tag.
+      this.news.tagShown();
       this.hector?.tagShown();
       this.hectorStep();
     }, delay + RESULTS_DELAY_MS);
@@ -986,6 +1005,8 @@ export class App {
   /** Who is playing changed (sign-in, a new name, sign-out): claim what waits here, and redraw the run's outcome. */
   accountChanged(): void {
     this.unlocks.setPlayer(this.player, this.stats.solved);
+    // The session is known now: a tag that is up can tell what is new.
+    this.news.tell();
     void this.claimAll();
     this.setOutcome(this.outcome);
     void this.syncStats();
@@ -1078,6 +1099,26 @@ export class App {
     this.results.hide();
     this.glare?.cancel();
     el('corner-new').hidden = false;
+  }
+
+  /**
+   * The unlock line's "Try it": the same path as a pick in the drawer (a decoration switched on, a slot set). A station
+   * is picked in the radio. An item the look has no place for yet opens the drawer instead.
+   */
+  private tryItem(item: ItemDef): void {
+    if (item.slot === 'sound') {
+      this.radio.select(item.value);
+      return;
+    }
+    const patch = tryPatch(this.look, item);
+    if (patch) this.applyLook({ ...this.look, ...patch });
+    else this.moreUnlocks();
+  }
+
+  /** The unlock line's "+N more": the tag goes, and the drawer opens on everything. */
+  private moreUnlocks(): void {
+    this.keepWatching();
+    this.openDecorate();
   }
 
   /** Renders the share image from the stage as it is now (the lit tree, identity camera). */
