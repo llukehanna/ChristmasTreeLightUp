@@ -4,7 +4,7 @@ import type { DailyResult, FinishResult } from '../api/types';
 import { formatMs, plural, UNRANKED_TEXT } from './format';
 import { G_LOGO } from './icons';
 
-/** Which board the place is on: the main one (absent), or today's Daily board. */
+/** Which board the place is on: the main one (absent), or the Daily board of the run's day. */
 export type RibbonBoard = 'main' | 'daily';
 
 export type RibbonModel =
@@ -40,8 +40,8 @@ const dailyPlace = (r: FinishResult): (DailyResult & { rank: number }) | null =>
 /** The result on the tag waits on its claim to be placed: a signed-out run, or a guest's place on a Daily board. */
 export const awaitsClaim = (r: FinishResult, guest: boolean): boolean => r.reason === 'anonymous' || (guest && dailyPlace(r) !== null);
 
-/** How the tag names the Daily board after a place on it ("#2 of 9 on today's Daily board"). */
-const DAILY_BOARD = "on today's Daily board";
+/** How the tag names the Daily board after a place on it ("#2 of 9 on the Daily board"): never "today's", as a Daily begun before midnight can finish after it. */
+const DAILY_BOARD = 'on the Daily board';
 
 /** "Unranked: …" for a finish the server kept but couldn't time (controller ruling, fix round 1). */
 export const LATE_TEXT = 'reached the server too late';

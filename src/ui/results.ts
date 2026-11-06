@@ -76,7 +76,7 @@ export class Results {
     const line = document.getElementById('r-daily');
     if (!line) return;
     line.textContent = day ? dailyLabel(day) : '';
-    line.hidden = day === null;
+    line.hidden = !day;
   }
 
   hide(): void {

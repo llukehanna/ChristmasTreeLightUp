@@ -25,6 +25,9 @@ const WINDOWS: Record<BoardWindow, { button: string; sub: string; empty: string 
   all: { button: 'All time', sub: 'All-time', empty: 'No ranked runs yet. Light a tree and be the first.' },
 };
 
+/** What a window counts: ranked runs, or on the Daily board (never ranked on the main one) just runs. */
+const runWord = (win: BoardWindow): string => (win === 'daily' ? 'run' : 'ranked run');
+
 /** The window chosen last in this browser; Today until one is chosen (or when storage is blocked), though Daily is the first button. */
 const WINDOW_KEY = 'aglow.boardWindow';
 export function loadBoardWindow(): BoardWindow {
@@ -56,16 +59,19 @@ function boardBody(b: Loadable<BoardResponse>, now: number, win: BoardWindow): s
   return `<ol class="acct-rows">${b.data.rows.map((r) => rowHtml(r, now)).join('')}</ol>`;
 }
 
-function boardPin(b: Loadable<BoardResponse>, user: User | null | undefined, now: number): string {
+function boardPin(b: Loadable<BoardResponse>, user: User | null | undefined, now: number, win: BoardWindow): string {
   if (!user)
     return `<div class="acct-pin-cta"><span>Sign in to see your name on the list</span><button class="acct-google sm" type="button" data-act="signin">${G_LOGO}<span>Sign in</span></button></div>`;
   if (user.name === null) return '<div class="acct-pin-cta"><span>Pick a display name to join the board</span><button class="acct-text" type="button" data-act="name">Pick a name</button></div>';
   if (b.status !== 'ready') return '';
   const { you, total, rows } = b.data;
-  if (you) return `<ol class="acct-rows">${rowHtml(you, now)}</ol><p class="acct-pin-note">Your best · #${Number(you.rank)} of ${plural(total, 'run')}</p>`;
-  // Your best is in the list above (rows are in rank order): say where, rather than repeating the header's total.
-  const best = rows.find((r) => r.mine);
-  return best ? `<p class="acct-pin-note">Your best · #${Number(best.rank)} of ${plural(total, 'run')}</p>` : `<p class="acct-pin-note">${plural(total, 'ranked run')}</p>`;
+  // The Daily board holds one run each, never ranked on the main board: "Your run · #r of N", not "Your best".
+  const note = (rank: number): string =>
+    win === 'daily' ? `Your run · #${Number(rank)} of ${count(total)}` : `Your best · #${Number(rank)} of ${plural(total, 'run')}`;
+  if (you) return `<ol class="acct-rows">${rowHtml(you, now)}</ol><p class="acct-pin-note">${note(you.rank)}</p>`;
+  // Your run is in the list above (rows are in rank order): say where, rather than repeating the header's total.
+  const mine = rows.find((r) => r.mine);
+  return `<p class="acct-pin-note">${mine ? note(mine.rank) : plural(total, runWord(win))}</p>`;
 }
 
 /** "Unranked · paused too long"; a reason this browser doesn't know yet reads just "Unranked". */
@@ -84,10 +90,11 @@ function gameHtml(g: RecentGame, now: number): string {
       : g.ranked
         ? ['s-counted', 'Ranked']
         : ['', unrankedLabel(g.reason)];
+  // The Daily tag sits on the second line, beside the date: after the time it pushed long rows out of the sheet.
   const tag = g.daily === null ? '' : `<span class="acct-daily">${esc(dailyLabel(g.daily))}</span>`;
   return `<li class="acct-game${g.ranked || placed ? '' : ' un'}">
-    <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}${tag}</span>
-    <span class="acct-when">${esc(formatWhen(g.finishedAt, now))}</span>
+    <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}</span>
+    <span class="acct-line2"><span class="acct-when">${esc(formatWhen(g.finishedAt, now))}</span>${tag}</span>
     ${placed ? '' : `<span class="acct-status ${cls}">${label}</span>`}</li>`;
 }
 
@@ -164,7 +171,7 @@ export function listView(
     render(inner) {
       const sub =
         tab === 'board'
-          ? `${WINDOWS[win].sub} · ${board.status === 'ready' ? plural(board.data.total, 'ranked run') : 'fastest trees'}`
+          ? `${WINDOWS[win].sub} · ${board.status === 'ready' ? plural(board.data.total, runWord(win)) : 'fastest trees'}`
           : user?.name
             ? `${esc(user.name)} · your trees`
             : 'Not signed in';
@@ -177,7 +184,7 @@ export function listView(
           </div>${tab === 'board' ? windowsHtml(win) : ''}
         </header>
         <div class="acct-body" id="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${tab === 'board' ? boardBody(board, now, win) : gamesBody(games, user, now, stats)}</div>
-        ${tab === 'board' ? `<footer class="acct-pin">${boardPin(board, user, now)}</footer>` : ''}`;
+        ${tab === 'board' ? `<footer class="acct-pin">${boardPin(board, user, now, win)}</footer>` : ''}`;
       const list = inner.querySelector<HTMLElement>('[role="tablist"]');
       if (list) bindTabKeys(list);
     },

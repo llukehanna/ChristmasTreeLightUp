@@ -62,7 +62,7 @@ describe('ribbonModel: the Daily Tree', () => {
     result({ ranked: false, reason: 'daily', rank: null, best: null, newBest: false, daily: { ...day, ...d }, ...over });
   const unnamed = { name: null, isAdmin: false, starHead: false };
 
-  it("a named player's first Daily run reads #2 of 9 on today's Daily board", () => {
+  it("a named player's first Daily run reads #2 of 9 on the Daily board", () => {
     expect(ribbonModel({ kind: 'done', result: daily() }, me)).toEqual({ kind: 'rank', rank: 2, of: 9, best: null, newBest: false, board: 'daily' });
     // After a claim, the claimed result follows the same rule.
     expect(ribbonModel({ kind: 'done', result: daily() }, me, { guest: false })).toMatchObject({ kind: 'rank', board: 'daily' });
@@ -261,19 +261,19 @@ describe('renderRibbon', () => {
     expect(document.activeElement?.id).toBe('r-new');
   });
 
-  it("the Daily: its place on today's Daily board, and Save to the Daily board", () => {
+  it("the Daily: its place on the Daily board, and Save to the Daily board", () => {
     const root = tag();
     const h = handlers();
     renderRibbon(root, { kind: 'rank', rank: 2, of: 9, best: null, newBest: false, board: 'daily' }, h);
-    expect(root.querySelector('.rib-line')?.textContent).toBe("#2 of 9 on today's Daily board");
+    expect(root.querySelector('.rib-line')?.textContent).toBe("#2 of 9 on the Daily board");
     const ros = root.querySelector<HTMLButtonElement>('.rib-ros');
-    expect(ros?.getAttribute('aria-label')).toBe("Rank 2 of 9 on today's Daily board: open the leaderboard");
+    expect(ros?.getAttribute('aria-label')).toBe("Rank 2 of 9 on the Daily board: open the leaderboard");
     expect(ros?.querySelector('.rib-ros-face')?.textContent).toBe('#2of 9');
     expect(ros?.querySelector('.rib-ros-banner')).toBeNull();
     ros?.click();
     expect(h.board).toHaveBeenCalledTimes(1);
     renderRibbon(root, { kind: 'save', rank: 2, of: 9, signedIn: false, board: 'daily' }, h);
-    expect(root.querySelector('.rib-line')?.textContent).toBe("Would place #2 of 9 on today's Daily board");
+    expect(root.querySelector('.rib-line')?.textContent).toBe("Would place #2 of 9 on the Daily board");
     const ribbon = root.querySelector<HTMLButtonElement>('.rib-ribbon');
     expect(ribbon?.textContent).toBe('Save to the Daily board');
     expect(ribbon?.querySelector('.acct-g')).not.toBeNull();

@@ -101,10 +101,14 @@ describe('your games: Daily Tree runs', () => {
   const rows = (...games: RecentGame[]) => render('games', { status: 'loading' }, { status: 'ready', data: { best: null, inTop: 0, total: 0, games } }, me, now);
   const row = (game: RecentGame) => rows(game).querySelector('.acct-game');
 
-  it('a first attempt shows only its Daily tag, after the time: no Unranked', () => {
+  it('a first attempt shows only its Daily tag, on the second line beside the date: no Unranked', () => {
     const r = row(g({}));
-    expect(r?.querySelector('.acct-gt .acct-daily')?.textContent).toBe('Daily Tree · Nov 6');
-    expect(r?.querySelector('.acct-gt')?.firstChild?.textContent).toBe('0:42.0');
+    expect(r?.querySelector('.acct-gt .acct-daily')).toBeNull();
+    expect(r?.querySelector('.acct-gt')?.textContent).toBe('0:42.0');
+    const second = r?.querySelector('.acct-line2');
+    expect([...(second?.children ?? [])].map((n) => n.className)).toEqual(['acct-when', 'acct-daily']);
+    expect(second?.querySelector('.acct-when')?.textContent).toBe('Dec 1 · 8:00 pm');
+    expect(second?.querySelector('.acct-daily')?.textContent).toBe('Daily Tree · Nov 6');
     expect(r?.querySelector('.acct-status')).toBeNull();
     expect(r?.textContent).not.toContain('Unranked');
     expect(r?.classList.contains('un')).toBe(false);
@@ -136,8 +140,10 @@ describe('your games: Daily Tree runs', () => {
     }
   });
 
-  it('a random game has no Daily tag; a day goes in as text', () => {
-    expect(row(g({ daily: null, dailyFirst: false, reason: 'paused' }))?.querySelector('.acct-daily')).toBeNull();
+  it('a random game has no Daily tag (its second line is the date alone); a day goes in as text', () => {
+    const plain = row(g({ daily: null, dailyFirst: false, reason: 'paused' }));
+    expect(plain?.querySelector('.acct-daily')).toBeNull();
+    expect(plain?.querySelector('.acct-line2')?.textContent).toBe('Dec 1 · 8:00 pm');
     expect(row(g({ daily: '<b>x</b>' }))?.querySelector('.acct-daily b')).toBeNull();
   });
 });
@@ -299,12 +305,24 @@ describe('board windows: Today, This week, All time (spec 2026-10-14 §4)', () =
     expect(el.querySelector('.acct-wins button')?.getAttribute('data-act')).toBe('win-daily');
     expect(pressed(el)).toEqual(['Daily']);
     expect(el.querySelector('.acct-body .acct-note')?.textContent).toBe("No one has lit today's Daily Tree yet.");
-    expect(el.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 0 ranked runs");
+    expect(el.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 0 runs");
     expect(render('board', { status: 'loading' }, { status: 'loading' }, me, now, undefined, 'daily').querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · fastest trees");
     // The remembered window is still Today until one is chosen.
     expect(loadBoardWindow()).toBe('today');
     saveBoardWindow('daily');
     expect(loadBoardWindow()).toBe('daily');
+  });
+
+  it("the Daily window's words: runs, not ranked runs, and your run, not your best", () => {
+    const daily = (data: BoardResponse) => render('board', { status: 'ready', data }, { status: 'loading' }, me, now, undefined, 'daily');
+    const listed = daily({ ...board, total: 9 });
+    expect(listed.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 9 runs");
+    expect(listed.querySelector('.acct-pin-note')?.textContent).toBe('Your run · #2 of 9');
+    const you = { rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true };
+    expect(daily({ rows: [board.rows[0]], total: 90, you }).querySelector('.acct-pin-note')?.textContent).toBe('Your run · #87 of 90');
+    expect(daily({ rows: [{ ...board.rows[0] }], total: 1, you: null }).querySelector('.acct-pin-note')?.textContent).toBe('1 run');
+    // The other windows keep their words.
+    expect(render('board', { status: 'ready', data: board }, { status: 'loading' }, me, now, undefined, 'today').querySelector('.acct-pin-note')?.textContent).toBe('Your best · #2 of 340 runs');
   });
 
   it('no run of yours in the window: no pinned row; unnamed, the pick-a-name call to action as before', () => {

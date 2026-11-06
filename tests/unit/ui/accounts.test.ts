@@ -195,7 +195,7 @@ it('the Daily window fetches the day\'s Daily board, comes first, and is remembe
   expect((document.activeElement as HTMLElement | null)?.dataset.act).toBe('win-daily');
   await tick();
   expect(names()).toEqual(['Comet']);
-  expect(document.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 1 ranked run");
+  expect(document.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 1 run");
   // The results tag's Daily rosette opens the Daily window, without changing the remembered one.
   localStorage.setItem('aglow.boardWindow', 'week');
   const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });

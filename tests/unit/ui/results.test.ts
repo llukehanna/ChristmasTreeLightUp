@@ -68,4 +68,7 @@ it("a Daily Tree: its label is a small line above the time; a random tree's tag 
   expect(line?.hidden).toBe(true);
   r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device) });
   expect(line?.hidden).toBe(true);
+  // An empty day is no day.
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), daily: '' });
+  expect(line?.hidden).toBe(true);
 });

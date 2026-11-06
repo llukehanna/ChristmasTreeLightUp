@@ -322,16 +322,16 @@ test.describe('the Daily Tree', () => {
     await expect(results.locator('#r-daily')).toBeVisible();
     await expect(results.locator('#r-daily')).toHaveText(`Daily Tree · ${label}`);
     await expect(results.locator('#r-daily + #r-time')).toHaveText(/^Lit in \d+:\d\d$/);
-    // Signed out: the place it would take on today's Daily board, and a ribbon to save it there.
-    await expect(results.locator('.rib-line')).toHaveText(/^Would place #\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    // Signed out: the place it would take on the Daily board, and a ribbon to save it there.
+    await expect(results.locator('.rib-line')).toHaveText(/^Would place #\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
     await results.getByRole('button', { name: 'Save to the Daily board' }).click();
     await page.getByRole('dialog', { name: 'Sign in' }).getByRole('link', { name: 'Continue with Google' }).click();
     await page.waitForURL(/\/\?test$/);
     await pickName(page, player.name);
-    // Claimed: the run's place on today's Daily board, and its rosette opens that board.
-    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    // Claimed: the run's place on the Daily board, and its rosette opens that board.
+    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
     await expect(results.locator('.rib-ribbon')).toHaveCount(0);
-    await results.getByRole('button', { name: /^Rank \d+ of \d+ on today's Daily board: open the leaderboard$/ }).click();
+    await results.getByRole('button', { name: /^Rank \d+ of \d+ on the Daily board: open the leaderboard$/ }).click();
     const board = page.getByRole('dialog', { name: 'Leaderboard' });
     await expect(board.getByRole('group', { name: 'Time window' }).getByRole('button', { name: 'Daily', pressed: true })).toBeVisible();
     await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(player.name);
@@ -404,7 +404,7 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await dailyFromMenu(page);
     await solveByTapping(page);
     const results = page.locator('#results');
-    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
     await page.locator('#account-chip').click();
     await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
     const board = page.getByRole('dialog', { name: 'Leaderboard' });
@@ -414,8 +414,9 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(windows.getByRole('button', { name: 'Today', pressed: true })).toBeVisible();
     await windows.getByRole('button', { name: 'Daily' }).click();
     await expect(windows.getByRole('button', { name: 'Daily', pressed: true })).toBeFocused();
-    await expect(board.locator('.acct-sub')).toHaveText(/^Today's Daily Tree · [\d,]+ ranked runs?$/);
+    await expect(board.locator('.acct-sub')).toHaveText(/^Today's Daily Tree · [\d,]+ runs?$/);
     await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(name);
+    await expect(board.locator('.acct-pin-note')).toHaveText(/^Your run · #\d+ of [\d,]+$/);
     expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBe('daily');
     // Your games: the run carries its Daily tag, and no "Unranked".
     await board.getByRole('tab', { name: 'Your games' }).click();
@@ -430,7 +431,7 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await dailyFromMenu(page);
     await solveByTapping(page);
     const results = page.locator('#results');
-    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
     // The tag is up: the Daily row starts the day's tree again.
     await dailyFromMenu(page);
     await solveByTapping(page);
@@ -445,5 +446,36 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go at this Daily Tree');
     await expect(games.nth(1).locator('.acct-status')).toHaveCount(0);
     await expect(games.nth(1).locator('.acct-daily')).toBeVisible();
+  });
+
+  test('Your games rows fit the sheet at 320px and on a desktop, a repeat Daily row and its long reason included', async ({ page }) => {
+    await namedPlayer(page);
+    for (let k = 0; k < 2; k++) {
+      await dailyFromMenu(page);
+      await solveByTapping(page);
+      await expect(page.locator('#results .rib-line')).toHaveText(k ? 'Unranked: not your first go at this Daily Tree' : /^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
+    }
+    await page.locator('#account-chip').click();
+    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Your games' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Your games' });
+    const games = sheet.locator('.acct-game');
+    await expect(games).toHaveCount(2);
+    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go at this Daily Tree');
+    /** The body never scrolls sideways, and every row's date, tag and status lie inside it. */
+    const fits = () =>
+      sheet.locator('.acct-body').evaluate((body) => {
+        const box = body.getBoundingClientRect();
+        const inside = [...body.querySelectorAll('.acct-game, .acct-when, .acct-daily, .acct-status')].every((n) => {
+          const r = n.getBoundingClientRect();
+          return r.left >= box.left - 0.5 && r.right <= box.right + 0.5;
+        });
+        return { scroll: body.scrollWidth, client: body.clientWidth, inside };
+      });
+    for (const width of [320, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect.poll(fits).toMatchObject({ inside: true });
+      const { scroll, client } = await fits();
+      expect(scroll, `at ${width}px`).toBeLessThanOrEqual(client);
+    }
   });
 });
