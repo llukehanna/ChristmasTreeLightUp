@@ -52,3 +52,9 @@ export const UNRANKED_TEXT: Readonly<Record<UnrankedReason | 'offline' | 'unveri
   offline: 'offline',
   unverified: "couldn't verify this run",
 };
+
+/** The HUD's Daily pill: 'Daily Tree · Nov 6' for '2026-11-06' (any year), with no leading zero on the day. */
+export function dailyLabel(day: string): string {
+  const [, m, d] = day.split('-').map(Number);
+  return `Daily Tree · ${MONTHS[m - 1]} ${d}`;
+}

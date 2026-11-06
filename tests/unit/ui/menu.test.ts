@@ -9,6 +9,7 @@ beforeEach(() => {
     <button id="menu-btn"></button>
     <div id="menu" hidden>
       <button id="new-tree">New tree</button>
+      <button id="daily-row"><span>Daily Tree</span></button>
       <button id="decorate-btn">Decorate</button>
       <button id="keys-row">Keyboard shortcuts</button>
       <input type="range" id="effects-volume" />
@@ -20,8 +21,9 @@ afterEach(() => vi.useRealTimers());
 
 function make(needsConfirm: boolean) {
   const onNewTree = vi.fn();
-  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onDecorate: () => {}, onNewTree, needsConfirm: () => needsConfirm });
-  return { menu, onNewTree };
+  const onDaily = vi.fn();
+  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, needsConfirm: () => needsConfirm });
+  return { menu, onNewTree, onDaily };
 }
 
 it('starts a tree at once when no confirm is needed', () => {
@@ -58,7 +60,7 @@ it('the menu button arms and starts through the same flow', () => {
 
 it('the Keyboard shortcuts row closes the menu, then asks for the key card', () => {
   const onKeys = vi.fn();
-  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onDecorate: () => {}, onNewTree: () => {}, needsConfirm: () => false, onKeys });
+  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onDecorate: () => {}, onNewTree: () => {}, onDaily: () => {}, needsConfirm: () => false, onKeys });
   menu.open();
   (document.getElementById('keys-row') as HTMLButtonElement).click();
   expect(menu.isOpen).toBe(false);
@@ -81,7 +83,7 @@ it('the confirm window is NEW_TREE_CONFIRM_MS (3,000 ms), which the N toast shar
 it('opening the menu tells the host first (it closes whatever would sit over the menu)', () => {
   const order: string[] = [];
   const menu = new Menu({ ...DEFAULT_SETTINGS }, {
-    onChange: () => {}, onDecorate: () => {}, onNewTree: () => {}, needsConfirm: () => false, onOpen: () => order.push(menu.isOpen ? 'open' : 'before'),
+    onChange: () => {}, onDecorate: () => {}, onNewTree: () => {}, onDaily: () => {}, needsConfirm: () => false, onOpen: () => order.push(menu.isOpen ? 'open' : 'before'),
   });
   menu.open();
   expect(order).toEqual(['before']);
@@ -90,10 +92,44 @@ it('opening the menu tells the host first (it closes whatever would sit over the
 it('Decorate closes the menu, then opens the drawer', () => {
   const order: string[] = [];
   const menu = new Menu({ ...DEFAULT_SETTINGS }, {
-    onChange: () => {}, onDecorate: () => order.push(menu.isOpen ? 'menu open' : 'menu closed'), onNewTree: () => {}, needsConfirm: () => false,
+    onChange: () => {}, onDecorate: () => order.push(menu.isOpen ? 'menu open' : 'menu closed'), onNewTree: () => {}, onDaily: () => {}, needsConfirm: () => false,
   });
   menu.open();
   (document.getElementById('decorate-btn') as HTMLButtonElement).click();
   expect(order).toEqual(['menu closed']);
   expect(document.querySelector('.seg')).toBeNull();
+});
+
+it('the Daily Tree row starts the Daily at once when nothing is at stake, and closes the menu', () => {
+  const { menu, onDaily, onNewTree } = make(false);
+  menu.open();
+  (document.getElementById('daily-row') as HTMLButtonElement).click();
+  expect(onDaily).toHaveBeenCalledTimes(1);
+  expect(onNewTree).not.toHaveBeenCalled();
+  expect(menu.isOpen).toBe(false);
+});
+
+it('mid-run the Daily Tree row asks the same 3 s confirm as New tree, armed on its own', () => {
+  const { menu, onDaily, onNewTree } = make(true);
+  const row = document.getElementById('daily-row') as HTMLButtonElement;
+  const newTree = document.getElementById('new-tree') as HTMLButtonElement;
+  row.click();
+  expect(onDaily).not.toHaveBeenCalled();
+  expect(row.textContent).toBe('Tap again to start over');
+  expect(row.classList.contains('armed')).toBe(true);
+  expect(newTree.textContent).toBe('New tree');
+  // New tree is not armed by the Daily's first tap: it arms for itself.
+  expect(menu.requestNewTree()).toBe('armed');
+  expect(onNewTree).not.toHaveBeenCalled();
+  expect(row.textContent).toBe('Daily Tree');
+  expect(menu.request('daily')).toBe('armed');
+  vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS - 10);
+  expect(menu.request('daily')).toBe('started');
+  expect(onDaily).toHaveBeenCalledTimes(1);
+  // Past the window, it arms afresh.
+  const late = make(true);
+  expect(late.menu.request('daily')).toBe('armed');
+  vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS + 10);
+  expect(late.menu.request('daily')).toBe('armed');
+  expect(late.onDaily).not.toHaveBeenCalled();
 });

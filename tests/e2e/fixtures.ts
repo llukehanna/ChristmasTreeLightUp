@@ -24,6 +24,22 @@ export async function returning(context: BrowserContext): Promise<void> {
 }
 
 /**
+ * This device has already started today's Daily Tree (aglow.daily, src/store/daily.ts), so its first tree is a random
+ * one, as before the Daily: the tests written for random trees keep them. The Daily's own tests opt out.
+ */
+export async function dailyStarted(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    try {
+      const d = new Date();
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      localStorage.setItem('aglow.daily', JSON.stringify(day));
+    } catch {
+      // A page without storage (about:blank).
+    }
+  });
+}
+
+/**
  * Every e2e test reaches the Worker's /api/* with its own client IP (CF-Connecting-IP), so the limit of 200 starts
  * per IP per hour counts per test, not per run of the whole suite on one local D1. Miniflare only fills that header in
  * when it is missing; in production Cloudflare always overwrites it, so nothing changes there.
@@ -31,10 +47,12 @@ export async function returning(context: BrowserContext): Promise<void> {
  * Only same-origin /api/* requests get it (on any other origin the extra header would break CORS). A test's own route
  * that lets a request through must call route.fallback() (not continue()), so it still comes through here.
  */
-export const test = base.extend<{ firstVisit: boolean }>({
+export const test = base.extend<{ firstVisit: boolean; daily: boolean }>({
   /** The browser has never been here: the opening plays (tests/e2e/opening.spec.ts). Otherwise it is a returning visitor. */
   firstVisit: [false, { option: true }],
-  context: async ({ context, baseURL, firstVisit }, use, testInfo) => {
+  /** The first tree may be the Daily Tree (this device hasn't started today's). Otherwise it has: see dailyStarted. */
+  daily: [false, { option: true }],
+  context: async ({ context, baseURL, firstVisit, daily }, use, testInfo) => {
     const ip = testIp(testInfo);
     const origin = new URL(baseURL ?? 'http://localhost:4173').origin;
     await context.route(
@@ -42,6 +60,7 @@ export const test = base.extend<{ firstVisit: boolean }>({
       (route) => route.continue({ headers: { ...route.request().headers(), 'cf-connecting-ip': ip } }),
     );
     if (!firstVisit) await returning(context);
+    if (!daily) await dailyStarted(context);
     await use(context);
   },
 });

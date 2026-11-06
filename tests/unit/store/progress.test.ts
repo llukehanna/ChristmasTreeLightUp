@@ -104,7 +104,7 @@ it('validates all mutations: wrong array length, invalid color, wrong version, n
 
 it('v2 keeps the online run, its log and a won run', () => {
   const b = Board.random(GRID, mulberry32(4));
-  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: 'c'.repeat(32) };
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: 'c'.repeat(32), daily: null };
   const log = [{ t: 10, a: GRID.ids[0] }, { t: 20, a: 'p' as const }];
   const won = {
     seconds: 81,
@@ -118,7 +118,7 @@ it('v2 keeps the online run, its log and a won run', () => {
 
 it('a won run sent too late keeps saying so after a reload', () => {
   const b = Board.random(GRID, mulberry32(4));
-  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null };
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: null };
   const won = { seconds: 81, score: 41_900, newBest: false, result: null, late: true };
   saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
   expect(loadGame(GRID)?.won).toEqual(won);
@@ -132,7 +132,7 @@ it('a save from before accounts (v1) restores as a local tree', () => {
 
 it('refuses a v2 save with a bad log, half an online run or a malformed result', () => {
   const b = Board.random(GRID, mulberry32(4));
-  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null };
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: null };
   const mutations: ((raw: Record<string, unknown>) => void)[] = [
     (raw) => (raw.log = [{ t: 5, a: 'r' }]),
     (raw) => (raw.seed = null),
@@ -145,6 +145,62 @@ it('refuses a v2 save with a bad log, half an online run or a malformed result',
     saveGame(b, 1000, { startEpoch: 1, online, log: [], won: null });
     const raw = JSON.parse(localStorage.getItem('aglow.game') ?? '{}') as Record<string, unknown>;
     mutate(raw);
+    localStorage.setItem('aglow.game', JSON.stringify(raw));
+    expect(loadGame(GRID)).toBeNull();
+  }
+});
+
+it('a saved Daily game restores its daily info', () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: { day: '2026-11-06', past: false, repeat: false } };
+  saveGame(b, 5000, { startEpoch: 123, online, log: [], won: null });
+  expect(loadGame(GRID)?.online).toEqual(online);
+});
+
+it('a save from before C1 restores with daily null', () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: null };
+  saveGame(b, 5000, { startEpoch: 123, online, log: [], won: null });
+  const raw = JSON.parse(localStorage.getItem('aglow.game') ?? '{}') as Record<string, unknown>;
+  delete raw.daily;
+  localStorage.setItem('aglow.game', JSON.stringify(raw));
+  expect(loadGame(GRID)?.online).toEqual(online);
+});
+
+it('a saved won Daily run (reason daily, with daily info) restores', () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: 'c'.repeat(32), daily: { day: '2026-11-06', past: false, repeat: false } };
+  const result = {
+    id: 'g'.repeat(22), ranked: false, reason: 'daily' as const, ms: 80_400, rank: null, total: 10, best: null, newBest: false,
+    daily: { day: '2026-11-06', past: false, first: true, rank: 2, total: 5 },
+  };
+  const won = { seconds: 81, score: 41_900, newBest: false, result };
+  saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
+  expect(loadGame(GRID)?.won).toEqual(won);
+  // A past day's run restores too.
+  const past = { ...won, result: { ...result, reason: 'past' as const, daily: { ...result.daily, past: true, first: false, rank: null } } };
+  saveGame(b, 5000, { startEpoch: 123, online: { ...online, daily: { day: '2026-11-02', past: true, repeat: false } }, log: [], won: past });
+  expect(loadGame(GRID)?.won).toEqual(past);
+});
+
+it('a saved result from before C1 (no daily) restores with daily null', () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: null };
+  const won = { seconds: 81, score: 41_900, newBest: false, result: { id: 'g'.repeat(22), ranked: true, reason: null, ms: 80_400, rank: 3, total: 10, best: 80_400, newBest: true, daily: null } };
+  saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
+  const raw = JSON.parse(localStorage.getItem('aglow.game') ?? '{}') as { won: { result: Record<string, unknown> } };
+  delete raw.won.result.daily;
+  localStorage.setItem('aglow.game', JSON.stringify(raw));
+  expect(loadGame(GRID)?.won).toEqual(won);
+});
+
+it('refuses a malformed daily', () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: null };
+  for (const daily of [{ day: 'soon', past: false, repeat: false }, { day: '2026-11-06', past: 'no', repeat: false }, 'x']) {
+    saveGame(b, 1000, { startEpoch: 1, online, log: [], won: null });
+    const raw = JSON.parse(localStorage.getItem('aglow.game') ?? '{}') as Record<string, unknown>;
+    raw.daily = daily;
     localStorage.setItem('aglow.game', JSON.stringify(raw));
     expect(loadGame(GRID)).toBeNull();
   }

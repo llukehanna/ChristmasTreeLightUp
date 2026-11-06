@@ -30,6 +30,7 @@ import { withPalette } from './render/palettes';
 import { sceneFor, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
+import { landsOnDaily, markDailyStarted } from './store/daily';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { loadLook, saveLook, worldLook, type Look } from './store/look';
@@ -41,6 +42,7 @@ import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
 import { Decorate } from './ui/decorate';
+import { dailyLabel } from './ui/format';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { whenIdle } from './ui/idle';
 import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
@@ -258,6 +260,7 @@ export class App {
       onChange: (s) => this.applySettings(s),
       onDecorate: () => this.openDecorate(),
       onNewTree: () => this.newGame(),
+      onDaily: () => this.newGame('daily'),
       needsConfirm: () => this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
       onOpen: () => {
         this.radioPanel.close();
@@ -421,7 +424,8 @@ export class App {
         this.prelude();
         await this.opening.roomLit();
       }
-      await this.freshTree();
+      // The Daily Tree, unless this device has already started today's (then a random tree, as N gives).
+      await this.freshTree(landsOnDaily(localDay(new Date())) ? 'daily' : 'random');
     }
     if (!this.board.won) this.showIntro();
     this.startLoop();
@@ -489,6 +493,7 @@ export class App {
     this.run = new Run(board, { now, epochNow: Date.now(), startEpoch: run.startEpoch, elapsedMs, log: run.log });
     this.live = true;
     this.online = run.online;
+    this.showDailyPill();
     this.won = null;
     this.claimState = null;
     this.returning = false;
@@ -531,27 +536,36 @@ export class App {
     this.busyUntil = Math.max(this.busyUntil, until + CALM_AFTER_MS);
   }
 
-  /** The server's seed when it answers within 1.5 s, else nothing (a local tree, unranked "offline"). Marks the start under way. */
-  private async fetchTree(): Promise<{ board: Board | null; online: OnlineRun | null }> {
+  /**
+   * The server's seed when it answers within 1.5 s, else nothing (a local tree, unranked "offline"). Marks the start under
+   * way. A live Daily the server started is marked on this device (the next fresh boot lands on a random tree); a failed
+   * start marks nothing, so the next load asks for the Daily again.
+   */
+  private async fetchTree(kind: 'daily' | 'random'): Promise<{ board: Board | null; online: OnlineRun | null }> {
     this.starting = true;
     try {
-      const s = await api.start();
+      const s = await api.start(kind === 'daily' ? { today: localDay(new Date()) } : undefined);
       const board = seededBoard(s.seed, s.genVersion);
-      if (board) return { board, online: { gameId: s.id, seed: s.seed, genVersion: s.genVersion, claim: s.claim } };
+      if (board) {
+        const daily = s.daily ?? null;
+        if (daily && !daily.past) markDailyStarted(daily.day);
+        return { board, online: { gameId: s.id, seed: s.seed, genVersion: s.genVersion, claim: s.claim, daily } };
+      }
     } catch {
       // Unreachable, slow, rate-limited (429) or not configured: play a local tree. Play is never blocked.
     }
     return { board: null, online: null };
   }
 
-  /** A new tree: from the server's seed (asked for now), else a local one. */
-  private async freshTree(): Promise<void> {
-    const { board, online } = await this.fetchTree();
+  /** A new tree, random or the Daily: from the server's seed (asked for now), else a local random one. */
+  private async freshTree(kind: 'daily' | 'random' = 'random'): Promise<void> {
+    const { board, online } = await this.fetchTree(kind);
     this.starting = false;
     this.beginGame(performance.now(), board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
   }
 
-  newGame(): void {
+  /** N, New tree and the results tag's button give a random tree; the menu's Daily Tree row gives the Daily. */
+  newGame(kind: 'daily' | 'random' = 'random'): void {
     if (this.starting) return;
     clearGame();
     // The old tree stays on screen until the new one is ready (1.5 s at most), without its results card.
@@ -560,7 +574,22 @@ export class App {
     el('corner-new').hidden = true;
     // "Press N again" has done its job: it must not linger over the new tree.
     this.toast.hide();
-    void this.freshTree();
+    void this.freshTree(kind);
+  }
+
+  /** The Daily pill shows while the tree on screen is a Daily Tree ('Daily' alone on a phone, or where the HUD is tight). */
+  private showDailyPill(): void {
+    const pill = el('daily-pill');
+    const day = this.online?.daily?.day ?? null;
+    if ((pill.dataset.day ?? null) === day) return;
+    pill.hidden = day === null;
+    if (day === null) delete pill.dataset.day;
+    else {
+      pill.dataset.day = day;
+      // 'Daily' and the rest ' Tree · Nov 6', so a phone (or a tight HUD) can show the first word alone.
+      el('daily-pill-rest').textContent = dailyLabel(day).slice('Daily'.length);
+    }
+    this.fitHud();
   }
 
   private snapshot(won: WonRun | null = null) {
@@ -1242,23 +1271,28 @@ export class App {
 
   /**
    * The radio pill takes the widest label (station · title · artist, station · title, station, short name, icon only)
-   * that leaves the wordmark clear, first beside the account chip's full name, then beside its initial alone; then the
-   * tagline is placed around the HUD's new width.
+   * that leaves the wordmark clear, first beside the account chip's full name, then beside its initial alone, and all of
+   * that beside the Daily pill's full label before its 'Daily' alone; then the tagline is placed around the HUD's new
+   * width.
    */
   private fitHud(): void {
     if (!this.laidOut) return;
     const pill = document.getElementById('radio-pill');
     const chip = document.getElementById('account-chip');
+    const daily = document.getElementById('daily-pill');
     const hud = document.querySelector('.hud');
     const mark = document.querySelector('.wordmark');
     if (pill && hud && mark) {
       const markRight = mark.getBoundingClientRect().right;
       const clear = (): boolean => hud.getBoundingClientRect().left - markRight >= 16;
-      fit: for (const chipFit of ['full', 'icon']) {
-        if (chip) chip.dataset.fit = chipFit;
-        for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
-          pill.dataset.fit = fit;
-          if (clear()) break fit;
+      fit: for (const dailyFit of ['full', 'short']) {
+        if (daily) daily.dataset.fit = dailyFit;
+        for (const chipFit of ['full', 'icon']) {
+          if (chip) chip.dataset.fit = chipFit;
+          for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
+            pill.dataset.fit = fit;
+            if (clear()) break fit;
+          }
         }
       }
     }

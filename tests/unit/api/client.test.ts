@@ -27,6 +27,15 @@ describe('api client', () => {
     expect(init).toMatchObject({ method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   });
 
+  it("a Daily start sends { daily }; a random one sends {}", async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ id: 'x', seed: 1, genVersion: 1, claim: null, daily: null }));
+    vi.stubGlobal('fetch', fetch);
+    await api.start({ today: '2026-11-06' });
+    await api.start();
+    expect(fetch.mock.calls[0][1].body).toBe('{"daily":{"today":"2026-11-06"}}');
+    expect(fetch.mock.calls[1][1].body).toBe('{}');
+  });
+
   it('turns an error answer into ApiError(status, code, message), and an unreachable server into status 0', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'taken', message: 'That name is taken.' }, { status: 409 })));
     await expect(api.setName('Comet')).rejects.toMatchObject({ status: 409, code: 'taken', message: 'That name is taken.' });

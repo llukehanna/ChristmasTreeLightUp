@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { esc, formatDay, formatMs, formatWhen, initial, plural, UNRANKED_TEXT } from '../../../src/ui/format';
+import { dailyLabel, esc, formatDay, formatMs, formatWhen, initial, plural, UNRANKED_TEXT } from '../../../src/ui/format';
 
 it('formats ranked times as m:ss.t, never rounding a time up', () => {
   expect(formatMs(81_049)).toBe('1:21.0');
@@ -33,4 +33,10 @@ it('escapes, initials, plurals and the unranked reasons', () => {
     offline: 'offline',
     unverified: "couldn't verify this run",
   });
+});
+
+it("dailyLabel('2026-11-06') is 'Daily Tree · Nov 6'; '2026-12-25' is 'Daily Tree · Dec 25'", () => {
+  expect(dailyLabel('2026-11-06')).toBe('Daily Tree · Nov 6');
+  expect(dailyLabel('2026-12-25')).toBe('Daily Tree · Dec 25');
+  expect(dailyLabel('2027-01-01')).toBe('Daily Tree · Jan 1');
 });

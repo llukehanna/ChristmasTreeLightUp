@@ -156,3 +156,99 @@ test('a session with a pause, a hidden tab and a reload is verified by the serve
   await expect.poll(() => page.evaluate(() => (window as unknown as W).__aglow.state().won)).toBe(true);
   await expect.poll(() => game(page)).toMatchObject({ id, outcome: 'done', reason: 'anonymous', ranked: false });
 });
+
+test.describe('the Daily Tree', () => {
+  test.use({ daily: true });
+
+  /** The bodies of this page's POST /api/games, in order (across reloads). */
+  const starts = (page: Page): unknown[] => {
+    const bodies: unknown[] = [];
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/games') bodies.push(r.postDataJSON());
+    });
+    return bodies;
+  };
+  /** The browser's local day (YYYY-MM-DD) and its label's date ("Nov 6"). */
+  const today = (page: Page) =>
+    page.evaluate(() => {
+      const d = new Date();
+      return {
+        day: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+        label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      };
+    });
+  /** The Daily from the server. A cold local Worker can miss the 1.5 s start; a failed start marks nothing, so a reload asks again. */
+  async function dailyTree(page: Page): Promise<string> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await waitInteractive(page);
+      const { id } = await game(page);
+      if (id) return id;
+      await page.reload();
+    }
+    throw new Error('the local Worker never started the Daily');
+  }
+
+  test('a first visit lands on the Daily Tree: the pill reads Daily Tree · <today>', async ({ page }) => {
+    const bodies = starts(page);
+    await ready(page);
+    await dailyTree(page);
+    const { day, label } = await today(page);
+    expect(bodies.at(-1)).toEqual({ daily: { today: day } });
+    await expect(page.locator('#daily-pill')).toBeVisible();
+    await expect(page.locator('#daily-pill')).toHaveText(`Daily Tree · ${label}`);
+    expect(await page.evaluate(() => localStorage.getItem('aglow.daily'))).toBe(JSON.stringify(day));
+    // On a phone the pill reads Daily alone.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('#daily-pill')).toHaveJSProperty('innerText', 'Daily');
+  });
+
+  test('after N the pill is gone', async ({ page }) => {
+    const bodies = starts(page);
+    await ready(page);
+    await dailyTree(page);
+    await expect(page.locator('#daily-pill')).toBeVisible();
+    const sent = bodies.length;
+    await page.keyboard.press('n');
+    // Mid-run the first N only asks.
+    if ((await page.locator('#toast').textContent())?.includes('Press N again')) await page.keyboard.press('n');
+    await expect.poll(() => bodies.length).toBe(sent + 1);
+    expect(bodies.at(-1)).toEqual({});
+    await waitInteractive(page);
+    await expect(page.locator('#daily-pill')).toBeHidden();
+  });
+
+  test('a reload mid-Daily resumes it, pill and all, with no second start request', async ({ page }) => {
+    const bodies = starts(page);
+    await ready(page);
+    const id = await dailyTree(page);
+    await page.evaluate(() => {
+      const a = (window as unknown as W).__aglow;
+      a.tap(a.ids[3]);
+    });
+    await page.waitForTimeout(300); // the turn settles and saves
+    const sent = bodies.length;
+    await page.reload();
+    await waitInteractive(page);
+    expect((await game(page)).id).toBe(id);
+    await expect(page.locator('#daily-pill')).toHaveText(`Daily Tree · ${(await today(page)).label}`);
+    await expect(page.locator('#daily-pill')).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(bodies.length).toBe(sent);
+  });
+
+  test('with /api/games failing, the tree is local with no pill, and the next load asks for the Daily again', async ({ page }) => {
+    const bodies = starts(page);
+    await page.route('**/api/games', (route) => route.abort());
+    await ready(page);
+    expect((await game(page)).id).toBeNull();
+    await expect(page.locator('#daily-pill')).toBeHidden();
+    expect(await page.evaluate(() => localStorage.getItem('aglow.daily'))).toBeNull();
+    const { day } = await today(page);
+    expect(bodies).toEqual([{ daily: { today: day } }]);
+    await page.unroute('**/api/games');
+    await page.reload();
+    await dailyTree(page);
+    expect(bodies[1]).toEqual({ daily: { today: day } });
+    await expect(page.locator('#daily-pill')).toBeVisible();
+  });
+});

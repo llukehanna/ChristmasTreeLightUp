@@ -1,6 +1,6 @@
 import type { LogEntry } from '../core/log';
 import { localDay } from '../store/stats';
-import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type ClaimResponse, type FinishResult, type HomeAloneResponse, type MeResponse, type MyGamesResponse, type NameCheck, type StarHeadResponse, type StartResponse, type User } from './types';
+import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type ClaimResponse, type DailyRequest, type FinishResult, type HomeAloneResponse, type MeResponse, type MyGamesResponse, type NameCheck, type StarHeadResponse, type StartResponse, type User } from './types';
 
 /** An API failure: the HTTP status (0 when the server couldn't be reached), the Worker's error code and message. */
 export class ApiError extends Error {
@@ -85,7 +85,8 @@ export const api = {
   setName: (name: string) => changesBoard(request<{ user: User }>('POST', '/api/auth/name', { name })),
   signOut: () => changesBoard(request<Record<string, never>>('POST', '/api/auth/signout', {})),
   deleteAccount: (confirm: string) => changesBoard(request<Record<string, never>>('DELETE', '/api/me', { confirm })),
-  start: () => request<StartResponse>('POST', '/api/games', {}, START_TIMEOUT_MS),
+  /** A random tree, or with `daily` the Daily Tree (or a past day's). */
+  start: (daily?: DailyRequest) => request<StartResponse>('POST', '/api/games', daily ? { daily } : {}, START_TIMEOUT_MS),
   finish: (id: string, log: readonly LogEntry[]) => changesBoard(request<FinishResult>('POST', `/api/games/${encodeURIComponent(id)}/finish`, { log })),
   claim: (claims: readonly { id: string; claim: string }[]) => changesBoard(request<ClaimResponse>('POST', '/api/games/claim', { claims })),
   board,

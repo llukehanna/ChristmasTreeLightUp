@@ -6,7 +6,9 @@ export interface MenuHandlers {
   /** "Decorate" was chosen: the menu has closed, and the drawer should open. */
   onDecorate(): void;
   onNewTree(): void;
-  /** True while a game is in progress (New tree then needs a second tap). */
+  /** "Daily Tree" was chosen (and confirmed mid-run): start today's Daily Tree. */
+  onDaily(): void;
+  /** True while a game is in progress (New tree and Daily Tree then need a second tap). */
   needsConfirm(): boolean;
   /** The menu is about to open (the app closes the radio panel). */
   onOpen?(): void;
@@ -17,13 +19,18 @@ export interface MenuHandlers {
 /** How long the first New tree press (or N) stays armed for the confirming second one. The N toast lasts as long. */
 export const NEW_TREE_CONFIRM_MS = 3000;
 
+/** What a menu row starts: a new random tree, or the Daily Tree. */
+export type TreeAction = 'new' | 'daily';
+
 export class Menu {
   private readonly root = el('menu');
   private readonly button = el('menu-btn');
   private readonly newTree = el('new-tree');
+  private readonly daily = el('daily-row');
   private readonly volume = el<HTMLInputElement>('effects-volume');
   private readonly haptics = el<HTMLInputElement>('haptics');
-  private armedUntil = 0;
+  /** The row whose first press is waiting for its confirming second one, and until when. */
+  private armed: { action: TreeAction; until: number } | null = null;
 
   constructor(private settings: Settings, private readonly h: MenuHandlers) {
     this.button.addEventListener('click', (e) => {
@@ -44,6 +51,7 @@ export class Menu {
     this.haptics.addEventListener('change', () => this.update({ haptics: this.haptics.checked }));
     if (!('vibrate' in navigator)) el('haptics-row').hidden = true;
     this.newTree.addEventListener('click', () => this.requestNewTree());
+    this.daily.addEventListener('click', () => this.request('daily'));
     // The card docks where the menu opens, so the menu closes first, then the card is pinned open.
     document.getElementById('keys-row')?.addEventListener('click', () => {
       this.close();
@@ -76,7 +84,7 @@ export class Menu {
     const active = document.activeElement;
     this.root.hidden = true;
     this.button.setAttribute('aria-expanded', 'false');
-    this.armedUntil = 0;
+    this.armed = null;
     this.render();
     // Hand focus back to the button unless the user has moved it somewhere else on purpose.
     if (wasOpen && (!active || active === document.body || this.root.contains(active))) this.button.focus({ preventScroll: true });
@@ -88,18 +96,25 @@ export class Menu {
     this.render();
   }
 
-  /**
-   * A new tree, from the button or the N key. While a run is in progress the first call only arms a 3 s confirm
-   * ('armed'); a second call inside the window, or any call when nothing is at stake, starts the tree ('started').
-   */
+  /** A new random tree, from the button or the N key: see request. */
   requestNewTree(): 'started' | 'armed' {
+    return this.request('new');
+  }
+
+  /**
+   * A new tree (New tree, N) or the Daily Tree (its row). While a run is in progress the first call only arms a 3 s
+   * confirm ('armed'); a second call for the same row inside the window, or any call when nothing is at stake, starts
+   * it ('started'). Each row arms for itself: a press of one never confirms the other.
+   */
+  request(action: TreeAction): 'started' | 'armed' {
     const now = performance.now();
-    if (!this.h.needsConfirm() || now < this.armedUntil) {
+    if (!this.h.needsConfirm() || (this.armed?.action === action && now < this.armed.until)) {
       this.close();
-      this.h.onNewTree();
+      if (action === 'daily') this.h.onDaily();
+      else this.h.onNewTree();
       return 'started';
     }
-    this.armedUntil = now + NEW_TREE_CONFIRM_MS;
+    this.armed = { action, until: now + NEW_TREE_CONFIRM_MS };
     this.render();
     window.setTimeout(() => this.render(), NEW_TREE_CONFIRM_MS + 50);
     return 'armed';
@@ -114,8 +129,10 @@ export class Menu {
   private render(): void {
     this.volume.value = String(this.settings.effectsVolume);
     this.haptics.checked = this.settings.haptics;
-    const armed = performance.now() < this.armedUntil;
-    this.newTree.textContent = armed ? 'Tap again to start over' : 'New tree';
-    this.newTree.classList.toggle('armed', armed);
+    const armed = this.armed !== null && performance.now() < this.armed.until ? this.armed.action : null;
+    this.newTree.textContent = armed === 'new' ? 'Tap again to start over' : 'New tree';
+    this.newTree.classList.toggle('armed', armed === 'new');
+    this.daily.textContent = armed === 'daily' ? 'Tap again to start over' : 'Daily Tree';
+    this.daily.classList.toggle('armed', armed === 'daily');
   }
 }

@@ -88,6 +88,9 @@ body[data-scene='aurora'] .pill.pause-btn svg { filter: drop-shadow(0 0 3px rgba
   box-shadow: 0 0 calc(5px + var(--lit) * 5px) rgba(255, 184, 74, calc(0.7 + var(--lit) * 0.3));
 }
 .pill.icon { padding: 0 12px; letter-spacing: 0.1em; }
+/* The Daily Tree's label (src/app.ts showDailyPill): 'Daily' alone on a phone, or where the HUD is tight (fitHud). */
+.pill.daily { cursor: default; gap: 0; white-space: nowrap; }
+.pill.daily[data-fit='short'] .daily-rest { display: none; }
 /* Two-bar pause glyph, same ink as the other pills. */
 .pill.pause-btn { width: 38px; padding: 0; justify-content: center; }
 .pill.pause-btn svg { display: block; fill: currentColor; filter: drop-shadow(0 0 3px rgba(255, 200, 120, 0.25)); }
@@ -162,6 +165,12 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
   transition: background 0.15s;
 }
 .menu .decorate-btn:hover { background: rgba(255, 220, 160, 0.12); }
+/* Daily Tree: under New tree, a quieter gold-edged row; mid-run it arms the same gold confirm. */
+.menu .daily-row {
+  all: unset; cursor: pointer; text-align: center; padding: 9px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  color: #f6d58e; background: rgba(255, 220, 160, 0.06); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.35); transition: background 0.15s;
+}
+.menu .daily-row:hover { background: rgba(255, 220, 160, 0.12); }
 .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
 input[type='range'] { width: 100%; accent-color: var(--accent); }
 .menu input[type='range'], .menu input[type='checkbox'] { accent-color: #e2b25a; }
@@ -175,7 +184,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 }
 .menu .newtree:hover { background: linear-gradient(180deg, #de4449, #9a1a27); }
 /* Confirmation state: gold, clearly distinct from the red New tree. */
-.menu .newtree.armed {
+.menu .newtree.armed, .menu .daily-row.armed {
   background: linear-gradient(180deg, #fbe4a6, #d6a24a 60%, #b9822f); color: #2a1206;
   box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.75), 0 0 0 1px rgba(255, 230, 160, 0.55), 0 0 20px rgba(255, 190, 90, 0.4);
 }
@@ -266,6 +275,7 @@ button:focus-visible, .menu button:focus-visible, .results button:focus-visible,
   .wordmark { top: calc(22px + env(safe-area-inset-top)); left: 18px; font-size: 10.5px; }
   .hud { top: calc(14px + env(safe-area-inset-top)); right: 14px; }
   .menu { right: 12px; left: 12px; width: auto; }
+  .pill.daily .daily-rest { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
