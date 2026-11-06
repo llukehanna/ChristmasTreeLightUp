@@ -1,6 +1,7 @@
 /**
- * The Daily Tree: one seed per UTC day, the same for everyone, derived from a server secret so it cannot be known
- * ahead of the day. Which days may be played is a one-day window around the server's UTC date.
+ * The Daily Tree: one seed per calendar day, the same for everyone, derived from a server secret so it cannot be known
+ * ahead of the day. A player's Daily is the tree of their own local date, which the server takes within a day of its
+ * UTC date (liveDay), so the day's tree opens and closes on each player's own midnight.
  */
 import { computeLighting } from '../../src/core/board.js';
 import { GRID } from '../../src/core/mask.js';

@@ -488,7 +488,7 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await dailyFromMenu(page);
     await expect(page.locator('#toast')).toHaveText("Not your first go today · this one won't rank");
     await solveByTapping(page);
-    await expect(results.locator('.rib-line')).toHaveText('Unranked: not your first go at this Daily Tree', { timeout: 15_000 });
+    await expect(results.locator('.rib-line')).toHaveText('Unranked: not your first go', { timeout: 15_000 });
     await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();
     await expect(results.locator('.rib-ribbon')).toHaveCount(0);
     // Your games: the repeat says so, the first attempt doesn't.
@@ -496,7 +496,7 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Your games' }).click();
     const games = page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game');
     await expect(games).toHaveCount(2);
-    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go at this Daily Tree');
+    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go');
     await expect(games.nth(1).locator('.acct-status')).toHaveCount(0);
     await expect(games.nth(1).locator('.acct-daily')).toBeVisible();
   });
@@ -506,14 +506,14 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     for (let k = 0; k < 2; k++) {
       await dailyFromMenu(page);
       await solveByTapping(page);
-      await expect(page.locator('#results .rib-line')).toHaveText(k ? 'Unranked: not your first go at this Daily Tree' : /^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
+      await expect(page.locator('#results .rib-line')).toHaveText(k ? 'Unranked: not your first go' : /^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
     }
     await page.locator('#account-chip').click();
     await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Your games' }).click();
     const sheet = page.getByRole('dialog', { name: 'Your games' });
     const games = sheet.locator('.acct-game');
     await expect(games).toHaveCount(2);
-    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go at this Daily Tree');
+    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go');
     /** The body never scrolls sideways, and every row's date, tag and status lie inside it. */
     const fits = () =>
       sheet.locator('.acct-body').evaluate((body) => {

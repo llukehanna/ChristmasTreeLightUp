@@ -126,12 +126,6 @@ export interface RunFlags {
 const WIN_SETTLE_MS = 2000;
 
 /**
- * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
- * behind the pause or once the win has settled (not during its confetti, the topper's flare and the tag's arrival).
- * Never while a tree is in play: not during its reveal (animation the player watches) and not once the clock runs,
- * which it does from the reveal's end (Run.frame), first move or not.
- */
-/**
  * Whether the tree in play is saved on a pause, a hidden tab or a page hide: once moved, or a Daily from its start (its
  * attempt is spent at the start, so a pause before the first move must survive a reload, or the time away counts).
  */
@@ -167,6 +161,12 @@ export function startToast(kind: 'daily' | 'random', online: OnlineRun | null): 
 export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[] }): string | null =>
   saved.log.length === 0 ? null : `Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`;
 
+/**
+ * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
+ * behind the pause or once the win has settled (not during its confetti, the topper's flare and the tag's arrival).
+ * Never while a tree is in play: not during its reveal (animation the player watches) and not once the clock runs,
+ * which it does from the reveal's end (Run.frame), first move or not.
+ */
 export const quietForWork = (f: RunFlags): boolean =>
   !f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS);
 

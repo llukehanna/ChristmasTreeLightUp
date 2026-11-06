@@ -88,26 +88,26 @@ describe('ribbonModel: the Daily Tree', () => {
     expect(awaitsClaim(result(), true)).toBe(false);
   });
 
-  it('a repeat reads Unranked: not your first go at this Daily Tree', () => {
+  it('a repeat reads Unranked: not your first go', () => {
     const repeat = daily({}, { first: false, rank: null });
-    expect(ribbonModel({ kind: 'done', result: repeat }, me)).toEqual({ kind: 'unranked', why: 'not your first go at this Daily Tree' });
+    expect(ribbonModel({ kind: 'done', result: repeat }, me)).toEqual({ kind: 'unranked', why: 'not your first go' });
     // A claimed run that wasn't the account's first go at the day reads the same.
-    expect(ribbonModel({ kind: 'done', result: repeat }, me, { guest: false })).toEqual({ kind: 'unranked', why: 'not your first go at this Daily Tree' });
+    expect(ribbonModel({ kind: 'done', result: repeat }, me, { guest: false })).toEqual({ kind: 'unranked', why: 'not your first go' });
     const root = tag();
     renderRibbon(root, ribbonModel({ kind: 'done', result: repeat }, me), handlers());
-    expect(root.querySelector('.rib-line')?.textContent).toBe('Unranked: not your first go at this Daily Tree');
+    expect(root.querySelector('.rib-line')?.textContent).toBe('Unranked: not your first go');
   });
 
   it('a repeat this device knew of at the start reads Unranked: not your first go, never a would-place or a save, guests included', () => {
     // The server can't know a guest's repeat (decision 5): its result still offers a place. The device knew.
-    const unranked = { kind: 'unranked', why: 'not your first go at this Daily Tree' };
+    const unranked = { kind: 'unranked', why: 'not your first go' };
     expect(ribbonModel({ kind: 'done', result: daily() }, null, { guest: true, repeat: true })).toEqual(unranked);
     expect(ribbonModel({ kind: 'done', result: daily() }, undefined, { guest: true, repeat: true })).toEqual(unranked);
     expect(ribbonModel({ kind: 'done', result: daily() }, unnamed, { repeat: true })).toEqual(unranked);
     const root = tag();
     renderRibbon(root, ribbonModel({ kind: 'done', result: daily() }, null, { guest: true, repeat: true }), handlers());
     expect(root.querySelector('.rib-ribbon')).toBeNull();
-    expect(root.querySelector('.rib-line')?.textContent).toBe('Unranked: not your first go at this Daily Tree');
+    expect(root.querySelector('.rib-line')?.textContent).toBe('Unranked: not your first go');
     // The server's own answer for an account stands: a place it gave is a place on the board, not a promise.
     expect(ribbonModel({ kind: 'done', result: daily() }, me, { repeat: true })).toMatchObject({ kind: 'rank', board: 'daily' });
     // A result the judge refused keeps the judge's reason.

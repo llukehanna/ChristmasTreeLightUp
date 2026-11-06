@@ -114,10 +114,10 @@ describe('your games: Daily Tree runs', () => {
     expect(r?.classList.contains('un')).toBe(false);
   });
 
-  it('a repeat shows the tag and Unranked · not your first go at this Daily Tree', () => {
+  it('a repeat shows the tag and Unranked · not your first go', () => {
     const r = row(g({ dailyFirst: false }));
     expect(r?.querySelector('.acct-daily')?.textContent).toBe('Daily Tree · Nov 6');
-    expect(r?.querySelector('.acct-status')?.textContent).toBe('Unranked · not your first go at this Daily Tree');
+    expect(r?.querySelector('.acct-status')?.textContent).toBe('Unranked · not your first go');
     expect(r?.classList.contains('un')).toBe(true);
   });
 
