@@ -190,6 +190,40 @@ it('the skip gesture is swallowed whole: a click on a HUD button fires nothing, 
   button.remove();
 });
 
+it('once the room is lit (the HUD mark), input is no skip: the first tree takes it while the chrome still fades', () => {
+  const stage = document.createElement('canvas');
+  document.body.append(stage);
+  const button = document.createElement('button');
+  document.body.append(button);
+  const game: string[] = [];
+  stage.addEventListener('pointerdown', () => game.push('stage pointerdown'));
+  stage.addEventListener('pointerup', () => game.push('stage pointerup'));
+  button.addEventListener('click', () => game.push('button click'));
+  const onKey = (e: KeyboardEvent) => game.push(`key ${e.key}`);
+  document.addEventListener('keydown', onKey);
+  const o = opening();
+  o.play(performance.now());
+  vi.advanceTimersByTime(2750);
+  expect(o.on).toBe(true);
+  const down = pointer('pointerdown', 'mouse', 1);
+  stage.dispatchEvent(down);
+  stage.dispatchEvent(pointer('pointerup', 'mouse', 1));
+  button.dispatchEvent(pointer('click', 'mouse', 1));
+  const key = new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true });
+  document.body.dispatchEvent(key);
+  expect(game).toEqual(['stage pointerdown', 'stage pointerup', 'button click', 'key n']);
+  expect(down.defaultPrevented || key.defaultPrevented).toBe(false);
+  // Not a skip: the chrome finishes on the lab's timeline, off at 4.6 s.
+  expect(body('m-o-fast')).toBe(false);
+  vi.advanceTimersByTime(OPENING_MS - 2750 - 1);
+  expect(o.on).toBe(true);
+  vi.advanceTimersByTime(1);
+  expect(o.on).toBe(false);
+  document.removeEventListener('keydown', onKey);
+  stage.remove();
+  button.remove();
+});
+
 it('a hidden tab ends it at once (no replay on return)', () => {
   const o = opening();
   o.play(performance.now());

@@ -20,7 +20,7 @@ async function forget(page: Page): Promise<void> {
   });
 }
 
-test('a first visit shows the opening, and a click skips it without turning a tile', async ({ page }) => {
+test('a first visit shows the opening: a click in the dark skips it without turning a tile, one in the lit room turns it', async ({ page }) => {
   // The tree is asked for once the room is lit: not in the dark, and at once on a skip.
   const starts: number[] = [];
   page.on('request', (r) => {
@@ -44,8 +44,8 @@ test('a first visit shows the opening, and a click skips it without turning a ti
   await menuBtn.click();
   await expect(page.locator('#menu')).toBeVisible();
 
-  // Again, with the page's clock in hand: the tree turns up as the room is lit, and takes taps while the opening still
-  // plays (a click then would turn a tile).
+  // Again, with the page's clock in hand: the tree turns up as the room is lit, and takes taps while the opening's
+  // chrome still fades (once the room is lit, a click is the game's, never a skip).
   await forget(page);
   await page.clock.install();
   await page.goto('/?test');
@@ -64,19 +64,14 @@ test('a first visit shows the opening, and a click skips it without turning a ti
     return a.ids[Math.floor(a.ids.length / 2)];
   });
   const [x, y] = await page.evaluate((t) => (window as unknown as W).__aglow.tileCenter(t), tile);
-  const before = await state(page);
   const log = (await game(page)).log;
   await page.mouse.click(x, y);
+  // Skipped nothing: the opening is still on, on its own timeline (a skip would have set m-o-fast at once).
+  expect(await page.evaluate(() => [...document.body.classList].filter((c) => c.startsWith('m-')))).toEqual(['m-open', 'm-o-mark', 'm-o-tag', 'm-o-hud']);
   await page.clock.resume();
-  // Skipped: faded, and the chrome classes off by 900 ms.
-  await opening(page).not.toHaveClass(/\bm-open\b/);
-  const after = await state(page);
-  expect(after.bits).toEqual(before.bits);
-  expect(after.rotating).toBe(0);
-  expect((await game(page)).log).toBe(log);
-  // Over: the next click turns the tile (it is logged).
-  await page.mouse.click(x, y);
+  // The click turned the tile (it is logged), and the opening plays out to 4.6 s.
   await expect.poll(async () => (await game(page)).log).toBeGreaterThan(log);
+  await opening(page).not.toHaveClass(/\bm-open\b/);
   // Seen once: a reload goes straight to the game.
   expect(await page.evaluate(() => localStorage.getItem('aglow.opened'))).toBe('true');
   await page.reload();

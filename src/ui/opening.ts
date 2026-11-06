@@ -1,8 +1,8 @@
 /**
  * The first-visit opening (ported from the lab's moments-opening). The screen starts dark; the garland flickers on bulb
  * by bulb, the presents catch a glint, the tree's dark silhouette surfaces, the star glints, the room comes up, then
- * AGLOW and the tagline and finally the HUD fade in. The first key or press anywhere skips it. It only draws over the
- * stage: the tree is fetched, revealed and timed exactly as on any other visit.
+ * AGLOW and the tagline and finally the HUD fade in. The first key or press anywhere, until the room is lit, skips it. It
+ * only draws over the stage: the tree is fetched, revealed and timed exactly as on any other visit.
  */
 import type { GarlandGeometry } from '../render/garland';
 import { X, Y, type Layout } from '../render/layout';
@@ -116,9 +116,12 @@ export class Opening {
     const at = (s: number, fn: () => void) => this.timers.push(window.setTimeout(fn, s * 1000));
     at(T.mark, () => bodyClass('m-o-mark', true));
     at(T.tag, () => bodyClass('m-o-tag', true));
+    // The room is lit: the first tree may start, and from here a press or key is the game's, not a skip (the chrome
+    // still finishes its fades, to 4.6 s).
     at(T.hud, () => {
       bodyClass('m-o-hud', true);
       this.lightRoom();
+      this.stopSkips();
     });
     at(T.done, () => this.end());
     addEventListener('pointerdown', this.onInput, true);
@@ -145,9 +148,10 @@ export class Opening {
   }
 
   /**
-   * The first press or key, anywhere, skips (captured on the window, ahead of everything else). The whole gesture is
-   * swallowed: the press, its release and its click, or the key and its keyup, reach nothing else. So a press on the
-   * stage turns no tile, one on an unseen HUD button fires nothing, and a key is never N, P, Escape or Tab.
+   * The first press or key, anywhere, before the room is lit skips (captured on the window, ahead of everything else).
+   * The whole gesture is swallowed: the press, its release and its click, or the key and its keyup, reach nothing else.
+   * So a press on the stage turns no tile, one on an unseen HUD button fires nothing, and a key is never N, P, Escape or
+   * Tab. Once the room is lit the HUD is in and the tree may be taking taps: input goes to them (stopSkips).
    */
   private readonly onInput = (e: Event): void => {
     if (!this.playing || this.skipAt >= 0) return;
@@ -189,6 +193,12 @@ export class Opening {
     }
   };
 
+  /** No more skips: a press or key reaches the game. A skip's own tail, if one is armed, is still swallowed. */
+  private stopSkips(): void {
+    removeEventListener('pointerdown', this.onInput, true);
+    removeEventListener('keydown', this.onInput, true);
+  }
+
   private release(): void {
     if (!this.tail) return;
     for (const t of TAIL[this.tail]) removeEventListener(t, this.onTail, true);
@@ -212,8 +222,7 @@ export class Opening {
     this.lightRoom();
     this.clearTimers();
     for (const c of CLASSES) bodyClass(c, false);
-    removeEventListener('pointerdown', this.onInput, true);
-    removeEventListener('keydown', this.onInput, true);
+    this.stopSkips();
     document.removeEventListener('visibilitychange', this.onHidden);
   }
 
