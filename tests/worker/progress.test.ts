@@ -6,6 +6,7 @@ import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
 import type { Db } from '../../worker/lib/db';
+import { historyOf } from '../../worker/lib/progress';
 import type { AppEnv } from '../../worker/lib/env';
 import { solvingTaps } from '../unit/core/solver';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
@@ -134,6 +135,25 @@ describe("housekeeping keeps an account's unfinished games", () => {
     expect(await row(random.id)).not.toBeNull();
     expect(await row(daily.id)).not.toBeNull();
     expect(await row(guestNew.id)).toBeNull();
+  });
+});
+
+describe("an unverifiable finish keeps an account's game", () => {
+  it("signed in: a random game survives a 422 finish, unfinished and still in the player's rows; a guest's is deleted", async () => {
+    at('2026-12-10T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com');
+    const anaId = (await db.prepare("SELECT id FROM users WHERE email = 'ana@example.com'").first<{ id: number }>())?.id as number;
+    const garbage = (id: string, cookie?: string) => call(env, 'POST', `/api/games/${id}/finish`, { cookie, body: { log: [{ t: 0, a: 'nope' }] } });
+    const own = await start(ana);
+    later();
+    expect((await garbage(own.id, ana)).status).toBe(422);
+    expect(await row(own.id)).toMatchObject({ user_id: anaId, finished_at: null, ms: null });
+    // A modified client can't erase the break in a run of trees: the row is still one of the player's runs, unfinished.
+    const { runs } = await historyOf(db, anaId, Date.now());
+    expect(runs).toEqual([expect.objectContaining({ started: Number((await row(own.id))?.started_at), finished: null, ms: null })]);
+    const guest = await start();
+    expect((await garbage(guest.id)).status).toBe(422);
+    expect(await row(guest.id)).toBeNull();
   });
 });
 

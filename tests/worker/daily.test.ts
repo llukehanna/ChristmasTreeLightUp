@@ -178,7 +178,7 @@ describe('starting the Daily Tree', () => {
     expect(await row(daily.id)).not.toBeNull();
   });
 
-  it("an unverifiable finish deletes a random game but never a Daily attempt: the player's next start of that day is a repeat", async () => {
+  it("an unverifiable finish deletes a guest's random game but never a Daily attempt: the player's next start of that day is a repeat", async () => {
     at('2026-12-10T12:00:00Z');
     const ana = await signIn(env, 'ana@example.com');
     const garbage = (id: string) => call(env, 'POST', `/api/games/${id}/finish`, { cookie: ana, body: { log: 'x' } });
@@ -186,9 +186,13 @@ describe('starting the Daily Tree', () => {
     expect((await garbage(daily.id)).status).toBe(422);
     expect(await row(daily.id)).toMatchObject({ finished_at: null, daily_day: dayNumber('2026-12-10') });
     expect((await json<StartResponse>(await startDaily({ today: '2026-12-10' }, ana))).daily?.repeat).toBe(true);
+    // A signed-in player's random game stays too (migration 0008: it's a break in their run of trees); a guest's goes.
     const random = await json<StartResponse>(await startDaily(undefined, ana));
     expect((await garbage(random.id)).status).toBe(422);
-    expect(await row(random.id)).toBeNull();
+    expect(await row(random.id)).toMatchObject({ finished_at: null });
+    const guest = await json<StartResponse>(await startDaily(undefined));
+    expect((await call(env, 'POST', `/api/games/${guest.id}/finish`, { body: { log: 'x' } })).status).toBe(422);
+    expect(await row(guest.id)).toBeNull();
   });
 
   it('the repeat lookup reads through games_daily, not a scan of every game', async () => {

@@ -212,8 +212,10 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
   const log = parseLog(body.log, GRID);
   const verdict = log && judge({ seed: game.seed, genVersion: game.gen_version, log, serverElapsedMs: receivedAt - game.started_at });
   if (!log || !verdict) {
-    // A Daily row stays (unfinished: the day is forfeited; a guest's is swept after a day), so garbage can't erase a first attempt.
-    await env.DB.prepare('DELETE FROM games WHERE id = ? AND finished_at IS NULL AND daily_day IS NULL').bind(id).run();
+    // Only a guest's random game goes at once. A signed-in player's row stays unfinished (plan C2+C3, decision 3), so
+    // garbage can't erase a break in a run of trees or a Daily first attempt; a guest's Daily stays too (the day is
+    // forfeited), until the sweep takes it after a day.
+    await env.DB.prepare('DELETE FROM games WHERE id = ? AND finished_at IS NULL AND daily_day IS NULL AND user_id IS NULL').bind(id).run();
     throw new HttpError(422, 'unverified', "This run couldn't be verified.");
   }
   // The judge's reason first. A Daily run never ranks on the main board: a past day's is on no board, a live day's on
