@@ -965,8 +965,8 @@ export class App {
     const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult, repeat: this.online?.daily?.repeat === true };
     const m = o && ribbonModel(o, this.session.current, ctx);
     renderRibbon(el('results'), m, {
-      // The rosette's rank and total are all-time ones, or the Daily board's.
-      board: () => this.accounts.openBoard(null, m?.kind === 'rank' && m.board === 'daily' ? 'daily' : 'all'),
+      // The rosette's rank and total are all-time ones, or those of the run's day's Daily board.
+      board: () => (m?.kind === 'rank' && m.board === 'daily' ? this.accounts.openBoard(null, 'daily', this.dailyDay ?? undefined) : this.accounts.openBoard(null, 'all')),
       save: () => this.saveRun(),
       retry: () => this.retry(),
     });

@@ -120,6 +120,18 @@ describe('api client', () => {
     ]);
   });
 
+  it("asks for the Daily board of this browser's day, or of the day given (the run's, from the rosette)", async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    const at = new Date(2026, 10, 7, 0, 10);
+    await api.board('daily', at);
+    await api.board('daily', at, '2026-11-06');
+    expect(fetch.mock.calls.map((c) => c[0])).toEqual([
+      `/api/board?window=daily&today=2026-11-07&tz=${at.getTimezoneOffset()}`,
+      `/api/board?window=daily&today=2026-11-06&tz=${at.getTimezoneOffset()}`,
+    ]);
+  });
+
   it('after a write, every window is revalidated once: the browser may hold a copy of each', async () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
     vi.stubGlobal('fetch', fetch);

@@ -465,14 +465,15 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(windows.getByRole('button', { name: 'Today', pressed: true })).toBeVisible();
     await windows.getByRole('button', { name: 'Daily' }).click();
     await expect(windows.getByRole('button', { name: 'Daily', pressed: true })).toBeFocused();
-    await expect(board.locator('.acct-sub')).toHaveText(/^Today's Daily Tree · [\d,]+ runs?$/);
+    const label = await page.evaluate(() => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    // The sub names the day it shows, as the pill does.
+    await expect(board.locator('.acct-sub')).toHaveText(new RegExp(`^Daily Tree · ${label} · [\\d,]+ runs?$`));
     await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(name);
     await expect(board.locator('.acct-pin-note')).toHaveText(/^Your run · #\d+ of [\d,]+$/);
     expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBe('daily');
     // Your games: the run carries its Daily tag, and no "Unranked".
     await board.getByRole('tab', { name: 'Your games' }).click();
     const first = page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game').first();
-    const label = await page.evaluate(() => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     await expect(first.locator('.acct-daily')).toHaveText(`Daily Tree · ${label}`);
     await expect(first).not.toContainText('Unranked');
   });

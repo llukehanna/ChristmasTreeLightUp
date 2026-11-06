@@ -70,9 +70,14 @@ async function changesBoard<T>(p: Promise<T>): Promise<T> {
   for (const w of BOARD_WINDOWS) staleWindows.add(w);
   return r;
 }
-/** One window of the board (spec 2026-10-14): today and this week are this browser's day and zone, as myStats sends them. */
-async function board(win: BoardWindow = 'all', now: Date = new Date()): Promise<BoardResponse> {
-  const path = win === 'all' ? '/api/board?window=all' : `/api/board?window=${win}&today=${localDay(now)}&tz=${now.getTimezoneOffset()}`;
+/**
+ * One window of the board (spec 2026-10-14): today and this week are this browser's day and zone, as myStats sends
+ * them. The Daily is this browser's day's, or `day`'s (a Daily run's, from the results tag: the server takes a day within
+ * one of its own).
+ */
+async function board(win: BoardWindow = 'all', now: Date = new Date(), day?: string): Promise<BoardResponse> {
+  const today = win === 'daily' && day !== undefined ? day : localDay(now);
+  const path = win === 'all' ? '/api/board?window=all' : `/api/board?window=${win}&today=${today}&tz=${now.getTimezoneOffset()}`;
   // Cleared before asking, so a write landing while this is in flight marks the window again; put back if this fails.
   const revalidate = staleWindows.delete(win);
   try {

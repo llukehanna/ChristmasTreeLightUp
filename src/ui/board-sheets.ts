@@ -1,5 +1,6 @@
 import { BOARD_TOP, BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardRow, type BoardWindow, type MyGamesResponse, type RecentGame, type User } from '../api/types';
 import { count, dailyLabel, esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
+import { localDay } from '../store/stats';
 import { G_LOGO, I } from './icons';
 import type { SheetView } from './sheet';
 
@@ -17,9 +18,13 @@ function rowHtml(r: BoardRow, now: number): string {
     <span class="acct-date">${formatDay(r.finishedAt, now)}</span></li>`;
 }
 
-/** The windows as the control and the subtitle name them, and what an empty one says (spec 2026-10-14 §4). */
+/**
+ * The windows as the control and the subtitle name them, and what an empty one says (spec 2026-10-14 §4). The Daily's
+ * subtitle is the day it shows (listView), as the pill names it: never "Today's", as the results tag's rosette opens
+ * the run's day, which can be yesterday by the time it is solved.
+ */
 const WINDOWS: Record<BoardWindow, { button: string; sub: string; empty: string }> = {
-  daily: { button: 'Daily', sub: "Today's Daily Tree", empty: "No one has lit today's Daily Tree yet." },
+  daily: { button: 'Daily', sub: 'Daily Tree', empty: 'No one has lit this Daily Tree yet.' },
   today: { button: 'Today', sub: 'Today', empty: 'No runs yet today — be the first.' },
   week: { button: 'This week', sub: 'This week', empty: 'No runs yet this week.' },
   all: { button: 'All time', sub: 'All-time', empty: 'No ranked runs yet. Light a tree and be the first.' },
@@ -164,14 +169,17 @@ export function listView(
   now: number,
   stats: Loadable<AccountStats> = { status: 'loading' },
   win: BoardWindow = 'all',
+  /** The day (YYYY-MM-DD) of the Daily board shown: this browser's today unless the rosette opened a run's. */
+  dailyDay: string = localDay(new Date(now)),
 ): SheetView {
   return {
     label: tab === 'board' ? 'Leaderboard' : 'Your games',
     card: false,
     render(inner) {
+      const name = win === 'daily' ? dailyLabel(dailyDay) : WINDOWS[win].sub;
       const sub =
         tab === 'board'
-          ? `${WINDOWS[win].sub} · ${board.status === 'ready' ? plural(board.data.total, runWord(win)) : 'fastest trees'}`
+          ? `${name} · ${board.status === 'ready' ? plural(board.data.total, runWord(win)) : 'fastest trees'}`
           : user?.name
             ? `${esc(user.name)} · your trees`
             : 'Not signed in';

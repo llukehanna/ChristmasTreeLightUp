@@ -6,14 +6,16 @@ import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '
 const calls = vi.hoisted(() => ({
   myStats: vi.fn<() => Promise<AccountStats>>(),
   myGames: vi.fn<() => Promise<MyGamesResponse>>(),
-  board: vi.fn<(w: BoardWindow) => Promise<BoardResponse>>(),
+  board: vi.fn<(w: BoardWindow, now?: Date, day?: string) => Promise<BoardResponse>>(),
 }));
 vi.mock('../../../src/api/client', async (orig) => ({
   ...(await orig<typeof import('../../../src/api/client')>()),
   api: { myStats: calls.myStats, myGames: calls.myGames, board: calls.board },
 }));
 
+import { localDay } from '../../../src/store/stats';
 import { Accounts } from '../../../src/ui/accounts';
+import { dailyLabel } from '../../../src/ui/format';
 
 const stats = (solved: number): AccountStats => ({ userId: 1, solved, totalMs: solved * 60_000, averageMs: 60_000, bestMs: 50_000, streak: 1, longestStreak: 1, lastSolvedDay: '2026-10-08', imported: 0 });
 const games: MyGamesResponse = { best: null, inTop: 0, total: 0, games: [] };
@@ -189,19 +191,30 @@ it('the Daily window fetches the day\'s Daily board, comes first, and is remembe
   accounts.openBoard();
   expect(document.querySelector('.acct-wins button')?.textContent).toBe('Daily');
   clickAct('win-daily');
-  expect(calls.board).toHaveBeenLastCalledWith('daily');
+  const today = localDay(new Date());
+  expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, today);
   expect(pressedWindow()).toBe('Daily');
   expect(localStorage.getItem('aglow.boardWindow')).toBe('daily');
   expect((document.activeElement as HTMLElement | null)?.dataset.act).toBe('win-daily');
   await tick();
   expect(names()).toEqual(['Comet']);
-  expect(document.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 1 run");
-  // The results tag's Daily rosette opens the Daily window, without changing the remembered one.
+  expect(document.querySelector('.acct-sub')?.textContent).toBe(`${dailyLabel(today)} · 1 run`);
+  // The results tag's Daily rosette opens the Daily window for the run's day, without changing the remembered window.
   localStorage.setItem('aglow.boardWindow', 'week');
   const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
-  fresh.openBoard(null, 'daily');
-  expect(calls.board).toHaveBeenLastCalledWith('daily');
+  const other = today === '2026-11-05' ? '2026-11-04' : '2026-11-05'; // a run's day that isn't today
+  fresh.openBoard(null, 'daily', other);
+  expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, other);
   expect(localStorage.getItem('aglow.boardWindow')).toBe('week');
+  await tick();
+  /** The newest sheet's (the first one is still in the page). */
+  const last = (sel: string) => [...document.querySelectorAll(sel)].at(-1)?.textContent;
+  expect(last('.acct-sub')).toBe(`${dailyLabel(other)} · 1 run`);
+  // Opened again without a day, it is today's board, read again (never the other day's answer).
+  calls.board.mockReturnValueOnce(new Promise(() => undefined));
+  fresh.openBoard(null, 'daily');
+  expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, today);
+  expect(last('.acct-body .acct-note')).toBe('Loading…');
 });
 
 it("a new local day: the Daily window starts again from Loading, never yesterday's Daily", async () => {
@@ -212,7 +225,7 @@ it("a new local day: the Daily window starts again from Loading, never yesterday
   const daily = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
   calls.board.mockResolvedValueOnce({ rows: [row('Comet', 9_000)], total: 1, you: null });
   daily.openBoard();
-  expect(calls.board).toHaveBeenLastCalledWith('daily');
+  expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, '2026-11-06');
   await tick();
   expect(names()).toEqual(['Comet']);
   // An answer asked for before midnight that comes back after it is dropped.
@@ -230,5 +243,5 @@ it("a new local day: the Daily window starts again from Loading, never yesterday
   expect(note()).toBe('Loading…');
   fresh.resolve({ rows: [], total: 0, you: null });
   await tick();
-  expect(note()).toBe("No one has lit today's Daily Tree yet.");
+  expect(note()).toBe('No one has lit this Daily Tree yet.');
 });

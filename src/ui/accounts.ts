@@ -36,6 +36,8 @@ export class Accounts {
   private readonly boards: Record<BoardWindow, Loadable<BoardResponse>> = { daily: { status: 'loading' }, today: { status: 'loading' }, week: { status: 'loading' }, all: { status: 'loading' } };
   /** The local day the Daily's, Today's and This week's answers are for: on a new day they start again from loading. */
   private boardsDay = '';
+  /** The day of the Daily board on screen: today's, or a Daily run's (the results tag's rosette). */
+  private dailyDay = '';
   private games: Loadable<MyGamesResponse> = { status: 'loading' };
   private stats: Loadable<AccountStats> = { status: 'loading' };
   /** Bumped by each stats load and each session change: only the newest answer is kept. */
@@ -103,11 +105,15 @@ export class Accounts {
     if (user) this.sheet.open(deleteView(user), from);
   }
 
-  /** The leaderboard on the window chosen last, or on `win` (the board of the results tag's rank) without changing that choice. */
-  openBoard(from?: HTMLElement | null, win: BoardWindow = this.chosen): void {
+  /**
+   * The leaderboard on the window chosen last, or on `win` (the board of the results tag's rank) without changing that
+   * choice; the Daily window shows `day`'s board (a Daily run's), today's by default.
+   */
+  openBoard(from?: HTMLElement | null, win: BoardWindow = this.chosen, day?: string): void {
     this.tab = 'board';
     this.win = win;
     this.newBoardDay();
+    this.showDaily(day ?? this.boardsDay);
     this.sheet.open(this.listNow(), from);
     void this.loadBoard();
   }
@@ -116,10 +122,19 @@ export class Accounts {
   private newBoardDay(): void {
     const day = localDay(new Date());
     if (day === this.boardsDay) return;
+    // Today's Daily board becomes the new day's; a run's day (the rosette's) stays until the board is opened again.
+    if (this.dailyDay === this.boardsDay) this.dailyDay = day;
     this.boardsDay = day;
     this.boards.daily = { status: 'loading' };
     this.boards.today = { status: 'loading' };
     this.boards.week = { status: 'loading' };
+  }
+
+  /** The Daily window shows `day`'s board: another day's answer goes back to loading. */
+  private showDaily(day: string): void {
+    if (day === this.dailyDay) return;
+    this.dailyDay = day;
+    this.boards.daily = { status: 'loading' };
   }
 
   openGames(from?: HTMLElement | null): void {
@@ -129,7 +144,7 @@ export class Accounts {
   }
 
   private listNow() {
-    return listView(this.tab, this.boards[this.win], this.games, this.session.current, Date.now(), this.stats, this.win);
+    return listView(this.tab, this.boards[this.win], this.games, this.session.current, Date.now(), this.stats, this.win, this.dailyDay);
   }
 
   /** Redraws the leaderboard or Your games when its data arrives, if that list is still on screen. */
@@ -145,13 +160,15 @@ export class Accounts {
   private async loadBoard(): Promise<void> {
     const win = this.win;
     const day = this.boardsDay;
+    const dailyDay = this.dailyDay;
     let next: Loadable<BoardResponse> | null;
     try {
-      next = { status: 'ready', data: await api.board(win) };
+      next = { status: 'ready', data: await (win === 'daily' ? api.board(win, undefined, dailyDay) : api.board(win)) };
     } catch {
       next = this.boards[win].status === 'ready' ? null : { status: 'error' };
     }
     if (win !== 'all' && day !== this.boardsDay) return;
+    if (win === 'daily' && dailyDay !== this.dailyDay) return;
     if (next) this.boards[win] = next;
     this.refreshList();
   }
@@ -313,6 +330,8 @@ export class Accounts {
         this.win = this.chosen = act.slice('win-'.length) as BoardWindow;
         saveBoardWindow(this.win);
         this.newBoardDay();
+        // The Daily button is today's Daily, whichever day's the rosette opened.
+        if (this.win === 'daily') this.showDaily(this.boardsDay);
         this.sheet.update(this.listNow());
         this.sheet.body.querySelector<HTMLElement>('.acct-wins [aria-pressed="true"]')?.focus({ preventScroll: true });
         void this.loadBoard();

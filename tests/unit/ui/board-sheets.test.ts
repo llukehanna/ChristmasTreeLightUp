@@ -304,9 +304,14 @@ describe('board windows: Today, This week, All time (spec 2026-10-14 §4)', () =
     expect(texts(el, '.acct-wins button')[0]).toBe('Daily');
     expect(el.querySelector('.acct-wins button')?.getAttribute('data-act')).toBe('win-daily');
     expect(pressed(el)).toEqual(['Daily']);
-    expect(el.querySelector('.acct-body .acct-note')?.textContent).toBe("No one has lit today's Daily Tree yet.");
-    expect(el.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 0 runs");
-    expect(render('board', { status: 'loading' }, { status: 'loading' }, me, now, undefined, 'daily').querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · fastest trees");
+    expect(el.querySelector('.acct-body .acct-note')?.textContent).toBe('No one has lit this Daily Tree yet.');
+    // The sub names the day the board is for (this browser's today unless told), as the pill does: never "Today's".
+    expect(el.querySelector('.acct-sub')?.textContent).toBe('Daily Tree · Dec 3 · 0 runs');
+    expect(render('board', { status: 'loading' }, { status: 'loading' }, me, now, undefined, 'daily').querySelector('.acct-sub')?.textContent).toBe('Daily Tree · Dec 3 · fastest trees');
+    // The rosette of a Daily begun before midnight opens that run's day.
+    const yesterday = render('board', { status: 'ready', data: { rows: [], total: 0, you: null } }, { status: 'loading' }, me, now, undefined, 'daily', '2026-12-02');
+    expect(yesterday.querySelector('.acct-sub')?.textContent).toBe('Daily Tree · Dec 2 · 0 runs');
+    expect(yesterday.querySelector('.acct-body .acct-note')?.textContent).toBe('No one has lit this Daily Tree yet.');
     // The remembered window is still Today until one is chosen.
     expect(loadBoardWindow()).toBe('today');
     saveBoardWindow('daily');
@@ -316,7 +321,7 @@ describe('board windows: Today, This week, All time (spec 2026-10-14 §4)', () =
   it("the Daily window's words: runs, not ranked runs, and your run, not your best", () => {
     const daily = (data: BoardResponse) => render('board', { status: 'ready', data }, { status: 'loading' }, me, now, undefined, 'daily');
     const listed = daily({ ...board, total: 9 });
-    expect(listed.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 9 runs");
+    expect(listed.querySelector('.acct-sub')?.textContent).toBe('Daily Tree · Dec 3 · 9 runs');
     expect(listed.querySelector('.acct-pin-note')?.textContent).toBe('Your run · #2 of 9');
     const you = { rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true };
     expect(daily({ rows: [board.rows[0]], total: 90, you }).querySelector('.acct-pin-note')?.textContent).toBe('Your run · #87 of 90');
