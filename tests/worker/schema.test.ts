@@ -22,18 +22,33 @@ describe('migrations', () => {
 
   it('create the tables and the indexes the spec names', async () => {
     const names = (await db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'").all<{ name: string }>()).results.map((r) => r.name);
-    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_best', 'games_stale', 'games_stale_daily', 'games_recent', 'starts', 'starts_ip', 'starts_at']));
+    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_best', 'games_stale', 'games_recent', 'starts', 'starts_ip', 'starts_at']));
   });
 
-  it('games_board, games_best, games_recent, games_stale and games_stale_daily are partial indexes', async () => {
+  it('games_board, games_best, games_recent and games_stale are partial indexes', async () => {
     const sql = async (name: string) => (await db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?").bind(name).first<{ sql: string }>())?.sql ?? '';
     expect(await sql('games_board')).toMatch(/WHERE ranked = 1$/);
     expect(await sql('games_best')).toMatch(/WHERE ranked = 1$/);
     expect(await sql('games_recent')).toMatch(/WHERE ranked = 1$/);
-    // Migration 0007: abandoned games in two kinds, each swept on its own index; games_abandoned is gone.
-    expect(await sql('games_stale')).toMatch(/WHERE finished_at IS NULL AND \(daily_day IS NULL OR user_id IS NULL\)$/);
-    expect(await sql('games_stale_daily')).toMatch(/WHERE finished_at IS NULL AND daily_day IS NOT NULL AND user_id IS NOT NULL$/);
+    // Migration 0008: only a guest's unfinished games are swept; games_stale_daily (0007) and games_abandoned are gone.
+    expect(await sql('games_stale')).toMatch(/WHERE finished_at IS NULL AND user_id IS NULL$/);
+    expect(await sql('games_stale_daily')).toBe('');
     expect(await sql('games_abandoned')).toBe('');
+  });
+
+  it('games carries the facts, the reported context and claimed_at, all null by default; world is secret or home-alone (migration 0008)', async () => {
+    await db.prepare("INSERT INTO games (id, gen_version, seed, started_at) VALUES ('plain-aaaaaaaaaaaaaa', 1, 1, 1)").run();
+    expect(await db.prepare("SELECT turns, min_turns, feats, tz, station, world, claimed_at FROM games WHERE id = 'plain-aaaaaaaaaaaaaa'").first()).toEqual({
+      turns: null,
+      min_turns: null,
+      feats: null,
+      tz: null,
+      station: null,
+      world: null,
+      claimed_at: null,
+    });
+    for (const world of ['secret', 'home-alone']) await db.prepare("UPDATE games SET world = ? WHERE id = 'plain-aaaaaaaaaaaaaa'").bind(world).run();
+    await expect(db.prepare("UPDATE games SET world = 'mars' WHERE id = 'plain-aaaaaaaaaaaaaa'").run()).rejects.toThrow(/CHECK/);
   });
 
   it('games.daily_day is null and daily_past 0 by default; games_daily is a partial index (migration 0006)', async () => {

@@ -1,4 +1,5 @@
 import { MAX_CLAIMS_PER_REQUEST, type ClaimResponse, type DailyInfo, type DailyResult, type FinishResult, type StartResponse } from '../../src/api/types.js';
+import { runFacts } from '../../src/core/facts.js';
 import { judge, type UnrankedReason } from '../../src/core/judge.js';
 import { parseLog } from '../../src/core/log.js';
 import { GRID } from '../../src/core/mask.js';
@@ -10,6 +11,7 @@ import { boardGrew, cachedDailyTotal, cachedTotal, dailyGrew } from '../lib/boar
 import { dailyClosesAt, dailySeed, DAILY_FIRST_DAY, liveDay } from '../lib/daily.js';
 import { dailyFirstId, dailyRankOf } from '../lib/daily-board.js';
 import { DAY_MS, dayNumber, dayText } from '../lib/days.js';
+import { runContextOf } from '../lib/progress.js';
 import { bestOf, rankOf } from '../lib/ranks.js';
 import { authSecret, currentUser, requireUser } from '../lib/users.js';
 
@@ -17,16 +19,17 @@ const HOUR_MS = 3_600_000;
 export const STARTS_PER_HOUR = 200;
 /** Finished games nobody has claimed are kept this long, so signing in later on the same browser still finds them. */
 export const UNCLAIMED_KEEP_DAYS = 90;
-/** Each start clears at most this many stale games of each kind: up to 75 in all (spec §2). */
+/** Each start clears at most this many stale games of each kind: up to 50 in all (spec §2). */
 const STALE_BATCH = 25;
 /**
- * Abandoned games, bound (cutoff, limit): each kind is swept on its own partial index (migration 0007), its WHERE
- * repeating the index's exactly, so neither walks rows it won't delete. STALE_SQL: a random game or a guest's Daily
- * (never claimable unfinished), after a day. STALE_DAILY_SQL: a signed-in player's Daily, their first attempt finished
- * or not (plan C1, decision 1), kept until its day has closed everywhere: three days.
+ * Abandoned games, bound (cutoff, limit): a guest's unfinished games (never claimable: a claim needs a finished run),
+ * swept after a day on their partial index (migration 0008), its WHERE repeating the index's exactly, so the delete
+ * never walks rows it won't delete. INDEXED BY: left alone, the planner seeks games_user (user_id, finished_at) on the
+ * two IS NULLs instead, walking every guest's unfinished game, the day's live ones too. A signed-in player's unfinished
+ * games are kept for good (plan C2+C3, decision 3): they break a run of trees, and a Daily one is a forfeited first
+ * attempt.
  */
-export const STALE_SQL = 'SELECT id FROM games WHERE finished_at IS NULL AND (daily_day IS NULL OR user_id IS NULL) AND started_at < ? LIMIT ?';
-export const STALE_DAILY_SQL = 'SELECT id FROM games WHERE finished_at IS NULL AND daily_day IS NOT NULL AND user_id IS NOT NULL AND started_at < ? LIMIT ?';
+export const STALE_SQL = 'SELECT id FROM games INDEXED BY games_stale WHERE finished_at IS NULL AND user_id IS NULL AND started_at < ? LIMIT ?';
 /** Each start prunes at most this many start records older than an hour. */
 const STARTS_PRUNE = 50;
 export const GAME_ID = /^[A-Za-z0-9_-]{16,64}$/;
@@ -110,9 +113,8 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
   // Stamped last, right before the insert, so nothing above counts against the player's clock.
   const now = Date.now();
   await env.DB.batch([
-    // Lazy housekeeping (no cron): abandoned games after a day (a signed-in player's Daily after three), unclaimed finished games after 90 days.
+    // Lazy housekeeping (no cron): a guest's abandoned games after a day, unclaimed finished games after 90 days.
     env.DB.prepare(`DELETE FROM games WHERE id IN (${STALE_SQL})`).bind(now - DAY_MS, STALE_BATCH),
-    env.DB.prepare(`DELETE FROM games WHERE id IN (${STALE_DAILY_SQL})`).bind(now - 3 * DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?)').bind(now - UNCLAIMED_KEEP_DAYS * DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM starts WHERE rowid IN (SELECT rowid FROM starts WHERE at < ? LIMIT ?)').bind(now - HOUR_MS, STARTS_PRUNE),
     env.DB.prepare('INSERT INTO starts (ip_hash, at) VALUES (?, ?)').bind(ipHash, now),
@@ -198,7 +200,7 @@ async function resultsOf(env: AppEnv, userId: number | null, games: readonly Fin
 
 const resultOf = async (env: AppEnv, g: FinishedGame): Promise<FinishResult> => (await resultsOf(env, g.user_id, [g]))[0];
 
-/** POST /api/games/:id/finish { log } */
+/** POST /api/games/:id/finish { log, ctx? }: a ctx that doesn't check out is dropped (runContextOf). */
 export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: readonly string[]): Promise<Response> {
   const receivedAt = Date.now();
   const body = await readJson(req);
@@ -210,7 +212,7 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
   const log = parseLog(body.log, GRID);
   const verdict = log && judge({ seed: game.seed, genVersion: game.gen_version, log, serverElapsedMs: receivedAt - game.started_at });
   if (!log || !verdict) {
-    // A Daily row stays (unfinished: the day is forfeited, housekeeping clears it), so garbage can't erase a first attempt.
+    // A Daily row stays (unfinished: the day is forfeited; a guest's is swept after a day), so garbage can't erase a first attempt.
     await env.DB.prepare('DELETE FROM games WHERE id = ? AND finished_at IS NULL AND daily_day IS NULL').bind(id).run();
     throw new HttpError(422, 'unverified', "This run couldn't be verified.");
   }
@@ -219,10 +221,28 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
   const reason: UnrankedReason | null =
     verdict.reason ?? (game.daily_past === 1 ? 'past' : game.daily_day !== null ? 'daily' : game.user_id === null ? 'anonymous' : null);
   const ranked = reason === null ? 1 : 0;
+  // The facts for the goals, only now the judge's capped replay has passed (runFacts lights the whole tree per turn).
+  const facts = runFacts(game.seed, game.gen_version, log);
+  const ctx = runContextOf(body.ctx);
   const saved = await env.DB.prepare(
-    'UPDATE games SET finished_at = ?, ms = ?, paused_ms = ?, pauses = ?, ranked = ?, unranked_reason = ?, log = ? WHERE id = ? AND finished_at IS NULL',
+    'UPDATE games SET finished_at = ?, ms = ?, paused_ms = ?, pauses = ?, ranked = ?, unranked_reason = ?, log = ?, turns = ?, min_turns = ?, feats = ?, tz = ?, station = ?, world = ? WHERE id = ? AND finished_at IS NULL',
   )
-    .bind(receivedAt, verdict.ms, verdict.pausedMs, verdict.pauses, ranked, reason, JSON.stringify(log), id)
+    .bind(
+      receivedAt,
+      verdict.ms,
+      verdict.pausedMs,
+      verdict.pauses,
+      ranked,
+      reason,
+      JSON.stringify(log),
+      facts?.turns ?? null,
+      facts?.minTurns ?? null,
+      facts?.feats ?? null,
+      ctx?.tz ?? null,
+      ctx?.station ?? null,
+      ctx?.world ?? null,
+      id,
+    )
     .run();
   if (saved.meta.changes === 0) {
     // Lost a race with another finish of the same game: answer what that one saved.
@@ -259,8 +279,9 @@ export async function claimGames(req: Request, env: AppEnv): Promise<Response> {
       unranked_reason: ranks ? null : game.unranked_reason,
       named: user.name === null ? 0 : 1,
     };
-    const res = await env.DB.prepare('UPDATE games SET user_id = ?, claim_hash = NULL, ranked = ?, unranked_reason = ? WHERE id = ? AND user_id IS NULL')
-      .bind(user.id, owned.ranked, owned.unranked_reason, id)
+    // claimed_at: a Daily run claimed once its day has closed is the account's history, never its board (daily-board.ts).
+    const res = await env.DB.prepare('UPDATE games SET user_id = ?, claim_hash = NULL, ranked = ?, unranked_reason = ?, claimed_at = ? WHERE id = ? AND user_id IS NULL')
+      .bind(user.id, owned.ranked, owned.unranked_reason, Date.now(), id)
       .run();
     if (res.meta.changes > 0) claimed.push(owned);
   }

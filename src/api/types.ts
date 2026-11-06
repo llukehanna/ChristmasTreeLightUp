@@ -1,3 +1,5 @@
+import type { ItemId } from '../core/catalogue';
+import type { GoalId, GoalState } from '../core/goals';
 import type { UnrankedReason } from '../core/judge';
 
 /** JSON shapes shared by the Worker and the browser (specs 2026-10-07 §3, 2026-10-08 §3), plus a few shared constants. */
@@ -68,6 +70,19 @@ export interface DailyInfo {
   past: boolean;
   /** The signed-in player has started this day's tree before: not their first attempt. */
   repeat: boolean;
+}
+
+/**
+ * POST /api/games/:id/finish { log, ctx? }: what the browser reports at the win (season two C2+C3), for the calendar
+ * and secret goals only. Self-reported; one that fails the Worker's checks is dropped and the run still finishes.
+ */
+export interface RunContext {
+  /** Date#getTimezoneOffset() at the win: UTC minus local, in minutes. */
+  tz: number;
+  /** The radio station playing (a station id, /^[a-z0-9-]{1,64}$/), or null. */
+  station: string | null;
+  /** An egg world the tree was lit in, or null. */
+  world: 'secret' | 'home-alone' | null;
 }
 
 export interface FinishResult {
@@ -211,4 +226,12 @@ export interface AccountStats {
   lastSolvedDay: string | null;
   /** How many of `solved` were imported. */
   imported: number;
+}
+
+/** GET /api/me/progress (season two C2+C3): what the account has earned, evaluated from its rows on the server. */
+export interface ProgressResponse {
+  earned: ItemId[];
+  goals: Record<GoalId, GoalState>;
+  /** Finished games, any source: the client shows the larger of this and the device's own count. */
+  treesLit: number;
 }

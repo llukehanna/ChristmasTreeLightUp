@@ -6,7 +6,7 @@ import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
-import { STALE_DAILY_SQL, STALE_SQL, STARTS_PER_HOUR, UNCLAIMED_KEEP_DAYS } from '../../worker/routes/games';
+import { STALE_SQL, STARTS_PER_HOUR, UNCLAIMED_KEEP_DAYS } from '../../worker/routes/games';
 import { solvingTaps, withPause } from '../unit/core/solver';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
@@ -156,12 +156,11 @@ describe('starting a game', () => {
     expect(await plan('SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?')).toContain('games_user');
   });
 
-  it("each abandoned-game delete SEARCHes its own partial index: it never walks rows it won't delete (migration 0007)", async () => {
+  it("the abandoned-game delete SEARCHes its partial index: it never walks rows it won't delete (migration 0008)", async () => {
     const plan = async (sql: string) => (await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(1, 25).all<{ detail: string }>()).results.map((r) => r.detail);
     expect(await plan(STALE_SQL)).toEqual([expect.stringMatching(/^SEARCH games USING (COVERING )?INDEX games_stale \(started_at<\?\)$/)]);
-    expect(await plan(STALE_DAILY_SQL)).toEqual([expect.stringMatching(/^SEARCH games USING (COVERING )?INDEX games_stale_daily \(started_at<\?\)$/)]);
-    // The old one-index sweep is gone: nothing else read it.
-    expect(await db.prepare("SELECT name FROM sqlite_master WHERE name = 'games_abandoned'").first()).toBeNull();
+    // The older sweeps' indexes are gone: nothing else read them.
+    for (const name of ['games_abandoned', 'games_stale_daily']) expect(await db.prepare('SELECT name FROM sqlite_master WHERE name = ?').bind(name).first(), name).toBeNull();
   });
 
   it('the start limit and its pruning read through indexes, not a scan of every start', async () => {
@@ -258,6 +257,19 @@ describe('claiming games', () => {
     expect((await claim(ana, [{ id: unfinished.id, claim: unfinished.claim }])).results).toEqual([]);
     expect((await claim(ana, [{ id: anon.game.id, claim: anon.game.claim }])).results).toHaveLength(1);
     expect((await claim(bo, [{ id: anon.game.id, claim: anon.game.claim }])).results).toEqual([]);
+  });
+
+  it('a claim records when it was made (claimed_at); a run finished signed in has none', async () => {
+    const anon = await play();
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const own = await play(ana);
+    expect(await row(anon.game.id)).toMatchObject({ claimed_at: null });
+    const before = Date.now();
+    await claim(ana, [{ id: anon.game.id, claim: anon.game.claim }]);
+    const claimedAt = Number((await row(anon.game.id))?.claimed_at);
+    expect(claimedAt).toBeGreaterThanOrEqual(before);
+    expect(claimedAt).toBeLessThanOrEqual(Date.now());
+    expect(await row(own.game.id)).toMatchObject({ claimed_at: null });
   });
 
   it('a claimed run keeps any other reason: a paused signed-out run stays unranked', async () => {

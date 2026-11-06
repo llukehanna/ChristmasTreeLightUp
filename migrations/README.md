@@ -21,3 +21,11 @@ still runs correctly against it (never an error), but its sweep plans as `SCAN g
 reads the whole games table, finished games included, on every start. So the old Worker's few seconds between the
 migration and the deploy are fine, but any rollback of the Worker past 0007 must be short: roll forward (or put back
 `games_abandoned`) quickly.
+
+0008 adds the columns season two's goals read (`turns`, `min_turns`, `feats`, `tz`, `station`, `world`, `claimed_at`),
+which the new Worker's finish and claim write: apply it first, as `npm run deploy` does. It also stops sweeping a
+signed-in player's unfinished games (they are kept for good) by dropping `games_stale_daily` and narrowing `games_stale`
+to a guest's unfinished games. Rolling the Worker back past 0008 brings back the old sweep, which deletes kept rows: a
+signed-in player's unfinished random games after a day and their unfinished Daily attempts after three, losing the
+breaks in their runs of trees and their forfeited first attempts (so a later attempt could join a closed day's board).
+Its queries no longer match either partial index, so it also scans the games table on every start. Roll forward.

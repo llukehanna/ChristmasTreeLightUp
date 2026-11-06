@@ -1,9 +1,11 @@
-import type { AccountStats, HomeAloneResponse, MeResponse, MyGamesResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
+import type { AccountStats, HomeAloneResponse, MeResponse, MyGamesResponse, ProgressResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
+import { evaluate } from '../../src/core/goals.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
 import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
 import { dailyFirstIds } from '../lib/daily-board.js';
 import { dayText, streaksOf, viewerDay } from '../lib/days.js';
+import { historyOf } from '../lib/progress.js';
 import { BEST_SQL, bestOf, rankOf, type BestRun } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
 
@@ -136,4 +138,15 @@ export async function myStats(req: Request, env: AppEnv): Promise<Response> {
     lastSolvedDay: last === undefined ? null : dayText(last),
     imported,
   } satisfies AccountStats);
+}
+
+/**
+ * GET /api/me/progress (season two C2+C3): what the account has earned and how far along each goal is, from evaluate()
+ * over all its rows (historyOf: one read of the rows and one of its top-10 Daily days). Nothing here is the browser's
+ * word but a finish's reported context (zone, station, world).
+ */
+export async function myProgress(req: Request, env: AppEnv): Promise<Response> {
+  const user = await requireUser(req, env);
+  const history = await historyOf(env.DB, user.id, Date.now());
+  return json({ ...evaluate(history), treesLit: history.treesLit } satisfies ProgressResponse);
 }

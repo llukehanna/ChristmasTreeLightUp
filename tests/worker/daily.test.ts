@@ -3,9 +3,9 @@ import { MAX_CLAIMS_PER_REQUEST, type BoardResponse, type ClaimResponse, type Da
 import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
-import { dailySeed } from '../../worker/lib/daily';
+import { dailyClosesAt, dailySeed } from '../../worker/lib/daily';
 import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, cachedDailyTopAndTotal, cachedDailyTotal, dailyGrew, resetBoardCache } from '../../worker/lib/board-cache';
-import { DAILY_FIRSTS_SQL, dailyTopAndTotal } from '../../worker/lib/daily-board';
+import { DAILY_FIRSTS_SQL, DAILY_TOP_TENS_SQL, dailyTopAndTotal, dailyTopTenDays } from '../../worker/lib/daily-board';
 import { dayNumber } from '../../worker/lib/days';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
@@ -155,7 +155,7 @@ describe('starting the Daily Tree', () => {
     expect(await row(random.id)).toMatchObject({ daily_day: null, daily_past: 0 });
   });
 
-  it("a signed-in player's unfinished Daily survives the one-day housekeeping and goes after three days; a guest's, like a random game, goes after one", async () => {
+  it("a signed-in player's unfinished Daily is never swept (migration 0008); a guest's, like a random game, goes after a day", async () => {
     at('2026-12-10T12:00:00Z');
     const ana = await signIn(env, 'ana@example.com');
     const daily = await json<StartResponse>(await startDaily({ today: '2026-12-10' }, ana));
@@ -170,12 +170,12 @@ describe('starting the Daily Tree', () => {
     await age(random.id, 2);
     await startDaily(undefined);
     expect(await row(daily.id)).not.toBeNull();
-    expect(await row(dailyOld.id)).toBeNull();
+    expect(await row(dailyOld.id)).not.toBeNull();
     expect(await row(guest.id)).toBeNull();
     expect(await row(random.id)).toBeNull();
     await age(daily.id, 3.5);
     await startDaily(undefined);
-    expect(await row(daily.id)).toBeNull();
+    expect(await row(daily.id)).not.toBeNull();
   });
 
   it("an unverifiable finish deletes a random game but never a Daily attempt: the player's next start of that day is a repeat", async () => {
@@ -397,7 +397,8 @@ describe('finishing a Daily run', () => {
     };
     const res = await call({ ...env, DB: counting }, 'POST', '/api/games/claim', { cookie: ana, body: { claims: runs.map((r) => ({ id: r.game.id, claim: r.game.claim })) } });
     const { results } = await json<ClaimResponse>(res);
-    expect(results.map((r) => r.daily)).toEqual(runs.map((r) => ({ ...r.result.daily, rank: 1, total: 1 })));
+    // Only Dec 8 is still open at the claim (migration 0008): the days closed before it keep their frozen boards.
+    expect(results.map((r) => r.daily)).toEqual(runs.map((r, k) => ({ ...r.result.daily, ...(k === 7 ? { rank: 1, total: 1 } : { first: false, rank: null, total: 0 }) })));
     // The worst case is 3 + 5 × MAX_CLAIMS_PER_REQUEST statements (43), against D1's 50 per request on Workers Free:
     // the session, the main total and the owner's best, then per claim its read and update, and per Daily day its
     // total, the owner's first attempt and the run's place.
@@ -598,5 +599,118 @@ describe('Your games and the Daily', () => {
     );
     expect(plan.filter((d) => /^SCAN/.test(d))).toEqual(['SCAN d VIRTUAL TABLE INDEX 1:']); // only the list of days itself
     expect(plan.join()).not.toContain('games_user');
+  });
+});
+
+describe('a closed day\'s board is frozen (migration 0008)', () => {
+  const userId = async (email: string) => (await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: number }>())?.id as number;
+
+  it("a guest's Daily claimed after its day closed is history, not board: the frozen board and top-10 are unchanged", async () => {
+    // Dec 10: a guest's clean run, then the account's own first attempt (too fast: off the board), then Comet's.
+    at('2026-12-10T12:00:00Z');
+    const guest = await play({ today: '2026-12-10' }, { gap: 50 });
+    later();
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const own = await play({ today: '2026-12-10' }, { cookie: ana, gap: 20 });
+    expect(own.result.reason).toBe('too_fast');
+    later();
+    const bo = await signIn(env, 'bo@example.com', 'Comet');
+    await play({ today: '2026-12-10' }, { cookie: bo, gap: 90 });
+    // Dec 11: another guest run, the account's only attempt that day once claimed.
+    vi.setSystemTime(Date.parse('2026-12-11T12:00:00Z'));
+    const guest11 = await play({ today: '2026-12-11' }, { gap: 50 });
+
+    const ten = dayNumber('2026-12-10') as number;
+    const eleven = ten + 1;
+    vi.setSystemTime(dailyClosesAt(ten)); // Dec 10 has just closed everywhere; Dec 11 is still live somewhere
+    const frozen = await dailyTopAndTotal(db, ten);
+    expect(frozen.top.map((r) => r.name)).toEqual(['Comet']);
+    const [anaId, boId] = [await userId('ana@example.com'), await userId('bo@example.com')];
+    expect(await dailyTopTenDays(db, anaId, Date.now())).toBe(0);
+    expect(await dailyTopTenDays(db, boId, Date.now())).toBe(1);
+
+    const { results } = await json<ClaimResponse>(
+      await call(env, 'POST', '/api/games/claim', { cookie: ana, body: { claims: [guest.game, guest11.game].map((g) => ({ id: g.id, claim: g.claim })) } }),
+    );
+    // Claimed, so it's the account's history; but late, so it never takes the forfeited first attempt's place.
+    expect(results.map((r) => [r.id, r.daily?.first, r.daily?.rank])).toEqual([
+      [guest.game.id, false, null],
+      [guest11.game.id, true, 1],
+    ]);
+    expect(await row(guest.game.id)).toMatchObject({ user_id: anaId, claimed_at: dailyClosesAt(ten), unranked_reason: 'daily' });
+    expect(await dailyTopAndTotal(db, ten)).toEqual(frozen);
+    // Dec 11's claim was in time: it joins that board.
+    expect((await dailyTopAndTotal(db, eleven)).top.map((r) => [r.name, r.id])).toEqual([['Meridian', guest11.game.id]]);
+    // Your games agrees: Dec 10's first attempt is still the too-fast run.
+    const g = await json<MyGamesResponse>(await call(env, 'GET', '/api/me/games', { cookie: ana }));
+    expect(g.games.filter((x) => x.dailyFirst).map((x) => x.id).sort()).toEqual([own.game.id, guest11.game.id].sort());
+    // Once Dec 11 closes too, the account has one top 10 (Dec 11's), Comet one (Dec 10's).
+    vi.setSystemTime(dailyClosesAt(eleven));
+    expect(await dailyTopTenDays(db, anaId, Date.now())).toBe(1);
+    expect(await dailyTopTenDays(db, boId, Date.now())).toBe(1);
+    expect(await dailyTopAndTotal(db, ten)).toEqual(frozen);
+  });
+
+  it('a forfeited first attempt keeps the player off the board after three days (it is never swept)', async () => {
+    at('2026-12-10T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const forfeit = await json<StartResponse>(await startDaily({ today: '2026-12-10' }, ana)); // opened, never finished
+    later();
+    const { result } = await play({ today: '2026-12-10' }, { cookie: ana });
+    expect(result.daily).toMatchObject({ first: false, rank: null });
+    vi.setSystemTime(Date.parse('2026-12-15T12:00:00Z'));
+    await startDaily(undefined); // housekeeping runs
+    expect(await row(forfeit.id)).toMatchObject({ finished_at: null, daily_day: dayNumber('2026-12-10') });
+    expect(await dailyTopAndTotal(db, dayNumber('2026-12-10') as number)).toEqual({ top: [], total: 0 });
+    expect(await dailyTopTenDays(db, await userId('ana@example.com'), Date.now())).toBe(0);
+  });
+
+  it('dailyTopTenDays counts closed days only', async () => {
+    const at0 = Date.parse('2026-12-08T12:00:00Z');
+    let n = 0;
+    const user = async (name: string) =>
+      (await db
+        .prepare('INSERT INTO users (google_sub, email, name, name_key, created_at) VALUES (?, ?, ?, ?, 1) RETURNING id')
+        .bind(`g-${name}`, `${name}@example.com`, name, name.toLowerCase())
+        .first<{ id: number }>())?.id as number;
+    /** A finished Daily run, straight into D1. */
+    const run = (userId: number, day: string, ms: number, { reason = 'daily', past = 0 }: { reason?: string; past?: number } = {}) => {
+      const startedAt = at0 + n++ * 1000;
+      return db
+        .prepare('INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, ranked, unranked_reason, daily_day, daily_past) VALUES (?, ?, 1, 1, ?, ?, ?, 0, ?, ?, ?)')
+        .bind(`run-${String(n).padStart(12, '0')}`, userId, startedAt, startedAt + ms, ms, reason, dayNumber(day), past)
+        .run();
+    };
+    const ana = await user('Meridian');
+    const others = [];
+    for (let k = 0; k < 10; k++) others.push(await user(`Other${k}`));
+    // Dec 9: ten players beat her (11th). Dec 10: nine do (10th). Dec 11: she is alone.
+    for (const o of others) await run(o, '2026-12-09', 10_000);
+    await run(ana, '2026-12-09', 20_000);
+    for (const o of others.slice(0, 9)) await run(o, '2026-12-10', 10_000);
+    await run(ana, '2026-12-10', 20_000);
+    await run(others[9], '2026-12-10', 30_000);
+    await run(ana, '2026-12-11', 20_000);
+    // Neither a past day's run nor a random ranked run is a Daily board place.
+    await run(ana, '2026-12-08', 1_000, { reason: 'past', past: 1 });
+    await db.prepare("INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, ranked) VALUES ('random-aaaaaaaaaaaa', ?, 1, 1, 1, 2, 1000, 1)").bind(ana).run();
+
+    const eleven = dayNumber('2026-12-11') as number;
+    expect(await dailyTopTenDays(db, ana, dailyClosesAt(eleven - 2))).toBe(0); // Dec 9 closed: 11th
+    expect(await dailyTopTenDays(db, ana, dailyClosesAt(eleven) - 1)).toBe(1); // Dec 10 closed: 10th; Dec 11 still live
+    expect(await dailyTopTenDays(db, ana, dailyClosesAt(eleven))).toBe(2);
+    expect(await dailyTopTenDays(db, others[9], dailyClosesAt(eleven))).toBe(1); // 10th on Dec 9 (a tie goes to the earlier finish), 11th on Dec 10
+  });
+
+  it("dailyTopTenDays' one statement reads the player's games through games_user and each day's board through games_daily", async () => {
+    const plan = (await db.prepare(`EXPLAIN QUERY PLAN ${DAILY_TOP_TENS_SQL}`).bind(1, 2).all<{ detail: string }>()).results.map((r) => r.detail);
+    expect(plan).toEqual(
+      expect.arrayContaining([
+        'SEARCH g USING INDEX games_user (user_id=?)',
+        'SEARCH g USING INDEX games_daily (daily_day=?)',
+        'SEARCH e USING INDEX games_daily (daily_day=? AND user_id=? AND started_at<?)',
+      ]),
+    );
+    expect(plan.join()).not.toContain('SCAN');
   });
 });
