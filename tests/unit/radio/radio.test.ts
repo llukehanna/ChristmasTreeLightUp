@@ -789,6 +789,7 @@ it('the remembered ambience warms first, and nothing runs in a hidden tab', asyn
     fakeAudio();
     const r = new Radio();
     r.firstGesture();
+    r.prewarm();
     r.prewarm(); // once only
     await vi.waitFor(() => expect(order).toEqual(['storm', 'fireplace', 'rain']));
 
@@ -804,6 +805,38 @@ it('the remembered ambience warms first, and nothing runs in a hidden tab', asyn
     expect(ran).toBe(0); // back, but it waits for an idle moment again
     slices.shift()!();
     expect(ran).toBe(1);
+  } finally {
+    Reflect.deleteProperty(document, 'visibilityState');
+    vi.unstubAllGlobals();
+  }
+});
+
+it('prewarm runs no slice while its gate says no, and the next idle moment after it says yes', async () => {
+  let idle!: (fn: () => void) => void;
+  for (const synth of [Fireplace, Rain, Storm]) {
+    vi.spyOn(synth.prototype, 'prewarm').mockImplementation(async (_ctx, i) => {
+      idle = i;
+    });
+  }
+  const slices: (() => void)[] = [];
+  vi.stubGlobal('requestIdleCallback', (fn: () => void) => slices.push(fn));
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+  try {
+    fakeAudio();
+    let open = false;
+    new Radio().prewarm(() => open);
+    await vi.waitFor(() => expect(idle).toBeDefined());
+    let ran = 0;
+    idle(() => ran++);
+    for (let i = 0; i < 5; i++) {
+      expect(slices).toHaveLength(1); // asked again at the next idle moment: no busy loop
+      slices.shift()!();
+    }
+    expect(ran).toBe(0);
+    open = true;
+    slices.shift()!();
+    expect(ran).toBe(1);
+    expect(slices).toHaveLength(0);
   } finally {
     Reflect.deleteProperty(document, 'visibilityState');
     vi.unstubAllGlobals();

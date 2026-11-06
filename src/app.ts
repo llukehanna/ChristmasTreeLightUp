@@ -103,6 +103,24 @@ const noClips = (): Record<HomeAloneClip, number> => ({
   scream: 0, kevin: 0, 'filthy-animal': 0, 'hector-credit-card': 0, 'hector-mistaken': 0, 'hector-love': 0,
 });
 
+/** The App state that says whether a run is under way. */
+export interface RunFlags {
+  /** A board exists. */
+  live: boolean;
+  /** A new tree is waiting for the server's seed. */
+  starting: boolean;
+  /** The tree's first move has been made. */
+  moved: boolean;
+  /** The tree is won (the results are up, or were). */
+  won: boolean;
+  paused: boolean;
+}
+
+/** A run under way: a tree on screen, its first move made, not yet won (paused or not). */
+export const runUnderway = (f: RunFlags): boolean => f.live && !f.starting && f.moved && !f.won;
+/** Heavy work that could stall a tap (the radio's prewarm) may run: before the first move, behind the pause, or after the win. */
+export const quietForWork = (f: RunFlags): boolean => !runUnderway(f) || f.paused;
+
 export class App {
   readonly sfx = new Sfx();
   readonly renderer: Renderer;
@@ -1029,6 +1047,7 @@ export class App {
     this.hideIntro();
     // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
     this.radio.firstGesture();
+    this.radio.prewarm(() => quietForWork(this.runFlags())); // once: the context exists now
     // A page loaded in secret mode had no audio context (or catalog) to preload the ad-lib with: once both exist. Once per URL.
     if (this.secret) this.winSound?.preload(this.radio.secretWinSound(), audio.ctx);
     if (this.homeAlone) this.sounds?.preload(); // a page loaded in the mode had no audio context to preload with
@@ -1233,7 +1252,11 @@ export class App {
 
   /** A run in progress in the house: the moment for "Kevin!". */
   private runInHouse(): boolean {
-    return this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null;
+    return this.homeAlone && runUnderway(this.runFlags());
+  }
+
+  private runFlags(): RunFlags {
+    return { live: this.live, starting: this.starting, moved: this.moved, won: this.winAt !== null, paused: this.paused };
   }
 
   private bindLifecycle(): void {

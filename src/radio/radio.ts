@@ -140,21 +140,23 @@ export class Radio {
     if (this.greeted) return;
     this.greeted = true;
     if (this.settings.on && this.kind === null && !this.pendingStart && !this.pendingSecret) this.startPreferred();
-    this.prewarm();
   }
 
   /**
    * Makes the ambiences' noise at idle, a buffer at a time, so starting one never stalls (100 to 190 ms in Chrome otherwise):
-   * the remembered ambience first, then the others. Once only, and nothing before the context exists.
+   * the remembered ambience first, then the others. Once only, and nothing before the context exists. A buffer can
+   * take over 100 ms to make, so a slice runs only while `canWork` says so (the app: never during a run); otherwise
+   * it waits for the next idle moment and asks again.
    */
-  prewarm(): void {
+  prewarm(canWork: () => boolean = () => true): void {
     const ctx = audio.ctx;
     if (this.warmed || !ctx) return;
     this.warmed = true;
     const first = ambientKind(this.remembered());
     const order = [...(first ? [first] : []), ...WARM_ORDER.filter((k) => k !== first)];
+    const slice = (fn: () => void): void => idleWhileVisible(() => (canWork() ? fn() : slice(fn)));
     void (async () => {
-      for (const kind of order) await this.ambience(kind).prewarm(ctx, idleWhileVisible);
+      for (const kind of order) await this.ambience(kind).prewarm(ctx, slice);
     })().catch(() => {
       /* nothing is lost: a start makes whatever is missing (and reports a real failure itself) */
     });
