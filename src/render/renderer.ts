@@ -350,6 +350,8 @@ export class Renderer {
     ctx.globalAlpha = 1;
     const fr = this.sky.frame(now);
     const sw = this.sky.current;
+    // The scene's own room, while no sweep or fade is over it: its motion and its glow are drawn (else null).
+    const room = !sw && this.backdropOf === sc.id ? this.backdrop : null;
     // During a sweep, firelight and embers belong to the non-aurora side of the sky.
     let back = sc;
     // During a fade, the scene it leaves and the arriving one's alpha (else null and -1).
@@ -393,8 +395,8 @@ export class Renderer {
       ctx.drawImage(this.sky.bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // The room's own motion: the Sash's snow, the Parlour's candles, coals, clock and window snow (ambient: it may
-      // drop to the calm rate). A sweep or fade (about a second) shows none.
-      if (!sw && this.backdrop && this.backdropOf === sc.id) this.backdrop.back(ctx, now, f.reducedMotion, tier);
+      // drop to the calm rate). A sweep or fade (about a second) shows none, nor its glow below.
+      room?.back(ctx, now, f.reducedMotion, tier);
       if (this.secret) aurora?.draw(ctx, L, now, tier, f.reducedMotion);
     }
     // Home Alone's window gags, behind the tree (spec 2026-10-14 §3): faded with the house, never during a sweep.
@@ -467,11 +469,11 @@ export class Renderer {
     if (!f.reducedMotion) drawFlashGlows(g, vis, L, now, sc);
     drawSourceGlow(g, L, sc);
     drawGroundPool(g, L, sc, litFrac + (f.ambient ?? 0) * 0.5);
-    if (this.backdrop) {
+    if (room) {
       // The room's own light that blooms (the Sash's street lamp, the square's lamps, the Parlour's candles), in screen
-      // space like the room.
+      // space like the room; only while the room's own motion is drawn, so no bloom floats without its source.
       g.setTransform(dpr * GLOW_SCALE, 0, 0, dpr * GLOW_SCALE, 0, 0);
-      this.backdrop.glow(g, now, f.reducedMotion, tier);
+      room.glow(g, now, f.reducedMotion, tier);
       world(g, dpr * GLOW_SCALE);
     }
     const st = starState(now, f.winAt, litFrac, f.reducedMotion);

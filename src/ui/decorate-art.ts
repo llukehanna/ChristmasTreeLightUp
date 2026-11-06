@@ -147,7 +147,8 @@ export const SCENE_ART: Record<SceneId, string> = {
     ${fir({ cx: 40, top: 16, h: 34 })}`,
   ),
   // Drawn in their hand from the scene (src/render/square.ts): blue hour, a rose glow low in the west, snow-roofed
-  // townhouses with lit shopfronts and a clock tower, gas lamps, carolers round a lantern, and the rink in front.
+  // townhouses with lit shopfronts and a clock tower, gas lamps, carolers round a lantern, and the rink in front. The
+  // spire's tip stays below y 9, inside the tile's cover crop.
   square: svg(
     '0 0 80 60',
     `<defs><linearGradient id="P-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#04071a"/><stop offset=".4" stop-color="#0c1335"/><stop offset=".78" stop-color="#22285a"/><stop offset="1" stop-color="#3a3264"/></linearGradient>
@@ -156,9 +157,9 @@ export const SCENE_ART: Record<SceneId, string> = {
     <linearGradient id="P-i" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d2340"/><stop offset=".35" stop-color="#11152a"/><stop offset="1" stop-color="#080a14"/></linearGradient></defs>
     <rect width="80" height="60" fill="url(#P-s)"/><rect width="80" height="44" fill="url(#P-r)"/>${stars(10, 7, 14)}
     <path d="M0 42V27l6-6 6 6v15zM17 42V25h11v17zM27 42V31h26v11zM52 42V26l3-3v-2l3-2 3 2v2l3 3v16zM64 42V24l8-6 8 6v18z" fill="#16152b"/>
-    <path d="M12 42V14h5v28z" fill="#15162a"/><path d="M11.4 14h6.2l-3.1-8z" fill="#121326"/>
-    <path d="M-.5 27.5L6 21l6.5 6.5M16.6 25h11.8M51.6 26.4l3.4-3.4M61 23l3.4 3.4M63.4 24.4L72 18l8.6 6.4M11.4 14l3.1-8" fill="none" stroke="#d6e0f6" stroke-width="1" stroke-linecap="round" opacity=".55"/>
-    <circle cx="14.5" cy="18" r="1.7" fill="#ffe2a8"/><path d="M14.5 18v-1.1M14.5 18h.8" stroke="#2a180a" stroke-width=".3"/>
+    <path d="M12 42V19h5v23z" fill="#15162a"/><path d="M11.4 19h6.2l-3.1-8z" fill="#121326"/>
+    <path d="M-.5 27.5L6 21l6.5 6.5M16.6 25h11.8M51.6 26.4l3.4-3.4M61 23l3.4 3.4M63.4 24.4L72 18l8.6 6.4M11.4 19l3.1-8" fill="none" stroke="#d6e0f6" stroke-width="1" stroke-linecap="round" opacity=".55"/>
+    <circle cx="14.5" cy="22.5" r="1.7" fill="#ffe2a8"/><path d="M14.5 22.5v-1.1M14.5 22.5h.8" stroke="#2a180a" stroke-width=".3"/>
     <g fill="#ffb868" opacity=".8"><rect x="2" y="30" width="1.6" height="2.4"/><rect x="8" y="30" width="1.6" height="2.4"/><rect x="19" y="28" width="1.6" height="2.4"/><rect x="24" y="28" width="1.6" height="2.4"/><rect x="55" y="29" width="1.6" height="2.4"/><rect x="67" y="27" width="1.6" height="2.4"/><rect x="75" y="27" width="1.6" height="2.4"/></g>
     <g filter="url(#P-b)" fill="#ffaa58" opacity=".85"><rect x="1" y="36" width="9" height="4.5"/><rect x="18.5" y="36" width="8" height="4.5"/><rect x="53.5" y="36" width="8" height="4.5"/><rect x="66" y="36" width="10" height="4.5"/></g>
     <g fill="#ffd696"><rect x="1.6" y="36.6" width="7.8" height="3.3"/><rect x="19.1" y="36.6" width="6.8" height="3.3"/><rect x="54.1" y="36.6" width="6.8" height="3.3"/><rect x="66.6" y="36.6" width="8.8" height="3.3"/></g>

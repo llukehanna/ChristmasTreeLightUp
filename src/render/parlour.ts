@@ -558,8 +558,13 @@ function drape(c: CanvasRenderingContext2D, L: Layout, x0: number, x1: number, y
 
 /* ---------------- per frame ---------------- */
 
+/**
+ * A flame's flicker: FLICKER_MEAN plus three sines (weights 0.5, 0.3, 0.2) scaled by 0.18, so it swings over
+ * 0.64..1 and averages FLICKER_MEAN.
+ */
+export const FLICKER_MEAN = 0.82;
 function flicker(now: number, p: number): number {
-  return 0.82 + 0.18 * (0.5 * Math.sin(now * 0.013 + p) + 0.3 * Math.sin(now * 0.031 + p * 2.1) + 0.2 * Math.sin(now * 0.071 + p * 3.3));
+  return FLICKER_MEAN + 0.18 * (0.5 * Math.sin(now * 0.013 + p) + 0.3 * Math.sin(now * 0.031 + p * 2.1) + 0.2 * Math.sin(now * 0.071 + p * 3.3));
 }
 
 /** The room's per-frame part: the snow beyond the glass, the coals, the candle flames and the clock; their glow. */
@@ -662,18 +667,21 @@ export class ParlourRoom implements Backdrop {
     disc(c, x, y, 1.2);
   }
 
-  /** On the glow layer: the cached blooms of the candles and the coals, faded by globalAlpha (steady while motion is reduced). */
+  /**
+   * On the glow layer: the cached blooms of the candles and the coals, faded by globalAlpha. While motion is reduced they
+   * hold at the flicker's mean, the brightness they average (not its peak).
+   */
   glow(g: CanvasRenderingContext2D, now: number, reduced: boolean): void {
     const { room, s } = this;
     const spr = room.spr;
     for (let i = 0; i < room.flames.length; i++) {
       const f = room.flames[i];
       const r = s * 0.55 * f.k;
-      g.globalAlpha = reduced ? 1 : flicker(now, f.p);
+      g.globalAlpha = reduced ? FLICKER_MEAN : flicker(now, f.p);
       g.drawImage(spr.flameGlow, f.x - r, f.y - s * 0.08 - r, r * 2, r * 2);
     }
     const cr = room.coals.w * 0.5;
-    g.globalAlpha = 0.35 * (reduced ? 1 : clamp01(flicker(now * 0.6, 3)));
+    g.globalAlpha = 0.35 * (reduced ? FLICKER_MEAN : clamp01(flicker(now * 0.6, 3)));
     g.drawImage(spr.coalsGlow, room.coals.x - cr, room.coals.y - cr, cr * 2, cr * 2);
     g.globalAlpha = 1;
   }

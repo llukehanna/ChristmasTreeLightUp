@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { paintBackdrop } from '../../../src/render/backdrop';
 import { computeLayout } from '../../../src/render/layout';
-import { ParlourRoom } from '../../../src/render/parlour';
+import { FLICKER_MEAN, ParlourRoom } from '../../../src/render/parlour';
 import { SCENES } from '../../../src/render/scenes';
 import { FakeMatrix, FakePath, drawn, matrices, recorder, type Call } from './backdrop-recorder';
 
@@ -123,6 +123,34 @@ describe('the Parlour', () => {
     const c = frame(1564, false);
     expect(c.back).not.toEqual(b.back);
     expect(c.glow.map((q) => q.a)).not.toEqual(b.glow.map((q) => q.a));
+  });
+
+  it("with motion reduced the candles and coals glow at their flicker's mean, not its peak", () => {
+    const bd = parlour();
+    const glow = (now: number, reduced: boolean) => {
+      log.length = 0;
+      bd.glow(main, now, reduced);
+      return drawn(log).map((q) => q.a);
+    };
+    // Three candle blooms, then the coals' (drawn at 0.35 of the flicker).
+    expect(glow(1000, true)).toEqual([FLICKER_MEAN, FLICKER_MEAN, FLICKER_MEAN, 0.35 * FLICKER_MEAN]);
+    // It really is the mean: the flickering blooms, sampled over a long stretch, average it and swing over 0.64..1.
+    const sums = [0, 0, 0, 0];
+    let lo = Infinity;
+    let hi = -Infinity;
+    const n = 20000;
+    for (let k = 0; k < n; k++) {
+      const a = glow(k * 37.3, false);
+      a.forEach((v, i) => (sums[i] += v));
+      for (const v of a.slice(0, 3)) {
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
+    }
+    for (const s of sums.slice(0, 3)) expect(s / n).toBeCloseTo(FLICKER_MEAN, 2);
+    expect(sums[3] / n).toBeCloseTo(0.35 * FLICKER_MEAN, 2);
+    expect(lo).toBeGreaterThanOrEqual(0.64 - 1e-9);
+    expect(hi).toBeLessThanOrEqual(1 + 1e-9);
   });
 
   it('the clock keeps the real time, read at most once a second', () => {

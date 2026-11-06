@@ -6,6 +6,7 @@ import { mulberry32 } from '../../../src/core/rng';
 import { Aurora, FADE_MS } from '../../../src/render/aurora';
 import { IDENTITY } from '../../../src/render/camera';
 import { CONFETTI_MS, Snowfall } from '../../../src/render/effects';
+import { ParlourRoom } from '../../../src/render/parlour';
 import { PizzaSprite } from '../../../src/render/pizza';
 import { EGGS } from '../../../src/eggs/eggs';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
@@ -291,19 +292,24 @@ it("the head mid-fade (hohoho): the head's sweep takes over from the sky as it s
   expect(r.homeAlone!.state().bandits).toBe(false);
 });
 
-it('the window snow is not drawn during a fade or a sweep', () => {
+it("the window snow and the lamp's glow are not drawn during a fade or a sweep", () => {
   const back = vi.spyOn(WindowSnow.prototype, 'back');
+  const glow = vi.spyOn(WindowSnow.prototype, 'glow');
   const { r, frame } = setup(SCENES.midnight);
   r.frame(frame(1000));
   expect(back).not.toHaveBeenCalled(); // Midnight has no window
   r.setScene(SCENES.sash, { now: 2000, reduced: false, kind: 'fade' });
   r.frame(frame(2000 + FADE_MS / 2));
   expect(back).not.toHaveBeenCalled();
+  expect(glow).not.toHaveBeenCalled();
   r.frame(frame(2000 + FADE_MS + 10));
   expect(back).toHaveBeenCalledTimes(1);
+  expect(glow).toHaveBeenCalledTimes(1);
   expect(back.mock.calls[0].slice(1)).toEqual([2000 + FADE_MS + 10, false, r.quality.tier]);
+  expect(glow.mock.calls[0].slice(1)).toEqual([2000 + FADE_MS + 10, false, r.quality.tier]);
   // Into the aurora and back out: neither sweep draws it.
   back.mockClear();
+  glow.mockClear();
   r.setScene(AURORA, { now: 4000, reduced: false });
   r.frame(frame(4000 + SWEEP_MS / 2));
   r.frame(frame(4000 + SWEEP_MS + 10));
@@ -311,6 +317,21 @@ it('the window snow is not drawn during a fade or a sweep', () => {
   r.frame(frame(7000 + SWEEP_MS / 2));
   expect(r.sweeping).toBe(true);
   expect(back).not.toHaveBeenCalled();
+  expect(glow).not.toHaveBeenCalled();
   r.frame(frame(7000 + SWEEP_MS + 10));
   expect(back).toHaveBeenCalledTimes(1);
+  expect(glow).toHaveBeenCalledTimes(1);
+});
+
+it("the parlour's candle and coal blooms wait for its candles: none during the fade into it", () => {
+  const back = vi.spyOn(ParlourRoom.prototype, 'back');
+  const glow = vi.spyOn(ParlourRoom.prototype, 'glow');
+  const { r, frame } = setup(SCENES.midnight);
+  r.setScene(SCENES.parlour, { now: 2000, reduced: false, kind: 'fade' });
+  r.frame(frame(2000 + FADE_MS / 2));
+  expect(back).not.toHaveBeenCalled();
+  expect(glow).not.toHaveBeenCalled();
+  r.frame(frame(2000 + FADE_MS + 10));
+  expect(back).toHaveBeenCalledTimes(1);
+  expect(glow).toHaveBeenCalledTimes(1);
 });
