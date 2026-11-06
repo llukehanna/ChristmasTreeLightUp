@@ -133,13 +133,13 @@ body.intro-low .intro { top: calc(var(--garland-bottom) + 8px); font-size: 20px;
 }
 .menu .bow { position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); }
 .menu .lbl { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; margin: 0 0 7px 2px; }
-.seg { display: flex; background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(236, 196, 116, 0.18); border-radius: 10px; padding: 3px; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35); }
-.seg button { all: unset; flex: 1; text-align: center; cursor: pointer; font-size: 12px; font-weight: 500; padding: 7px 4px; border-radius: 7px; opacity: 0.78; }
-.seg button:hover { opacity: 1; }
-.seg button[aria-pressed='true'] {
-  background: linear-gradient(180deg, #f6dc98, #d6a24a 60%, #b9822f); color: #2a1206; opacity: 1; font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.7), 0 1px 3px rgba(0, 0, 0, 0.4);
+/* Decorate: opens the drawer (src/ui/decorate.css), a gold-edged ghost beside the red New tree. */
+.menu .decorate-btn {
+  all: unset; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 600; color: #f6d58e; background: rgba(255, 220, 160, 0.06); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.35);
+  transition: background 0.15s;
 }
+.menu .decorate-btn:hover { background: rgba(255, 220, 160, 0.12); }
 .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
 input[type='range'] { width: 100%; accent-color: var(--accent); }
 .menu input[type='range'], .menu input[type='checkbox'] { accent-color: #e2b25a; }
@@ -235,9 +235,9 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 .corner { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); right: calc(24px + env(safe-area-inset-right)); }
 
 /* Declared after the `all: unset` component rules so the focus ring wins. */
-button:focus-visible, .seg button:focus-visible, .menu button:focus-visible, .results button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, .menu button:focus-visible, .results button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pill:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
-.menu button:focus-visible, .menu .seg button:focus-visible, .menu input:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
+.menu button:focus-visible, .menu input:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
 .results button:focus-visible, .results .actions button:focus-visible { outline: 2px solid #8e1622; outline-offset: 3px; }
 
 @media (max-width: 600px) {

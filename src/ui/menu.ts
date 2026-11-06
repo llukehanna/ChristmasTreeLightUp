@@ -1,11 +1,10 @@
-import { STARTER_LOOK, type Look } from '../store/look';
 import type { Settings } from '../store/settings';
 import { el } from './dom';
 
 export interface MenuHandlers {
   onChange(s: Settings): void;
-  /** The scene or the light path was chosen. */
-  onLook(patch: Partial<Look>): void;
+  /** "Decorate" was chosen: the menu has closed, and the drawer should open. */
+  onDecorate(): void;
   onNewTree(): void;
   /** True while a game is in progress (New tree then needs a second tap). */
   needsConfirm(): boolean;
@@ -24,7 +23,6 @@ export class Menu {
   private readonly newTree = el('new-tree');
   private readonly volume = el<HTMLInputElement>('effects-volume');
   private readonly haptics = el<HTMLInputElement>('haptics');
-  private look: Look = STARTER_LOOK;
   private armedUntil = 0;
 
   constructor(private settings: Settings, private readonly h: MenuHandlers) {
@@ -37,15 +35,11 @@ export class Menu {
       const t = e.target as Node;
       if (!this.root.hidden && !this.root.contains(t) && !this.button.contains(t) && t !== el('stage')) this.close();
     });
-    this.root.querySelectorAll<HTMLElement>('.seg').forEach((seg) =>
-      seg.addEventListener('click', (e) => {
-        const b = (e.target as HTMLElement).closest('button');
-        if (!b?.dataset.value) return;
-        // The scene and the light path belong to the look; the markup keeps `pathStyle`, the look calls it `path`.
-        const key = seg.dataset.setting === 'scene' ? 'scene' : 'path';
-        this.h.onLook({ [key]: b.dataset.value } as Partial<Look>);
-      }),
-    );
+    // The drawer takes the room the menu would sit in, so the menu closes first.
+    el('decorate-btn').addEventListener('click', () => {
+      this.close();
+      this.h.onDecorate();
+    });
     this.volume.addEventListener('input', () => this.update({ effectsVolume: Number(this.volume.value) }));
     this.haptics.addEventListener('change', () => this.update({ haptics: this.haptics.checked }));
     if (!('vibrate' in navigator)) el('haptics-row').hidden = true;
@@ -72,8 +66,8 @@ export class Menu {
     this.h.onOpen?.();
     this.root.hidden = false;
     this.button.setAttribute('aria-expanded', 'true');
-    // Focus the current choice of the first setting (else the first control) so keyboard users start inside the dialog.
-    const first = this.root.querySelector<HTMLElement>('.seg button[aria-pressed="true"]') ?? this.root.querySelector<HTMLElement>('button, input');
+    // Focus the first control so keyboard users start inside the dialog.
+    const first = this.root.querySelector<HTMLElement>('button, input');
     first?.focus({ preventScroll: true });
   }
 
@@ -91,12 +85,6 @@ export class Menu {
   /** Keep the menu's copy of the settings in step when they change elsewhere (e.g. the radio's Effects slider). */
   sync(s: Settings): void {
     this.settings = s;
-    this.render();
-  }
-
-  /** Keep the scene and path segments pressed in step with the look. */
-  syncLook(l: Look): void {
-    this.look = l;
     this.render();
   }
 
@@ -124,10 +112,6 @@ export class Menu {
   }
 
   private render(): void {
-    this.root.querySelectorAll<HTMLElement>('.seg').forEach((seg) => {
-      const current = seg.dataset.setting === 'scene' ? this.look.scene : this.look.path;
-      seg.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === current)));
-    });
     this.volume.value = String(this.settings.effectsVolume);
     this.haptics.checked = this.settings.haptics;
     const armed = performance.now() < this.armedUntil;

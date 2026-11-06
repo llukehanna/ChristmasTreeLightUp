@@ -97,6 +97,8 @@ export class Renderer {
   /** The scene's own room's per-frame parts (the Sash's window snow), and whose they are; null for a painted-once sky. */
   private backdrop: Backdrop | null = null;
   private backdropOf: Scene['id'] | null = null;
+  /** The layout and sky canvas the backdrop was painted for: a dress change (a live pick) keeps it, and its falling snow. */
+  private backdropAt: { layout: Layout; bg: HTMLCanvasElement } | null = null;
   private readonly tree = document.createElement('canvas');
   layout: Layout = computeLayout(1, 1, 1);
   scene: Scene = SCENES.fireside;
@@ -237,10 +239,17 @@ export class Renderer {
   }
 
   private repaint(): void {
-    const bg = ctx2d(this.sky.bg);
-    this.backdrop = paintBackdrop(bg, this.layout, this.scene);
-    this.backdropOf = this.backdrop ? this.scene.id : null;
-    if (!this.backdrop) paintBackground(bg, this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
+    // The room the backdrop paints depends on the layout and the scene's id alone: kept unless either (or the sky's canvas,
+    // which a sweep or fade swaps) has changed since it was painted.
+    const at = this.backdropAt;
+    const keep = this.backdrop !== null && this.backdropOf === this.scene.id && at !== null && at.layout === this.layout && at.bg === this.sky.bg;
+    if (!keep) {
+      const bg = ctx2d(this.sky.bg);
+      this.backdrop = paintBackdrop(bg, this.layout, this.scene);
+      this.backdropOf = this.backdrop ? this.scene.id : null;
+      this.backdropAt = this.backdrop ? { layout: this.layout, bg: this.sky.bg } : null;
+      if (!this.backdrop) paintBackground(bg, this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
+    }
     const tree = ctx2d(this.tree);
     paintTree(tree, this.layout, this.scene);
     // The decorations go on the tree layer, which is drawn before every wire, glass and bulb: they never cover one.

@@ -8,7 +8,9 @@ import { skirtBottom } from '../../../src/render/decor';
 import { Y, computeLayout } from '../../../src/render/layout';
 import { drawUnlit } from '../../../src/render/paths';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
+import { withPalette } from '../../../src/render/palettes';
 import { SCENES } from '../../../src/render/scenes';
+import { Snowfall as WindowSnow } from '../../../src/render/window-kit';
 import { VisualState } from '../../../src/render/visual-state';
 import { NO_DECOR, STARTER_LOOK, type Dress } from '../../../src/store/look';
 
@@ -56,7 +58,8 @@ beforeEach(() => {
       if (name === 'drawImage' && args[0] === tree) order.push('tree');
     });
   } as never);
-  vi.stubGlobal('Path2D', class { moveTo(): void {} lineTo(): void {} quadraticCurveTo(): void {} });
+  // A path that accepts every call (the Sash's room builds its glass with rects and arcs).
+  vi.stubGlobal('Path2D', class { constructor() { return new Proxy(this, { get: () => () => {} }); } });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -143,4 +146,34 @@ it('with no presents the share rectangle is the tree alone', () => {
   const t = r.treeRect();
   expect(t.x).toBeCloseTo(tree.x);
   expect(t.y + t.h).toBeCloseTo(skirtBottom(L) * 2);
+});
+
+it("a dress change keeps the Sash's backdrop and its snow; a resize or a change of scene paints it afresh", () => {
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents };
+  vi.stubGlobal('DOMMatrix', class { a = 1; b = 0; c = 0; d = 1; e = 0; f = 0; }); // jsdom has none (the snow's sheets use one)
+  const r = new Renderer(document.createElement('canvas'));
+  const backdrop = () => (r as unknown as { backdrop: unknown }).backdrop;
+  r.setScene(SCENES.sash);
+  r.resize(1280, 800, 2);
+  const first = backdrop();
+  expect(first).toBeInstanceOf(WindowSnow);
+
+  // Live picks in the Decorate drawer: the flakes keep falling where they were.
+  r.setDress({ ...dress, decor: { ...NO_DECOR, tinsel: true } });
+  r.setDress({ ...dress, topper: 'angel', presents: 'kraft' });
+  expect(backdrop()).toBe(first);
+  // A palette is a new scene object with the same id (withPalette): still the same room.
+  r.setScene(withPalette(SCENES.sash, 'ice'));
+  expect(backdrop()).toBe(first);
+
+  r.resize(1024, 768, 2);
+  const resized = backdrop();
+  expect(resized).toBeInstanceOf(WindowSnow);
+  expect(resized).not.toBe(first);
+
+  r.setScene(SCENES.midnight);
+  expect(backdrop()).toBeNull();
+  r.setScene(SCENES.sash);
+  expect(backdrop()).toBeInstanceOf(WindowSnow);
+  expect(backdrop()).not.toBe(resized);
 });

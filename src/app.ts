@@ -40,6 +40,7 @@ import { readJSON, writeJSON } from './store/storage';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
+import { Decorate } from './ui/decorate';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
@@ -151,6 +152,8 @@ export class App {
   private readonly toast = new Toast(el('toast'));
   private readonly results: Results;
   private readonly menu: Menu;
+  /** The Decorate drawer: the look, picked live (it opens from the menu). */
+  private readonly decorate: Decorate;
   private readonly radioPanel: RadioPanel;
   /** The HUD account chip and menu, and the account sheets (spec 2026-10-07 §6). */
   private readonly accounts: Accounts;
@@ -217,7 +220,7 @@ export class App {
     this.results = new Results({ onNew: () => this.newGame(), onShare: () => void this.share(), onKeep: () => this.keepWatching() });
     this.menu = new Menu(this.settings, {
       onChange: (s) => this.applySettings(s),
-      onLook: (patch) => this.applyLook({ ...this.look, ...patch }),
+      onDecorate: () => this.openDecorate(),
       onNewTree: () => this.newGame(),
       needsConfirm: () => this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
       onOpen: () => {
@@ -227,6 +230,11 @@ export class App {
         this.keyCard.close();
       },
       onKeys: () => this.keyCard.pin(),
+    });
+    this.decorate = new Decorate({
+      look: () => this.look,
+      onLook: (patch) => this.applyLook({ ...this.look, ...patch }),
+      world: () => this.world,
     });
     this.radioPanel = new RadioPanel(
       this.radio,
@@ -570,6 +578,8 @@ export class App {
    */
   private presentWin(now: number, won: WonRun, sound: boolean): void {
     this.menu.close();
+    // The win's confetti and its tag want the whole stage.
+    this.decorate.close();
     this.radioPanel.close();
     this.accounts.closeMenu();
     this.hideIntro();
@@ -1051,7 +1061,6 @@ export class App {
   /** The scene and light path, and the dress. A change of either re-renders the share image. */
   private applyLook(l: Look, persist = true): void {
     this.look = l;
-    this.menu.syncLook(l);
     this.pausedDrawn = false;
     if (persist) saveLook(l);
     const restyle = l.path !== this.renderer.style;
@@ -1066,9 +1075,20 @@ export class App {
     return this.secret ? 'secret' : this.homeAlone ? 'home-alone' : null;
   }
 
-  /** Dress the tree: the look, less what the egg world takes away. */
+  /** Dress the tree: the look, less what the egg world takes away. The drawer shows the look, and the world it waits out. */
   private dress(): void {
     this.renderer.setDress(worldLook(this.look, this.world));
+    this.decorate.sync();
+  }
+
+  /** From the menu (closed by now): whatever would sit over the drawer or the framed stage goes first. */
+  private openDecorate(): void {
+    this.radioPanel.close();
+    this.accounts.closeMenu();
+    this.keyCard.close();
+    // The frame crops around the tree as it stands at rest.
+    if (isZoomed(this.camera)) this.setCamera(IDENTITY);
+    this.decorate.open();
   }
 
   /**
@@ -1284,10 +1304,14 @@ export class App {
     addEventListener('blur', () => this.keyCard.hide());
     document.addEventListener('keydown', (e) => {
       this.renderer.homeAlone?.input();
-      // The settings and radio dialogs handle their own Escape (and mark it handled). Keys never reach the game while
-      // the menu is open, or while focus is inside the radio panel; the desktop popover stays open while you play, so
-      // with focus back on the game (or nowhere) P still pauses.
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.radioPanel.hasFocus || this.accounts.blocksKeys || isEditable(e.target)) return;
+      // The settings and radio dialogs and the Decorate drawer handle their own Escape (and mark it handled). Keys never
+      // reach the game while the menu or the drawer is open, or while focus is inside the radio panel; the desktop popover
+      // stays open while you play, so with focus back on the game (or nowhere) P still pauses.
+      if (
+        e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.decorate.isOpen || this.radioPanel.hasFocus ||
+        this.accounts.blocksKeys || isEditable(e.target)
+      )
+        return;
       // The first letter of an egg's word ("hohoho", "kevin") starts loading the eggs, if they aren't in yet.
       if (!this.paused && !this.eggs && (e.key === 'h' || e.key === 'H' || e.key === 'k' || e.key === 'K')) void this.requestEggs();
       // "hohoho" swaps the topper, as five taps on the star do (not under the pause overlay, like the taps).
@@ -1359,6 +1383,7 @@ export class App {
     if (on) {
       // The dialogs would otherwise sit on top of the pause overlay, inert.
       this.menu.close();
+      this.decorate.close();
       this.radioPanel.close();
       this.accounts.closeMenu();
     }

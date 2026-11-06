@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { rotCCW, rotCW } from '../../src/core/dirs';
 import type { AglowProbe } from '../../src/debug';
+import { openDecorate, swatch } from './helpers';
 
 type W = Window & { __aglow: AglowProbe };
 
@@ -119,10 +120,10 @@ test('solving shows the results card and sharing copies to the clipboard', async
 
 test('Sash puts the window up', async ({ page }) => {
   await ready(page);
-  await page.click('#menu-btn');
-  await page.click('.seg[data-setting="scene"] button[data-value="sash"]');
+  await openDecorate(page);
+  await swatch(page, 'Sash').click();
   await expect(page.locator('body')).toHaveAttribute('data-scene', 'sash');
-  await expect(page.locator('.seg[data-setting="scene"] button[data-value="sash"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(swatch(page, 'Sash')).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
   await page.evaluate(() => (window as unknown as W).__aglow.solve());
   await expect(page.locator('#results')).toBeVisible({ timeout: 1200 });
@@ -130,12 +131,12 @@ test('Sash puts the window up', async ({ page }) => {
 
 test('settings persist across reloads', async ({ page }) => {
   await ready(page);
-  await page.click('#menu-btn');
-  await page.click('.seg[data-setting="pathStyle"] button[data-value="neon"]');
+  await openDecorate(page);
+  await swatch(page, 'Neon').click();
   await page.reload();
   await ready(page);
-  await page.click('#menu-btn');
-  await expect(page.locator('.seg[data-setting="pathStyle"] button[data-value="neon"]')).toHaveAttribute('aria-pressed', 'true');
+  await openDecorate(page);
+  await expect(swatch(page, 'Neon')).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('an unfinished tree resumes after reload', async ({ page }) => {

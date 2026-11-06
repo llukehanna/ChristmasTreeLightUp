@@ -165,3 +165,14 @@ export async function resumeIfPaused(page: Page): Promise<void> {
   if (await overlay.isVisible()) await overlay.click();
   await expect(overlay).toBeHidden();
 }
+
+/** Opens the Decorate drawer from the settings menu (the menu closes first) and waits for it to be up. */
+export async function openDecorate(page: Page): Promise<void> {
+  await page.click('#menu-btn');
+  await page.click('#decorate-btn');
+  await expect(page.locator('#menu')).toBeHidden();
+  await expect(page.locator('#decorate')).toHaveClass(/\bopen\b/);
+}
+
+/** A swatch in the Decorate drawer, by its label ("Neon", "Sash", "Festive"…). */
+export const swatch = (page: Page, label: string) => page.locator('#decorate .deco-sw').filter({ has: page.getByText(label, { exact: true }) });
