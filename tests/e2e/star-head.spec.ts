@@ -1,5 +1,5 @@
 import { devices, type Page } from '@playwright/test';
-import { expect, test, testIp } from './fixtures';
+import { expect, returning, test, testIp } from './fixtures';
 import { asPlayer, game, pickName, ready, resumeIfPaused, signInFromChip, stopClock, tapStarStill, waitInteractive, type W } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
@@ -152,6 +152,7 @@ test('signed in, the head follows the account to a fresh browser', async ({ page
       (route) => route.continue({ headers: { ...route.request().headers(), 'cf-connecting-ip': ip } }),
     );
     await fresh.addCookies([{ name: 'aglow_fake_as', value: player.email, url: origin }]);
+    await returning(fresh);
     const other = await fresh.newPage();
     await ready(other);
     expect((await star(other)).head).toBe(false);

@@ -29,6 +29,7 @@ import { QualityGovernor } from './quality';
 import { SCENES, type Scene } from './scenes';
 import { SkySweep, type SceneChange } from './sky-sweep';
 import { TILE_FILL_MS, type VisualState } from './visual-state';
+import type { Opening } from '../ui/opening';
 
 const GLOW_SCALE = 0.5;
 /**
@@ -75,6 +76,8 @@ export interface FrameInput {
   calm?: boolean;
   /** Secret mode while music drives it: the nod, the bulb pulse, the palette step and the garland face's bob. */
   beat?: BeatFrame;
+  /** The first-visit opening: while it is on, its darkness and lights are the last thing drawn. */
+  opening?: Opening;
 }
 
 function ctx2d(c: HTMLCanvasElement, opts?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D {
@@ -549,6 +552,10 @@ export class Renderer {
             ? (this.pizza?.get(eggs.pizza.PIZZA_PX * dpr) ?? null)
             : null;
       this.confetti.draw(ctx, L, now, f.winAt, density, sc, sprite);
+    }
+    if (f.opening?.on) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      f.opening.front(ctx, L, now);
     }
   }
 

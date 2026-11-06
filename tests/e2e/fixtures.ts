@@ -1,4 +1,4 @@
-import { test as base, type TestInfo } from '@playwright/test';
+import { test as base, type BrowserContext, type TestInfo } from '@playwright/test';
 
 export { expect } from '@playwright/test';
 
@@ -10,6 +10,20 @@ export function testIp(info: Pick<TestInfo, 'testId' | 'workerIndex' | 'retry'>)
 }
 
 /**
+ * A returning visitor: the first-visit opening (src/ui/opening.ts) has played, so it never plays here. Every test's own
+ * context gets this (unless `firstVisit`); a context a test makes for itself calls it too.
+ */
+export async function returning(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem('aglow.opened', 'true');
+    } catch {
+      // A page without storage (about:blank): nothing to open there.
+    }
+  });
+}
+
+/**
  * Every e2e test reaches the Worker's /api/* with its own client IP (CF-Connecting-IP), so the limit of 200 starts
  * per IP per hour counts per test, not per run of the whole suite on one local D1. Miniflare only fills that header in
  * when it is missing; in production Cloudflare always overwrites it, so nothing changes there.
@@ -17,14 +31,17 @@ export function testIp(info: Pick<TestInfo, 'testId' | 'workerIndex' | 'retry'>)
  * Only same-origin /api/* requests get it (on any other origin the extra header would break CORS). A test's own route
  * that lets a request through must call route.fallback() (not continue()), so it still comes through here.
  */
-export const test = base.extend({
-  context: async ({ context, baseURL }, use, testInfo) => {
+export const test = base.extend<{ firstVisit: boolean }>({
+  /** The browser has never been here: the opening plays (tests/e2e/opening.spec.ts). Otherwise it is a returning visitor. */
+  firstVisit: [false, { option: true }],
+  context: async ({ context, baseURL, firstVisit }, use, testInfo) => {
     const ip = testIp(testInfo);
     const origin = new URL(baseURL ?? 'http://localhost:4173').origin;
     await context.route(
       (url) => url.origin === origin && url.pathname.startsWith('/api/'),
       (route) => route.continue({ headers: { ...route.request().headers(), 'cf-connecting-ip': ip } }),
     );
+    if (!firstVisit) await returning(context);
     await use(context);
   },
 });

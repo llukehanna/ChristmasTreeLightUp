@@ -44,6 +44,7 @@ import { Decorate } from './ui/decorate';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { whenIdle } from './ui/idle';
 import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
+import { markOpened, Opening, OPENING_MS, shouldOpen } from './ui/opening';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
@@ -227,6 +228,12 @@ export class App {
   private glares = 0;
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
+  /** The room lighting up on a first visit (src/ui/opening.ts): it draws over the first tree, which is fetched as ever. */
+  private readonly opening = new Opening({
+    garland: () => this.renderer.garland.geo,
+    bulbs: () => this.renderer.scene.bulbs,
+    camera: () => this.camera,
+  });
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -345,6 +352,14 @@ export class App {
     this.touchOnly.addEventListener?.('change', () => this.fitKeyCard());
     this.bindControls();
     this.bindLifecycle();
+    // A first visit opens in the dark while the first tree loads (never in a tab opened in the background, where it
+    // would play unseen: it waits for a visit that shows it). The first key or press skips it.
+    if (!document.hidden && shouldOpen()) {
+      markOpened();
+      const now = performance.now();
+      this.opening.play(now);
+      this.busy(now + OPENING_MS);
+    }
     // With a saved mode the first frame and the account's answer (which can switch a mode) wait for the eggs, so they
     // land after the saved mode's start, as they did when the eggs were in the main chunk. The wait is bounded: a load
     // that stalls must not leave a blank stage. The mode's 'start' switch then stays queued, and attachEggs brings the
@@ -912,9 +927,10 @@ export class App {
     // While paused the stage is blurred behind the overlay: draw one frame, then idle until resume. The topper is the
     // exception: a flip that lands under the overlay (the account's choice arriving) or a sticker that finishes
     // loading keeps drawing until it has settled, so the paused frame shows it. So does a sky sweep, which would
-    // otherwise freeze half-swept with its seam in the paused frame.
+    // otherwise freeze half-swept with its seam in the paused frame, and the opening, whose skip fade (a skip, then P
+    // within 900 ms) would otherwise freeze half-dark.
     if (this.paused) {
-      if (this.pausedDrawn && !this.renderer.topper.needsFrame(now) && !this.renderer.sweeping) return;
+      if (this.pausedDrawn && !this.renderer.topper.needsFrame(now) && !this.renderer.sweeping && !this.opening.on) return;
       this.pausedDrawn = true;
     } else this.pausedDrawn = false;
     // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow.
@@ -945,6 +961,7 @@ export class App {
       highs: show ? this.radio.show.high : 0,
       // While secret mode is on: the onset only while beating, the palette step held through a music pause.
       beat: this.secret && eggs && tracker ? eggs.beatFrame.fillBeatFrame(this.beat, tracker, beating, this.reduced.matches) : undefined,
+      opening: this.opening,
     });
   }
 
