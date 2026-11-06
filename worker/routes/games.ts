@@ -1,4 +1,4 @@
-import { MAX_CLAIMS_PER_REQUEST, type ClaimResponse, type FinishResult, type StartResponse } from '../../src/api/types.js';
+import { MAX_CLAIMS_PER_REQUEST, type ClaimResponse, type DailyInfo, type FinishResult, type StartResponse } from '../../src/api/types.js';
 import { judge, type UnrankedReason } from '../../src/core/judge.js';
 import { parseLog } from '../../src/core/log.js';
 import { GRID } from '../../src/core/mask.js';
@@ -7,11 +7,12 @@ import { hmac, randomSeed, randomToken } from '../lib/crypto.js';
 import type { AppEnv, Ctx } from '../lib/env.js';
 import { clientIp, HttpError, json, rateKey, readJson } from '../lib/http.js';
 import { boardGrew, cachedTotal } from '../lib/board-cache.js';
+import { dailySeed, DAILY_FIRST_DAY, liveDay } from '../lib/daily.js';
+import { DAY_MS, dayNumber, dayText } from '../lib/days.js';
 import { bestOf, rankOf } from '../lib/ranks.js';
 import { authSecret, currentUser, requireUser } from '../lib/users.js';
 
 const HOUR_MS = 3_600_000;
-const DAY_MS = 86_400_000;
 export const STARTS_PER_HOUR = 200;
 /** Finished games nobody has claimed are kept this long, so signing in later on the same browser still finds them. */
 export const UNCLAIMED_KEEP_DAYS = 90;
@@ -43,10 +44,29 @@ const finished = (g: GameRow): g is FinishedGame => g.finished_at !== null && g.
 const onBoard = (g: GameRow): boolean => g.ranked === 1 && g.named === 1;
 const notFound = () => new HttpError(404, 'not_found', "That game isn't on record.");
 
-/** POST /api/games {} */
+const dayClosed = () => new HttpError(400, 'invalid', "That day's tree isn't open.");
+
+/**
+ * The day a start asks for, from `daily: { today, day? }`: `today` is the player's local date (within a day of ours),
+ * `day` (default today) is the tree they want, from the first Daily Tree up to today. Null when there is no `daily`.
+ */
+function dailyAsked(daily: unknown, nowMs: number): { day: number; past: boolean } | null {
+  if (daily === undefined || daily === null) return null;
+  if (typeof daily !== 'object' || Array.isArray(daily)) throw dayClosed();
+  const { today, day } = daily as Record<string, unknown>;
+  const todayNo = liveDay(today, nowMs);
+  if (todayNo === null) throw dayClosed();
+  const wanted = day === undefined ? todayNo : dayNumber(day);
+  const first = dayNumber(DAILY_FIRST_DAY);
+  if (wanted === null || first === null || wanted < first || wanted > todayNo) throw dayClosed();
+  return { day: wanted, past: wanted < todayNo };
+}
+
+/** POST /api/games { daily? } */
 export async function startGame(req: Request, env: AppEnv): Promise<Response> {
   const secret = authSecret(env);
-  await readJson(req);
+  const body = await readJson(req);
+  const asked = dailyAsked(body.daily, Date.now());
   const ipHash = await hmac(secret, `ip:${rateKey(clientIp(req))}`);
   // Counted in their own table, so a start whose game a 422 deleted still counts.
   const recent = await env.DB.prepare('SELECT count(*) AS n FROM starts WHERE ip_hash = ? AND at > ?').bind(ipHash, Date.now() - HOUR_MS).first<{ n: number }>();
@@ -54,27 +74,35 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
 
   const user = await currentUser(req, env);
   const id = randomToken(16);
-  const seed = randomSeed();
+  const seed = asked ? await dailySeed(secret, asked.day) : randomSeed();
+  // Only a signed-in player has attempts to repeat; a past start never counts as the live one.
+  const repeat =
+    asked !== null &&
+    user !== null &&
+    (await env.DB.prepare('SELECT 1 AS one FROM games WHERE daily_day = ? AND user_id = ? AND daily_past = 0 LIMIT 1').bind(asked.day, user.id).first()) !== null;
+  const daily: DailyInfo | null = asked && { day: dayText(asked.day), past: asked.past, repeat };
   const claim = user ? null : randomToken(24);
   const claimHash = claim && (await hmac(secret, `claim:${claim}`));
   // Stamped last, right before the insert, so nothing above counts against the player's clock.
   const now = Date.now();
   await env.DB.batch([
-    // Lazy housekeeping (no cron): abandoned games after a day, unclaimed finished games after 90 days.
-    env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE finished_at IS NULL AND started_at < ? LIMIT ?)').bind(now - DAY_MS, STALE_BATCH),
+    // Lazy housekeeping (no cron): abandoned games after a day (a Daily's first attempt, until its day has closed), unclaimed finished games after 90 days.
+    env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE finished_at IS NULL AND started_at < ? AND (daily_day IS NULL OR started_at < ?) LIMIT ?)').bind(now - DAY_MS, now - 3 * DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?)').bind(now - UNCLAIMED_KEEP_DAYS * DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM starts WHERE rowid IN (SELECT rowid FROM starts WHERE at < ? LIMIT ?)').bind(now - HOUR_MS, STARTS_PRUNE),
     env.DB.prepare('INSERT INTO starts (ip_hash, at) VALUES (?, ?)').bind(ipHash, now),
-    env.DB.prepare('INSERT INTO games (id, user_id, claim_hash, gen_version, seed, started_at) VALUES (?, ?, ?, ?, ?, ?)').bind(
+    env.DB.prepare('INSERT INTO games (id, user_id, claim_hash, gen_version, seed, started_at, daily_day, daily_past) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(
       id,
       user?.id ?? null,
       claimHash,
       GEN_VERSION,
       seed,
       now,
+      asked?.day ?? null,
+      asked?.past ? 1 : 0,
     ),
   ]);
-  return json({ id, seed, genVersion: GEN_VERSION, claim } satisfies StartResponse);
+  return json({ id, seed, genVersion: GEN_VERSION, claim, daily } satisfies StartResponse);
 }
 
 /**

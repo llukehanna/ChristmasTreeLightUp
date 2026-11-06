@@ -68,7 +68,7 @@ describe('starting a game', () => {
   it('returns an id, a seed and the generator version; a claim token only when signed out', async () => {
     const before = Date.now();
     const anon = await start();
-    expect(anon).toEqual({ id: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/), seed: expect.any(Number), genVersion: GEN_VERSION, claim: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/) });
+    expect(anon).toEqual({ id: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/), seed: expect.any(Number), genVersion: GEN_VERSION, claim: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/), daily: null });
     const stored = await row(anon.id);
     expect(stored).toMatchObject({ user_id: null, gen_version: GEN_VERSION, seed: anon.seed, finished_at: null, ranked: 0 });
     expect(stored?.started_at).toBeGreaterThanOrEqual(before);
@@ -152,8 +152,8 @@ describe('starting a game', () => {
   });
 
   it('housekeeping finds stale games through indexes, not a scan of every game', async () => {
-    const plan = async (sql: string) => JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(1, 25).all()).results);
-    expect(await plan('SELECT id FROM games WHERE finished_at IS NULL AND started_at < ? LIMIT ?')).toContain('games_abandoned');
+    const plan = async (sql: string, ...binds: number[]) => JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...(binds.length ? binds : [1, 25])).all()).results);
+    expect(await plan('SELECT id FROM games WHERE finished_at IS NULL AND started_at < ? AND (daily_day IS NULL OR started_at < ?) LIMIT ?', 1, 1, 25)).toContain('games_abandoned');
     expect(await plan('SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?')).toContain('games_user');
   });
 

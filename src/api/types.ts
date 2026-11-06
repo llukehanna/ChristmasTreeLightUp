@@ -49,6 +49,22 @@ export interface StartResponse {
   genVersion: number;
   /** Proves ownership of a game played signed out (only its HMAC is stored); null when signed in. */
   claim: string | null;
+  /** Set when this is a Daily Tree start; null for a random game. */
+  daily: DailyInfo | null;
+}
+
+/** POST /api/games { daily }: the player's local date, and for a past day's tree (Advent catch-up) that day. */
+export interface DailyRequest {
+  today: string;
+  day?: string;
+}
+export interface DailyInfo {
+  /** YYYY-MM-DD */
+  day: string;
+  /** A day already over for the player: unranked, never on a Daily board, never a streak day. */
+  past: boolean;
+  /** The signed-in player has started this day's tree before: not their first attempt. */
+  repeat: boolean;
 }
 
 export interface FinishResult {

@@ -33,6 +33,13 @@ describe('migrations', () => {
     expect(await sql('games_abandoned')).toMatch(/WHERE finished_at IS NULL$/);
   });
 
+  it('games.daily_day is null and daily_past 0 by default; games_daily is a partial index (migration 0006)', async () => {
+    await db.prepare("INSERT INTO games (id, gen_version, seed, started_at) VALUES ('plain-aaaaaaaaaaaaaa', 1, 1, 1)").run();
+    expect(await db.prepare("SELECT daily_day, daily_past FROM games WHERE id = 'plain-aaaaaaaaaaaaaa'").first()).toEqual({ daily_day: null, daily_past: 0 });
+    const sql = (await db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'games_daily'").first<{ sql: string }>())?.sql ?? '';
+    expect(sql).toMatch(/WHERE daily_day IS NOT NULL$/);
+  });
+
   it('deleting a user deletes their sessions and games (foreign keys cascade); signed-out games stay', async () => {
     const user = await db.prepare("INSERT INTO users (google_sub, email, created_at) VALUES ('g-1', 'a@example.com', 1) RETURNING id").first<{ id: number }>();
     if (!user) throw new Error('no user');
