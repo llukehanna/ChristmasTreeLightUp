@@ -39,7 +39,7 @@ it('six sections in order, with the current look pressed', () => {
   const { sections, tiles, label } = make();
   expect(sections.map((s) => s.querySelector('h3 span')!.textContent)).toEqual(['Scene', 'Light path', 'Bulbs', 'Topper', 'Decorations', 'Presents']);
   expect(sections.map((s) => tiles(s).map(label))).toEqual([
-    ['Fireside', 'Midnight', 'Sash', 'Frost'],
+    ['Fireside', 'Midnight', 'Sash', 'Town square', 'Parlour', 'Frost'],
     ['Filament', 'Fairy lights', 'Neon'],
     ['Scene', 'Gilded', 'Classic', 'Ice', 'Gold & silver', 'Pastel'],
     ['Snowflake', 'Star', 'Angel', 'Bow'],

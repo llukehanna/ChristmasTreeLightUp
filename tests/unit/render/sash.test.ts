@@ -4,6 +4,7 @@ import { paintBackdrop } from '../../../src/render/backdrop';
 import { computeLayout } from '../../../src/render/layout';
 import { AURORA, HOME_ALONE, SCENES } from '../../../src/render/scenes';
 import { Snowfall } from '../../../src/render/window-kit';
+import { FakeMatrix, FakePath, matrices, recorder, type Call } from './backdrop-recorder';
 
 // A browser without canvas filters: blur.ts takes its downsample fallback.
 vi.mock('../../../src/render/blur', async (actual) => {
@@ -11,71 +12,13 @@ vi.mock('../../../src/render/blur', async (actual) => {
   return { ...real, CANVAS_FILTER: false };
 });
 
-interface Call {
-  name: string;
-  args: unknown[];
-}
-
-/** jsdom has no Path2D: the glass only needs to be a path the snow can be clipped to. */
-class FakePath {
-  rect(): void {}
-  ellipse(): void {}
-  moveTo(): void {}
-  lineTo(): void {}
-  closePath(): void {}
-  addPath(): void {}
-}
-
-/** jsdom has no DOMMatrix either: one that counts how many are made. */
-let matrices = 0;
-class FakeMatrix {
-  a = 1;
-  b = 0;
-  c = 0;
-  d = 1;
-  e = 0;
-  f = 0;
-  constructor() {
-    matrices++;
-  }
-}
-
-/** A 2D context that records every call and every property it is set to (as `set:name`), and keeps save/restore state. */
-function recorder(log: Call[], canvas: { width: number; height: number }): CanvasRenderingContext2D {
-  const state: Record<string | symbol, unknown> = { globalAlpha: 1, globalCompositeOperation: 'source-over', canvas };
-  const stack: Record<string | symbol, unknown>[] = [];
-  const methods: Record<string, (...a: number[]) => unknown> = {
-    save: () => (log.push({ name: 'save', args: [] }), stack.push({ ...state })),
-    restore: () => (log.push({ name: 'restore', args: [] }), Object.assign(state, stack.pop())),
-    createLinearGradient: () => (log.push({ name: 'createLinearGradient', args: [] }), { addColorStop() {} }),
-    createRadialGradient: () => (log.push({ name: 'createRadialGradient', args: [] }), { addColorStop() {} }),
-    createPattern: () => ({
-      // The matrix is reused: record what it says at the time.
-      setTransform: (m: { a: number; d: number; e: number; f: number }) => log.push({ name: 'pattern', args: [m.a, m.d, m.e, m.f] }),
-    }),
-    createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
-  };
-  return new Proxy(state, {
-    get(t, k) {
-      if (typeof k === 'string' && k in methods) return methods[k];
-      if (k in t) return t[k];
-      return (...args: unknown[]) => log.push({ name: String(k), args });
-    },
-    set(t, k, v) {
-      t[k] = v;
-      log.push({ name: `set:${String(k)}`, args: [v] });
-      return true;
-    },
-  }) as unknown as CanvasRenderingContext2D;
-}
-
 const L = computeLayout(1280, 800, 2);
 let log: Call[];
 let main: CanvasRenderingContext2D;
 
 beforeEach(() => {
   log = [];
-  matrices = 0;
+  matrices.made = 0;
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
     return recorder(log, this);
   } as never);
@@ -155,7 +98,7 @@ describe('the Sash', () => {
 
   it('no gradient, filter or matrix is created per frame', () => {
     const bd = sash();
-    matrices = 0;
+    matrices.made = 0;
     const create = vi.spyOn(document, 'createElement');
     for (let k = 0; k < 10; k++) {
       bd.back(main, 1000 + k * 16, false, 0);
@@ -163,7 +106,7 @@ describe('the Sash', () => {
     }
     expect(log.filter((c) => c.name === 'createRadialGradient' || c.name === 'createLinearGradient')).toEqual([]);
     expect(log.filter((c) => c.name === 'set:filter')).toEqual([]);
-    expect(matrices).toBeLessThanOrEqual(1);
+    expect(matrices.made).toBeLessThanOrEqual(1);
     // The flake and glow sprites are the snow's own: no canvas is made per frame either.
     expect(create).not.toHaveBeenCalled();
     // The lamp's glow is drawn, and the alpha put back.

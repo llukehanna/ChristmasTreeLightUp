@@ -6,7 +6,7 @@ it('lifts unlit wires on Frost per path style, and leaves the night scenes plain
   expect(SCENES.frost.unlit.filament.look).toBe('twotone');
   expect(SCENES.frost.unlit.fairy.look).toBe('glint');
   expect(SCENES.frost.unlit.neon.look).toBe('glint');
-  for (const id of ['midnight', 'fireside', 'sash'] as const)
+  for (const id of ['midnight', 'fireside', 'sash', 'square', 'parlour'] as const)
     for (const u of Object.values(SCENES[id].unlit)) expect(u.look).toBe('plain');
 });
 it('gives every scene six bulb colours', () => {
@@ -36,7 +36,7 @@ it('the aurora: a night scene of its own, six cool bulbs in hue order, shown onl
   for (let k = 1; k < hues.length; k++) expect(hues[k]).toBeGreaterThan(hues[k - 1]);
   expect(sceneFor('frost', true)).toBe(AURORA);
   expect(sceneFor('frost', false)).toBe(SCENES.frost);
-  expect(Object.keys(SCENES)).toEqual(['midnight', 'fireside', 'frost', 'sash']); // not a menu pick
+  expect(Object.keys(SCENES)).toEqual(['midnight', 'fireside', 'frost', 'sash', 'square', 'parlour']); // not a menu pick
 });
 
 it('Home Alone: a warm night room of its own, chosen over the hour, never over the head', () => {
@@ -53,7 +53,7 @@ it('Home Alone: a warm night room of its own, chosen over the hour, never over t
     expect(sceneFor(id, true, true)).toBe(AURORA); // they never stack, but if asked, the head wins
     expect(sceneFor(id, false)).toBe(SCENES[id]);
   }
-  expect(Object.keys(SCENES)).toEqual(['midnight', 'fireside', 'frost', 'sash']); // not a menu pick
+  expect(Object.keys(SCENES)).toEqual(['midnight', 'fireside', 'frost', 'sash', 'square', 'parlour']); // not a menu pick
 });
 
 it("the Sash: the lab's town-square palette in a dark room, its own snow behind the glass and none in the room", () => {
@@ -73,4 +73,38 @@ it("the Sash: the lab's town-square palette in a dark room, its own snow behind 
   }
   expect(sceneFor('sash', false)).toBe(SCENES.sash);
   expect(sceneFor('sash', true)).toBe(AURORA);
+});
+
+it("the Town square: the lab's blue-hour palette, light snow in the square and the rink mirroring the tree", () => {
+  expect(SCENES.square).toMatchObject({
+    id: 'square', light: 'moon', sky: ['#060a1c', '#141a3e', '#2c2a52'], ground: ['#2a3150', '#0b0e1c'],
+    needleA: [15, 46, 40], needleB: [44, 102, 84], trunk: '#0c0d10', bulbFrost: 0, core: '#fff4dc', glow: '#ffb862',
+    copperOn: 'rgba(236,178,108,.92)', neon: '#ff9548', neonMid: '#ffc07a', socket: '#6a5434',
+    bulbs: ['#ff4f5e', '#ffc04e', '#58b0ff', '#5fdc90', '#ff96c8', '#fff0d0'],
+    starOff: 'rgba(255,236,205,.05)', starEdge: 'rgba(255,236,205,.32)', hover: '255,212,150', snow: '235,240,255',
+    snowAlpha: 0.42, bloom: 1, snowDust: false, reflect: true, embers: false,
+  });
+  // The same cool, pale unlit wire as the Sash's (it is the Sash's source).
+  expect(SCENES.square.unlit).toEqual(SCENES.sash.unlit);
+  expect(sceneFor('square', false)).toBe(SCENES.square);
+  expect(sceneFor('square', true)).toBe(AURORA);
+});
+
+it("the Parlour: the lab's candlelit palette, firelight and embers from its hearth, the floor mirroring the tree", () => {
+  expect(SCENES.parlour).toMatchObject({
+    id: 'parlour', light: 'fire', sky: ['#0a0405', '#150709', '#1d0b0b'], ground: ['#1c0e08', '#070302'],
+    needleA: [15, 34, 20], needleB: [48, 80, 44], trunk: '#120a06', bulbFrost: 0, core: '#fff2da', glow: '#ff9a44',
+    copperOn: 'rgba(242,172,100,.95)', neon: '#ff7a2e', neonMid: '#ffae6a', socket: '#3b2a17',
+    bulbs: ['#ff4434', '#ffbf3e', '#4fcf78', '#fff0d2', '#ff8636', '#e2607a'],
+    starOff: 'rgba(255,225,190,.05)', starEdge: 'rgba(255,225,190,.30)', hover: '255,190,130', snow: '255,236,210',
+    snowAlpha: 0, bloom: 1, snowDust: false, reflect: true, embers: true,
+  });
+  for (const u of Object.values(SCENES.parlour.unlit)) {
+    expect(u).toEqual({
+      look: 'plain', wire: 'rgba(238,200,150,.38)', wireW: 0.06, copper: 'rgba(212,145,82,.5)', led: 'rgba(255,222,182,.34)',
+      glass: 'rgba(255,220,190,.12)', glassHi: 'rgba(255,240,220,.34)',
+    });
+  }
+  expect(sceneFor('parlour', false)).toBe(SCENES.parlour);
+  expect(sceneFor('parlour', false, true)).toBe(HOME_ALONE);
 });

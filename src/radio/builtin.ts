@@ -23,4 +23,7 @@ export const SCENE_STATION: Readonly<Record<SceneId, string>> = {
   midnight: MUSIC_BOX_ID,
   frost: 'christmas-classics',
   sash: MUSIC_BOX_ID,
+  square: 'christmas-classics',
+  // The Parlour has a coal fire (embers and all): the fire suits it.
+  parlour: FIREPLACE_ID,
 };

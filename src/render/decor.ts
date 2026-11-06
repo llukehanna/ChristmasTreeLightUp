@@ -1,9 +1,10 @@
 import { mulberry32, type Rng } from '../core/rng';
 import type { Decor } from '../store/look';
-import { blurredLayer, clipBox, type Box } from './blur';
+import { blurredLayer, clipBox } from './blur';
 import { hexRgb } from './color';
 import { envelope, X, Y, type Layout } from './layout';
 import { canvas, clamp01, css, mixRgb, smooth, TAU } from './paint-util';
+import { layerBox } from './scene-util';
 import type { Rgb, Scene } from './scenes';
 
 /**
@@ -50,12 +51,6 @@ function decorLit(sc: Scene): Lit {
 
 /** An albedo under a light. */
 const lit = (L: Lit, c: Rgb, k = 1): Rgb => [c[0] * L.amb * L.tint[0] * k, c[1] * L.amb * L.tint[1] * k, c[2] * L.amb * L.tint[2] * k];
-
-/** A blur layer's device-px box: the CSS rectangle padded by three blur radii (the blur's tails), so the layer stays small. */
-function layerBox(L: Layout, x0: number, y0: number, x1: number, y1: number, blur: number): Box {
-  const pad = 3 * blur;
-  return { x: (x0 - pad) * L.dpr, y: (y0 - pad) * L.dpr, w: (x1 - x0 + 2 * pad) * L.dpr, h: (y1 - y0 + 2 * pad) * L.dpr };
-}
 
 /* ---------- drape geometry ---------- */
 

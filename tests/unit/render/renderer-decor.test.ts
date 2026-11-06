@@ -6,10 +6,12 @@ import { mulberry32 } from '../../../src/core/rng';
 import { IDENTITY } from '../../../src/render/camera';
 import { skirtBottom } from '../../../src/render/decor';
 import { Y, computeLayout } from '../../../src/render/layout';
+import { ParlourRoom } from '../../../src/render/parlour';
 import { drawUnlit } from '../../../src/render/paths';
 import { Renderer, type FrameInput } from '../../../src/render/renderer';
 import { withPalette } from '../../../src/render/palettes';
 import { SCENES } from '../../../src/render/scenes';
+import { SquareLights } from '../../../src/render/square';
 import { Snowfall as WindowSnow } from '../../../src/render/window-kit';
 import { VisualState } from '../../../src/render/visual-state';
 import { NO_DECOR, STARTER_LOOK, type Dress } from '../../../src/store/look';
@@ -176,6 +178,35 @@ it("a dress change keeps the Sash's backdrop and its snow; a resize or a change 
   r.setScene(SCENES.sash);
   expect(backdrop()).toBeInstanceOf(WindowSnow);
   expect(backdrop()).not.toBe(resized);
+});
+
+it("swapping between the rooms live paints each one afresh, and a resize re-bakes the Parlour's flame for the new screen", () => {
+  vi.stubGlobal('DOMMatrix', class { a = 1; b = 0; c = 0; d = 1; e = 0; f = 0; });
+  const r = new Renderer(document.createElement('canvas'));
+  const backdrop = () => (r as unknown as { backdrop: unknown }).backdrop;
+  r.setScene(SCENES.sash);
+  r.resize(1280, 800, 2);
+  const sash = backdrop();
+  expect(sash).toBeInstanceOf(WindowSnow);
+  r.setScene(SCENES.square);
+  expect(backdrop()).toBeInstanceOf(SquareLights);
+  r.setScene(SCENES.parlour);
+  const parlour = backdrop() as ParlourRoom;
+  expect(parlour).toBeInstanceOf(ParlourRoom);
+  // Back to the square: its own lights again, never the parlour's room or the first square's.
+  r.setScene(SCENES.square);
+  expect(backdrop()).toBeInstanceOf(SquareLights);
+  r.setScene(SCENES.parlour);
+  const again = backdrop() as ParlourRoom;
+  expect(again).not.toBe(parlour);
+  expect(again.room.spr.flame.width).toBe(parlour.room.spr.flame.width);
+  // The flame is baked at twice device resolution: a screen at dpr 1 gets a smaller one, and the room is laid out anew.
+  r.resize(1280, 800, 1);
+  const resized = backdrop() as ParlourRoom;
+  expect(resized).not.toBe(again);
+  expect(resized.room.spr.flame.width).toBeLessThan(again.room.spr.flame.width);
+  r.setScene(SCENES.fireside);
+  expect(backdrop()).toBeNull();
 });
 
 it('setDress says whether it repainted: a real change does, the same dress or a palette alone (the scene carries it) does not', () => {

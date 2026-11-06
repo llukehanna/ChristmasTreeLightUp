@@ -24,7 +24,9 @@ interface Item {
   patch(l: Look): Partial<Look>;
 }
 
-const SCENE_ITEMS: readonly [SceneId, string][] = [['fireside', 'Fireside'], ['midnight', 'Midnight'], ['sash', 'Sash'], ['frost', 'Frost']];
+const SCENE_ITEMS: readonly [SceneId, string][] = [
+  ['fireside', 'Fireside'], ['midnight', 'Midnight'], ['sash', 'Sash'], ['square', 'Town square'], ['parlour', 'Parlour'], ['frost', 'Frost'],
+];
 const PATH_ITEMS: readonly [PathStyle, string][] = [['filament', 'Filament'], ['fairy', 'Fairy lights'], ['neon', 'Neon']];
 const BULB_ITEMS: readonly [PaletteId, string][] = [
   ['scene', 'Scene'], ['gilded', 'Gilded'], ['classic', 'Classic'], ['ice', 'Ice'], ['goldsilver', 'Gold & silver'], ['pastel', 'Pastel'],

@@ -10,7 +10,8 @@
   /* Bottom of the garland (px), set by the app from the renderer's geometry. */
   --garland-bottom: 104px;
 }
-body[data-scene='midnight'], body[data-scene='sash'] { --ink: #f3ead8; --accent: #ffcf80; --panel: rgba(10, 14, 30, 0.72); }
+/* Fireside and the Parlour keep the warm defaults above; the night scenes share Midnight's. */
+body[data-scene='midnight'], body[data-scene='sash'], body[data-scene='square'] { --ink: #f3ead8; --accent: #ffcf80; --panel: rgba(10, 14, 30, 0.72); }
 body[data-scene='frost'] {
   --ink: #15261f; --accent: #e0a040;
   --hud-bg: rgba(255, 255, 255, 0.55); --hud-line: rgba(21, 38, 31, 0.1); --panel: rgba(250, 252, 253, 0.84);

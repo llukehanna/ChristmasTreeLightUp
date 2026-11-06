@@ -146,6 +146,85 @@ export const SCENE_ART: Record<SceneId, string> = {
     <ellipse cx="40" cy="51" rx="18" ry="2.6" fill="#ffc070" opacity=".2" filter="url(#P-bb)"/>
     ${fir({ cx: 40, top: 16, h: 34 })}`,
   ),
+  // Drawn in their hand from the scene (src/render/square.ts): blue hour, a rose glow low in the west, snow-roofed
+  // townhouses with lit shopfronts and a clock tower, gas lamps, carolers round a lantern, and the rink in front.
+  square: svg(
+    '0 0 80 60',
+    `<defs><linearGradient id="P-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#04071a"/><stop offset=".4" stop-color="#0c1335"/><stop offset=".78" stop-color="#22285a"/><stop offset="1" stop-color="#3a3264"/></linearGradient>
+    <radialGradient id="P-r" cx=".22" cy=".72" r=".6"><stop offset="0" stop-color="#ff8278" stop-opacity=".22"/><stop offset="1" stop-color="#c86e96" stop-opacity="0"/></radialGradient>
+    <linearGradient id="P-p" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2c4a"/><stop offset="1" stop-color="#4c5078"/></linearGradient>
+    <linearGradient id="P-i" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d2340"/><stop offset=".35" stop-color="#11152a"/><stop offset="1" stop-color="#080a14"/></linearGradient></defs>
+    <rect width="80" height="60" fill="url(#P-s)"/><rect width="80" height="44" fill="url(#P-r)"/>${stars(10, 7, 14)}
+    <path d="M0 42V27l6-6 6 6v15zM17 42V25h11v17zM27 42V31h26v11zM52 42V26l3-3v-2l3-2 3 2v2l3 3v16zM64 42V24l8-6 8 6v18z" fill="#16152b"/>
+    <path d="M12 42V14h5v28z" fill="#15162a"/><path d="M11.4 14h6.2l-3.1-8z" fill="#121326"/>
+    <path d="M-.5 27.5L6 21l6.5 6.5M16.6 25h11.8M51.6 26.4l3.4-3.4M61 23l3.4 3.4M63.4 24.4L72 18l8.6 6.4M11.4 14l3.1-8" fill="none" stroke="#d6e0f6" stroke-width="1" stroke-linecap="round" opacity=".55"/>
+    <circle cx="14.5" cy="18" r="1.7" fill="#ffe2a8"/><path d="M14.5 18v-1.1M14.5 18h.8" stroke="#2a180a" stroke-width=".3"/>
+    <g fill="#ffb868" opacity=".8"><rect x="2" y="30" width="1.6" height="2.4"/><rect x="8" y="30" width="1.6" height="2.4"/><rect x="19" y="28" width="1.6" height="2.4"/><rect x="24" y="28" width="1.6" height="2.4"/><rect x="55" y="29" width="1.6" height="2.4"/><rect x="67" y="27" width="1.6" height="2.4"/><rect x="75" y="27" width="1.6" height="2.4"/></g>
+    <g filter="url(#P-b)" fill="#ffaa58" opacity=".85"><rect x="1" y="36" width="9" height="4.5"/><rect x="18.5" y="36" width="8" height="4.5"/><rect x="53.5" y="36" width="8" height="4.5"/><rect x="66" y="36" width="10" height="4.5"/></g>
+    <g fill="#ffd696"><rect x="1.6" y="36.6" width="7.8" height="3.3"/><rect x="19.1" y="36.6" width="6.8" height="3.3"/><rect x="54.1" y="36.6" width="6.8" height="3.3"/><rect x="66.6" y="36.6" width="8.8" height="3.3"/></g>
+    <g fill="#5a1418"><rect x=".6" y="34.6" width="9.8" height="1.2"/><rect x="53.1" y="34.6" width="8.8" height="1.2"/></g><g fill="#163a26"><rect x="18.1" y="34.6" width="8.8" height="1.2"/><rect x="65.6" y="34.6" width="10.8" height="1.2"/></g>
+    <rect x="21.6" y="31" width=".6" height="11" fill="#0a0b14"/><rect x="59.6" y="31" width=".6" height="11" fill="#0a0b14"/>
+    <g filter="url(#P-bb)" fill="#ffc878" opacity=".6"><circle cx="21.9" cy="31" r="2.6"/><circle cx="59.9" cy="31" r="2.6"/></g><circle cx="21.9" cy="31" r=".9" fill="#ffe2a8"/><circle cx="59.9" cy="31" r=".9" fill="#ffe2a8"/>
+    <rect y="42" width="80" height="4" fill="url(#P-p)"/>
+    <g filter="url(#P-bb)" fill="#ffb46e" opacity=".3"><ellipse cx="5.5" cy="43.4" rx="6" ry="1.2"/><ellipse cx="22.5" cy="43.4" rx="5" ry="1.2"/><ellipse cx="57.5" cy="43.4" rx="5" ry="1.2"/><ellipse cx="71" cy="43.4" rx="6" ry="1.2"/></g>
+    <g fill="#080911"><path d="M3.2 45.4l.5-4h1.6l.5 4z"/><circle cx="4.5" cy="40.9" r=".8"/><path d="M6.4 45.6l.5-4.4h1.8l.5 4.4z"/><circle cx="7.8" cy="40.6" r=".85"/><path d="M9.5 45.4l.5-4h1.6l.5 4z"/><circle cx="10.8" cy="40.9" r=".8"/></g>
+    <path d="M12.6 45.6l.7-6.4" stroke="#090a12" stroke-width=".4"/><g filter="url(#P-b)"><circle cx="13.4" cy="39.2" r="1.2" fill="#ffc878" opacity=".8"/></g><rect x="13" y="38.8" width=".9" height=".9" fill="#ffd08a"/>
+    <rect y="46" width="80" height="14" fill="url(#P-i)"/>
+    <g filter="url(#P-b)" fill="#ffb464" opacity=".28"><rect x="2" y="46" width="7" height="7"/><rect x="19.5" y="46" width="6" height="6"/><rect x="54.5" y="46" width="6" height="6"/><rect x="67" y="46" width="8" height="7"/><rect x="21.4" y="46" width="1" height="6"/><rect x="59.4" y="46" width="1" height="6"/></g>
+    <rect y="45.4" width="80" height="1.2" fill="#dce4fa" opacity=".22"/>
+    <g fill="none" stroke="#d2dcff" stroke-width=".3" opacity=".12"><path d="M8 52q14 3 28 0M46 55q12 2 24-1"/></g>
+    <ellipse cx="40" cy="49" rx="12" ry="2.4" fill="#ffc070" opacity=".22" filter="url(#P-bb)"/>
+    ${fir({ cx: 40, top: 12, h: 34 })}`,
+  ),
+  // Drawn in their hand from the scene (src/render/parlour.ts): oxblood damask over walnut wainscoting, the hearth on the
+  // left under a gilt mirror with the clock and candles on its mantel, a sconce, and a snowy window between velvet drapes.
+  parlour: svg(
+    '0 0 80 60',
+    `<defs><linearGradient id="P-w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#120708"/><stop offset=".4" stop-color="#1d0a0b"/><stop offset="1" stop-color="#2a0f10"/></linearGradient>
+    <pattern id="P-dm" width="7" height="9" patternUnits="userSpaceOnUse"><path d="M3.5 1.2c1.7 1.8 1.7 4.2 0 6.2-1.7-2-1.7-4.4 0-6.2z" fill="#c04a42" opacity=".13"/></pattern>
+    <linearGradient id="P-ws" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#24130b"/><stop offset="1" stop-color="#170c07"/></linearGradient>
+    <linearGradient id="P-fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22120a"/><stop offset="1" stop-color="#0d0705"/></linearGradient>
+    <linearGradient id="P-m" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a1312"/><stop offset="1" stop-color="#0e0909"/></linearGradient>
+    <linearGradient id="P-n" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060b1e"/><stop offset=".6" stop-color="#0f1a3a"/><stop offset="1" stop-color="#26345e"/></linearGradient>
+    <linearGradient id="P-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34241a"/><stop offset=".25" stop-color="#6a5438"/><stop offset=".5" stop-color="#3c2c1c"/><stop offset=".75" stop-color="#5e4a30"/><stop offset="1" stop-color="#2e2014"/></linearGradient>
+    <linearGradient id="P-d" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1e0306"/><stop offset=".45" stop-color="#5a0c14"/><stop offset=".6" stop-color="#7a1a22"/><stop offset="1" stop-color="#2a0408"/></linearGradient>
+    <radialGradient id="P-fire" cx=".5" cy=".85" r=".7"><stop offset="0" stop-color="#ffb060"/><stop offset=".4" stop-color="#e0501a"/><stop offset="1" stop-color="#501405" stop-opacity="0"/></radialGradient>
+    <radialGradient id="P-room" cx="0" cy=".8" r=".75"><stop offset="0" stop-color="#ff7832" stop-opacity=".22"/><stop offset="1" stop-color="#ff6428" stop-opacity="0"/></radialGradient>
+    <linearGradient id="P-top" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".34"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient></defs>
+    <rect width="80" height="60" fill="url(#P-w)"/><rect width="80" height="38" fill="url(#P-dm)"/>
+    <rect width="80" height="3.4" fill="#0e0506"/><rect y="3.4" width="80" height=".4" fill="#ffc896" opacity=".07"/>
+    <rect y="38" width="80" height="9" fill="url(#P-ws)"/><rect y="37.2" width="80" height="1.6" fill="#3c2214"/><rect y="37.2" width="80" height=".3" fill="#ffc88c" opacity=".09"/>
+    <g fill="none" stroke="#000" stroke-opacity=".28" stroke-width=".5"><rect x="23" y="39.6" width="7" height="5.6"/><rect x="32" y="39.6" width="7" height="5.6"/><rect x="41" y="39.6" width="7" height="5.6"/><rect x="50" y="39.6" width="7" height="5.6"/></g>
+    <rect y="46" width="80" height="1.2" fill="#140a06"/><rect y="47.2" width="80" height="12.8" fill="url(#P-fl)"/>
+    <path d="M23 49h30l5 11H18z" fill="#3a1214"/><path d="M24 49.8h28" stroke="#c8964a" stroke-opacity=".3" stroke-width=".6" stroke-dasharray="1 1"/>
+    <rect x="-1" y="27" width="22" height="19" fill="url(#P-m)"/>
+    <path d="M3 46V36q6.5-5.4 13 0v10z" fill="#050202"/>
+    <ellipse cx="9.5" cy="44.5" rx="6" ry="4" fill="url(#P-fire)" filter="url(#P-b)"/>
+    <g fill="#ff8a3a" opacity=".7"><circle cx="6.5" cy="44.6" r=".6"/><circle cx="9" cy="44.2" r=".7"/><circle cx="11.6" cy="44.7" r=".6"/><circle cx="13.5" cy="44.3" r=".5"/></g>
+    <path d="M5 40.5v5.5M7.5 40.5v5.5M10 40.5v5.5M12.5 40.5v5.5M15 40.5v5.5" stroke="#0a0606" stroke-width=".55"/>
+    <path d="M2.4 46V36q7.1-6 14.2 0v10" fill="none" stroke="#c8965a" stroke-opacity=".12" stroke-width=".6"/>
+    <rect x="-1" y="25.6" width="23" height="1.8" fill="#4a2c18"/><rect x="-1" y="25.6" width="23" height=".4" fill="#ffc88c" opacity=".12"/>
+    <rect x="2.5" y="7" width="15" height="14" fill="#0e0809"/>
+    <g filter="url(#P-b)" opacity=".55"><circle cx="12" cy="11" r="1" fill="#ffaa5a"/><circle cx="14.6" cy="15" r="1.1" fill="#ff5a50"/><circle cx="10" cy="17" r=".9" fill="#ffd28c"/><circle cx="15.4" cy="10" r=".8" fill="#6ed282"/><circle cx="6" cy="18.6" r="1.6" fill="#ffaa5a" opacity=".5"/></g>
+    <rect x="2.5" y="7" width="15" height="14" fill="none" stroke="url(#P-g)" stroke-width="1.5"/><path d="M6.6 6.3q3.4-3 6.8 0z" fill="url(#P-g)"/>
+    <path d="M8 25.6v-3.4q0-1.1.9-1.3q1.1-1.6 2.2 0q.9.2.9 1.3v3.4z" fill="#3e200f"/><circle cx="10" cy="22.7" r="1.05" fill="#857a68"/><path d="M10 22.7v-.75M10 22.7h.55" stroke="#2a180a" stroke-width=".25"/>
+    <g fill="#6e5a3c"><rect x="4.25" y="22.6" width=".5" height="3"/><rect x="15.25" y="22.6" width=".5" height="3"/><rect x="52.75" y="19.8" width=".9" height="1.1"/></g>
+    <g fill="#8c8270"><rect x="4.1" y="19.8" width=".8" height="2.8"/><rect x="15.1" y="19.8" width=".8" height="2.8"/><rect x="52.8" y="17.4" width=".8" height="2.4"/></g>
+    <path d="M53.2 23.2q-1.4-1.2 0-2.3" fill="none" stroke="#5e4a2e" stroke-width=".45"/>
+    <g filter="url(#P-bb)" fill="#ffb464" opacity=".5"><circle cx="4.5" cy="18.6" r="2.4"/><circle cx="15.5" cy="18.6" r="2.4"/><circle cx="53.2" cy="16.2" r="2.4"/></g>
+    <g fill="#ffe6b4"><path d="M4.5 17.6q.65 1 0 2q-.65-1 0-2z"/><path d="M15.5 17.6q.65 1 0 2q-.65-1 0-2z"/><path d="M53.2 15.2q.65 1 0 2q-.65-1 0-2z"/></g>
+    <rect x="62" y="9" width="12" height="27" fill="url(#P-n)"/>
+    <path d="M62 36v-6l4.6-3.4 4 2.6 3.4-1.4V36z" fill="#96a5cd" opacity=".35"/><g fill="#ffbe6e" opacity=".5"><rect x="64.4" y="31.2" width=".9" height="1.2"/><rect x="69.2" y="32" width=".9" height="1.2"/></g>
+    <g fill="#ebf0ff" opacity=".7"><circle cx="64" cy="12" r=".35"/><circle cx="70.6" cy="14.4" r=".3"/><circle cx="66.4" cy="19" r=".4"/><circle cx="72.2" cy="22" r=".3"/><circle cx="63.4" cy="25" r=".3"/><circle cx="69" cy="27.4" r=".35"/></g>
+    <path d="M68 9v27M62 15.75h12M62 22.5h12M62 29.25h12" stroke="#1a0d08" stroke-width=".7"/><rect x="62" y="9" width="12" height="27" fill="none" stroke="#140a06" stroke-width="1"/>
+    <rect x="60.8" y="36" width="14.4" height="1.3" fill="#3a2214"/>
+    <path d="M56.6 6h6.2v2.6q-.6 10-3.4 15.4q2.4 5 3.8 22H56.6z" fill="url(#P-d)"/><path d="M73.2 6H81v40h-7.6q1.4-17 3.8-22q-2.8-5.4-4-15.4z" fill="url(#P-d)"/>
+    <path d="M59.4 24c1.4-.2 2.6.2 3.6 1M76.6 24c-1.4-.2-2.6.2-3.6 1" fill="none" stroke="#8a6c3c" stroke-width=".55"/>
+    <path d="M55.6 3.4H81v3.4q-4.2 2.6-8.4 0q-4.2 2.6-8.4 0q-4.2 2.6-8.6 0z" fill="#4a0b12" stroke="#dcaa5a" stroke-opacity=".2" stroke-width=".4"/>
+    <rect width="80" height="60" fill="url(#P-room)"/><rect width="80" height="20" fill="url(#P-top)"/>
+    <ellipse cx="37" cy="50" rx="15" ry="2.6" fill="#ffc070" opacity=".2" filter="url(#P-bb)"/>
+    ${fir({ cx: 37, top: 13, h: 35 })}`,
+  ),
   frost: svg(
     '0 0 80 60',
     `<defs><linearGradient id="P-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a9c8da"/><stop offset="1" stop-color="#eef5f8"/></linearGradient>

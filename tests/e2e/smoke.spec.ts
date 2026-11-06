@@ -129,6 +129,22 @@ test('Sash puts the window up', async ({ page }) => {
   await expect(page.locator('#results')).toBeVisible({ timeout: 1200 });
 });
 
+for (const [label, id, what] of [['Town square', 'square', 'the square at blue hour'], ['Parlour', 'parlour', 'the parlour']] as const) {
+  test(`${label} puts up ${what}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await ready(page);
+    await openDecorate(page);
+    await swatch(page, label).click();
+    await expect(page.locator('body')).toHaveAttribute('data-scene', id);
+    await expect(swatch(page, label)).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => (window as unknown as W).__aglow.solve());
+    await expect(page.locator('#results')).toBeVisible({ timeout: 1200 });
+    expect(errors).toEqual([]);
+  });
+}
+
 test('settings persist across reloads', async ({ page }) => {
   await ready(page);
   await openDecorate(page);

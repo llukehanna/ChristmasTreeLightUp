@@ -13,6 +13,7 @@ import { AURORA, HOME_ALONE, SCENES, type Scene } from '../../../src/render/scen
 import { SWEEP_MS } from '../../../src/render/sky-sweep';
 import { VisualState } from '../../../src/render/visual-state';
 import { Snowfall as WindowSnow } from '../../../src/render/window-kit';
+import { FakePath } from './backdrop-recorder';
 
 /** Every gradient colour stop drawn, in order (the firelight's strength is in its first stop). */
 let stops: string[] = [];
@@ -46,8 +47,9 @@ function sink(): CanvasRenderingContext2D {
 beforeEach(() => {
   stops = [];
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => sink()) as never);
-  // jsdom has neither: the Sash's glass is a path of panes and an arch, and its snow reuses one matrix.
-  vi.stubGlobal('Path2D', class { moveTo(): void {} lineTo(): void {} rect(): void {} ellipse(): void {} closePath(): void {} addPath(): void {} });
+  // jsdom has neither: the Sash's glass is a path of panes and an arch (the Town square's figures are paths too), and
+  // its snow reuses one matrix.
+  vi.stubGlobal('Path2D', FakePath);
   vi.stubGlobal('DOMMatrix', class { a = 1; b = 0; c = 0; d = 1; e = 0; f = 0; });
 });
 afterEach(() => {

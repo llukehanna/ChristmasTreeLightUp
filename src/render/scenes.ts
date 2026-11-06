@@ -1,7 +1,7 @@
 import type { PathStyle } from './paths';
 
 /** The menu's scenes. Secret mode's aurora (spec 2026-10-08 secret mode §2) is not one of them. */
-export type SceneId = 'midnight' | 'fireside' | 'frost' | 'sash';
+export type SceneId = 'midnight' | 'fireside' | 'frost' | 'sash' | 'square' | 'parlour';
 export type Rgb = readonly [number, number, number];
 
 /**
@@ -126,6 +126,40 @@ export const SCENES: Readonly<Record<SceneId, Scene>> = {
     socket: '#6a5434', bulbs: ['#ff4f5e', '#ffc04e', '#58b0ff', '#5fdc90', '#ff96c8', '#fff0d0'],
     starOff: 'rgba(255,236,205,.05)', starEdge: 'rgba(255,236,205,.32)', hover: '255,212,150',
     snow: '235,240,255', snowAlpha: 0, bloom: 1, snowDust: false, reflect: true, embers: false,
+  },
+  /**
+   * Blue hour on the town square (src/render/square.ts paints it): lit shopfronts, a skating rink that mirrors the
+   * tree, light snow. The lab's palette as it is.
+   */
+  square: {
+    id: 'square', light: 'moon',
+    sky: ['#060a1c', '#141a3e', '#2c2a52'], ground: ['#2a3150', '#0b0e1c'],
+    needleA: [15, 46, 40], needleB: [44, 102, 84], trunk: '#0c0d10',
+    unlit: everyStyle({
+      look: 'plain', wire: 'rgba(195,208,236,.42)', wireW: 0.06, copper: 'rgba(210,155,100,.5)', led: 'rgba(255,232,200,.36)',
+      glass: 'rgba(210,222,255,.12)', glassHi: 'rgba(255,255,255,.34)',
+    }),
+    bulbFrost: 0, core: '#fff4dc', glow: '#ffb862', copperOn: 'rgba(236,178,108,.92)', neon: '#ff9548', neonMid: '#ffc07a',
+    socket: '#6a5434', bulbs: ['#ff4f5e', '#ffc04e', '#58b0ff', '#5fdc90', '#ff96c8', '#fff0d0'],
+    starOff: 'rgba(255,236,205,.05)', starEdge: 'rgba(255,236,205,.32)', hover: '255,212,150',
+    snow: '235,240,255', snowAlpha: 0.42, bloom: 1, snowDust: false, reflect: true, embers: false,
+  },
+  /**
+   * A Victorian parlour on Christmas Eve (src/render/parlour.ts paints it): candlelight and a coal fire low on the left,
+   * so the game's firelight and embers belong to its hearth; deep wallpaper, velvet. The lab's palette as it is.
+   */
+  parlour: {
+    id: 'parlour', light: 'fire',
+    sky: ['#0a0405', '#150709', '#1d0b0b'], ground: ['#1c0e08', '#070302'],
+    needleA: [15, 34, 20], needleB: [48, 80, 44], trunk: '#120a06',
+    unlit: everyStyle({
+      look: 'plain', wire: 'rgba(238,200,150,.38)', wireW: 0.06, copper: 'rgba(212,145,82,.5)', led: 'rgba(255,222,182,.34)',
+      glass: 'rgba(255,220,190,.12)', glassHi: 'rgba(255,240,220,.34)',
+    }),
+    bulbFrost: 0, core: '#fff2da', glow: '#ff9a44', copperOn: 'rgba(242,172,100,.95)', neon: '#ff7a2e', neonMid: '#ffae6a',
+    socket: '#3b2a17', bulbs: ['#ff4434', '#ffbf3e', '#4fcf78', '#fff0d2', '#ff8636', '#e2607a'],
+    starOff: 'rgba(255,225,190,.05)', starEdge: 'rgba(255,225,190,.30)', hover: '255,190,130',
+    snow: '255,236,210', snowAlpha: 0, bloom: 1, snowDust: false, reflect: true, embers: true,
   },
 };
 

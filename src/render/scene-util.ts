@@ -1,8 +1,11 @@
-import { blurredLayer } from './blur';
+import { blurredLayer, type Box } from './blur';
 import type { Layout } from './layout';
 import { TAU, canvas } from './paint-util';
 
-/** Small drawing helpers for the scenes that paint their own room (src/render/sash.ts), ported from the lab's scenes-util. */
+/**
+ * Small drawing helpers for the scenes that paint their own room (src/render/sash.ts, square.ts, parlour.ts), ported
+ * from the lab's scenes-util.
+ */
 
 export function disc(c: CanvasRenderingContext2D, x: number, y: number, r: number): void {
   c.beginPath();
@@ -31,12 +34,21 @@ export function deviceLayer(L: Layout, w = L.w, h = L.h): [HTMLCanvasElement, Ca
   return [cv, c];
 }
 
-/** Paints with `paint` (CSS px) and blurs it into `dst` by `cssPx` (blur.ts's blurredLayer), composited with `op`. */
-export function blurInto(dst: CanvasRenderingContext2D, L: Layout, cssPx: number, paint: (c: CanvasRenderingContext2D) => void, op: GlobalCompositeOperation = 'source-over'): void {
+/**
+ * Paints with `paint` (CSS px) and blurs it into `dst` by `cssPx` (blur.ts's blurredLayer), composited with `op`. With
+ * `box` (device px, see layerBox) the layer covers only that box.
+ */
+export function blurInto(dst: CanvasRenderingContext2D, L: Layout, cssPx: number, paint: (c: CanvasRenderingContext2D) => void, op: GlobalCompositeOperation = 'source-over', box?: Box): void {
   dst.save();
   dst.globalCompositeOperation = op;
-  blurredLayer(dst, L.dpr, cssPx, paint);
+  blurredLayer(dst, L.dpr, cssPx, paint, box);
   dst.restore();
+}
+
+/** A blur layer's device-px box: the CSS rectangle padded by three blur radii (the blur's tails), so the layer stays small. */
+export function layerBox(L: Layout, x0: number, y0: number, x1: number, y1: number, blur: number): Box {
+  const pad = 3 * blur;
+  return { x: (x0 - pad) * L.dpr, y: (y0 - pad) * L.dpr, w: (x1 - x0 + 2 * pad) * L.dpr, h: (y1 - y0 + 2 * pad) * L.dpr };
 }
 
 /** Film grain baked into a layer (fine, monochrome, ±amp). */
@@ -84,5 +96,22 @@ export function softSprite(rgb: string, px: number, hard = 0): HTMLCanvasElement
   c.fillRect(0, 0, n, n);
   s = cv;
   sprites.set(key, s);
+  return s;
+}
+
+/**
+ * A radial gradient baked once into a sprite (`px` radius, so 2·px square), for per-frame glows that must be drawImage
+ * only: draw it at any size, and fade it with globalAlpha instead of rebuilding the gradient. Cached by its stops, and
+ * built at paint time (its cache key is a string); it doesn't depend on the layout, so it outlives a resize unchanged.
+ */
+const gradSprites = new Map<string, HTMLCanvasElement>();
+export function radialSprite(stops: readonly (readonly [number, string])[], px = 64): HTMLCanvasElement {
+  const key = `${px}|${stops.map(([o, col]) => `${o}:${col}`).join(',')}`;
+  let s = gradSprites.get(key);
+  if (s) return s;
+  const [cv, c] = canvas(px * 2, px * 2);
+  radial(c, px, px, px, stops);
+  s = cv;
+  gradSprites.set(key, s);
   return s;
 }

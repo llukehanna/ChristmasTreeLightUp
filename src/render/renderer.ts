@@ -97,7 +97,10 @@ export class Renderer {
   private eggs: EggModules | null = null;
   /** Secret mode's curtains (spec 2026-10-08 secret mode §2). */
   private aurora: Aurora | null = null;
-  /** The scene's own room's per-frame parts (the Sash's window snow), and whose they are; null for a painted-once sky. */
+  /**
+   * The scene's own room's per-frame parts (the Sash's window snow, the Parlour's candles), and whose they are; null for a
+   * painted-once sky.
+   */
   private backdrop: Backdrop | null = null;
   private backdropOf: Scene['id'] | null = null;
   /** The layout and sky canvas the backdrop was painted for: a dress change (a live pick) keeps it, and its falling snow. */
@@ -389,7 +392,8 @@ export class Renderer {
     } else {
       ctx.drawImage(this.sky.bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // The Sash's snow behind its glass (ambient: it may drop to the calm rate). A sweep or fade (about a second) shows none.
+      // The room's own motion: the Sash's snow, the Parlour's candles, coals, clock and window snow (ambient: it may
+      // drop to the calm rate). A sweep or fade (about a second) shows none.
       if (!sw && this.backdrop && this.backdropOf === sc.id) this.backdrop.back(ctx, now, f.reducedMotion, tier);
       if (this.secret) aurora?.draw(ctx, L, now, tier, f.reducedMotion);
     }
@@ -464,9 +468,10 @@ export class Renderer {
     drawSourceGlow(g, L, sc);
     drawGroundPool(g, L, sc, litFrac + (f.ambient ?? 0) * 0.5);
     if (this.backdrop) {
-      // The room's own light that blooms (the Sash's street lamp), in screen space like the room.
+      // The room's own light that blooms (the Sash's street lamp, the square's lamps, the Parlour's candles), in screen
+      // space like the room.
       g.setTransform(dpr * GLOW_SCALE, 0, 0, dpr * GLOW_SCALE, 0, 0);
-      this.backdrop.glow(g);
+      this.backdrop.glow(g, now, f.reducedMotion, tier);
       world(g, dpr * GLOW_SCALE);
     }
     const st = starState(now, f.winAt, litFrac, f.reducedMotion);

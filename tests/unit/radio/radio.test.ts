@@ -291,8 +291,11 @@ it('Rain and Storm play without the catalog, are remembered, stop each other and
   open();
 });
 
-it('scenes suggest Jazz by the fire, Classics in the frost and Music Box at midnight and by the window', () => {
-  expect(builtin.SCENE_STATION).toEqual({ fireside: 'christmas-jazz', frost: 'christmas-classics', midnight: 'music-box', sash: 'music-box' });
+it('scenes suggest Jazz by the fire, Classics in the frost and the square, Music Box at midnight and by the window, the fire in the parlour', () => {
+  expect(builtin.SCENE_STATION).toEqual({
+    fireside: 'christmas-jazz', frost: 'christmas-classics', midnight: 'music-box', sash: 'music-box', square: 'christmas-classics',
+    parlour: builtin.FIREPLACE_ID,
+  });
 });
 
 it('has no Piano Carols left: no ids, no bundled fetch', async () => {

@@ -49,6 +49,12 @@ it('a bad field falls back alone', () => {
     .toEqual({ ...STARTER_LOOK, path: 'neon' });
   expect(parseLook('junk')).toEqual(STARTER_LOOK);
 });
+it('every scene the drawer offers survives a reload', () => {
+  for (const scene of ['midnight', 'fireside', 'frost', 'sash', 'square', 'parlour'] as const) {
+    saveLook({ ...STARTER_LOOK, scene });
+    expect(loadLook().scene).toBe(scene);
+  }
+});
 it('a bad decor flag falls back alone', () => {
   expect(parseLook({ ...STARTER_LOOK, decor: { tinsel: true, beads: 'yes' } }).decor).toEqual({ ...NO_DECOR, tinsel: true });
 });

@@ -29,7 +29,7 @@ export const STARTER_LOOK: Look = {
 
 const KEY = 'aglow.look';
 const SETTINGS_KEY = 'aglow.settings';
-const SCENES: readonly string[] = ['midnight', 'fireside', 'frost', 'sash'];
+const SCENES: readonly string[] = ['midnight', 'fireside', 'frost', 'sash', 'square', 'parlour'];
 const PATHS: readonly string[] = ['filament', 'fairy', 'neon'];
 const PALETTES: readonly string[] = ['scene', 'gilded', 'classic', 'ice', 'goldsilver', 'pastel'];
 const TOPPERS: readonly string[] = ['snowflake', 'star', 'angel', 'bow'];
