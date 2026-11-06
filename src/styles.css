@@ -165,6 +165,14 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
   transition: background 0.15s;
 }
 .menu .decorate-btn:hover { background: rgba(255, 220, 160, 0.12); }
+/* The unseen dot (src/ui/menu.ts setDot): something earned waits in the wardrobe. Never set during a run. */
+#menu-btn.has-new, .menu .decorate-btn.has-new { position: relative; }
+#menu-btn.has-new::after, .menu .decorate-btn.has-new::after {
+  content: ''; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 38% 32%, #fff6d4, #e2b25a 55%, #8a5a1c);
+  box-shadow: 0 0 0 1.5px rgba(30, 6, 8, 0.9), 0 0 8px rgba(255, 196, 100, 0.7);
+}
+.menu .decorate-btn.has-new::after { top: 5px; right: 6px; }
 /* Daily Tree: under New tree, a quieter gold-edged row; mid-run it arms the same gold confirm. */
 .menu .daily-row {
   all: unset; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;

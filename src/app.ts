@@ -6,7 +6,8 @@ import type { AccountStats, ClaimResponse, FinishResult, ProgressResponse } from
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
 import type { Turn } from './core/dirs';
-import { pileOf } from './core/goals';
+import { itemOf, type ItemId } from './core/catalogue';
+import { GOALS, pileOf } from './core/goals';
 import { CLOCK_TOLERANCE_MS } from './core/judge';
 import type { LogEntry } from './core/log';
 import { GRID } from './core/mask';
@@ -35,6 +36,7 @@ import { dailyStart, landsOnDaily } from './store/daily';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, savesAtStart, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { effectiveLook, loadLook, saveLook, worldLook, type Look } from './store/look';
+import { loadLooks, saveLookIn } from './store/saved-looks';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
 import { loadStarHead, saveStarHead } from './store/star-head';
 import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './store/stats';
@@ -43,7 +45,7 @@ import { lastPlayer } from './store/unlocks';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
-import { Decorate } from './ui/decorate';
+import { Decorate, lockText } from './ui/decorate';
 import { dailyLabelParts } from './ui/format';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { whenIdle } from './ui/idle';
@@ -176,6 +178,12 @@ export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[]
 export const quietForWork = (f: RunFlags): boolean =>
   !f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS);
 
+/**
+ * A run is in progress from the first move to the win (or a new tree): no unlock shows then (the unseen dot waits for
+ * the run to end). A pause doesn't end it.
+ */
+export const runInProgress = (f: Pick<RunFlags, 'live' | 'winAt'> & { moved: boolean }): boolean => f.live && f.moved && f.winAt === null;
+
 export class App {
   /**
    * A first visit (src/ui/opening.ts), read first of all: before this page load writes any of the play data it looks
@@ -252,7 +260,12 @@ export class App {
   /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
   private statsSeq = 0;
   /** What the player owns: the look shows only that (the saved look is never changed). A change re-applies the look. */
-  private readonly unlocks = new UnlockState({ onChange: () => this.applyLook(this.look, false) });
+  private readonly unlocks = new UnlockState({
+    onChange: () => {
+      this.applyLook(this.look, false);
+      this.showDot();
+    },
+  });
   /** Bumped by each progress fetch, so an older answer (another player's, after a switch) never lands. */
   private progressSeq = 0;
   /** The star-head egg: taps on the star and "hohoho" swap the topper (src/ui/star-egg.ts). */
@@ -325,7 +338,27 @@ export class App {
       look: () => this.look,
       onLook: (patch) => this.applyLook({ ...this.look, ...patch }),
       world: () => this.world,
+      owns: (id) => this.unlocks.owns(id),
+      goal: (id) => this.unlocks.goal(id),
+      guest: () => this.player === null,
+      unseen: () => this.unlocks.unseen(),
+      onSeen: () => {
+        this.unlocks.markSeen();
+        this.showDot();
+      },
+      looks: () => loadLooks(),
+      onSaveLook: (slot, name) => saveLookIn(slot, { name, look: this.look }),
+      // The same path as a pick: saved as the look, and shown as far as it is owned.
+      onApplyLook: (slot) => {
+        const saved = loadLooks()[slot];
+        if (saved) this.applyLook(saved.look);
+      },
     });
+    // A remembered Rain or Storm the player hasn't earned (signed out, say) waits: the Fireplace plays instead.
+    this.radio.locked = (source) => {
+      const item = itemOf(`sound:${source}`);
+      return item !== undefined && !this.unlocks.owns(item.id);
+    };
     this.radioPanel = new RadioPanel(
       this.radio,
       {
@@ -338,6 +371,8 @@ export class App {
           this.accounts.closeMenu();
         },
         onPillChange: () => this.fitHud(),
+        owns: (id) => this.unlocks.owns(id),
+        lockText: (id) => this.lockOf(id),
       },
     );
     this.accounts = new Accounts(this.session, {
@@ -410,6 +445,7 @@ export class App {
     this.applySettings(this.settings, false);
     this.unlocks.setPlayer(this.player, this.stats.solved);
     this.applyLook(this.look, false);
+    this.showDot();
     this.resize();
     addEventListener('resize', () => {
       if (this.resizeQueued) return;
@@ -616,6 +652,8 @@ export class App {
     this.starting = false;
     const now = performance.now();
     this.beginGame(now, board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
+    // A new tree ends the run before it: an unlock that waited can show now.
+    this.showDot();
     beginsAway(this.run, document.hidden, now);
     if (this.shouldSave()) this.save(now);
     const toast = startToast(kind, online);
@@ -750,6 +788,7 @@ export class App {
     this.lastSeconds = won.seconds;
     this.winAt = sound ? now : this.vis.lastLitAt(this.board);
     this.busy(this.winAt + CONFETTI_MS);
+    this.showDot();
     const game = this.board;
     const delay = sound ? 0 : Math.max(0, this.winAt - now);
     // A live win in Home Alone mode says one clip (spec 2026-10-14 §6, §9.4), and an unverified one brings Hector.
@@ -1301,6 +1340,22 @@ export class App {
     const repainted = this.renderer.setDress({ ...worldLook(this.shownLook, this.world), pile });
     this.decorate.sync();
     return repainted;
+  }
+
+  /** A locked item's goal and progress, as the drawer and the radio show it. */
+  private lockOf(id: ItemId): string {
+    const goal = itemOf(id)!.goal;
+    return lockText(GOALS.find((g) => g.id === goal)!, this.unlocks.goal(goal), this.player === null);
+  }
+
+  /**
+   * The unseen dot on the menu button and its Decorate row. Never put up during a run (the first move to the win or a new
+   * tree): it waits for the run to end. Taking it down (everything seen) is always fine.
+   */
+  private showDot(): void {
+    const on = this.unlocks.unseen().length > 0;
+    if (on && runInProgress({ live: this.live, moved: this.moved, winAt: this.winAt })) return;
+    this.menu.setDot(on);
   }
 
   /** From the menu (closed by now): whatever would sit over the drawer or the framed stage goes first. */

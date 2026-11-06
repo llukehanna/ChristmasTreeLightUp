@@ -25,6 +25,35 @@ test('Decorate opens from the menu; Neon and Sash apply live and survive a reloa
   await expect(swatch(page, 'Sash')).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('launch day: a saved look the player has only partly earned shows what they own, locks the rest, and stays saved', async ({ page }) => {
+  // An existing player on a fresh season-two device (Review Focus 2): 12 trees on this device, and a look from before.
+  const saved = { v: 1, scene: 'sash', path: 'neon', palette: 'scene', topper: 'star', decor: { tinsel: false, beads: false, canes: false, skirt: false }, presents: 'game' };
+  await page.addInitScript((l) => {
+    if (localStorage.getItem('aglow.look')) return;
+    localStorage.setItem('aglow.look', JSON.stringify(l));
+    localStorage.setItem('aglow.stats', JSON.stringify({ v: 1, solved: 12, totalSeconds: 12 * 300, bestSeconds: 95, bestScore: 1000, streak: 1, longestStreak: 3, lastSolvedDay: '2025-12-20' }));
+  }, saved);
+  await ready(page);
+  // Sash (10 trees) shows; Neon (25 trees) and the star (a tree under a minute) wait.
+  await expect(page.locator('body')).toHaveAttribute('data-scene', 'sash');
+  await openDecorate(page);
+  const neon = page.locator('#decorate .deco-sw[data-id="path:neon"]');
+  const star = page.locator('#decorate .deco-sw[data-id="topper:star"]');
+  await expect(neon).toHaveClass(/\bdeco-locked\b/);
+  await expect(neon.locator('.deco-sw-l')).toHaveText('Light 25 trees · 12/25');
+  await expect(star).toHaveClass(/\bdeco-locked\b/);
+  await expect(star.locator('.deco-sw-l')).toHaveText('A tree under 1:00 · Sign in to track');
+  await expect(swatch(page, 'Sash')).toHaveAttribute('aria-pressed', 'true');
+  await expect(swatch(page, 'Filament')).toHaveAttribute('aria-pressed', 'true');
+  await expect(swatch(page, 'Snowflake')).toHaveAttribute('aria-pressed', 'true');
+  await expect(swatch(page, 'Festive')).toHaveAttribute('aria-pressed', 'true');
+  // A click on a locked swatch spells out its goal and applies nothing.
+  await neon.click();
+  await expect(page.locator('#decorate .deco-hint')).toHaveText('Light 25 trees · 12/25');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('aglow.look') ?? 'null'))).toEqual(saved);
+});
+
 test('a topper picked over the results is in the share image', async ({ page }) => {
   const shares = () => page.evaluate(() => (window as unknown as W).__aglow.homeAlone().shares);
   await owning(page, ['topper:angel']);

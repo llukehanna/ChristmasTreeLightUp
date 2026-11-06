@@ -184,3 +184,19 @@ it("on today's live Daily, its row just closes the menu: no confirm, no restart"
     expect(onNewTree).toHaveBeenCalledTimes(midRun ? 0 : 1);
   }
 });
+
+it('the Decorate row and the menu button wear a dot while anything is unseen', () => {
+  const { menu } = make(false);
+  const btn = document.getElementById('menu-btn')!;
+  const row = document.getElementById('decorate-btn')!;
+  expect(btn.classList.contains('has-new')).toBe(false);
+  expect(row.classList.contains('has-new')).toBe(false);
+  menu.setDot(true);
+  expect(btn.classList.contains('has-new')).toBe(true);
+  expect(row.classList.contains('has-new')).toBe(true);
+  expect(btn.getAttribute('aria-label')).toBe('Settings, new in Decorate');
+  menu.setDot(false);
+  expect(btn.classList.contains('has-new')).toBe(false);
+  expect(row.classList.contains('has-new')).toBe(false);
+  expect(btn.getAttribute('aria-label')).toBe('Settings');
+});

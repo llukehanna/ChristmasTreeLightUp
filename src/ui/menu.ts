@@ -100,6 +100,16 @@ export class Menu {
     if (wasOpen && (!active || active === document.body || this.root.contains(active))) this.button.focus({ preventScroll: true });
   }
 
+  /**
+   * The unseen dot: something earned and not yet seen in the wardrobe. The app sets it only while no run is in progress
+   * (src/app.ts showDot).
+   */
+  setDot(on: boolean): void {
+    this.button.classList.toggle('has-new', on);
+    el('decorate-btn').classList.toggle('has-new', on);
+    this.button.setAttribute('aria-label', on ? 'Settings, new in Decorate' : 'Settings');
+  }
+
   /** Keep the menu's copy of the settings in step when they change elsewhere (e.g. the radio's Effects slider). */
   sync(s: Settings): void {
     this.settings = s;

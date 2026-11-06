@@ -248,6 +248,20 @@ function stubMusicBox() {
   };
 }
 
+it('a remembered station the player no longer owns is not autoplayed: the Fireplace plays, and the setting stays', () => {
+  fakeAudio();
+  const fire = vi.spyOn(Fireplace.prototype, 'start').mockReturnValue(undefined);
+  const storm = vi.spyOn(Storm.prototype, 'start').mockReturnValue(undefined);
+  saveRadioSettings({ ...DEFAULT_RADIO, source: 'storm' });
+  const r = new Radio();
+  r.locked = (id) => id === 'storm';
+  r.firstGesture();
+  expect(r.view().kind).toBe('fireplace');
+  expect(fire).toHaveBeenCalledTimes(1);
+  expect(storm).not.toHaveBeenCalled();
+  expect(loadRadioSettings()).toMatchObject({ on: true, source: 'storm' });
+});
+
 it('Rain and Storm play without the catalog, are remembered, stop each other and drive the light show', async () => {
   fakeAudio();
   let open!: () => void;

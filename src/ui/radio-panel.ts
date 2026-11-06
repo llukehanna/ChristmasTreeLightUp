@@ -1,3 +1,4 @@
+import type { ItemId } from '../core/catalogue';
 import { formatTime } from '../core/score';
 import { ambientKind, FIREPLACE_ID, MUSIC_BOX_ID, MUSIC_BOX_META, RAIN_ID, STORM_ID } from '../radio/builtin';
 import { EMBED_PRESETS } from '../radio/embed';
@@ -97,7 +98,14 @@ export interface RadioPanelHooks {
   onOpen?(): void;
   /** The pill's label changed, so the HUD may have changed width. */
   onPillChange?(): void;
+  /** Whether the player has earned an item: Rain and Storm are earned (src/core/catalogue.ts); without it, all are free. */
+  owns?(id: ItemId): boolean;
+  /** A locked item's goal and progress (src/ui/decorate.ts lockText). */
+  lockText?(id: ItemId): string;
 }
+
+/** The stations that are earned, and their items. The Fireplace is always free. */
+const EARNED: Readonly<Record<string, ItemId>> = { [RAIN_ID]: 'sound:rain', [STORM_ID]: 'sound:storm' };
 
 const shortName = (name: string): string => name.replace(/^Christmas\s+/i, '');
 
@@ -467,11 +475,15 @@ export class RadioPanel {
         : v.kind === 'station' && v.station?.id === r.id;
       // The Secret row is never unavailable: it plays the celesta when the station can't.
       const unavailable = !ambientKind(r.id) && r.id !== MUSIC_BOX_ID && r.id !== SECRET_ID && v.unavailable(r.id);
+      const item = EARNED[r.id] as ItemId | undefined;
+      const locked = item !== undefined && this.hooks.owns?.(item) === false;
       b.setAttribute('aria-current', String(current));
       b.classList.toggle('live', current && v.playing);
-      b.disabled = unavailable && !current;
+      b.classList.toggle('locked', locked);
+      b.disabled = (unavailable || locked) && !current;
       const desc = r.id === SECRET_ID && !playable ? CELESTA_DESC : r.desc;
-      setText(b.querySelector('.d') as HTMLElement, unavailable ? 'Unavailable right now' : desc);
+      const lock = locked ? (this.hooks.lockText?.(item) ?? '') : '';
+      setText(b.querySelector('.d') as HTMLElement, lock || (unavailable ? 'Unavailable right now' : desc));
       setText(b.querySelector('.lbl') as HTMLElement, current ? (v.playing ? 'Playing' : 'Paused') : '');
     }
   }

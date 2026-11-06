@@ -149,6 +149,7 @@ for (const [label, id, what] of [['Town square', 'square', 'the square at blue h
 }
 
 test('settings persist across reloads', async ({ page }) => {
+  await owning(page, ['path:neon']);
   await ready(page);
   await openDecorate(page);
   await swatch(page, 'Neon').click();

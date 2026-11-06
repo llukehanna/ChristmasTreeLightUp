@@ -8,7 +8,7 @@ import { CAROLS } from './carols';
 import { loadCatalog } from './catalog';
 import { parseEmbed, type Embed } from './embed';
 import { Fireplace } from './fireplace';
-import { isSecretSource, SECRET_ID } from './ids';
+import { FIREPLACE_ID, isSecretSource, SECRET_ID } from './ids';
 import { LightShow } from './lightshow';
 import { CELESTA, MusicBox } from './musicbox';
 import { RadioPlayer, type RemoteAction } from './player';
@@ -57,6 +57,8 @@ function idleWhileVisible(fn: () => void): void {
 
 export class Radio {
   onChange: (() => void) | null = null;
+  /** A source the player hasn't earned yet (Rain, Storm: src/core/catalogue.ts). Remembered, it is never autoplayed. */
+  locked: (source: string) => boolean = () => false;
   readonly show: LightShow;
   private settings = loadRadioSettings();
   private catalog: Station[] = [];
@@ -388,6 +390,8 @@ export class Radio {
 
   private preferredSource(): string {
     const s = this.remembered();
+    // The remembered choice stays saved, so it plays again once earned; until then the Fireplace (always free) stands in.
+    if (s !== null && this.locked(s)) return FIREPLACE_ID;
     if (isSynthSource(s) || (s === 'embed' && this.embed)) return s;
     const byId = (id: string | null): Station | undefined => (id === null ? undefined : this.catalog.find((x) => x.id === id && this.playable(x)));
     // In secret mode the Secret station (or the celesta) is the suggestion, as a scene's station is otherwise.

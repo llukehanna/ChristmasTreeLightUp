@@ -2,27 +2,77 @@
  * The Decorate drawer (spec: Part B, from the lab's menus-decorate): one place to dress the tree, with painted swatches,
  * each pick applied live and saved. On desktop the stage glides into a framed window on the left so the drawer never
  * covers the tree, and the board stays playable there; on phones the stage rises above a bottom sheet.
+ *
+ * It is also the wardrobe (season two, Parts C2+C3): a swatch the player hasn't earned is locked and says its goal, one
+ * earned since they last looked wears a New pip, and three saved looks sit under the header.
  */
+import { itemOf, type ItemDef, type ItemId } from '../core/catalogue';
+import { GOALS, type GoalDef, type GoalId, type GoalState } from '../core/goals';
 import { computeLayout } from '../render/layout';
 import { PALETTES } from '../render/palettes';
 import type { PathStyle } from '../render/paths';
 import { SCENES, type SceneId } from '../render/scenes';
-import type { Decor, Look, PaletteId, PresentSet, TopperKind } from '../store/look';
+import { effectiveLook, type Decor, type Look, type PaletteId, type PresentSet, type TopperKind } from '../store/look';
+import type { SavedLook } from '../store/saved-looks';
 import { BOW_ART, DECOR_ART, PATH_ART, PRESENT_ART, SCENE_ART, TOPPER_ART } from './decorate-art';
+import { count, formatMs } from './format';
 
 export interface DecorateHandlers {
+  /** The saved look (the drawer presses what the stage shows of it: effectiveLook). */
   look(): Look;
   onLook(patch: Partial<Look>): void;
   world(): 'secret' | 'home-alone' | null;
+  owns(id: ItemId): boolean;
+  goal(id: GoalId): GoalState | null;
+  /** Signed out: a guest's device tracks the milestones alone. */
+  guest(): boolean;
+  /** Earned and not yet seen here: they wear a New pip while the drawer is open. */
+  unseen(): ItemId[];
+  /** The drawer opened: everything earned has now been seen. */
+  onSeen(): void;
+  /** The three saved looks, an empty slot null (src/store/saved-looks.ts). */
+  looks(): (SavedLook | null)[];
+  onSaveLook(slot: 0 | 1 | 2, name: string): void;
+  onApplyLook(slot: 0 | 1 | 2): void;
 }
 
-/** One swatch: what it shows, whether the look has it, and the one-field patch a pick sends. */
+/** One swatch: its item (none for a starter value), what it shows, whether the look has it, and the patch a pick sends. */
 interface Item {
+  id: string;
+  def: ItemDef | undefined;
   label: string;
   art: string;
   on(l: Look): boolean;
   patch(l: Look): Partial<Look>;
 }
+
+interface Tile {
+  b: HTMLButtonElement;
+  item: Item;
+  label: HTMLElement;
+  lock: HTMLElement;
+}
+
+const GOAL: ReadonlyMap<GoalId, GoalDef> = new Map(GOALS.map((g) => [g.id, g]));
+
+/**
+ * What a locked item says: its goal, and how far along the player is ("Light 25 trees · 18/25", "A tree under 1:00 ·
+ * best 1:12.4"). A guest's device tracks milestones only, so other goals ask them to sign in; a signed-in player whose
+ * progress hasn't loaded sees the goal alone. A secret stays "???" until it is done.
+ */
+export function lockText(goal: GoalDef, state: GoalState | null, guest: boolean): string {
+  if (goal.kind === 'secret' && !state?.done) return '???';
+  if (guest && goal.kind !== 'milestone') return `${goal.text} · Sign in to track`;
+  if (state === null || state.done) return goal.text;
+  if (goal.kind === 'speed' || goal.kind === 'ao5') return state.have > 0 ? `${goal.text} · best ${formatMs(state.have)}` : goal.text;
+  // A one-off goal has nothing to count.
+  return goal.need > 1 ? `${goal.text} · ${count(state.have)}/${count(goal.need)}` : goal.text;
+}
+
+/** A small padlock over a locked swatch's dimmed art. Static markup. */
+const LOCK_ART =
+  '<svg viewBox="0 0 12 14" aria-hidden="true"><path d="M3.6 6.2V4.6a2.4 2.4 0 0 1 4.8 0v1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="1.6" y="6" width="8.8" height="7" rx="1.6" fill="currentColor"/></svg>';
+const SLOTS = [0, 1, 2] as const;
 
 const SCENE_ITEMS: readonly [SceneId, string][] = [
   ['fireside', 'Fireside'], ['midnight', 'Midnight'], ['sash', 'Sash'], ['square', 'Town square'], ['parlour', 'Parlour'], ['frost', 'Frost'],
@@ -47,10 +97,18 @@ export class Decorate {
   private root: HTMLElement | null = null;
   private backdrop: HTMLElement | null = null;
   private frame: HTMLElement | null = null;
-  private tiles: { b: HTMLButtonElement; on: (l: Look) => boolean }[] = [];
+  private tiles: Tile[] = [];
   /** The Scene bulbs swatch's dots: they show the current scene's own colours. */
   private sceneDots: HTMLElement[] = [];
   private worldLine: HTMLElement | null = null;
+  /** The line above the footer that spells out a locked swatch's goal. */
+  private hint: HTMLElement | null = null;
+  private chips: HTMLButtonElement[] = [];
+  private saveBtn: HTMLButtonElement | null = null;
+  private saveForm: HTMLElement | null = null;
+  private nameField: HTMLInputElement | null = null;
+  /** Save is open: a chip takes the look instead of applying one. */
+  private saving = false;
   private opened = false;
   /** The stage's transform: screen = (p − c)·s + c + t, with c the viewport's centre. */
   private xf = { s: 1, tx: 0, ty: 0 };
@@ -82,6 +140,7 @@ export class Decorate {
     if (!this.root) this.build();
     const root = this.root!;
     this.sync();
+    this.markNew();
     document.body.classList.add('decorating');
     for (const n of document.querySelectorAll<HTMLElement>(OUT_OF_REACH)) n.inert = true;
     this.fit();
@@ -105,19 +164,105 @@ export class Decorate {
     for (const n of document.querySelectorAll<HTMLElement>(OUT_OF_REACH)) n.inert = false;
     for (const n of [this.root, this.backdrop, this.frame]) n?.classList.remove('open');
     if (this.root) this.root.inert = true;
+    for (const n of this.root?.querySelectorAll('.deco-new') ?? []) n.remove();
+    this.endSave();
+    this.showHint(null);
     this.unfit();
     // The drawer opened from the settings menu: focus goes back to its button, unless the user moved it on purpose.
     if (this.root && active instanceof Node && this.root.contains(active)) document.getElementById('menu-btn')?.focus({ preventScroll: true });
   }
 
-  /** Press what the look now holds, and say so when an egg world keeps its own tree. */
+  /**
+   * Press what the stage shows of the look (a locked choice stays saved, unpressed), lock what isn't earned with its
+   * goal, and say so when an egg world keeps its own tree.
+   */
   sync(): void {
     if (!this.root) return;
-    const l = this.h.look();
-    for (const t of this.tiles) t.b.setAttribute('aria-pressed', String(t.on(l)));
-    const own = SCENES[l.scene].bulbs;
+    const shown = effectiveLook(this.h.look(), (id) => this.h.owns(id));
+    for (const t of this.tiles) {
+      const lock = this.lockOf(t.item);
+      t.b.setAttribute('aria-pressed', String(lock === null && t.item.on(shown)));
+      t.b.classList.toggle('deco-locked', lock !== null);
+      t.lock.hidden = lock === null;
+      t.label.textContent = lock ?? t.item.label;
+      // Still a button (a press spells out the goal), so its name says it is locked rather than aria-disabled.
+      if (lock === null) t.b.removeAttribute('aria-label');
+      else t.b.setAttribute('aria-label', `${t.item.label}, locked: ${lock}`);
+    }
+    const own = SCENES[shown.scene].bulbs;
     this.sceneDots.forEach((b, i) => b.style.setProperty('--c', own[i % own.length]));
     this.worldLine!.hidden = this.h.world() === null;
+    this.renderLooks();
+  }
+
+  /** The lock text for an item not earned yet; null for one the player owns (or a starter value). */
+  private lockOf(item: Item): string | null {
+    const def = item.def;
+    if (!def || this.h.owns(def.id)) return null;
+    return lockText(GOAL.get(def.goal)!, this.h.goal(def.goal), this.h.guest());
+  }
+
+  /** Pips on what was earned since the player last looked, for as long as the drawer stays open; then it's all seen. */
+  private markNew(): void {
+    const fresh = new Set<string>(this.h.unseen());
+    for (const t of this.tiles) {
+      if (!fresh.has(t.item.id) || t.b.querySelector('.deco-new')) continue;
+      const pip = document.createElement('i');
+      pip.className = 'deco-new';
+      pip.textContent = 'New';
+      t.b.append(pip);
+    }
+    this.h.onSeen();
+  }
+
+  private showHint(text: string | null): void {
+    if (!this.hint) return;
+    this.hint.hidden = text === null;
+    this.hint.textContent = text ?? '';
+  }
+
+  /* ---------- saved looks ---------- */
+
+  private renderLooks(): void {
+    const looks = this.h.looks();
+    this.chips.forEach((c, i) => {
+      const l = looks[i] ?? null;
+      c.textContent = l?.name ?? 'Empty';
+      c.classList.toggle('empty', l === null);
+      c.disabled = !this.saving && l === null;
+      if (this.saving) c.setAttribute('aria-label', l ? `Save here, replacing ${l.name}` : `Save in slot ${i + 1}`);
+      else c.removeAttribute('aria-label');
+    });
+    this.saveBtn!.textContent = this.saving ? 'Cancel' : 'Save';
+    this.saveBtn!.setAttribute('aria-expanded', String(this.saving));
+    this.saveForm!.hidden = !this.saving;
+    this.root?.querySelector('.deco-looks')?.classList.toggle('saving', this.saving);
+  }
+
+  private startSave(): void {
+    this.saving = true;
+    this.nameField!.value = '';
+    this.renderLooks();
+    this.nameField!.focus({ preventScroll: true });
+  }
+
+  private endSave(): void {
+    if (!this.saving) return;
+    this.saving = false;
+    this.renderLooks();
+  }
+
+  private pickSlot(slot: 0 | 1 | 2): void {
+    if (this.saving) {
+      this.h.onSaveLook(slot, this.nameField!.value);
+      this.saving = false;
+      this.renderLooks();
+      this.chips[slot].focus({ preventScroll: true });
+    } else if (this.h.looks()[slot]) {
+      this.h.onApplyLook(slot);
+      this.showHint(null);
+      this.sync();
+    }
   }
 
   /* ---------- the stage glides into a framed window ---------- */
@@ -213,24 +358,51 @@ export class Decorate {
     root.innerHTML = `<div class="deco-band" aria-hidden="true"></div>${BOW_ART}
       <header class="deco-head"><small>Decorate</small><h2>Dress the tree</h2>
       <button class="deco-x" type="button" aria-label="Close"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
+      <div class="deco-looks" role="group" aria-label="Saved looks">${SLOTS.map((i) => `<button type="button" class="deco-look" data-slot="${i}"></button>`).join('')}<button type="button" class="deco-save" aria-controls="deco-save-form">Save</button></div>
+      <div class="deco-save-form" id="deco-save-form" hidden><input class="deco-name" type="text" maxlength="16" placeholder="Name this look" aria-label="Name this look" autocomplete="off" spellcheck="false" /><span>then pick a slot</span></div>
       <p class="deco-world" hidden>${WORLD_LINE}</p>
       <div class="deco-body"></div>
+      <p class="deco-hint" role="status" hidden></p>
       <footer class="deco-foot"><button type="button" class="deco-done">Done</button></footer>`;
     // Taps inside the drawer are the drawer's: the menus' outside-tap closers never see them.
     root.addEventListener('pointerdown', (e) => e.stopPropagation());
     root.querySelector('.deco-x')!.addEventListener('click', () => this.close());
     root.querySelector('.deco-done')!.addEventListener('click', () => this.close());
     this.worldLine = root.querySelector('.deco-world');
+    this.hint = root.querySelector('.deco-hint');
+    this.chips = [...root.querySelectorAll<HTMLButtonElement>('.deco-look')];
+    this.chips.forEach((c, i) => c.addEventListener('click', () => this.pickSlot(i as 0 | 1 | 2)));
+    this.saveBtn = root.querySelector('.deco-save');
+    this.saveBtn!.addEventListener('click', () => (this.saving ? this.endSave() : this.startSave()));
+    this.saveForm = root.querySelector('.deco-save-form');
+    this.nameField = root.querySelector('.deco-name');
+    // Enter saves in the first empty slot; Esc puts the field away and leaves the drawer open (marked handled).
+    this.nameField!.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.endSave();
+        this.saveBtn!.focus({ preventScroll: true });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const empty = this.h.looks().findIndex((l) => l === null);
+        if (empty >= 0) this.pickSlot(empty as 0 | 1 | 2);
+      }
+    });
     const body = root.querySelector<HTMLElement>('.deco-body')!;
+    const item = (key: string, v: string, label: string, art: string, on: Item['on'], patch: Item['patch']): Item => {
+      const id = `${key}:${v}`;
+      return { id, def: itemOf(id), label, art, on, patch };
+    };
     const items = <V extends string>(list: readonly [V, string][], art: (v: V) => string, key: 'scene' | 'path' | 'palette' | 'topper' | 'presents'): Item[] =>
-      list.map(([v, label]) => ({ label, art: art(v), on: (l) => l[key] === v, patch: () => ({ [key]: v }) as Partial<Look> }));
+      list.map(([v, label]) => item(key, v, label, art(v), (l) => l[key] === v, () => ({ [key]: v }) as Partial<Look>));
     body.append(
       this.section('Scene', 'Where it stands', 'scene', 4, items(SCENE_ITEMS, (v) => SCENE_ART[v], 'scene')),
       this.section('Light path', 'What the wires become', 'strand', 3, items(PATH_ITEMS, (v) => PATH_ART[v], 'path')),
       this.section('Bulbs', 'Their colours', 'pal', 3, items(BULB_ITEMS, () => '<span class="deco-pal"></span>', 'palette')),
       this.section('Topper', 'Crowning the tree', 'top', 4, items(TOPPER_ITEMS, (v) => TOPPER_ART[v], 'topper')),
       this.section('Decorations', 'Mix and match', 'decor', 4,
-        DECOR_ITEMS.map(([k, label]) => ({ label, art: DECOR_ART[k], on: (l) => l.decor[k], patch: (l) => ({ decor: { ...l.decor, [k]: !l.decor[k] } }) }))),
+        // The toggle flips one flag of the saved look, so a locked decoration it has on stays on.
+        DECOR_ITEMS.map(([k, label]) => item('decor', k, label, DECOR_ART[k], (l) => l.decor[k], (l) => ({ decor: { ...l.decor, [k]: !l.decor[k] } })))),
       this.section('Presents', 'Under the tree', 'gift', 4, items(PRESENT_ITEMS, (v) => PRESENT_ART[v], 'presents')),
     );
     // The bulbs: six lit drops each, the Scene swatch's in the current scene's colours (sync).
@@ -262,15 +434,20 @@ export class Decorate {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = `deco-sw deco-sw-${kind}`;
-    b.innerHTML = `<span class="deco-sw-art">${item.art}</span><span class="deco-sw-l">${item.label}</span>`;
+    b.dataset.id = item.id;
+    b.innerHTML = `<span class="deco-sw-art">${item.art}<i class="deco-lock" hidden>${LOCK_ART}</i></span><span class="deco-sw-l">${item.label}</span>`;
     b.addEventListener('click', () => {
+      // A locked swatch applies nothing: it spells out its goal above the footer.
+      const lock = this.lockOf(item);
+      this.showHint(lock);
+      if (lock !== null) return;
       this.h.onLook(item.patch(this.h.look()));
       this.sync();
       b.classList.remove('deco-pop');
       void b.offsetWidth;
       b.classList.add('deco-pop');
     });
-    this.tiles.push({ b, on: item.on });
+    this.tiles.push({ b, item, label: b.querySelector('.deco-sw-l')!, lock: b.querySelector('.deco-lock')! });
     return b;
   }
 }

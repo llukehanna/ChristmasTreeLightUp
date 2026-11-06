@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it } from 'vitest';
-import { quietForWork, type RunFlags } from '../../src/app';
+import { quietForWork, runInProgress, type RunFlags } from '../../src/app';
 
 const NOW = 100_000;
 /** The App's states. `moved` (the first move made) is not read by the gate: it is kept to show it changes nothing. */
@@ -26,5 +26,19 @@ it("the radio's prewarm runs only with no board, a seed pending, behind the paus
     paused: true,
     wonJustNow: false, // the confetti, the topper's flare and the results tag's arrival
     wonAndSettled: true,
+  });
+});
+
+it('a run is in progress from the first move to the win: only then does an unlock wait to show', () => {
+  const inRun = Object.fromEntries(Object.entries(STATES).map(([k, f]) => [k, runInProgress(f)]));
+  expect(inRun).toEqual({
+    noBoard: false,
+    seedPending: false,
+    reveal: false,
+    clockRunningNoMove: false,
+    midRun: true,
+    paused: true,
+    wonJustNow: false,
+    wonAndSettled: false,
   });
 });

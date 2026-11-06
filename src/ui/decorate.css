@@ -91,8 +91,9 @@ body.decorating .vignette { opacity: 0; }
 .deco-sec h3 i { flex: 1; height: 1px; align-self: center; background: linear-gradient(90deg, rgba(236, 196, 116, 0.35), rgba(236, 196, 116, 0.04)); }
 .deco-sec h3 em { font: italic 400 14px 'Instrument Serif', serif; color: rgba(246, 231, 200, 0.5); }
 .deco-grid { display: grid; gap: 8px; }
-.deco-g4 { grid-template-columns: repeat(4, 1fr); }
-.deco-g3 { grid-template-columns: repeat(3, 1fr); }
+/* minmax(0, …): a locked swatch's long goal is cut short, never widening its column. */
+.deco-g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.deco-g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* A swatch: a little lit vitrine with its name beneath. */
 .deco-sw {
@@ -146,6 +147,53 @@ body.decorating .vignette { opacity: 0; }
   100% { transform: scale(1); }
 }
 
+/* The wardrobe (season two): a swatch not earned yet keeps its art at 35% under a small lock, its label the goal
+   (cut short; a click spells it out in the hint line). */
+.deco-locked .deco-sw-art > :not(.deco-lock) { opacity: 0.35; }
+.deco-locked:hover .deco-sw-art { transform: none; }
+.deco-locked .deco-sw-l { max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: rgba(246, 231, 200, 0.5); font-weight: 400; }
+.deco-lock {
+  position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  display: grid; place-items: center; color: #f0c977; background: rgba(20, 6, 6, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.45), 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.deco-lock svg { width: 10px; height: 12px; }
+/* New: earned since the player last opened the drawer (from the lab's mx-new). */
+.deco-new {
+  position: absolute; top: 5px; left: 5px; padding: 1px 5px 1.5px; border-radius: 4px; pointer-events: none;
+  font: 600 8px/1.3 Inter, sans-serif; font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: #2a1206;
+  background: var(--deco-gold); box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+/* A locked swatch's goal in full, above the footer. */
+.deco-hint {
+  flex: none; margin: 0; padding: 9px 22px 1px; text-align: center;
+  font: italic 400 15px/1.3 'Instrument Serif', serif; color: #f6d58e; border-top: 1px solid rgba(236, 196, 116, 0.1);
+}
+
+/* Saved looks: three chips under the header, and Save, which opens a name field; a chip then takes the look. */
+.deco-looks { flex: none; display: flex; gap: 6px; margin: 2px 18px 8px; }
+.deco-looks button {
+  all: unset; box-sizing: border-box; cursor: pointer; min-width: 0; padding: 6px 10px; border-radius: 999px; text-align: center;
+  font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
+}
+.deco-looks .deco-look { flex: 1 1 0; color: #f6d58e; background: rgba(255, 220, 160, 0.06); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.32); }
+.deco-looks .deco-look:hover:not(:disabled) { background: rgba(255, 220, 160, 0.12); }
+.deco-looks .deco-look.empty { color: rgba(246, 231, 200, 0.4); background: none; box-shadow: none; border: 1px dashed rgba(236, 196, 116, 0.28); }
+.deco-looks .deco-look:disabled { cursor: default; }
+.deco-looks.saving .deco-look { color: #fff1dc; box-shadow: inset 0 0 0 1px #ecc474, 0 0 10px rgba(255, 180, 80, 0.25); }
+.deco-looks .deco-save { flex: none; color: #2a1206; font-weight: 600; background: var(--deco-gold); box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.6), 0 1px 3px rgba(0, 0, 0, 0.35); }
+.deco-looks .deco-save:hover { filter: brightness(1.06); }
+.deco-looks button:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
+.deco-save-form { flex: none; display: flex; align-items: center; gap: 10px; margin: -2px 18px 8px; }
+.deco-save-form span { flex: none; font: italic 400 14px 'Instrument Serif', serif; color: rgba(246, 231, 200, 0.6); }
+.deco-name {
+  flex: 1 1 auto; min-width: 0; padding: 7px 11px; border-radius: 9px; border: 1px solid rgba(236, 196, 116, 0.4);
+  background: rgba(0, 0, 0, 0.3); color: #fff3dc; font: 500 12.5px Inter, sans-serif;
+}
+.deco-name::placeholder { color: rgba(246, 231, 200, 0.4); }
+.deco-name:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 1px; }
+
 /* Bulbs swatch: lit drops on a velvet strip. */
 .deco-pal { display: flex; align-items: center; justify-content: center; gap: 6%; width: 100%; height: 100%; }
 .deco-pal b {
@@ -174,7 +222,7 @@ body.decorating .vignette { opacity: 0; }
     padding-bottom: env(safe-area-inset-bottom);
     transform: translateY(calc(100% + 30px));
   }
-  .deco-g4 { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .deco-g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
   .deco-head h2 { font-size: 25px; }
   .deco-sw-l { font-size: 10px; }
 }

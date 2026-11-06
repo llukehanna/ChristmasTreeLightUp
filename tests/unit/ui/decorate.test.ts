@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { Decorate, type DecorateHandlers } from '../../../src/ui/decorate';
+import { GOALS, type GoalId, type GoalState } from '../../../src/core/goals';
+import { Decorate, lockText, type DecorateHandlers } from '../../../src/ui/decorate';
 import { NO_DECOR, STARTER_LOOK, type Look } from '../../../src/store/look';
 
 beforeEach(() => {
@@ -24,8 +25,24 @@ const LOOK: Look = {
   ...STARTER_LOOK, scene: 'sash', path: 'neon', palette: 'ice', topper: 'bow', decor: { ...NO_DECOR, beads: true }, presents: 'game',
 };
 
-function make(look: Look = LOOK, world: ReturnType<DecorateHandlers['world']> = null) {
-  const h = { look: () => look, onLook: vi.fn(), world: () => world };
+/** Handlers that own everything, with nothing new and no saved looks, unless a test says otherwise. */
+const handlers = (over: Partial<DecorateHandlers> = {}) => ({
+  look: () => LOOK,
+  onLook: vi.fn(),
+  world: (): ReturnType<DecorateHandlers['world']> => null,
+  owns: () => true,
+  goal: (): GoalState | null => null,
+  guest: () => false,
+  unseen: () => [],
+  onSeen: vi.fn(),
+  looks: () => [null, null, null],
+  onSaveLook: vi.fn(),
+  onApplyLook: vi.fn(),
+  ...over,
+});
+
+function make(look: Look = LOOK, world: ReturnType<DecorateHandlers['world']> = null, over: Partial<DecorateHandlers> = {}) {
+  const h = handlers({ look: () => look, world: () => world, ...over });
   const d = create(h);
   d.open();
   const sections = [...document.querySelectorAll<HTMLElement>('.deco-sec')];
@@ -61,7 +78,7 @@ it('a pick calls onLook with one field, and a decoration toggles one flag', () =
   tile('Kraft').click();
   tile('Tinsel').click();
   tile('Beads').click();
-  expect(h.onLook.mock.calls).toEqual([
+  expect(vi.mocked(h.onLook).mock.calls).toEqual([
     [{ scene: 'midnight' }],
     [{ path: 'fairy' }],
     [{ palette: 'gilded' }],
@@ -74,7 +91,7 @@ it('a pick calls onLook with one field, and a decoration toggles one flag', () =
 
 it('sync presses what the look now holds, and the Scene bulbs follow the scene', () => {
   let look = LOOK;
-  const d = create({ look: () => look, onLook: () => {}, world: () => null });
+  const d = create(handlers({ look: () => look }));
   d.open();
   const pressed = () => [...document.querySelectorAll('.deco-sw[aria-pressed="true"] .deco-sw-l')].map((n) => n.textContent);
   const sceneDots = () => [...document.querySelectorAll<HTMLElement>('.deco-sw-pal')[0].querySelectorAll('b')].map((b) => b.style.getPropertyValue('--c'));
@@ -88,7 +105,7 @@ it('sync presses what the look now holds, and the Scene bulbs follow the scene',
 
 it('in a world it says the look comes back', () => {
   let world: 'secret' | 'home-alone' | null = 'home-alone';
-  const d = create({ look: () => LOOK, onLook: () => {}, world: () => world });
+  const d = create(handlers({ world: () => world }));
   d.open();
   const line = document.querySelector<HTMLElement>('.deco-world')!;
   expect(line.hidden).toBe(false);
@@ -117,7 +134,7 @@ it('Esc closes the drawer and is marked handled (the game does not pause)', () =
 it('the pointer remap listens only while the drawer is open', () => {
   const add = vi.spyOn(window, 'addEventListener');
   const remove = vi.spyOn(window, 'removeEventListener');
-  const d = create({ look: () => LOOK, onLook: () => {}, world: () => null });
+  const d = create(handlers());
   const captured = (spy: typeof add) => spy.mock.calls.filter((c) => c[0] === 'pointerdown' && (c[2] === true || (c[2] as AddEventListenerOptions)?.capture));
   expect(captured(add)).toHaveLength(0);
   d.open();
@@ -138,4 +155,126 @@ it('opening glides the stage into the frame, and closing lets it go', () => {
   expect(document.body.classList.contains('decorating')).toBe(false);
   expect(stage.style.transform).toBe('');
   expect(document.querySelector<HTMLElement>('.hud')!.inert).toBe(false);
+});
+
+const goalOf = (id: GoalId) => GOALS.find((g) => g.id === id)!;
+const byId = (id: string) => document.querySelector<HTMLButtonElement>(`.deco-sw[data-id="${id}"]`)!;
+const hint = () => document.querySelector<HTMLElement>('.deco-hint')!;
+
+it('lockText: milestones count, speed shows the best, a guest is asked to sign in, a secret is ???', () => {
+  const st = (have: number, need: number, done = false): GoalState => ({ have, need, done });
+  expect(lockText(goalOf('m25'), st(18, 25), false)).toBe('Light 25 trees · 18/25');
+  expect(lockText(goalOf('m25'), st(18, 25), true)).toBe('Light 25 trees · 18/25');
+  expect(lockText(goalOf('m1000'), st(18, 1000), true)).toBe('Light 1,000 trees · 18/1,000');
+  expect(lockText(goalOf('s60'), st(72_400, 60_000), false)).toBe('A tree under 1:00 · best 1:12.4');
+  expect(lockText(goalOf('s60'), st(0, 60_000), false)).toBe('A tree under 1:00');
+  expect(lockText(goalOf('a45'), st(51_000, 45_000), false)).toBe('Average of 5 under 0:45 · best 0:51.0');
+  expect(lockText(goalOf('streak7'), st(2, 7), false)).toBe('Play the Daily Tree 7 days in a row · 2/7');
+  // A one-off has nothing to count.
+  expect(lockText(goalOf('perfect'), st(0, 1), false)).toBe('A tree in its minimum turns');
+  // A guest's device can't tell; a signed-in player's progress still loading shows the goal alone.
+  expect(lockText(goalOf('streak7'), null, true)).toBe('Play the Daily Tree 7 days in a row · Sign in to track');
+  expect(lockText(goalOf('streak7'), null, false)).toBe('Play the Daily Tree 7 days in a row');
+});
+
+it("a secret's swatch says ??? until its goal is done", () => {
+  for (const guest of [false, true]) {
+    expect(lockText(goalOf('eggSecret'), { have: 0, need: 1, done: false }, guest)).toBe('???');
+    expect(lockText(goalOf('eggSecret'), null, guest)).toBe('???');
+    expect(lockText(goalOf('fireplace100'), { have: 40, need: 100, done: false }, guest)).toBe('???');
+  }
+  expect(lockText(goalOf('eggSecret'), { have: 1, need: 1, done: true }, false)).toBe('A tree in secret mode');
+});
+
+it('a locked swatch is dimmed, says its goal and progress, and a click applies nothing', () => {
+  const goal = vi.fn((id: GoalId): GoalState | null => (id === 'm25' ? { have: 12, need: 25, done: false } : null));
+  const { h, label } = make(LOOK, null, { owns: (id) => id !== 'path:neon' && id !== 'topper:bow', goal });
+  const neon = byId('path:neon');
+  expect(neon.classList.contains('deco-locked')).toBe(true);
+  expect(neon.querySelector('.deco-lock')).not.toBeNull();
+  expect(label(neon)).toBe('Light 25 trees · 12/25');
+  expect(neon.getAttribute('aria-label')).toBe('Neon, locked: Light 25 trees · 12/25');
+  // The stage shows Filament and the Snowflake in their place: those are what is pressed.
+  expect(neon.getAttribute('aria-pressed')).toBe('false');
+  expect(byId('path:filament').getAttribute('aria-pressed')).toBe('true');
+  expect(byId('topper:snowflake').getAttribute('aria-pressed')).toBe('true');
+  // A starter swatch is never locked.
+  expect(byId('path:filament').classList.contains('deco-locked')).toBe(false);
+  expect(hint().hidden).toBe(true);
+  neon.click();
+  expect(h.onLook).not.toHaveBeenCalled();
+  expect(hint().hidden).toBe(false);
+  expect(hint().textContent).toBe('Light 25 trees · 12/25');
+  // An owned pick goes through, and puts the hint away.
+  byId('path:fairy').click();
+  expect(h.onLook).toHaveBeenCalledWith({ path: 'fairy' });
+  expect(hint().hidden).toBe(true);
+});
+
+it('a decoration toggle keeps a locked decoration the saved look has on', () => {
+  const look: Look = { ...LOOK, decor: { ...NO_DECOR, beads: true } };
+  const { h } = make(look, null, { owns: (id) => id !== 'decor:beads' });
+  expect(byId('decor:beads').getAttribute('aria-pressed')).toBe('false');
+  byId('decor:tinsel').click();
+  expect(h.onLook).toHaveBeenCalledWith({ decor: { ...NO_DECOR, beads: true, tinsel: true } });
+});
+
+it('an earned, unseen swatch wears a New pip; opening the drawer calls onSeen once', () => {
+  let unseen: string[] = ['scene:midnight', 'decor:tinsel'];
+  const onSeen = vi.fn(() => (unseen = []));
+  const { d } = make(LOOK, null, { unseen: () => unseen as never, onSeen });
+  expect(onSeen).toHaveBeenCalledTimes(1);
+  const pips = () => [...document.querySelectorAll('.deco-sw .deco-new')].map((n) => n.closest<HTMLElement>('.deco-sw')!.dataset.id);
+  expect(pips()).toEqual(['scene:midnight', 'decor:tinsel']);
+  expect(document.querySelector('.deco-new')!.textContent).toBe('New');
+  d.sync(); // still open: the pips stay
+  expect(pips()).toHaveLength(2);
+  d.close();
+  expect(pips()).toEqual([]);
+  d.open();
+  expect(onSeen).toHaveBeenCalledTimes(2);
+  expect(pips()).toEqual([]);
+});
+
+it('three saved looks: save names a slot, apply sends the whole look', () => {
+  let looks: ReturnType<DecorateHandlers['looks']> = [{ name: 'Cosy', look: LOOK }, null, null];
+  const onSaveLook = vi.fn((slot: 0 | 1 | 2, name: string) => {
+    looks = looks.map((l, i) => (i === slot ? { name: name || `Look ${slot + 1}`, look: LOOK } : l));
+  });
+  const { h } = make(LOOK, null, { looks: () => looks, onSaveLook });
+  const chips = () => [...document.querySelectorAll<HTMLButtonElement>('.deco-look')];
+  const field = () => document.querySelector<HTMLInputElement>('.deco-name')!;
+  expect(chips().map((c) => c.textContent)).toEqual(['Cosy', 'Empty', 'Empty']);
+  // Under the header, before the sections.
+  const head = document.querySelector('.deco-head')!;
+  const row = document.querySelector('.deco-looks')!;
+  expect(head.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(chips()[1].disabled).toBe(true);
+
+  chips()[0].click();
+  expect(h.onApplyLook).toHaveBeenCalledWith(0);
+
+  // Save opens the name field; a slot then takes it.
+  expect(field().closest<HTMLElement>('.deco-save-form')!.hidden).toBe(true);
+  document.querySelector<HTMLButtonElement>('.deco-save')!.click();
+  expect(field().closest<HTMLElement>('.deco-save-form')!.hidden).toBe(false);
+  expect(field().maxLength).toBe(16);
+  expect(chips().every((c) => !c.disabled)).toBe(true);
+  field().value = 'Party time';
+  chips()[2].click();
+  expect(onSaveLook).toHaveBeenCalledWith(2, 'Party time');
+  expect(h.onApplyLook).toHaveBeenCalledTimes(1);
+  expect(field().closest<HTMLElement>('.deco-save-form')!.hidden).toBe(true);
+  expect(chips().map((c) => c.textContent)).toEqual(['Cosy', 'Empty', 'Party time']);
+
+  // Enter saves in the first empty slot; Esc only closes the field, not the drawer.
+  document.querySelector<HTMLButtonElement>('.deco-save')!.click();
+  field().value = '';
+  field().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  expect(onSaveLook).toHaveBeenLastCalledWith(1, '');
+  document.querySelector<HTMLButtonElement>('.deco-save')!.click();
+  const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  field().dispatchEvent(esc);
+  expect(field().closest<HTMLElement>('.deco-save-form')!.hidden).toBe(true);
+  expect(document.querySelector('#decorate')!.classList.contains('open')).toBe(true);
 });
