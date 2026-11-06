@@ -53,7 +53,7 @@ test('the radio panel lists Music Box and Fireplace, and plays the Fireplace', a
   await expect.poll(async () => (await radio(page)).kind).toBe('fireplace');
   await expect(page.locator('#radio-pill')).toContainText('Fireplace');
   await expect(panel.locator('.st', { hasText: 'Fireplace' })).toHaveAttribute('aria-current', 'true');
-  await expect(panel.locator('.title')).toHaveText('Crackle & wind');
+  await expect(panel.locator('.title')).toHaveText('Crackling logs');
 });
 
 test('a failing stations endpoint shows the warning, and Music Box still plays', async ({ page }) => {

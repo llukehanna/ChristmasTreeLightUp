@@ -289,7 +289,7 @@ export class RadioPanel {
     setText(this.q('.station'), sourceName(v) ?? 'Aglow Radio');
     setText(
       this.q('.title'),
-      v.kind === 'fireplace' ? 'Crackle & wind'
+      v.kind === 'fireplace' ? 'Crackling logs'
       : v.kind === 'embed' ? 'Press play in the player below'
       : v.track?.title ?? (v.settings.on ? 'Ready when you are' : 'Music off'),
     );
@@ -420,7 +420,7 @@ export class RadioPanel {
           icon: /classic/i.test(s.id) ? ICON.star : ICON.note,
         })),
         { id: MUSIC_BOX_ID, name: MUSIC_BOX_META.name, desc: 'Public-domain carols, always on', icon: ICON.bell },
-        { id: FIREPLACE_ID, name: 'Fireplace', desc: 'Crackle & wind, no music', icon: ICON.flame },
+        { id: FIREPLACE_ID, name: 'Fireplace', desc: 'Crackling logs, no music', icon: ICON.flame },
       ];
       const box = this.q('.stations');
       box.replaceChildren();
@@ -506,7 +506,7 @@ function sourceName(v: RadioView): string | null {
 }
 
 function creditLine(v: RadioView): string {
-  if (v.kind === 'fireplace') return 'Crackle and wind, synthesized live in your browser.';
+  if (v.kind === 'fireplace') return 'Crackling logs, synthesized live in your browser.';
   if (v.kind === 'embed') return 'Full tracks for listeners signed in to the service; otherwise 30-second previews.';
   return v.track?.credit ?? '';
 }
