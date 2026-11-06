@@ -72,3 +72,12 @@ it("a Daily Tree: its label is a small line above the time; a random tree's tag 
   r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), daily: '' });
   expect(line?.hidden).toBe(true);
 });
+
+it('the tag wears its style as data-tag; the plain tag too', () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  const root = document.getElementById('results')!;
+  r.setTag('velvet');
+  expect(root.dataset.tag).toBe('velvet');
+  r.setTag('plain');
+  expect(root.dataset.tag).toBe('plain');
+});

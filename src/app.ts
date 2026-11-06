@@ -60,7 +60,7 @@ import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
 import { picked, tryPatch, UnlockNews } from './ui/unlock-ribbon';
-import { UnlockState } from './unlock-state';
+import { previewAll, UnlockState } from './unlock-state';
 
 /** A win hurries the flow still in flight this much, and the results tag follows this long after the last bulb. */
 const LAST_WAVE_SPEEDUP = 4;
@@ -260,8 +260,13 @@ export class App {
   private accountStats: AccountStats | null = null;
   /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
   private statsSeq = 0;
+  /**
+   * Luke's wardrobe preview, `?wardrobe=all` on a dev build: everything is owned, and the full pile of presents stands, so
+   * every wrapping shows. A production build has neither the check nor the word (tests/unit/build).
+   */
+  private readonly preview = import.meta.env.DEV && previewAll(import.meta.env.DEV, location.search);
   /** What the player owns: the look shows only that (the saved look is never changed). A change re-applies the look (news). */
-  private readonly unlocks = new UnlockState({ onChange: () => this.news.changed() });
+  private readonly unlocks = new UnlockState({ onChange: () => this.news.changed() }, this.preview);
   /**
    * When an unlock shows: never during a run (the look, the pile and the dot wait for its end: ruling R9), and what is
    * new goes on the results tag (ribbon "Unlocked: … · Try it").
@@ -1379,13 +1384,15 @@ export class App {
   }
 
   /**
-   * Dress the tree: the look, less what the egg world takes away. The drawer shows the look, and the world it waits out.
-   * Says whether the stage repainted.
+   * Dress the tree, and the results tag in its style: the look, less what the egg world takes away. The drawer shows the
+   * look, and the world it waits out. Says whether the stage repainted.
    */
   private dress(): boolean {
-    // One present per PILE_STEP trees lit; the egg worlds keep the full pile.
-    const pile = this.world ? Infinity : pileOf(this.news.treesLit(), Infinity);
-    const repainted = this.renderer.setDress({ ...worldLook(this.shownLook, this.world), pile });
+    // One present per PILE_STEP trees lit; the egg worlds (and the wardrobe preview) keep the full pile.
+    const pile = this.world || this.preview ? Infinity : pileOf(this.news.treesLit(), Infinity);
+    const worn = worldLook(this.shownLook, this.world);
+    const repainted = this.renderer.setDress({ ...worn, pile });
+    this.results.setTag(worn.tag);
     this.decorate.sync();
     return repainted;
   }

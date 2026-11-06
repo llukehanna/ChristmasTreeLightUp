@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { ProgressResponse } from '../../src/api/types';
-import type { ItemId } from '../../src/core/catalogue';
+import { ITEMS, type ItemId } from '../../src/core/catalogue';
 import { evaluate, pileOf } from '../../src/core/goals';
 import { effectiveLook, STARTER_LOOK, type Look } from '../../src/store/look';
 import { loadUnlocks, saveUnlocks } from '../../src/store/unlocks';
-import { UnlockState } from '../../src/unlock-state';
+import { previewAll, UnlockState } from '../../src/unlock-state';
 
 beforeEach(() => localStorage.clear());
 
@@ -154,4 +154,23 @@ it('switching players switches records; a signed-in player without an id has the
   expect(s.owns('scene:parlour')).toBe(false);
   expect(s.fresh()).toEqual([]);
   expect(Object.keys(JSON.parse(localStorage.getItem('aglow.unlocks')!)).sort()).toEqual(['guest', 'u1']);
+});
+
+it('?wardrobe=all is a dev build alone: it owns everything without earning, announcing or saving any of it', () => {
+  expect(previewAll(true, '?wardrobe=all')).toBe(true);
+  expect(previewAll(true, '?scene=frost&wardrobe=all')).toBe(true);
+  // The production build: import.meta.env.DEV is false, whatever the address says.
+  expect(previewAll(false, '?wardrobe=all')).toBe(false);
+  expect(previewAll(true, '?wardrobe=some')).toBe(false);
+  expect(previewAll(true, '')).toBe(false);
+  const s = new UnlockState({ onChange: vi.fn() }, true);
+  s.setPlayer(null, 0);
+  expect(ITEMS.every((i) => s.owns(i.id))).toBe(true);
+  expect(s.fresh()).toEqual([]);
+  expect(s.unseen()).toEqual([]);
+  expect(loadUnlocks('guest')!.earned).toEqual([]);
+  // Without it, a new guest owns nothing.
+  const { s: plain } = state();
+  plain.setPlayer(null, 0);
+  expect(ITEMS.some((i) => plain.owns(i.id))).toBe(false);
 });

@@ -1,5 +1,6 @@
 import type { AccountStats } from '../api/types';
 import { formatTime } from '../core/score';
+import type { TagStyle } from '../store/look';
 import { averageSeconds, type Stats } from '../store/stats';
 import { el } from './dom';
 import { count, dailyLabel } from './format';
@@ -108,6 +109,11 @@ export class Results {
     if (anchor) anchor.after(u);
     else this.root.querySelector('.stats')?.before(u);
     if (focused) u.querySelector<HTMLElement>(`.${focused.split(' ')[0]}`)?.focus({ preventScroll: true });
+  }
+
+  /** The look's tag style: its paper and ribbon (tag-styles.css). The words keep their own inks on every one. */
+  setTag(tag: TagStyle): void {
+    this.root.dataset.tag = tag;
   }
 
   /** The tag is up (shown, not put away). */

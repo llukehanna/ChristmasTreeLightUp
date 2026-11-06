@@ -1,7 +1,7 @@
 import type { TopperKind } from '../store/look';
 import { TOUCH_ONLY_QUERY } from '../ui/key-card';
 import { blurredLayer } from './blur';
-import { hexRgb } from './color';
+import { hexRgb, rgba } from './color';
 import { drawStarBody, type StarState } from './effects';
 import { canvas, clamp01, css, mixRgb, TAU } from './paint-util';
 import type { Rgb, Scene } from './scenes';
@@ -17,8 +17,38 @@ import type { Rgb, Scene } from './scenes';
  * (topper.ts) places, pops, turns and flips it; everything here is drawn about the origin, the star's centre.
  */
 
-export type ArtKind = Exclude<TopperKind, 'star'>;
+/** The star and its two recolours (drawStarBody, in their own glass and light); every other kind is painted art. */
+export type StarKind = Extract<TopperKind, 'star' | 'silverstar' | 'goldstar'>;
+export type ArtKind = Exclude<TopperKind, StarKind>;
 type Ctx = CanvasRenderingContext2D;
+
+export const isStar = (k: TopperKind): k is StarKind => k === 'star' || k === 'silverstar' || k === 'goldstar';
+
+/** The silver and gold stars: their glass (`glass`, for the unlit body and its edge) and their light (core, glow). */
+const STAR_TINTS: Readonly<Record<Exclude<StarKind, 'star'>, { glass: string; core: string; glow: string }>> = {
+  silverstar: { glass: '#d6e0ee', core: '#f6f9ff', glow: '#b4cbe8' },
+  goldstar: { glass: '#ffc85c', core: '#fff4c8', glow: '#ffb92e' },
+};
+const tinted = new WeakMap<Scene, Map<StarKind, Scene>>();
+
+/**
+ * The scene as `kind` sees it: the silver or gold star's glass and light in place of the scene's, for its body and its
+ * halo and win flare (drawStarGlow); the star keeps the scene's. In daylight the scene's dark edge stays, so it reads.
+ * Memoised per scene, so a frame allocates nothing.
+ */
+export function starTint(sc: Scene, kind: StarKind): Scene {
+  if (kind === 'star') return sc;
+  let m = tinted.get(sc);
+  if (!m) tinted.set(sc, (m = new Map()));
+  let out = m.get(kind);
+  if (!out) {
+    const t = STAR_TINTS[kind];
+    const day = sc.light === 'day';
+    out = { ...sc, starOff: rgba(t.glass, day ? 0.5 : 0.1), starEdge: day ? sc.starEdge : rgba(t.glass, 0.55), core: t.core, glow: t.glow };
+    m.set(kind, out);
+  }
+  return out;
+}
 type Box = readonly [number, number, number, number];
 
 /** Each topper's sprite box in tiles around the star's centre: left, top, width, height. */

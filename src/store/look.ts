@@ -3,9 +3,17 @@ import type { PathStyle } from '../render/paths';
 import type { SceneId } from '../render/scenes';
 import { hasPlayed, readJSON, writeJSON } from './storage';
 
-export type PaletteId = 'scene' | 'gilded' | 'classic' | 'ice' | 'goldsilver' | 'pastel';
-export type TopperKind = 'snowflake' | 'star' | 'angel' | 'bow';
-export type PresentSet = 'none' | 'game' | 'luxe' | 'kraft';
+export type PaletteId =
+  | 'scene' | 'gilded' | 'classic' | 'ice' | 'goldsilver' | 'pastel'
+  | 'golden' | 'candy' | 'emerald' | 'disco' | 'peppermint' | 'snow' | 'rosegold' | 'copper' | 'sapphire';
+export type TopperKind = 'snowflake' | 'star' | 'angel' | 'bow' | 'silverstar' | 'goldstar';
+export type PresentSet = 'none' | 'game' | 'luxe' | 'kraft' | 'silver' | 'tartan' | 'starry' | 'candystripe' | 'goldfoil';
+/** The garland's bulb colours across the top: 'game' wears the tree's own (src/render/garland-sets.ts). */
+export type GarlandSet = 'game' | 'candlelight' | 'gold' | 'mercury' | 'champagne' | 'silver' | 'ice' | 'pastel' | 'classic' | 'peppermint' | 'rosegold';
+/** The results tag's paper and ribbon (src/ui/tag-styles.css). */
+export type TagStyle =
+  | 'plain' | 'silver' | 'goldfoil' | 'velvet' | 'tartan' | 'holly' | 'plaid' | 'ember' | 'frost' | 'gingerbread' | 'snowflake' | 'kraft'
+  | 'candystripe' | 'starry';
 export interface Decor { tinsel: boolean; beads: boolean; canes: boolean; skirt: boolean }
 
 /** Every cosmetic choice in one record (spec: Part B). Saved on its own, apart from the settings. */
@@ -17,27 +25,35 @@ export interface Look {
   topper: TopperKind;
   decor: Decor;
   presents: PresentSet;
+  garland: GarlandSet;
+  tag: TagStyle;
 }
 
 /**
- * What the renderer dresses the tree with: everything in the look but the scene and the light path, and how many of the
- * placed presents to show (the pile: Decision 9).
+ * What the renderer dresses the tree with: everything in the look but the scene, the light path and the results tag, and
+ * how many of the placed presents to show (the pile: Decision 9).
  */
-export type Dress = Pick<Look, 'palette' | 'topper' | 'decor' | 'presents'> & { pile: number };
+export type Dress = Pick<Look, 'palette' | 'topper' | 'decor' | 'presents' | 'garland'> & { pile: number };
 
 export const NO_DECOR: Decor = { tinsel: false, beads: false, canes: false, skirt: false };
 
 export const STARTER_LOOK: Look = {
-  v: 1, scene: 'fireside', path: 'filament', palette: 'scene', topper: 'snowflake', decor: NO_DECOR, presents: 'none',
+  v: 1, scene: 'fireside', path: 'filament', palette: 'scene', topper: 'snowflake', decor: NO_DECOR, presents: 'none', garland: 'game', tag: 'plain',
 };
 
 const KEY = 'aglow.look';
 const SETTINGS_KEY = 'aglow.settings';
 const SCENES: readonly string[] = ['midnight', 'fireside', 'frost', 'sash', 'square', 'parlour'];
-const PATHS: readonly string[] = ['filament', 'fairy', 'neon'];
-const PALETTES: readonly string[] = ['scene', 'gilded', 'classic', 'ice', 'goldsilver', 'pastel'];
-const TOPPERS: readonly string[] = ['snowflake', 'star', 'angel', 'bow'];
-const PRESENTS: readonly string[] = ['none', 'game', 'luxe', 'kraft'];
+const PATHS: readonly string[] = ['filament', 'fairy', 'neon', 'neonbright'];
+const PALETTES: readonly string[] = [
+  'scene', 'gilded', 'classic', 'ice', 'goldsilver', 'pastel', 'golden', 'candy', 'emerald', 'disco', 'peppermint', 'snow', 'rosegold', 'copper', 'sapphire',
+];
+const TOPPERS: readonly string[] = ['snowflake', 'star', 'angel', 'bow', 'silverstar', 'goldstar'];
+const PRESENTS: readonly string[] = ['none', 'game', 'luxe', 'kraft', 'silver', 'tartan', 'starry', 'candystripe', 'goldfoil'];
+const GARLANDS: readonly string[] = ['game', 'candlelight', 'gold', 'mercury', 'champagne', 'silver', 'ice', 'pastel', 'classic', 'peppermint', 'rosegold'];
+const TAGS: readonly string[] = [
+  'plain', 'silver', 'goldfoil', 'velvet', 'tartan', 'holly', 'plaid', 'ember', 'frost', 'gingerbread', 'snowflake', 'kraft', 'candystripe', 'starry',
+];
 
 const pick = <T extends string>(allowed: readonly string[], v: unknown, fallback: T): T =>
   typeof v === 'string' && allowed.includes(v) ? (v as T) : fallback;
@@ -61,6 +77,8 @@ export function parseLook(raw: unknown): Look {
     topper: pick(TOPPERS, o.topper, STARTER_LOOK.topper),
     decor: parseDecor(o.decor),
     presents: pick(PRESENTS, o.presents, STARTER_LOOK.presents),
+    garland: pick(GARLANDS, o.garland, STARTER_LOOK.garland),
+    tag: pick(TAGS, o.tag, STARTER_LOOK.tag),
   };
 }
 
@@ -96,12 +114,13 @@ export function loadLook(): Look {
 export const saveLook = (l: Look): void => writeJSON(KEY, l);
 
 /**
- * The look the stage shows in an egg world. Secret mode and Home Alone keep their own sky and tree: only the light path
- * (and the scene id, which steers the radio) carry in. The topper is kept in secret mode: the star-head egg flips from it.
+ * The look the stage shows in an egg world. Secret mode and Home Alone keep their own sky and tree, garland and tag: only
+ * the light path (and the scene id, which steers the radio) carry in. The topper is kept in secret mode: the star-head
+ * egg flips from it.
  */
 export function worldLook(l: Look, world: 'secret' | 'home-alone' | null): Look {
   if (world === null) return l;
-  const w: Look = { ...l, palette: 'scene', decor: NO_DECOR, presents: 'game' };
+  const w: Look = { ...l, palette: 'scene', decor: NO_DECOR, presents: 'game', garland: 'game', tag: 'plain' };
   return world === 'home-alone' ? { ...w, topper: 'star' } : w;
 }
 
@@ -111,7 +130,7 @@ export function worldLook(l: Look, world: 'secret' | 'home-alone' | null): Look 
  */
 export function effectiveLook(l: Look, owns: (id: ItemId) => boolean): Look {
   const has = (slot: Slot, value: string): boolean => value === STARTER[slot] || owns(`${slot}:${value}` as ItemId);
-  const keep = <K extends 'scene' | 'path' | 'palette' | 'topper' | 'presents'>(slot: K): Look[K] =>
+  const keep = <K extends 'scene' | 'path' | 'palette' | 'topper' | 'presents' | 'garland' | 'tag'>(slot: K): Look[K] =>
     has(slot, l[slot]) ? l[slot] : (STARTER[slot] as Look[K]);
   const decor = (k: keyof Decor): boolean => l.decor[k] && has('decor', k);
   return {
@@ -121,6 +140,8 @@ export function effectiveLook(l: Look, owns: (id: ItemId) => boolean): Look {
     palette: keep('palette'),
     topper: keep('topper'),
     presents: keep('presents'),
+    garland: keep('garland'),
+    tag: keep('tag'),
     decor: { tinsel: decor('tinsel'), beads: decor('beads'), canes: decor('canes'), skirt: decor('skirt') },
   };
 }

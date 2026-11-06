@@ -3,11 +3,11 @@ import { D, L, R, U } from '../../../src/core/dirs';
 import { bulbAngle } from '../../../src/render/bulbs';
 import { easeSnap } from '../../../src/render/effects';
 import { tileGeometry } from '../../../src/render/geometry';
-import { PATH_STYLES, TwinkleClock, drawLitCore, drawLitGlow, twinklePhase } from '../../../src/render/paths';
+import { NEON_TUNE, PATH_STYLES, TwinkleClock, drawLitCore, drawLitGlow, neonFlicker, twinklePhase, unlitOf } from '../../../src/render/paths';
 import { SCENES } from '../../../src/render/scenes';
 
-it('offers exactly the three approved light paths', () => {
-  expect(PATH_STYLES).toEqual(['filament', 'fairy', 'neon']);
+it('offers exactly the approved light paths, and Neon bright', () => {
+  expect(PATH_STYLES).toEqual(['filament', 'fairy', 'neon', 'neonbright']);
 });
 /** A context that records the line width and alpha of each stroke, and ignores the rest. */
 function strokeLog(): { c: CanvasRenderingContext2D; strokes: { w: number; a: number; style: unknown }[] } {
@@ -32,6 +32,32 @@ it('neon is the Soft level: a 0.26 glow at 70%, a 0.16 tube', () => {
   expect(core.strokes.map((s) => s.w)).toEqual([16, 7.5]);
   expect(core.strokes[0].style).toBe(sc.neonMid);
   expect(core.strokes[0].a).toBe(1);
+});
+it('Neon bright is the tube before the Soft pass: a 0.34 glow at full strength, a 0.18 tube, and the stutter', () => {
+  const sc = SCENES.fireside;
+  const prims = tileGeometry(R | L, R);
+  const args = { q: 1, alpha: 1, seed: 0, now: 0, twinkleT: 0, flicker: 0.3 };
+  const glow = strokeLog();
+  drawLitGlow(glow.c, prims, 100, sc, 'neonbright', args);
+  expect(glow.strokes[0]).toMatchObject({ w: 34, style: sc.neon });
+  expect(glow.strokes[0].a).toBeCloseTo(0.3);
+  const core = strokeLog();
+  drawLitCore(core.c, prims, 100, sc, 'neonbright', args);
+  expect(core.strokes.map((s) => s.w)).toEqual([18, 7.5]);
+  expect(core.strokes[0].a).toBeCloseTo(0.3);
+  // Neon itself never stutters, whatever it is handed.
+  const soft = strokeLog();
+  drawLitGlow(soft.c, prims, 100, sc, 'neon', args);
+  expect(soft.strokes[0].a).toBeCloseTo(0.7);
+  expect(NEON_TUNE.neonbright).toEqual({ glowW: 0.34, glowA: 1, midW: 0.18, flicker: true });
+});
+it('the stutter: dark and bright flashes for 260 ms after a tube lights, then steady', () => {
+  expect([0, 40, 80, 120, 160, 200, 240].map(neonFlicker)).toEqual([1, 0.15, 0.9, 0.3, 1, 0.6, 1]);
+  expect(neonFlicker(-5)).toBe(1);
+  expect(neonFlicker(261)).toBe(1);
+});
+it('Neon bright wears Neon\'s unlit glass in every scene', () => {
+  for (const sc of Object.values(SCENES)) expect(unlitOf(sc, 'neonbright')).toBe(sc.unlit.neon);
 });
 it('points a bulb socket along its wire', () => {
   expect(bulbAngle(U)).toBeCloseTo(-Math.PI / 2);

@@ -1,8 +1,29 @@
 import { heads, pointsAlong, primProgress, tracePrim, type Prim } from './geometry';
-import type { Scene, UnlitLook } from './scenes';
+import type { Scene, Unlit, UnlitLook } from './scenes';
 
-export type PathStyle = 'filament' | 'fairy' | 'neon';
-export const PATH_STYLES: readonly PathStyle[] = ['filament', 'fairy', 'neon'];
+export type PathStyle = 'filament' | 'fairy' | 'neon' | 'neonbright';
+export const PATH_STYLES: readonly PathStyle[] = ['filament', 'fairy', 'neon', 'neonbright'];
+/** The wire a style is made of: Neon bright is Neon's tube, lit harder. */
+export type WireStyle = Exclude<PathStyle, 'neonbright'>;
+
+/** The scene's unlit treatment for a style's wire. */
+export const unlitOf = (sc: Scene, style: PathStyle): Unlit => sc.unlit[style === 'neonbright' ? 'neon' : style];
+
+/**
+ * How hard a neon tube glows: glowW and glowA, the bloomed tube's width and strength; midW, the crisp tube's width.
+ * Neon is Part B's Soft pass (Luke: "too strong, makes fast runs a little tougher"); Neon bright is the tube before it,
+ * with its turn-on stutter, earned by an average of five under 0:45.
+ */
+export const NEON_TUNE = {
+  neon: { glowW: 0.26, glowA: 0.7, midW: 0.16, flicker: false },
+  neonbright: { glowW: 0.34, glowA: 1, midW: 0.18, flicker: true },
+} as const;
+
+/** Neon bright's tubes stutter on like real ones (spec §4.4): the brightness `sinceLitMs` after a tile's tube lit. */
+export function neonFlicker(sinceLitMs: number): number {
+  if (sinceLitMs < 0 || sinceLitMs > 260) return 1;
+  return [1, 0.15, 0.9, 0.3, 1, 0.6, 1][Math.floor(sinceLitMs / 38)] ?? 1;
+}
 
 export interface LitArgs {
   q: number;
@@ -11,6 +32,8 @@ export interface LitArgs {
   now: number;
   /** The twinkle clock (ms): `now` slowed or sped by the light show's highs, see `TwinkleClock`. */
   twinkleT: number;
+  /** Neon bright's turn-on stutter (neonFlicker); 1 or absent: steady. */
+  flicker?: number;
 }
 
 const TAU = Math.PI * 2;
@@ -75,7 +98,7 @@ function drawUnder(c: CanvasRenderingContext2D, prims: readonly Prim[], s: numbe
 
 /** Unlit wires in the scene's treatment for this path style (spec §4.4). */
 export function drawUnlit(c: CanvasRenderingContext2D, prims: readonly Prim[], s: number, sc: Scene, style: PathStyle): void {
-  const u = sc.unlit[style];
+  const u = unlitOf(sc, style);
   c.lineCap = 'round';
   c.lineJoin = 'round';
   if (style === 'filament') {
@@ -131,10 +154,11 @@ export function drawLitGlow(c: CanvasRenderingContext2D, prims: readonly Prim[],
       dot(c, p.x * s, p.y * s, s * 0.11);
     }
   } else {
-    // Soft neon: a narrower, dimmer bloom than a full-strength tube, and no turn-on stutter.
-    c.globalAlpha = a.alpha * 0.7;
+    // Neon's Soft bloom, narrower and dimmer, or Neon bright's full-strength tube with its turn-on stutter (NEON_TUNE).
+    const tune = NEON_TUNE[style];
+    c.globalAlpha = a.alpha * tune.glowA * (tune.flicker ? (a.flicker ?? 1) : 1);
     c.strokeStyle = sc.neon;
-    c.lineWidth = s * 0.26;
+    c.lineWidth = s * tune.glowW;
     strokePrims(c, prims, a.q, s);
   }
   c.globalAlpha = a.alpha;
@@ -169,8 +193,10 @@ export function drawLitCore(c: CanvasRenderingContext2D, prims: readonly Prim[],
     }
     c.globalAlpha = a.alpha;
   } else {
+    const tune = NEON_TUNE[style];
+    c.globalAlpha = a.alpha * (tune.flicker ? (a.flicker ?? 1) : 1);
     c.strokeStyle = sc.neonMid;
-    c.lineWidth = s * 0.16;
+    c.lineWidth = s * tune.midW;
     strokePrims(c, prims, a.q, s);
     c.strokeStyle = sc.core;
     c.lineWidth = s * 0.075;

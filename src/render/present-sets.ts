@@ -1,5 +1,6 @@
 import { mulberry32, type Rng } from '../core/rng';
-import type { Face, Gift, Pass, Tone } from './presents';
+import type { PresentSet } from '../store/look';
+import type { Face, Gift, Pass, Paper, Tone } from './presents';
 
 /**
  * The alternative present sets, painted in place of the game's boxes through the same placement, sprites and two-pass
@@ -13,6 +14,54 @@ import type { Face, Gift, Pass, Tone } from './presents';
 
 type Ctx = CanvasRenderingContext2D;
 type P = readonly [number, number];
+
+/**
+ * The wrappings that are the game's boxes in other papers (season two, Parts C2+C3): six each, standing in for the
+ * game's six (PAPERS) one for one, so every gift keeps its place, size and bow.
+ */
+export type PaperSet = Extract<PresentSet, 'silver' | 'tartan' | 'starry' | 'candystripe' | 'goldfoil'>;
+export const SET_PAPERS: Readonly<Record<PaperSet, readonly Paper[]>> = {
+  silver: [
+    { base: '#b8c2cc', ribbon: '#f2f5f8', pattern: 'plain', ink: '#b8c2cc' }, // brushed silver, white satin
+    { base: '#2c3440', ribbon: '#c9d3de', pattern: 'dots', ink: '#c9d3de' }, // gunmetal, silver dots
+    { base: '#e8edf2', ribbon: '#8c99a8', pattern: 'stripe', ink: '#9aa7b6' }, // frost white, pewter pinstripe
+    { base: '#5d6b7a', ribbon: '#eef2f6', pattern: 'plain', ink: '#5d6b7a' }, // slate, white satin
+    { base: '#cfd8e2', ribbon: '#3a4656', pattern: 'plain', ink: '#cfd8e2' }, // platinum, charcoal ribbon
+    { base: '#3e4a58', ribbon: '#d8e0e8', pattern: 'stripe', ink: '#b8c4d0' }, // midnight steel, silver stripe
+  ],
+  tartan: [
+    { base: '#9e1b26', ribbon: '#1f4a33', pattern: 'check', ink: '#1f4a33' }, // red tartan, green ribbon
+    { base: '#1f4a33', ribbon: '#c9a24a', pattern: 'check', ink: '#9e1b26' }, // green tartan, gold ribbon
+    { base: '#e9dcc0', ribbon: '#9e1b26', pattern: 'check', ink: '#9e1b26' }, // dress tartan on cream, red ribbon
+    { base: '#1c2c50', ribbon: '#9e1b26', pattern: 'check', ink: '#2f6b45' }, // navy tartan, red ribbon
+    { base: '#9e1b26', ribbon: '#e9dcc0', pattern: 'plain', ink: '#9e1b26' }, // plain red, cream ribbon
+    { base: '#1f4a33', ribbon: '#9e1b26', pattern: 'plain', ink: '#1f4a33' }, // plain green, red ribbon
+  ],
+  starry: [
+    { base: '#16224a', ribbon: '#e2b25a', pattern: 'stars', ink: '#f0d080' }, // midnight, gold stars
+    { base: '#0f1834', ribbon: '#c9d6ee', pattern: 'stars', ink: '#dfe8ff' }, // night sky, silver stars
+    { base: '#e2b25a', ribbon: '#16224a', pattern: 'stars', ink: '#16224a' }, // gold, midnight stars
+    { base: '#22336a', ribbon: '#e2b25a', pattern: 'plain', ink: '#22336a' }, // twilight blue, gold ribbon
+    { base: '#16224a', ribbon: '#c9d6ee', pattern: 'stars', ink: '#f0d080' }, // midnight, gold stars, silver ribbon
+    { base: '#2b3f7a', ribbon: '#f0d080', pattern: 'stars', ink: '#f0d080' }, // dusk blue, gold stars
+  ],
+  candystripe: [
+    { base: '#f6efe8', ribbon: '#c8202e', pattern: 'candy', ink: '#c8202e' }, // white, red candy stripe
+    { base: '#c8202e', ribbon: '#f6efe8', pattern: 'candy', ink: '#f6efe8' }, // red, white candy stripe
+    { base: '#f6efe8', ribbon: '#2a8a4e', pattern: 'candy', ink: '#2a8a4e' }, // white, green candy stripe
+    { base: '#c8202e', ribbon: '#f6efe8', pattern: 'plain', ink: '#c8202e' }, // plain red, white ribbon
+    { base: '#f6efe8', ribbon: '#c8202e', pattern: 'candy', ink: '#c8202e' }, // white, red candy stripe
+    { base: '#2a8a4e', ribbon: '#f6efe8', pattern: 'candy', ink: '#f6efe8' }, // green, white candy stripe
+  ],
+  goldfoil: [
+    { base: '#c9a24a', ribbon: '#7d1420', pattern: 'plain', ink: '#c9a24a' }, // gold foil, crimson ribbon
+    { base: '#e2c070', ribbon: '#1f3f66', pattern: 'stripe', ink: '#b88a30' }, // pale gold, blue ribbon
+    { base: '#d8b25a', ribbon: '#7d1420', pattern: 'dots', ink: '#fff0c0' }, // gold, champagne dots
+    { base: '#b8862e', ribbon: '#f3e6c4', pattern: 'plain', ink: '#b8862e' }, // old gold, ivory ribbon
+    { base: '#e9cc80', ribbon: '#7d1420', pattern: 'stripe', ink: '#b88a30' }, // champagne gold, crimson ribbon
+    { base: '#a8782a', ribbon: '#f3e6c4', pattern: 'plain', ink: '#a8782a' }, // antique gold, ivory ribbon
+  ],
+};
 
 /** Paints gift `index` (of the layout, in order) in `set`: six specs each, used `index % 6`. */
 export function paintSetGift(c: Ctx, g: Gift, t: Tone, pass: Pass, index: number, set: 'luxe' | 'kraft'): void {

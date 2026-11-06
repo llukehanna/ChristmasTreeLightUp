@@ -115,6 +115,8 @@ body.decorating .vignette { opacity: 0; }
 .deco-sw-top .deco-sw-art { aspect-ratio: 1; padding: 8px; }
 .deco-sw-decor .deco-sw-art, .deco-sw-gift .deco-sw-art { aspect-ratio: 4 / 3; padding: 6px; }
 .deco-sw-pal .deco-sw-art { aspect-ratio: 3 / 1.15; }
+.deco-sw-garl .deco-sw-art { aspect-ratio: 2 / 1; padding: 2px 6px; }
+.deco-sw-tag .deco-sw-art { aspect-ratio: 4 / 3; padding: 6px; }
 .deco-sw-l { font-size: 11px; font-weight: 500; color: rgba(246, 231, 200, 0.68); white-space: nowrap; transition: color 0.2s; letter-spacing: 0.01em; }
 .deco-sw:hover .deco-sw-art {
   transform: translateY(-1px); filter: none;
@@ -202,6 +204,9 @@ body.decorating .vignette { opacity: 0; }
   box-shadow: 0 0 9px 1px color-mix(in srgb, var(--c) 70%, transparent), 0 0 2px var(--c);
 }
 .deco-pal b:nth-child(even) { transform: translateY(3px); }
+
+/* Garland swatch: each C9 bulb, and its glow, in its group's --c (src/ui/decorate.ts). */
+.deco-garl-b { fill: var(--c); }
 
 .deco-foot { flex: none; display: flex; gap: 10px; padding: 12px 18px 16px; border-top: 1px solid rgba(236, 196, 116, 0.16); }
 .deco-foot button {

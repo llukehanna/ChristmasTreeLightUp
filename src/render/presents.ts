@@ -3,7 +3,7 @@ import { CANVAS_FILTER } from './blur';
 import { hexRgb } from './color';
 import type { FaceSprites } from './face-sprites';
 import { X, Y, type Layout } from './layout';
-import { paintSetGift } from './present-sets';
+import { paintSetGift, SET_PAPERS, type PaperSet } from './present-sets';
 import type { Scene } from './scenes';
 import type { PresentSet } from '../store/look';
 
@@ -17,7 +17,8 @@ import type { PresentSet } from '../store/look';
 export interface Paper {
   base: string;
   ribbon: string;
-  pattern: 'plain' | 'stripe' | 'dots' | 'face';
+  /** Prints: a pinstripe, dots, small stars, a broad candy stripe, a tartan check, or (secret mode) Luke's head. */
+  pattern: 'plain' | 'stripe' | 'dots' | 'stars' | 'candy' | 'check' | 'face';
   ink: string;
 }
 
@@ -261,15 +262,46 @@ function paperPattern(c: CanvasRenderingContext2D, g: Gift, t: Tone, face: Face,
   c.fillStyle = t.of(p.ink, face, 0.95);
   c.strokeStyle = t.of(p.ink, face, 0.95);
   const step = Math.max(4, g.w * 0.11);
-  if (p.pattern === 'stripe') {
-    c.lineWidth = Math.max(0.6, g.w * 0.018);
-    c.globalAlpha = 0.75;
+  if (p.pattern === 'stripe' || p.pattern === 'candy') {
+    // A candy stripe is the pinstripe's diagonal, broad and further apart.
+    const candy = p.pattern === 'candy';
+    const pitch = candy ? step * 1.6 : step;
+    c.lineWidth = candy ? pitch * 0.4 : Math.max(0.6, g.w * 0.018);
+    c.globalAlpha = candy ? 0.9 : 0.75;
     c.beginPath();
-    for (let x = box.x0 - (box.y1 - box.y0); x < box.x1; x += step) {
+    for (let x = box.x0 - (box.y1 - box.y0); x < box.x1; x += pitch) {
       c.moveTo(x, box.y1);
       c.lineTo(x + (box.y1 - box.y0), box.y0);
     }
     c.stroke();
+  } else if (p.pattern === 'check') {
+    // Tartan: broad translucent bands both ways, crossing darker, with a thin line through each.
+    const pitch = step * 1.5;
+    const band = pitch * 0.34;
+    c.globalAlpha = 0.32;
+    for (let x = box.x0 + pitch * 0.3; x < box.x1; x += pitch) c.fillRect(x, box.y0, band, box.y1 - box.y0);
+    for (let y = box.y0 + pitch * 0.3; y < box.y1; y += pitch) c.fillRect(box.x0, y, box.x1 - box.x0, band);
+    c.globalAlpha = 0.6;
+    c.lineWidth = Math.max(0.5, g.w * 0.01);
+    c.beginPath();
+    for (let x = box.x0 + pitch * 0.3 + band / 2; x < box.x1; x += pitch) {
+      c.moveTo(x, box.y0);
+      c.lineTo(x, box.y1);
+    }
+    for (let y = box.y0 + pitch * 0.3 + band / 2; y < box.y1; y += pitch) {
+      c.moveTo(box.x0, y);
+      c.lineTo(box.x1, y);
+    }
+    c.stroke();
+  } else if (p.pattern === 'stars') {
+    // Small four-point stars on the dots' staggered grid, every other one smaller.
+    c.globalAlpha = 0.9;
+    const r = Math.max(1, g.w * 0.032);
+    let row = 0;
+    for (let y = box.y0 + step * 0.45; y < box.y1; y += step * 0.9, row++) {
+      let k = row;
+      for (let x = box.x0 + (row % 2 ? step * 0.55 : 0); x < box.x1; x += step * 1.1, k++) sparkle(c, x, y, k % 2 ? r * 0.65 : r);
+    }
   } else {
     c.globalAlpha = 0.85;
     const r = Math.max(0.6, g.w * 0.02);
@@ -283,6 +315,22 @@ function paperPattern(c: CanvasRenderingContext2D, g: Gift, t: Tone, face: Face,
     }
   }
   c.restore();
+}
+
+/** A four-point star of outer radius `r`, filled. */
+function sparkle(c: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  const i = r * 0.3;
+  c.beginPath();
+  c.moveTo(x, y - r);
+  c.lineTo(x + i, y - i);
+  c.lineTo(x + r, y);
+  c.lineTo(x + i, y + i);
+  c.lineTo(x, y + r);
+  c.lineTo(x - i, y + i);
+  c.lineTo(x - r, y);
+  c.lineTo(x - i, y - i);
+  c.closePath();
+  c.fill();
 }
 
 /** `print` multiplied by `light`, keeping its own alpha: a layout-time copy (one per box face and pass), never per frame. */
@@ -516,12 +564,15 @@ export class Presents {
 
   /**
    * Places and pre-renders the gifts. Call on layout, scene or set change. `faces`: secret mode, with the sticker loaded.
-   * `set`: 'none' lays out no gifts; Luxe and Kraft paint every box but the face paper (always the game's) in their own.
+   * `set`: 'none' lays out no gifts; Luxe and Kraft paint every box but the face paper (always the game's) in their own;
+   * the other sets wrap the game's boxes in their own papers (SET_PAPERS), each in place of the game's paper it stands for.
    * `pile`: only the first `pile` gifts of the placement, where they stand, so a new one never moves the others.
    */
   layout(L: Layout, grid: Grid, sc: Scene, faces: FaceSprites | null = null, set: PresentSet = 'game', pile = Infinity): void {
     for (const sp of this.sprites) sp.base.width = sp.light.width = 0;
-    this.gifts = set === 'none' ? [] : placePresents(L, grid).slice(0, pile);
+    const placed = set === 'none' ? [] : placePresents(L, grid).slice(0, pile);
+    const papers = set in SET_PAPERS ? SET_PAPERS[set as PaperSet] : null;
+    this.gifts = papers ? placed.map((g) => ({ ...g, paper: papers[PAPERS.indexOf(g.paper)] })) : placed;
     this.faceIndex = faces?.ready ? faceGiftIndex(this.gifts) : -1;
     if (this.faceIndex >= 0) this.gifts[this.faceIndex] = { ...this.gifts[this.faceIndex], paper: FACE_PAPER };
     const lt = lighting(sc);

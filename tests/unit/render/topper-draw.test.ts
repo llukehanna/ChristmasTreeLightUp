@@ -5,7 +5,7 @@ import { SCENES } from '../../../src/render/scenes';
 import * as beatFx from '../../../src/render/beat-fx';
 import { NOD_DIP, NOD_MS } from '../../../src/render/beat-fx';
 import { drawStarBody } from '../../../src/render/effects';
-import { drawArt } from '../../../src/render/topper-art';
+import { drawArt, starTint } from '../../../src/render/topper-art';
 import { BURST_MS, FADE_MS, FLIP_MS, Topper, WOBBLE_MS } from '../../../src/render/topper';
 import type { TopperKind } from '../../../src/store/look';
 
@@ -247,7 +247,7 @@ describe('the nod (secret mode)', () => {
 });
 
 describe('the other toppers', () => {
-  const KINDS: readonly TopperKind[] = ['star', 'snowflake', 'angel', 'bow'];
+  const KINDS: readonly TopperKind[] = ['star', 'silverstar', 'goldstar', 'snowflake', 'angel', 'bow'];
 
   it('each kind draws its own art, not the star body', () => {
     const t = new Topper();
@@ -256,6 +256,38 @@ describe('the other toppers', () => {
     expect(drawStarBody).not.toHaveBeenCalled();
     expect(drawArt).toHaveBeenCalled();
     expect(vi.mocked(drawArt).mock.calls[0][0]).toBe('snowflake');
+  });
+
+  it('the silver and gold stars are the star recoloured: its body in their own glass and light, never the art', () => {
+    for (const kind of ['silverstar', 'goldstar'] as const) {
+      vi.mocked(drawStarBody).mockClear();
+      const t = new Topper();
+      t.setKind(kind);
+      t.prepare(L, sc);
+      frame(t, 1000);
+      expect(drawArt, kind).not.toHaveBeenCalled();
+      expect(drawStarBody, kind).toHaveBeenCalledTimes(1);
+      const drawn = vi.mocked(drawStarBody).mock.calls[0][2];
+      expect(drawn, kind).toBe(starTint(sc, kind));
+      expect([drawn.starOff, drawn.starEdge, drawn.core, drawn.glow], kind).not.toEqual([sc.starOff, sc.starEdge, sc.core, sc.glow]);
+      // The rest of the scene is the scene's.
+      expect(drawn.bulbs).toBe(sc.bulbs);
+      // The win's halo and flare (drawStarGlow) take the star's light too.
+      expect(t.tint(sc), kind).toBe(drawn);
+    }
+    expect(starTint(sc, 'silverstar').glow).not.toBe(starTint(sc, 'goldstar').glow);
+  });
+
+  it('the gold star keeps the daylight edge readable on Frost', () => {
+    expect(starTint(SCENES.frost, 'goldstar').starEdge).toBe(SCENES.frost.starEdge);
+  });
+
+  it('the star and the art toppers keep the scene for the halo', () => {
+    for (const kind of ['star', 'angel', 'snowflake', 'bow'] as const) {
+      const t = new Topper();
+      t.setKind(kind);
+      expect(t.tint(sc), kind).toBe(sc);
+    }
   });
 
   it('a flip from the snowflake to the head shows the snowflake leaving', async () => {

@@ -39,8 +39,14 @@ it('Try it: a decoration is switched on, a slot the look has takes the value; on
   expect(tryPatch(look, itemOf('topper:star')!)).toEqual({ topper: 'star' });
   expect(tryPatch(look, itemOf('presents:luxe')!)).toEqual({ presents: 'luxe' });
   expect(tryPatch(look, itemOf('palette:gilded')!)).toEqual({ palette: 'gilded' });
-  // Not in the look yet (Milestone 2): a palette it can't hold, a tree, a sound.
-  expect(tryPatch(look, itemOf('palette:candy')!)).toBeNull();
+  // Task 7's: the new bulbs, garlands, tags, wrappings, stars and Neon bright.
+  expect(tryPatch(look, itemOf('palette:candy')!)).toEqual({ palette: 'candy' });
+  expect(tryPatch(look, itemOf('garland:gold')!)).toEqual({ garland: 'gold' });
+  expect(tryPatch(look, itemOf('tag:holly')!)).toEqual({ tag: 'holly' });
+  expect(tryPatch(look, itemOf('presents:goldfoil')!)).toEqual({ presents: 'goldfoil' });
+  expect(tryPatch(look, itemOf('topper:goldstar')!)).toEqual({ topper: 'goldstar' });
+  expect(tryPatch(look, itemOf('path:neonbright')!)).toEqual({ path: 'neonbright' });
+  // Not in the look yet (Task 8): a tree, a sound.
   expect(tryPatch(look, itemOf('tree:flocked')!)).toBeNull();
   expect(tryPatch(look, itemOf('sound:rain')!)).toBeNull();
 });
@@ -173,6 +179,7 @@ it('a pick names the slots it changed and the decorations it switched on', () =>
   expect(picked(before, { ...before, topper: 'star', decor: { ...before.decor, tinsel: true } })).toEqual(['topper:star', 'decor:tinsel']);
   expect(picked(before, { ...before, decor: { ...before.decor, skirt: false } })).toEqual([]);
   expect(picked(before, before)).toEqual([]);
+  expect(picked(before, { ...before, garland: 'ice', tag: 'frost' })).toEqual(['garland:ice', 'tag:frost']);
 });
 
 it('a new tree ends the run: the held look applies, and the ribbon waits for a tag', () => {

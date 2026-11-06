@@ -63,7 +63,14 @@ describe.runIf(process.env.BUILD_TEST === '1')('the build (BUILD_TEST=1)', () =>
         }
       },
     };
-    await build({ root: ROOT, logLevel: 'silent', plugins: [record], build: { outDir: out, emptyOutDir: true, manifest: true } });
+    // As `npm run build` does: Vite keeps vitest's NODE_ENV (test), and would build with import.meta.env.DEV true.
+    const env = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      await build({ root: ROOT, logLevel: 'silent', plugins: [record], build: { outDir: out, emptyOutDir: true, manifest: true } });
+    } finally {
+      process.env.NODE_ENV = env;
+    }
     manifest = JSON.parse(readFileSync(join(out, '.vite/manifest.json'), 'utf8')) as Record<string, ManifestChunk>;
   }, 120_000);
 
@@ -103,6 +110,14 @@ describe.runIf(process.env.BUILD_TEST === '1')('the build (BUILD_TEST=1)', () =>
     expect(entry.dynamicImports ?? []).toContain('src/eggs/eggs.ts');
     const eggs = modules.get(manifest['src/eggs/eggs.ts'].file) ?? [];
     for (const m of MOVED) expect(eggs).toContain(m);
+  });
+
+  it("the production build has no wardrobe preview (?wardrobe=all is a dev build's alone)", () => {
+    const assets = join(out, 'assets');
+    const js = readdirSync(assets).filter((f) => f.endsWith('.js')).map((f) => readFileSync(join(assets, f), 'utf8')).join('\n');
+    // The module that holds the preview is in the build (its storage key is), and the preview isn't.
+    expect(js).toContain('aglow.unlocks');
+    expect(js).not.toContain('wardrobe');
   });
 
   it(`the entry chunk is under ${ENTRY_MAX / 1000} kB raw`, () => {

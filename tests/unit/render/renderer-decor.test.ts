@@ -69,7 +69,7 @@ afterEach(() => {
 });
 
 it('decorations are painted into the tree layer, which is drawn before the wires', () => {
-  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, pile: Infinity };
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, garland: STARTER_LOOK.garland, pile: Infinity };
   const r = new Renderer(document.createElement('canvas'));
   tree = (r as unknown as { tree: HTMLCanvasElement }).tree;
   r.setScene(SCENES.midnight);
@@ -96,7 +96,7 @@ it('decorations are painted into the tree layer, which is drawn before the wires
 });
 
 it('turning the decorations off repaints the tree layer without them', () => {
-  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, pile: Infinity };
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, garland: STARTER_LOOK.garland, pile: Infinity };
   const r = new Renderer(document.createElement('canvas'));
   tree = (r as unknown as { tree: HTMLCanvasElement }).tree;
   r.resize(1280, 800, 1);
@@ -107,7 +107,7 @@ it('turning the decorations off repaints the tree layer without them', () => {
 });
 
 it('the share image keeps the skirt: with it on the crop reaches its lowest paint, with it off it is unchanged', () => {
-  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, pile: Infinity };
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, garland: STARTER_LOOK.garland, pile: Infinity };
   const r = new Renderer(document.createElement('canvas'));
   r.setScene(SCENES.midnight);
   r.resize(1280, 800, 2);
@@ -126,7 +126,7 @@ it('the share image keeps the skirt: with it on the crop reaches its lowest pain
 });
 
 it('with no presents the share rectangle is the tree alone', () => {
-  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: 'game', pile: Infinity };
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: 'game', garland: STARTER_LOOK.garland, pile: Infinity };
   const r = new Renderer(document.createElement('canvas'));
   r.setScene(SCENES.midnight);
   r.resize(1280, 800, 2);
@@ -157,7 +157,7 @@ it('with no presents the share rectangle is the tree alone', () => {
 });
 
 it("a dress change keeps the Sash's backdrop and its snow; a resize or a change of scene paints it afresh", () => {
-  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, pile: Infinity };
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, garland: STARTER_LOOK.garland, pile: Infinity };
   vi.stubGlobal('DOMMatrix', class { a = 1; b = 0; c = 0; d = 1; e = 0; f = 0; }); // jsdom has none (the snow's sheets use one)
   const r = new Renderer(document.createElement('canvas'));
   const backdrop = () => (r as unknown as { backdrop: unknown }).backdrop;
@@ -216,7 +216,7 @@ it("swapping between the rooms live paints each one afresh, and a resize re-bake
 });
 
 it('setDress says whether it repainted: a real change does, the same dress or a palette alone (the scene carries it) does not', () => {
-  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, pile: Infinity };
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, garland: STARTER_LOOK.garland, pile: Infinity };
   const r = new Renderer(document.createElement('canvas'));
   r.setScene(SCENES.midnight);
   r.resize(1280, 800, 1);
@@ -228,4 +228,21 @@ it('setDress says whether it repainted: a real change does, the same dress or a 
   expect(r.setDress({ ...dress, palette: 'ice', topper: 'angel', presents: 'luxe' })).toBe(true);
   expect(r.setDress({ ...dress, palette: 'ice', topper: 'angel', presents: 'luxe', decor: { ...NO_DECOR, beads: true } })).toBe(true);
   expect(repaint).toHaveBeenCalledTimes(3);
+});
+
+it('a garland change alone repaints the garland, never the tree layer', () => {
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents, garland: 'game', pile: Infinity };
+  const r = new Renderer(document.createElement('canvas'));
+  tree = (r as unknown as { tree: HTMLCanvasElement }).tree;
+  r.resize(1280, 800, 1);
+  r.setDress(dress);
+  logs.clear();
+  const paint = vi.spyOn(r.garland, 'paint');
+  const set = vi.spyOn(r.garland, 'setSet');
+  expect(r.setDress({ ...dress, garland: 'gold' })).toBe(true);
+  expect(set).toHaveBeenLastCalledWith('gold');
+  expect(paint).toHaveBeenCalledTimes(1);
+  expect(logs.has(tree)).toBe(false);
+  expect(r.setDress({ ...dress, garland: 'gold' })).toBe(false);
+  expect(paint).toHaveBeenCalledTimes(1);
 });

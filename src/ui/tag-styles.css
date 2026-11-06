@@ -1,0 +1,85 @@
+/*
+ * The results tag's styles (season two, Parts C2+C3): each changes the tag's paper and its ribbon, and nothing else. The
+ * paper runs from --tag-paper-hi at the top to --tag-paper-lo at the foot, under a faint --tag-print; the ribbon is a
+ * short satin band threaded down through the eyelet (styles.css draws them all). Every paper stays light enough that the
+ * tag's own inks keep 4.5:1 down to its darkest stop (tests/unit/ui/tag-styles.test.ts), and every print is faint enough
+ * that it never competes with the words.
+ */
+
+.results[data-tag='silver'] {
+  --tag-paper-hi: #f7f8fa; --tag-paper-lo: #e1e6ec;
+  --tag-print: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0 2px, transparent 2px 7px);
+  --tag-ribbon: #8d99a8; --tag-ribbon-hi: #dfe6ee;
+}
+
+.results[data-tag='goldfoil'] {
+  --tag-paper-hi: #fcf3d6; --tag-paper-lo: #f0dfae;
+  --tag-print: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.4) 45%, transparent 60%);
+  --tag-ribbon: #b8862e; --tag-ribbon-hi: #f6dc98;
+}
+
+.results[data-tag='velvet'] {
+  --tag-paper-hi: #fbf0f0; --tag-paper-lo: #f0dcdd;
+  --tag-print: radial-gradient(rgba(122, 15, 30, 0.035) 1px, transparent 1px) 0 0 / 3px 3px;
+  --tag-ribbon: #7a0f1e; --tag-ribbon-hi: #c23446;
+}
+
+.results[data-tag='tartan'] {
+  --tag-paper-hi: #f7f1e4; --tag-paper-lo: #ede2cc;
+  --tag-print: repeating-linear-gradient(0deg, rgba(158, 27, 38, 0.05) 0 6px, transparent 6px 22px), repeating-linear-gradient(90deg, rgba(31, 74, 51, 0.05) 0 6px, transparent 6px 22px);
+  --tag-ribbon: #9e1b26; --tag-ribbon-hi: #d8505a;
+}
+
+.results[data-tag='holly'] {
+  --tag-paper-hi: #f9f5e9; --tag-paper-lo: #ece4cc;
+  --tag-print: radial-gradient(circle, rgba(178, 32, 44, 0.12) 1.5px, transparent 2px) 0 0 / 26px 26px, radial-gradient(circle, rgba(31, 90, 52, 0.08) 2px, transparent 2.5px) 13px 13px / 26px 26px;
+  --tag-ribbon: #1f5a34; --tag-ribbon-hi: #4f9a68;
+}
+
+.results[data-tag='plaid'] {
+  --tag-paper-hi: #f8f2e9; --tag-paper-lo: #eee3d4;
+  --tag-print: repeating-linear-gradient(0deg, rgba(179, 32, 44, 0.06) 0 10px, transparent 10px 20px), repeating-linear-gradient(90deg, rgba(179, 32, 44, 0.06) 0 10px, transparent 10px 20px);
+  --tag-ribbon: #b3202c; --tag-ribbon-hi: #e8606a;
+}
+
+.results[data-tag='ember'] {
+  --tag-paper-hi: #fdf3e8; --tag-paper-lo: #f3e0ca;
+  --tag-print: radial-gradient(circle, rgba(232, 110, 40, 0.14) 1px, transparent 1.5px) 0 0 / 17px 19px;
+  --tag-ribbon: #c4501c; --tag-ribbon-hi: #f29a5a;
+}
+
+.results[data-tag='frost'] {
+  --tag-paper-hi: #f5f9fc; --tag-paper-lo: #e1eaf2;
+  --tag-print: radial-gradient(60% 40% at 15% 85%, rgba(255, 255, 255, 0.55), transparent 70%), radial-gradient(50% 35% at 88% 12%, rgba(255, 255, 255, 0.5), transparent 70%);
+  --tag-ribbon: #6f9cc2; --tag-ribbon-hi: #cfe4f4;
+}
+
+.results[data-tag='gingerbread'] {
+  --tag-paper-hi: #faefdf; --tag-paper-lo: #f0dcbf;
+  --tag-print: radial-gradient(circle, rgba(255, 255, 255, 0.75) 1.2px, transparent 1.6px) 0 0 / 14px 14px;
+  --tag-ribbon: #8a5a2e; --tag-ribbon-hi: #c89564;
+}
+
+.results[data-tag='snowflake'] {
+  --tag-paper-hi: #f7fafc; --tag-paper-lo: #e5edf3;
+  --tag-print: radial-gradient(circle, rgba(63, 111, 154, 0.08) 1.5px, transparent 2px) 0 0 / 22px 22px;
+  --tag-ribbon: #3f6f9a; --tag-ribbon-hi: #8ab4d8;
+}
+
+.results[data-tag='kraft'] {
+  --tag-paper-hi: #f3e8d2; --tag-paper-lo: #e8d6b6;
+  --tag-print: repeating-linear-gradient(80deg, rgba(110, 80, 40, 0.04) 0 1px, transparent 1px 4px);
+  --tag-ribbon: #8a6a42; --tag-ribbon-hi: #c8ab7e;
+}
+
+.results[data-tag='candystripe'] {
+  --tag-paper-hi: #fcf9f6; --tag-paper-lo: #f2e9e2;
+  --tag-print: repeating-linear-gradient(135deg, rgba(200, 32, 46, 0.06) 0 6px, transparent 6px 16px);
+  --tag-ribbon: #c8202e; --tag-ribbon-hi: #f2737c;
+}
+
+.results[data-tag='starry'] {
+  --tag-paper-hi: #f4f5fa; --tag-paper-lo: #e2e5f1;
+  --tag-print: radial-gradient(circle, rgba(201, 162, 74, 0.35) 0.8px, transparent 1.2px) 0 0 / 19px 23px, radial-gradient(circle, rgba(201, 162, 74, 0.25) 0.6px, transparent 1px) 9px 11px / 23px 19px;
+  --tag-ribbon: #1f2a5a; --tag-ribbon-hi: #5a6aa8;
+}

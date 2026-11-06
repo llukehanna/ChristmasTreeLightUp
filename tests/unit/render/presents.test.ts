@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GRID } from '../../../src/core/mask';
 import type { FaceSprites } from '../../../src/render/face-sprites';
 import { computeLayout, tileAt, Y } from '../../../src/render/layout';
-import { paintSetGift } from '../../../src/render/present-sets';
-import { FACE_PAPER, giftBounds, placePresents, Presents, tileRects } from '../../../src/render/presents';
+import { paintSetGift, SET_PAPERS } from '../../../src/render/present-sets';
+import { FACE_PAPER, giftBounds, PAPERS, placePresents, Presents, tileRects } from '../../../src/render/presents';
 import { SCENES } from '../../../src/render/scenes';
 
 // The real set painter, with its calls noted (a test may silence it to see what the game's own box draws).
@@ -168,6 +168,36 @@ describe('present sets', () => {
       }
     });
   }
+
+  for (const set of ['silver', 'tartan', 'starry', 'candystripe', 'goldfoil'] as const) {
+    it(`${set} wraps the game's boxes in its own six papers, where they stand`, () => {
+      paintSet.mockImplementation(() => {});
+      const game = new Presents();
+      game.layout(L, GRID, SCENES.midnight, null, 'game');
+      const p = new Presents();
+      p.layout(L, GRID, SCENES.midnight, null, set);
+      expect(SET_PAPERS[set]).toHaveLength(6);
+      expect(p.gifts.length).toBe(6);
+      expect(paintSet).not.toHaveBeenCalled();
+      expect(curves()).toBeGreaterThan(0);
+      p.gifts.forEach((g, i) => {
+        expect(g.paper).toBe(SET_PAPERS[set][PAPERS.indexOf(game.gifts[i].paper)]);
+        expect({ ...g, paper: null }).toEqual({ ...game.gifts[i], paper: null });
+      });
+    });
+  }
+
+  it('Tartan, Starry and Candy stripe carry their own prints', () => {
+    const prints = (set: keyof typeof SET_PAPERS) => new Set(SET_PAPERS[set].map((p) => p.pattern));
+    expect(prints('tartan').has('check')).toBe(true);
+    expect(prints('starry').has('stars')).toBe(true);
+    expect(prints('candystripe').has('candy')).toBe(true);
+    for (const set of ['tartan', 'starry', 'candystripe'] as const) {
+      counts.clear();
+      new Presents().layout(L, GRID, SCENES.frost, null, set);
+      expect(counts.get('clip') ?? 0, set).toBeGreaterThan(0);
+    }
+  });
 
   it('a pile of n keeps the first n gifts where they stand', () => {
     const full = new Presents();

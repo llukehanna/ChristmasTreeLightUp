@@ -8,13 +8,16 @@
  */
 import { itemOf, type ItemDef, type ItemId } from '../core/catalogue';
 import { GOALS, type GoalDef, type GoalId, type GoalState } from '../core/goals';
+import { GARLAND_SETS } from '../render/garland-sets';
 import { computeLayout } from '../render/layout';
-import { PALETTES } from '../render/palettes';
+import { PALETTES, withPalette } from '../render/palettes';
 import type { PathStyle } from '../render/paths';
 import { SCENES, type SceneId } from '../render/scenes';
-import { effectiveLook, type Decor, type Look, type PaletteId, type PresentSet, type TopperKind } from '../store/look';
+import {
+  effectiveLook, type Decor, type GarlandSet, type Look, type PaletteId, type PresentSet, type TagStyle, type TopperKind,
+} from '../store/look';
 import type { SavedLook } from '../store/saved-looks';
-import { BOW_ART, DECOR_ART, PATH_ART, PRESENT_ART, SCENE_ART, TOPPER_ART } from './decorate-art';
+import { BOW_ART, DECOR_ART, garlandArt, PATH_ART, PRESENT_ART, SCENE_ART, TAG_ART, TOPPER_ART } from './decorate-art';
 import { count, formatMs } from './format';
 
 export interface DecorateHandlers {
@@ -61,13 +64,16 @@ const GOAL: ReadonlyMap<GoalId, GoalDef> = new Map(GOALS.map((g) => [g.id, g]));
  * progress hasn't loaded sees the goal alone. A secret stays "???" until it is done.
  */
 export function lockText(goal: GoalDef, state: GoalState | null, guest: boolean): string {
-  if (goal.kind === 'secret' && !state?.done) return '???';
+  if (goal.kind === 'secret' && !state?.done) return SECRET;
   if (guest && goal.kind !== 'milestone') return `${goal.text} · Sign in to track`;
   if (state === null || state.done) return goal.text;
   if (goal.kind === 'speed' || goal.kind === 'ao5') return state.have > 0 ? `${goal.text} · best ${formatMs(state.have)}` : goal.text;
   // A one-off goal has nothing to count.
   return goal.need > 1 ? `${goal.text} · ${count(state.have)}/${count(goal.need)}` : goal.text;
 }
+
+/** What a secret's locked swatch says, to the eye and to assistive tech. */
+const SECRET = '???';
 
 /** A small padlock over a locked swatch's dimmed art. Static markup. */
 const LOCK_ART =
@@ -77,14 +83,31 @@ const SLOTS = [0, 1, 2] as const;
 const SCENE_ITEMS: readonly [SceneId, string][] = [
   ['fireside', 'Fireside'], ['midnight', 'Midnight'], ['sash', 'Sash'], ['square', 'Town square'], ['parlour', 'Parlour'], ['frost', 'Frost'],
 ];
-const PATH_ITEMS: readonly [PathStyle, string][] = [['filament', 'Filament'], ['fairy', 'Fairy lights'], ['neon', 'Neon']];
+const PATH_ITEMS: readonly [PathStyle, string][] = [['filament', 'Filament'], ['fairy', 'Fairy lights'], ['neon', 'Neon'], ['neonbright', 'Neon bright']];
 const BULB_ITEMS: readonly [PaletteId, string][] = [
-  ['scene', 'Scene'], ['gilded', 'Gilded'], ['classic', 'Classic'], ['ice', 'Ice'], ['goldsilver', 'Gold & silver'], ['pastel', 'Pastel'],
+  ['scene', 'Scene'], ['gilded', 'Gilded'], ['golden', 'Golden'], ['classic', 'Classic'], ['candy', 'Candy'], ['emerald', 'Emerald'],
+  ['ice', 'Ice'], ['snow', 'Snow'], ['sapphire', 'Sapphire'], ['goldsilver', 'Gold & silver'], ['pastel', 'Pastel'], ['peppermint', 'Peppermint'],
+  ['rosegold', 'Rose gold'], ['copper', 'Copper'], ['disco', 'Disco'],
 ];
-const TOPPER_ITEMS: readonly [TopperKind, string][] = [['snowflake', 'Snowflake'], ['star', 'Star'], ['angel', 'Angel'], ['bow', 'Bow']];
+// The game's garland wears the tree's own bulbs: "Matching".
+const GARLAND_ITEMS: readonly [GarlandSet, string][] = [
+  ['game', 'Matching'], ['candlelight', 'Candlelight'], ['gold', 'Gold'], ['mercury', 'Mercury'], ['champagne', 'Champagne'], ['silver', 'Silver'],
+  ['ice', 'Ice'], ['pastel', 'Pastel'], ['classic', 'Classic'], ['peppermint', 'Peppermint'], ['rosegold', 'Rose gold'],
+];
+const TOPPER_ITEMS: readonly [TopperKind, string][] = [
+  ['snowflake', 'Snowflake'], ['star', 'Star'], ['silverstar', 'Silver star'], ['goldstar', 'Gold star'], ['angel', 'Angel'], ['bow', 'Bow'],
+];
 const DECOR_ITEMS: readonly [keyof Decor, string][] = [['tinsel', 'Tinsel'], ['beads', 'Beads'], ['canes', 'Candy canes'], ['skirt', 'Skirt']];
 // The game's own set shows as "Festive", so it doesn't clash with the Classic bulbs.
-const PRESENT_ITEMS: readonly [PresentSet, string][] = [['none', 'None'], ['game', 'Festive'], ['luxe', 'Luxe'], ['kraft', 'Kraft']];
+const PRESENT_ITEMS: readonly [PresentSet, string][] = [
+  ['none', 'None'], ['game', 'Festive'], ['luxe', 'Luxe'], ['kraft', 'Kraft'], ['silver', 'Silver'], ['tartan', 'Tartan'], ['starry', 'Starry'],
+  ['candystripe', 'Candy stripe'], ['goldfoil', 'Gold foil'],
+];
+const TAG_ITEMS: readonly [TagStyle, string][] = [
+  ['plain', 'Plain'], ['silver', 'Silver'], ['goldfoil', 'Gold foil'], ['velvet', 'Velvet'], ['tartan', 'Tartan'], ['holly', 'Holly'], ['plaid', 'Plaid'],
+  ['ember', 'Ember'], ['frost', 'Frost'], ['gingerbread', 'Gingerbread'], ['snowflake', 'Snowflake'], ['kraft', 'Kraft'], ['candystripe', 'Candy stripe'],
+  ['starry', 'Starry night'],
+];
 
 /** The pointer events the remap re-sends in stage coordinates while the stage is scaled into its frame. */
 const REMAPPED = ['pointerdown', 'pointermove', 'pointerup', 'contextmenu', 'click', 'wheel'] as const;
@@ -100,6 +123,8 @@ export class Decorate {
   private tiles: Tile[] = [];
   /** The Scene bulbs swatch's dots: they show the current scene's own colours. */
   private sceneDots: HTMLElement[] = [];
+  /** The Matching garland swatch's bulbs: they show the bulbs on the tree (the scene's, or the look's palette). */
+  private matchDots: SVGElement[] = [];
   private worldLine: HTMLElement | null = null;
   /** The line above the footer that spells out a locked swatch's goal. */
   private hint: HTMLElement | null = null;
@@ -185,12 +210,15 @@ export class Decorate {
       t.b.classList.toggle('deco-locked', lock !== null);
       t.lock.hidden = lock === null;
       t.label.textContent = lock ?? t.item.label;
-      // Still a button (a press spells out the goal), so its name says it is locked rather than aria-disabled.
+      // Still a button (a press spells out the goal), so its name says it is locked rather than aria-disabled. A secret's
+      // name stays a secret: it says "???" as its label does.
       if (lock === null) t.b.removeAttribute('aria-label');
-      else t.b.setAttribute('aria-label', `${t.item.label}, locked: ${lock}`);
+      else t.b.setAttribute('aria-label', lock === SECRET ? `${SECRET}, locked` : `${t.item.label}, locked: ${lock}`);
     }
     const own = SCENES[shown.scene].bulbs;
     this.sceneDots.forEach((b, i) => b.style.setProperty('--c', own[i % own.length]));
+    const tree = withPalette(SCENES[shown.scene], shown.palette).bulbs;
+    this.matchDots.forEach((b, i) => b.style.setProperty('--c', tree[i % tree.length]));
     this.worldLine!.hidden = this.h.world() === null;
     this.renderLooks();
   }
@@ -393,17 +421,20 @@ export class Decorate {
       const id = `${key}:${v}`;
       return { id, def: itemOf(id), label, art, on, patch };
     };
-    const items = <V extends string>(list: readonly [V, string][], art: (v: V) => string, key: 'scene' | 'path' | 'palette' | 'topper' | 'presents'): Item[] =>
+    type Key = 'scene' | 'path' | 'palette' | 'topper' | 'presents' | 'garland' | 'tag';
+    const items = <V extends string>(list: readonly [V, string][], art: (v: V) => string, key: Key): Item[] =>
       list.map(([v, label]) => item(key, v, label, art(v), (l) => l[key] === v, () => ({ [key]: v }) as Partial<Look>));
     body.append(
       this.section('Scene', 'Where it stands', 'scene', 4, items(SCENE_ITEMS, (v) => SCENE_ART[v], 'scene')),
       this.section('Light path', 'What the wires become', 'strand', 3, items(PATH_ITEMS, (v) => PATH_ART[v], 'path')),
       this.section('Bulbs', 'Their colours', 'pal', 3, items(BULB_ITEMS, () => '<span class="deco-pal"></span>', 'palette')),
+      this.section('Garland', 'Across the top', 'garl', 3, items(GARLAND_ITEMS, garlandArt, 'garland')),
       this.section('Topper', 'Crowning the tree', 'top', 4, items(TOPPER_ITEMS, (v) => TOPPER_ART[v], 'topper')),
       this.section('Decorations', 'Mix and match', 'decor', 4,
         // The toggle flips one flag of the saved look, so a locked decoration it has on stays on.
         DECOR_ITEMS.map(([k, label]) => item('decor', k, label, DECOR_ART[k], (l) => l.decor[k], (l) => ({ decor: { ...l.decor, [k]: !l.decor[k] } })))),
       this.section('Presents', 'Under the tree', 'gift', 4, items(PRESENT_ITEMS, (v) => PRESENT_ART[v], 'presents')),
+      this.section('Tag', 'Your results', 'tag', 4, items(TAG_ITEMS, (v) => TAG_ART[v], 'tag')),
     );
     // The bulbs: six lit drops each, the Scene swatch's in the current scene's colours (sync).
     body.querySelectorAll<HTMLElement>('.deco-pal').forEach((pal, i) => {
@@ -415,6 +446,12 @@ export class Decorate {
         pal.append(b);
       }
     });
+    // The garlands: each bulb in its set's colour, the Matching one's in the tree's bulbs (sync).
+    for (const [id] of GARLAND_ITEMS) {
+      const bulbs = [...body.querySelectorAll<SVGElement>(`.deco-sw[data-id="garland:${id}"] .deco-garl-g`)];
+      if (id === 'game') this.matchDots.push(...bulbs);
+      else bulbs.forEach((b, k) => b.style.setProperty('--c', GARLAND_SETS[id][k]));
+    }
     document.body.append(root);
     this.root = root;
   }

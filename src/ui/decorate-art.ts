@@ -3,8 +3,9 @@
  * (src/lab/menus-art.ts): only the swatches for what the drawer offers. Built once, when the module loads.
  */
 import type { PathStyle } from '../render/paths';
+import { SET_PAPERS, type PaperSet } from '../render/present-sets';
 import type { SceneId } from '../render/scenes';
-import type { Decor, PresentSet, TopperKind } from '../store/look';
+import type { Decor, PresentSet, TagStyle, TopperKind } from '../store/look';
 
 let n = 0;
 /** Gives every `P-` id and `#P-` reference in an SVG string its own prefix, so swatches never share gradients. */
@@ -264,20 +265,33 @@ export const PATH_ART: Record<PathStyle, string> = {
     `<g filter="url(#P-bb)"><path d="M4 12Q42 40 80 12" fill="none" stroke="#ff3fa8" stroke-width="7" opacity=".8"/></g>
     <path d="M4 12Q42 40 80 12" fill="none" stroke="#ff7cc8" stroke-width="3"/><path d="M4 12Q42 40 80 12" fill="none" stroke="#ffe6f6" stroke-width="1.1"/>`,
   ),
+  // Neon at full strength: a wider, brighter bloom (twice over) and a wider tube.
+  neonbright: svg(
+    '0 0 84 44',
+    `<g filter="url(#P-bb)"><path d="M4 12Q42 40 80 12" fill="none" stroke="#ff3fa8" stroke-width="10"/><path d="M4 12Q42 40 80 12" fill="none" stroke="#ff5cb8" stroke-width="5"/></g>
+    <path d="M4 12Q42 40 80 12" fill="none" stroke="#ff8ad0" stroke-width="3.6"/><path d="M4 12Q42 40 80 12" fill="none" stroke="#fff4fa" stroke-width="1.6"/>`,
+  ),
 };
 
 /* ---------------- toppers (56×56) ---------------- */
 
-export const TOPPER_ART: Record<TopperKind, string> = {
-  star: svg(
+/** The star in a halo of `glow`, its points shaded from `hi` through `mid` to `lo`, with a `core` at the heart. */
+const star = (glow: string, hi: string, mid: string, lo: string, core: string): string =>
+  svg(
     '0 0 56 56',
-    `<defs><radialGradient id="P-g" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffd27a" stop-opacity=".75"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/></radialGradient>
-    <linearGradient id="P-s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff4cf"/><stop offset=".5" stop-color="#f0c060"/><stop offset="1" stop-color="#a8701e"/></linearGradient></defs>
+    `<defs><radialGradient id="P-g" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="${glow}" stop-opacity=".75"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient>
+    <linearGradient id="P-s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${hi}"/><stop offset=".5" stop-color="${mid}"/><stop offset="1" stop-color="${lo}"/></linearGradient></defs>
     <circle cx="28" cy="28" r="22" fill="url(#P-g)"/>
     <path d="M28 4L30.2 25.8 52 28 30.2 30.2 28 52 25.8 30.2 4 28 25.8 25.8Z" fill="url(#P-s)"/>
     <path d="M28 14L29.4 26.6 42 28 29.4 29.4 28 42 26.6 29.4 14 28 26.6 26.6Z" transform="rotate(45 28 28)" fill="url(#P-s)" opacity=".9"/>
-    <circle cx="28" cy="28" r="2.4" fill="#fffbe8"/>`,
-  ),
+    <circle cx="28" cy="28" r="2.4" fill="${core}"/>`,
+  );
+
+export const TOPPER_ART: Record<TopperKind, string> = {
+  star: star('#ffd27a', '#fff4cf', '#f0c060', '#a8701e', '#fffbe8'),
+  // The star recoloured (src/render/topper-art.ts STAR_TINTS): cool silver, and a deeper, richer gold.
+  silverstar: star('#b4cbe8', '#ffffff', '#c9d4e2', '#6f7c8c', '#f6f9ff'),
+  goldstar: star('#ffb92e', '#fff0b0', '#ffbf2e', '#9a5a0c', '#fff4c8'),
   angel: svg(
     '0 0 56 56',
     `<defs><radialGradient id="P-g" cx=".5" cy=".45" r=".5"><stop offset="0" stop-color="#fff0c8" stop-opacity=".7"/><stop offset="1" stop-color="#fff0c8" stop-opacity="0"/></radialGradient>
@@ -399,6 +413,16 @@ const gifts = (boxes: readonly Box[]): string =>
     ${boxes.map(box).join('')}`,
   );
 
+/** A set that wraps the game's boxes in its own papers: the three boxes in the papers that stand for the game's (0, 1, 3). */
+const papered = (set: PaperSet): string => {
+  const p = SET_PAPERS[set];
+  return gifts([
+    { x: 6, w: 20, h: 16, paper: p[0].base, ribbon: p[0].ribbon },
+    { x: 24, w: 15, h: 22, paper: p[1].base, ribbon: p[1].ribbon },
+    { x: 38, w: 20, h: 13, paper: p[3].base, ribbon: p[3].ribbon },
+  ]);
+};
+
 export const PRESENT_ART: Record<PresentSet, string> = {
   // An empty floor under the tree: the tree's warm pool of light and a faint hem where the boxes would stand.
   none: svg(
@@ -421,7 +445,66 @@ export const PRESENT_ART: Record<PresentSet, string> = {
     { x: 24, w: 15, h: 22, paper: '#7a5a39', ribbon: '#c8343c', twine: true },
     { x: 38, w: 20, h: 13, paper: '#9a7650', ribbon: '#efe2c4', twine: true },
   ]),
+  silver: papered('silver'),
+  tartan: papered('tartan'),
+  starry: papered('starry'),
+  candystripe: papered('candystripe'),
+  goldfoil: papered('goldfoil'),
 };
+
+/* ---------------- garland (84×44) ---------------- */
+
+/**
+ * A swag of six C9 bulbs. Each bulb's colour is its group's `--c` (decorate.css paints `.deco-garl-b` in it): the drawer
+ * sets them from the set, or, for the game's, from the bulbs on the tree. One per swatch, each with its own filter id.
+ */
+export function garlandArt(): string {
+  const bulbs = Array.from({ length: 6 }, (_, i) => {
+    const [x, y] = quad(0.08 + (0.84 * i) / 5, 4, 8, 42, 30, 80, 8);
+    // Lit like the stage's garland: a halo, the glass, a hot white core and a specular.
+    return `<g class="deco-garl-g"><g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(1.25)">
+      <circle cy="7" r="6" class="deco-garl-b" opacity=".7" filter="url(#P-b)"/>
+      <rect x="-1.6" y="-.5" width="3.2" height="3" rx=".6" fill="#163a25"/>
+      <path d="M-1.8 2.4C-3.6 3.6-3.2 7.6-.8 10.6Q0 11.4.8 10.6C3.2 7.6 3.6 3.6 1.8 2.4Z" class="deco-garl-b"/>
+      <ellipse cy="6" rx="1.2" ry="2" fill="#fff" opacity=".55" filter="url(#P-b)"/>
+      <ellipse cx="-.9" cy="5" rx=".45" ry="1.6" fill="#fff" opacity=".75"/></g></g>`;
+  });
+  return svg('0 0 84 44', `<path d="M4 8Q42 30 80 8" fill="none" stroke="#0e2416" stroke-width="1.2"/>${bulbs.join('')}`);
+}
+
+/* ---------------- results tag (56×44) ---------------- */
+
+/** Each tag style's paper (top to foot) and ribbon, as tag-styles.css sets them (tests/unit/ui/tag-styles.test.ts). */
+const TAGS: Record<TagStyle, readonly [string, string, string]> = {
+  plain: ['#f9efdc', '#efdcbc', '#c49440'],
+  silver: ['#f7f8fa', '#e1e6ec', '#8d99a8'],
+  goldfoil: ['#fcf3d6', '#f0dfae', '#b8862e'],
+  velvet: ['#fbf0f0', '#f0dcdd', '#7a0f1e'],
+  tartan: ['#f7f1e4', '#ede2cc', '#9e1b26'],
+  holly: ['#f9f5e9', '#ece4cc', '#1f5a34'],
+  plaid: ['#f8f2e9', '#eee3d4', '#b3202c'],
+  ember: ['#fdf3e8', '#f3e0ca', '#c4501c'],
+  frost: ['#f5f9fc', '#e1eaf2', '#6f9cc2'],
+  gingerbread: ['#faefdf', '#f0dcbf', '#8a5a2e'],
+  snowflake: ['#f7fafc', '#e5edf3', '#3f6f9a'],
+  kraft: ['#f3e8d2', '#e8d6b6', '#8a6a42'],
+  candystripe: ['#fcf9f6', '#f2e9e2', '#c8202e'],
+  starry: ['#f4f5fa', '#e2e5f1', '#1f2a5a'],
+};
+
+/** A small tag: its paper, the ribbon through the eyelet (the plain tag has a gold string), and two lines of ink. */
+const tag = ([hi, lo, ribbon]: readonly [string, string, string]): string =>
+  svg(
+    '0 0 56 44',
+    `<defs><linearGradient id="P-p" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hi}"/><stop offset="1" stop-color="${lo}"/></linearGradient></defs>
+    <path d="M17 6h22l6 5v28H11V11z" fill="#000" opacity=".35" transform="translate(0 1.5)" filter="url(#P-b)"/>
+    <path d="M17 6h22l6 5v28H11V11z" fill="url(#P-p)"/>
+    <path d="M28 0v12" stroke="${ribbon}" stroke-width="3"/>
+    <circle cx="28" cy="12" r="1.9" fill="#3a1a0c" stroke="#e2b560" stroke-width=".8"/>
+    <path d="M20 22h16M23 28h10" stroke="#7d1420" stroke-width="1.6" stroke-linecap="round" opacity=".75"/>`,
+  );
+
+export const TAG_ART = Object.fromEntries(Object.entries(TAGS).map(([k, v]) => [k, tag(v)])) as Record<TagStyle, string>;
 
 /** The drawer's gold bow, over its ribbon band, with its own gradient ids. */
 export const BOW_ART = uniq(`<svg class="deco-bow" viewBox="0 0 64 40" aria-hidden="true" focusable="false">

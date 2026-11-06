@@ -4,6 +4,7 @@ import './ui/account.css';
 import './ui/frost-pause.css';
 import './ui/key-card.css';
 import './ui/decorate.css';
+import './ui/tag-styles.css';
 import { App } from './app';
 import { installDebugHook } from './debug';
 

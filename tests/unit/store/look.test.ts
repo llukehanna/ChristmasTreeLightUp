@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest';
+import { ITEMS } from '../../../src/core/catalogue';
 import { effectiveLook, NO_DECOR, STARTER_LOOK, loadLook, parseLook, saveLook, worldLook, type Look } from '../../../src/store/look';
 
 beforeEach(() => {
@@ -76,4 +77,31 @@ it('effectiveLook: starter values need no item, a palette falls back alone, and 
   const l = effectiveLook(saved, (id) => id === 'decor:tinsel' || id === 'decor:canes');
   expect(l).toEqual({ ...STARTER_LOOK, decor: { ...NO_DECOR, tinsel: true } });
   expect(effectiveLook(saved, () => true)).toEqual(saved);
+});
+
+it('the starter look hangs the game garland and the plain tag', () => {
+  expect(STARTER_LOOK).toMatchObject({ garland: 'game', tag: 'plain' });
+  expect(parseLook({ ...STARTER_LOOK, garland: undefined, tag: undefined })).toEqual(STARTER_LOOK);
+});
+it('parseLook keeps a valid garland and tag and drops unknown ones', () => {
+  expect(parseLook({ ...STARTER_LOOK, garland: 'champagne', tag: 'velvet' })).toMatchObject({ garland: 'champagne', tag: 'velvet' });
+  expect(parseLook({ ...STARTER_LOOK, garland: 'tinsel', tag: 7 })).toEqual(STARTER_LOOK);
+});
+it('parseLook accepts every value the catalogue names for a Look slot (the catalogue and the look cannot drift)', () => {
+  const slots = ['scene', 'path', 'palette', 'topper', 'presents', 'garland', 'tag'] as const;
+  const named = ITEMS.filter((i) => (slots as readonly string[]).includes(i.slot));
+  expect(named.length).toBeGreaterThan(40);
+  for (const i of named) expect(parseLook({ ...STARTER_LOOK, [i.slot]: i.value })[i.slot as (typeof slots)[number]], i.id).toBe(i.value);
+});
+it('effectiveLook locks the garland and the tag', () => {
+  const saved: Look = { ...STARTER_LOOK, garland: 'gold', tag: 'holly' };
+  expect(effectiveLook(saved, () => false)).toMatchObject({ garland: 'game', tag: 'plain' });
+  expect(effectiveLook(saved, (id) => id === 'tag:holly')).toMatchObject({ garland: 'game', tag: 'holly' });
+  expect(effectiveLook(saved, (id) => id === 'garland:gold')).toMatchObject({ garland: 'gold', tag: 'plain' });
+  expect(saved).toMatchObject({ garland: 'gold', tag: 'holly' });
+});
+it('the egg worlds reset the garland and the tag too', () => {
+  const mine: Look = { ...STARTER_LOOK, garland: 'pastel', tag: 'ember', palette: 'disco', topper: 'goldstar' };
+  for (const w of ['secret', 'home-alone'] as const) expect(worldLook(mine, w)).toMatchObject({ garland: 'game', tag: 'plain', palette: 'scene' });
+  expect(worldLook(mine, 'secret').topper).toBe('goldstar');
 });

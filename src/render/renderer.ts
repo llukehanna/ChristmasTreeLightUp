@@ -22,7 +22,7 @@ import { paintBackground } from './paint-background';
 import { paintTree } from './paint-tree';
 import type { PizzaSprite } from './pizza';
 import { STARTER_LOOK, type Dress } from '../store/look';
-import { TwinkleClock, drawLitCore, drawLitGlow, drawUnlit, type PathStyle } from './paths';
+import { TwinkleClock, drawLitCore, drawLitGlow, drawUnlit, neonFlicker, NEON_TUNE, type PathStyle } from './paths';
 import { Presents } from './presents';
 import { Topper } from './topper';
 import { QualityGovernor } from './quality';
@@ -110,7 +110,10 @@ export class Renderer {
   scene: Scene = SCENES.fireside;
   style: PathStyle = 'filament';
   /** What the tree is dressed with, from the look (src/store/look.ts). */
-  private dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: STARTER_LOOK.decor, presents: STARTER_LOOK.presents, pile: Infinity };
+  private dress: Dress = {
+    palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: STARTER_LOOK.decor, presents: STARTER_LOOK.presents,
+    garland: STARTER_LOOK.garland, pile: Infinity,
+  };
   readonly quality = new QualityGovernor();
   private readonly snow = new Snowfall();
   private readonly embers = new Embers();
@@ -194,19 +197,28 @@ export class Renderer {
   }
 
   /**
-   * The tree's dress: the topper, decorations and presents are drawn from it. The palette is kept but never read here:
-   * it reaches the stage as the scene's colours (setScene), so a palette alone repaints nothing. Says whether it
+   * The tree's dress: the topper, decorations, presents and garland are drawn from it. The palette is kept but never read
+   * here: it reaches the stage as the scene's colours (setScene), so a palette alone repaints nothing. Says whether it
    * repainted (a change, on a sized stage), so the share image can follow.
    */
   setDress(d: Dress): boolean {
     const same = this.dress.topper === d.topper && this.dress.presents === d.presents && this.dress.pile === d.pile &&
       (Object.keys(d.decor) as (keyof Dress['decor'])[]).every((k) => this.dress.decor[k] === d.decor[k]);
+    const garland = this.dress.garland !== d.garland;
     this.dress = d;
-    if (same) return false;
+    this.garland.setSet(d.garland);
+    if (same && !garland) return false;
     this.topper.setKind(d.topper);
     if (!this.sized) return false;
-    this.repaint();
+    // A garland alone repaints just its own back layer (its dark glass).
+    if (same) this.paintGarland(this.readyFaces());
+    else this.repaint();
     return true;
+  }
+
+  /** Neon bright's stutter as tile `i`'s tube comes on (1: steady); never under reduced motion. */
+  private flicker(vis: VisualState, i: number, now: number, reduced: boolean): number {
+    return this.style === 'neonbright' && NEON_TUNE.neonbright.flicker && !reduced ? neonFlicker(now - (vis.litStart[i] + TILE_FILL_MS)) : 1;
   }
 
   /** Secret mode: the aurora scene is up. */
@@ -276,8 +288,12 @@ export class Renderer {
   private layFaces(): void {
     const faces = this.readyFaces();
     this.presents.layout(this.layout, GRID, this.scene, faces, this.dress.presents, this.dress.pile);
-    this.garland.paint(this.scene, this.layout.dpr, faces && this.eggs ? this.eggs.faces.faceGarlandIndex(this.garland.geo) : -1);
+    this.paintGarland(faces);
     this.faced = faces !== null;
+  }
+
+  private paintGarland(faces: FaceSprites | null): void {
+    this.garland.paint(this.scene, this.layout.dpr, faces && this.eggs ? this.eggs.faces.faceGarlandIndex(this.garland.geo) : -1);
   }
 
   /** The faces, in secret mode with the sticker loaded (and the eggs: the faces are one); else null. */
@@ -458,10 +474,11 @@ export class Renderer {
       if (alpha <= 0) continue;
       if (q >= 1 && board.lighting.lit[i]) visLit++;
       const prims = tileGeometry(board.bits[i], board.lighting.entry[i]);
+      const flicker = this.flicker(vis, i, now, f.reducedMotion);
       g.save();
       g.translate(cx, cy);
       g.scale(k, k);
-      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT });
+      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT, flicker });
       if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i, pulse) * alpha, s);
       g.restore();
       if (q >= 1 && board.lighting.lit[i] && !won) drawFrontier(g, board, L, i, now, sc, false);
@@ -481,7 +498,7 @@ export class Renderer {
     // A tap on the star, or the topper's flip, flares the halo for a moment (not the topper's own brightness).
     const kick = this.topper.glowKick(now);
     st.glow += kick;
-    drawStarGlow(g, L, sc, st, won);
+    drawStarGlow(g, L, this.topper.tint(sc), st, won);
     st.glow -= kick;
     this.topper.drawGlow(g, L, sc, st, won, litFrac, now, f.winAt, f.reducedMotion, dpr * GLOW_SCALE * cam.scale);
     this.current.draw(g, board, L, s * SPARKS.glowR, SPARKS.glowA, now);
@@ -524,10 +541,11 @@ export class Renderer {
       const [cx, cy] = tileCenter(L, GRID, i);
       const k = f.reducedMotion ? 1 : vis.settleScale(i, now);
       const prims = tileGeometry(board.bits[i], board.lighting.entry[i]);
+      const flicker = this.flicker(vis, i, now, f.reducedMotion);
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(k, k);
-      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT });
+      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT, flicker });
       if (degree(board.solution[i]) === 1 && q >= 1) {
         const amt = this.bulbAmount(f, i, pulse) * alpha;
         const face = i === faceTile && faces ? faces.get('ornament', facePx, true) : null;

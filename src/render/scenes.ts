@@ -1,4 +1,4 @@
-import type { PathStyle } from './paths';
+import type { WireStyle } from './paths';
 
 /** The menu's scenes. Secret mode's aurora (spec 2026-10-08 secret mode §2) is not one of them. */
 export type SceneId = 'midnight' | 'fireside' | 'frost' | 'sash' | 'square' | 'parlour';
@@ -27,7 +27,7 @@ export interface Unlit {
 }
 
 /** The same unlit palette for every path style. */
-const everyStyle = (u: Unlit): Readonly<Record<PathStyle, Unlit>> => ({ filament: u, fairy: u, neon: u });
+const everyStyle = (u: Unlit): Readonly<Record<WireStyle, Unlit>> => ({ filament: u, fairy: u, neon: u });
 
 export interface Scene {
   id: SceneId | 'aurora' | 'home-alone';
@@ -37,8 +37,8 @@ export interface Scene {
   needleA: Rgb;
   needleB: Rgb;
   trunk: string;
-  /** Unlit palette and treatment per path style (Frost picks a different one per style). */
-  unlit: Readonly<Record<PathStyle, Unlit>>;
+  /** Unlit palette and treatment per wire (Frost picks a different one per wire); read through paths.ts's unlitOf. */
+  unlit: Readonly<Record<WireStyle, Unlit>>;
   /** 0 = dark coloured glass for unlit bulbs; above 0, lifts it toward pale frosted glass with a rim (daylight). */
   bulbFrost: number;
   core: string;

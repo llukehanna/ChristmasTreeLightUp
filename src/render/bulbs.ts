@@ -1,6 +1,6 @@
 import { D, L, U } from '../core/dirs';
 import { hexRgb, mix, rgba, shade } from './color';
-import { GLINT_NEAR, GLINT_WIDE, type PathStyle } from './paths';
+import { GLINT_NEAR, GLINT_WIDE, unlitOf, type PathStyle } from './paths';
 import type { Scene } from './scenes';
 
 const TAU = Math.PI * 2;
@@ -58,7 +58,7 @@ export function drawBulb(c: CanvasRenderingContext2D, b: number, color: string, 
 
 /** An unlit bulb on a glint-treated style gets the same soft snow-glint halo as its wire. */
 function drawBulbUnder(c: CanvasRenderingContext2D, r: number, a: number, sc: Scene, style: PathStyle, s: number): void {
-  if (sc.unlit[style].look !== 'glint') return;
+  if (unlitOf(sc, style).look !== 'glint') return;
   const gx = -Math.cos(a) * r * 0.12;
   const gy = -Math.sin(a) * r * 0.12;
   c.fillStyle = GLINT_WIDE;

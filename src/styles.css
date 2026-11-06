@@ -201,6 +201,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 
 /* ---------- results: gift tag ---------- */
 .results {
+  /* The plain tag's paper and print, and no ribbon: a tag style (tag-styles.css) sets its own. */
+  --tag-paper-hi: #f9efdc; --tag-paper-lo: #efdcbc; --tag-print: repeating-linear-gradient(90deg, rgba(120, 80, 30, 0.018) 0 1px, transparent 1px 3px);
+  --tag-ribbon: transparent; --tag-ribbon-hi: transparent;
   position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom)); transform: translate(-50%, 24px);
   width: min(420px, calc(100vw - 32px)); padding: 46px 24px 18px; border-radius: 10px 10px 18px 18px; text-align: center;
   color: #3a1a0e; border: 0; background: none; isolation: isolate;
@@ -209,13 +212,14 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
   opacity: 0; transition: opacity 0.7s, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60, 70, 0.3)) drop-shadow(0 2px 5px rgba(40, 60, 70, 0.22)); }
-/* The tag itself: cream card with notched top corners. */
+/* The tag itself: a card with notched top corners, its ribbon threaded down through the eyelet. */
 .results::after {
   content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
   background:
+    linear-gradient(90deg, transparent calc(50% - 5px), var(--tag-ribbon) calc(50% - 5px), var(--tag-ribbon-hi) 50%, var(--tag-ribbon) calc(50% + 5px), transparent calc(50% + 5px)) 0 0 / 100% 21px no-repeat,
     radial-gradient(120% 55% at 50% 0%, rgba(255, 255, 255, 0.6), transparent 70%),
-    repeating-linear-gradient(90deg, rgba(120, 80, 30, 0.018) 0 1px, transparent 1px 3px),
-    linear-gradient(180deg, #f9efdc, #efdcbc);
+    var(--tag-print),
+    linear-gradient(180deg, var(--tag-paper-hi), var(--tag-paper-lo));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -24px 40px -26px rgba(120, 70, 20, 0.28);
   clip-path: polygon(14% 0, 86% 0, 100% 9%, 100% 100%, 0 100%, 0 9%);
 }
@@ -227,8 +231,8 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 }
 .results.show { opacity: 1; transform: translate(-50%, 0); }
 .results h2 { margin: 0; font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400; font-size: 40px; line-height: 1.05; color: #7d1420; }
-.results .daily { margin-bottom: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #9a6a2a; }
-.results .merry { margin-top: 2px; font: italic 400 17px 'Instrument Serif', serif; color: #9a6a2a; }
+.results .daily { margin-bottom: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #7c521c; }
+.results .merry { margin-top: 2px; font: italic 400 17px 'Instrument Serif', serif; color: #7c521c; }
 .results .badge {
   display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;
   background: linear-gradient(180deg, #c8323b, #9a1a26); color: #fff3de; box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35);
@@ -236,7 +240,7 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 .results .badge.quiet { background: rgba(122, 70, 30, 0.12); color: #6b3a1c; font-weight: 500; box-shadow: none; }
 .results .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin: 20px 0 18px; padding: 14px 0; border-top: 1px solid rgba(122, 70, 30, 0.22); border-bottom: 1px solid rgba(122, 70, 30, 0.22); }
 .results .stats b { display: block; font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.results .stats span { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
+.results .stats span { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.7; }
 .results .actions { display: flex; gap: 8px; }
 .results .actions button { all: unset; flex: 1; cursor: pointer; padding: 12px; border-radius: 12px; font-size: 13px; font-weight: 600; background: rgba(122, 70, 30, 0.12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4); }
 .results .actions button:hover { background: rgba(122, 70, 30, 0.18); }
@@ -272,7 +276,7 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 @media (prefers-reduced-motion: reduce) {
   .results .hector.still { transition: opacity 0.35s !important; }
 }
-.results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.6; }
+.results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.7; }
 /* The unlock line, under the rank strip, in the tag's own ink; its buttons are links with a 24px target (as Retry). */
 .results .unlock { margin-top: 6px; font-size: 12.5px; color: #7a4a22; }
 .results .unlock b { font-weight: 600; color: #7d1420; }

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { ITEMS } from '../../../src/core/catalogue';
 import { GOALS, type GoalId, type GoalState } from '../../../src/core/goals';
+import { GARLAND_SETS } from '../../../src/render/garland-sets';
+import { PALETTES } from '../../../src/render/palettes';
 import { Decorate, lockText, type DecorateHandlers } from '../../../src/ui/decorate';
 import { NO_DECOR, STARTER_LOOK, type Look } from '../../../src/store/look';
 
@@ -52,21 +55,58 @@ function make(look: Look = LOOK, world: ReturnType<DecorateHandlers['world']> = 
   return { d, h, sections, tiles, label, tile };
 }
 
-it('six sections in order, with the current look pressed', () => {
+it('eight sections in order, with the current look pressed', () => {
   const { sections, tiles, label } = make();
-  expect(sections.map((s) => s.querySelector('h3 span')!.textContent)).toEqual(['Scene', 'Light path', 'Bulbs', 'Topper', 'Decorations', 'Presents']);
+  expect(sections.map((s) => s.querySelector('h3 span')!.textContent)).toEqual(['Scene', 'Light path', 'Bulbs', 'Garland', 'Topper', 'Decorations', 'Presents', 'Tag']);
+  expect(sections.map((s) => s.querySelector('h3 em')!.textContent)).toContain('Across the top');
+  expect(sections.map((s) => s.querySelector('h3 em')!.textContent)).toContain('Your results');
   expect(sections.map((s) => tiles(s).map(label))).toEqual([
     ['Fireside', 'Midnight', 'Sash', 'Town square', 'Parlour', 'Frost'],
-    ['Filament', 'Fairy lights', 'Neon'],
-    ['Scene', 'Gilded', 'Classic', 'Ice', 'Gold & silver', 'Pastel'],
-    ['Snowflake', 'Star', 'Angel', 'Bow'],
+    ['Filament', 'Fairy lights', 'Neon', 'Neon bright'],
+    ['Scene', 'Gilded', 'Golden', 'Classic', 'Candy', 'Emerald', 'Ice', 'Snow', 'Sapphire', 'Gold & silver', 'Pastel', 'Peppermint', 'Rose gold', 'Copper', 'Disco'],
+    ['Matching', 'Candlelight', 'Gold', 'Mercury', 'Champagne', 'Silver', 'Ice', 'Pastel', 'Classic', 'Peppermint', 'Rose gold'],
+    ['Snowflake', 'Star', 'Silver star', 'Gold star', 'Angel', 'Bow'],
     ['Tinsel', 'Beads', 'Candy canes', 'Skirt'],
-    ['None', 'Festive', 'Luxe', 'Kraft'],
+    ['None', 'Festive', 'Luxe', 'Kraft', 'Silver', 'Tartan', 'Starry', 'Candy stripe', 'Gold foil'],
+    ['Plain', 'Silver', 'Gold foil', 'Velvet', 'Tartan', 'Holly', 'Plaid', 'Ember', 'Frost', 'Gingerbread', 'Snowflake', 'Kraft', 'Candy stripe', 'Starry night'],
   ]);
   const pressed = sections.map((s) => tiles(s).filter((b) => b.getAttribute('aria-pressed') === 'true').map(label));
-  expect(pressed).toEqual([['Sash'], ['Neon'], ['Ice'], ['Bow'], ['Beads'], ['Festive']]);
+  expect(pressed).toEqual([['Sash'], ['Neon'], ['Ice'], ['Matching'], ['Bow'], ['Beads'], ['Festive'], ['Plain']]);
   // No tree section and no Surprise button from the lab.
   expect(document.querySelector('[data-act="surprise"]')).toBeNull();
+});
+
+it('a swatch for every catalogue item whose slot the drawer shows (the catalogue and the art cannot drift)', () => {
+  make();
+  const shown = new Set(['scene', 'path', 'palette', 'garland', 'topper', 'decor', 'presents', 'tag']);
+  const items = ITEMS.filter((i) => shown.has(i.slot));
+  expect(items.length).toBeGreaterThan(60);
+  for (const i of items) expect(byId(i.id), i.id).not.toBeNull();
+  // Each swatch has its art: no empty thumbnails.
+  for (const b of document.querySelectorAll<HTMLElement>('.deco-sw')) expect(b.querySelector('.deco-sw-art')!.children.length, b.dataset.id).toBeGreaterThan(1);
+});
+
+it('a garland and a tag pick send one field; the Matching garland shows the bulbs on the tree', () => {
+  const { h, tile, sections } = make();
+  byId('garland:champagne').click();
+  byId('tag:velvet').click();
+  expect(vi.mocked(h.onLook).mock.calls).toEqual([[{ garland: 'champagne' }], [{ tag: 'velvet' }]]);
+  expect(tile('Matching').dataset.id).toBe('garland:game');
+  const dots = (id: string) => [...byId(id).querySelectorAll<HTMLElement>('[style]')].map((n) => n.style.getPropertyValue('--c'));
+  // LOOK has the Ice bulbs: the Matching garland wears them; a set wears its own.
+  expect(dots('garland:game')).toEqual([...PALETTES.ice]);
+  expect(dots('garland:gold')).toEqual([...GARLAND_SETS.gold]);
+  expect(sections).toHaveLength(8);
+});
+
+it("a locked secret's swatch says ??? to assistive tech too, never its name", () => {
+  make(LOOK, null, { owns: (id) => !['palette:disco', 'tag:plaid', 'tag:ember'].includes(id) });
+  for (const id of ['palette:disco', 'tag:plaid', 'tag:ember']) {
+    const b = byId(id);
+    expect(b.querySelector('.deco-sw-l')!.textContent).toBe('???');
+    expect(b.getAttribute('aria-label'), id).toBe('???, locked');
+    expect(b.textContent).not.toMatch(/Disco|Plaid|Ember/);
+  }
 });
 
 it('a pick calls onLook with one field, and a decoration toggles one flag', () => {
@@ -75,7 +115,7 @@ it('a pick calls onLook with one field, and a decoration toggles one flag', () =
   tile('Fairy lights').click();
   tile('Gilded').click();
   tile('Angel').click();
-  tile('Kraft').click();
+  byId('presents:kraft').click();
   tile('Tinsel').click();
   tile('Beads').click();
   expect(vi.mocked(h.onLook).mock.calls).toEqual([
@@ -98,7 +138,7 @@ it('sync presses what the look now holds, and the Scene bulbs follow the scene',
   const sashDots = sceneDots();
   look = { ...LOOK, scene: 'frost', presents: 'none', decor: NO_DECOR };
   d.sync();
-  expect(pressed()).toEqual(['Frost', 'Neon', 'Ice', 'Bow', 'None']);
+  expect(pressed()).toEqual(['Frost', 'Neon', 'Ice', 'Matching', 'Bow', 'None', 'Plain']);
   expect(sceneDots()).not.toEqual(sashDots);
   expect(sceneDots()).toHaveLength(6);
 });

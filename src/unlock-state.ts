@@ -13,6 +13,12 @@ const ordered = (ids: Iterable<ItemId>): ItemId[] => {
 };
 
 /**
+ * Luke's preview of the wardrobe: `?wardrobe=all` owns every item, on a dev build alone. The app passes
+ * `import.meta.env.DEV`, which a production build replaces with false, so the check (and this word) never ships.
+ */
+export const previewAll = (dev: boolean, search: string): boolean => dev && new URLSearchParams(search).get('wardrobe') === 'all';
+
+/**
  * What the player owns (season two, Parts C2+C3): the server's set (or this player's cached one, until it arrives) with
  * what this device's own trees earn. Guests earn milestones only, from this device (Decision 8). Kept per player on the
  * device (src/store/unlocks.ts), with what they have been told of. Never touches the saved look: the app shows
@@ -26,10 +32,11 @@ export class UnlockState {
   private rec: UnlockRecord = { earned: [], known: [], seen: [], synced: false, treesLit: 0 };
   private earned: ReadonlySet<ItemId> = new Set();
 
-  constructor(private readonly h: { onChange(): void }) {}
+  /** `all`: the dev preview (previewAll): everything is owned, though nothing is earned, announced or saved for it. */
+  constructor(private readonly h: { onChange(): void }, private readonly all = false) {}
 
   owns(id: ItemId): boolean {
-    return this.earned.has(id);
+    return this.all || this.earned.has(id);
   }
 
   /** How far along a goal is; null for what a guest's device can't tell (all but the milestones). */

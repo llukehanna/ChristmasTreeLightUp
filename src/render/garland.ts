@@ -1,4 +1,6 @@
+import type { GarlandSet } from '../store/look';
 import { mix, rgba, shade } from './color';
+import { GARLAND_SETS } from './garland-sets';
 import type { Scene } from './scenes';
 
 /**
@@ -143,6 +145,18 @@ export class Garland {
   face = -1;
   private knockK = -1;
   private knockAt = Number.NEGATIVE_INFINITY;
+  /** The look's garland set's colours, or null for the game's: the scene's bulbs (src/render/garland-sets.ts). */
+  private colours: readonly string[] | null = null;
+
+  /** The look's garland set. Call paint after it: the dark glass is in the back layer. */
+  setSet(set: GarlandSet): void {
+    this.colours = set === 'game' ? null : GARLAND_SETS[set];
+  }
+
+  private colour(k: number, sc: Scene): string {
+    const c = this.colours ?? sc.bulbs;
+    return c[k % c.length];
+  }
 
   layout(w: number, s: number, chromeBottom: number): void {
     const prev = this.onAt;
@@ -290,7 +304,7 @@ export class Garland {
       c.translate(b.x, b.y);
       c.rotate(b.angle);
       this.socket(c, g.size, day);
-      if (k !== this.face) this.glassUnlit(c, sc.bulbs[k % sc.bulbs.length], g.size, day);
+      if (k !== this.face) this.glassUnlit(c, this.colour(k, sc), g.size, day);
       c.restore();
     }
     c.restore();
@@ -303,7 +317,7 @@ export class Garland {
       const a = this.amount(k, now, winAt, reduced);
       if (a <= 0) continue;
       const b = g.bulbs[k];
-      const col = sc.bulbs[k % sc.bulbs.length];
+      const col = this.colour(k, sc);
       const cy = glassCentre(g.size);
       const x = b.x - Math.sin(b.angle) * cy;
       const y = b.y + Math.cos(b.angle) * cy;
@@ -326,7 +340,7 @@ export class Garland {
       const a = this.amount(k, now, winAt, reduced);
       if (a <= 0 || k === this.face) continue;
       const b = g.bulbs[k];
-      const col = sc.bulbs[k % sc.bulbs.length];
+      const col = this.colour(k, sc);
       c.save();
       c.translate(b.x, b.y);
       c.rotate(b.angle);

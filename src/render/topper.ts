@@ -3,10 +3,10 @@ import type * as BeatFx from './beat-fx';
 import { drawStarBody, easeOutBack, foil, ignitePop, STAR_V, type StarState } from './effects';
 import { X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
-import { drawArt, drawArtGlow, prepareArt } from './topper-art';
+import { drawArt, drawArtGlow, isStar, prepareArt, starTint } from './topper-art';
 
 /**
- * The tree's topper: the look's (the star, a snowflake, an angel or a bow; src/render/topper-art.ts), or (the star-head
+ * The tree's topper: the look's (a star, silver or gold, a snowflake, an angel or a bow; topper-art.ts), or (the star-head
  * egg, 2026-10-08) Luke's sticker of his head in a Santa hat. Five quick taps on the topper (or typing "hohoho") flip
  * one for the other like a coin. The head follows the star's rules: dim before the win, a little brighter as the tree
  * lights, then it ignites with the star's halo and pop, and sways.
@@ -346,7 +346,12 @@ export class Topper {
 
   /** Builds the current kind's sprites for the layout and scene (on a resize, a scene or a palette change). */
   prepare(L: Layout, sc: Scene): void {
-    if (this.kind !== 'star') prepareArt(this.kind, L.s, L.dpr, sc);
+    if (!isStar(this.kind)) prepareArt(this.kind, L.s, L.dpr, sc);
+  }
+
+  /** The scene the star's halo and win flare (drawStarGlow) are drawn in: the silver or gold star's light, else the scene's. */
+  tint(sc: Scene): Scene {
+    return isStar(this.kind) ? starTint(sc, this.kind) : sc;
   }
 
   /** Puts a face on top at once (the stored preference at start). */
@@ -475,12 +480,12 @@ export class Topper {
   /**
    * The topper's glow on the glow layer (pass 1). The head's aura: its silhouette in the scene's glow colour, which the
    * bloom softens into a halo hugging the sticker, as bright as the head is lit. The other kinds' own glow
-   * (drawArtGlow), turned and squeezed with the face. The star needs none: its own glow is drawStarGlow's (which the
-   * renderer draws behind every kind).
+   * (drawArtGlow), turned and squeezed with the face. The stars need none: their glow is drawStarGlow's (which the
+   * renderer draws behind every kind, in the star's light: tint).
    */
   drawGlow(g: CanvasRenderingContext2D, L: Layout, sc: Scene, st: StarState, won: boolean, litFrac: number, now: number, winAt: number | null, reduced: boolean, px: number): void {
     const kind = this.kind;
-    if (kind !== 'star') {
+    if (!isStar(kind)) {
       const p = this.place(L, st, won, now, reduced);
       const alpha = p.fade >= 0
         ? (this.standIn(this.head) ? p.fade : 0) + (this.standIn(this.from) ? 1 - p.fade : 0)
@@ -557,7 +562,7 @@ export class Topper {
       // The look's topper (or the head's stand-in when the sticker can't be had).
       c.rotate(angle);
       c.scale(sx, 1);
-      if (this.kind === 'star') drawStarBody(c, s, sc, body.on);
+      if (isStar(this.kind)) drawStarBody(c, s, starTint(sc, this.kind), body.on);
       else drawArt(this.kind, c, s, sc, body, won, litFrac, now);
       c.restore();
       return;
@@ -575,7 +580,10 @@ export class Topper {
     c.restore();
   }
 
-  /** The edge, seen only as the face turns nearly edge-on (`sx` its width): gold for the look's topper, the sticker's white border for the head. */
+  /**
+   * The edge, seen only as the face turns nearly edge-on (`sx` its width): gold for the look's topper (silver for the
+   * silver star), the sticker's white border for the head.
+   */
   private rim(c: CanvasRenderingContext2D, s: number, head: boolean, sx: number): void {
     const half = head ? HEAD_H * s * 0.4 : s * 0.66;
     const mid = head ? (HEAD_TOP + HEAD_H / 2) * s : 0;
@@ -587,10 +595,11 @@ export class Topper {
     c.beginPath();
     c.moveTo(0, mid - half);
     c.lineTo(0, mid + half);
-    c.strokeStyle = head ? '#cfc6b8' : '#b07c26';
+    const silver = !head && this.kind === 'silverstar';
+    c.strokeStyle = head ? '#cfc6b8' : silver ? '#8e9aa8' : '#b07c26';
     c.lineWidth = w;
     c.stroke();
-    c.strokeStyle = head ? '#fffaf0' : '#ffe7a6';
+    c.strokeStyle = head ? '#fffaf0' : silver ? '#eef3f8' : '#ffe7a6';
     c.lineWidth = w * 0.42;
     c.stroke();
     c.restore();
