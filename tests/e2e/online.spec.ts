@@ -236,6 +236,32 @@ test.describe('the Daily Tree', () => {
     expect(bodies.length).toBe(sent);
   });
 
+  test('reload before the first move on the Daily resumes it, pill and all, with no second start', async ({ page }) => {
+    const bodies = starts(page);
+    await ready(page);
+    const id = await dailyTree(page);
+    const sent = bodies.length;
+    await page.reload();
+    await waitInteractive(page);
+    expect((await game(page)).id).toBe(id);
+    await expect(page.locator('#daily-pill')).toBeVisible();
+    await expect(page.locator('#daily-pill')).toHaveText(`Daily Tree · ${(await today(page)).label}`);
+    await page.waitForTimeout(500);
+    expect(bodies.length).toBe(sent);
+    // The resumed log (a reload as its only pause) still verifies: a Daily first attempt, played signed out.
+    await solveByTapping(page);
+    await expect.poll(() => game(page)).toMatchObject({ id, outcome: 'done', reason: 'daily' });
+  });
+
+  test("the menu's Daily Tree row says Played once today's Daily is started", async ({ page }) => {
+    await ready(page);
+    await dailyTree(page);
+    await page.click('#menu-btn');
+    await expect(page.locator('#daily-row')).toBeVisible();
+    await expect(page.locator('#daily-note')).toBeVisible();
+    await expect(page.locator('#daily-note')).toHaveText('Played');
+  });
+
   test('with /api/games failing, the tree is local with no pill, and the next load asks for the Daily again', async ({ page }) => {
     const bodies = starts(page);
     await page.route('**/api/games', (route) => route.abort());

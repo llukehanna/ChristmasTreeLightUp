@@ -32,7 +32,7 @@ import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
 import { landsOnDaily, markDailyStarted } from './store/daily';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
-import { clearGame, loadGame, markReturn, saveGame, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
+import { clearGame, loadGame, markReturn, saveGame, savesAtStart, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { loadLook, saveLook, worldLook, type Look } from './store/look';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
 import { loadStarHead, saveStarHead } from './store/star-head';
@@ -261,6 +261,7 @@ export class App {
       onDecorate: () => this.openDecorate(),
       onNewTree: () => this.newGame(),
       onDaily: () => this.newGame('daily'),
+      dailyPlayed: () => !landsOnDaily(localDay(new Date())),
       needsConfirm: () => this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
       onOpen: () => {
         this.radioPanel.close();
@@ -561,7 +562,9 @@ export class App {
   private async freshTree(kind: 'daily' | 'random' = 'random'): Promise<void> {
     const { board, online } = await this.fetchTree(kind);
     this.starting = false;
-    this.beginGame(performance.now(), board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
+    const now = performance.now();
+    this.beginGame(now, board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
+    if (savesAtStart(online)) this.save(now);
   }
 
   /** N, New tree and the results tag's button give a random tree; the menu's Daily Tree row gives the Daily. */

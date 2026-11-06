@@ -167,10 +167,12 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
 .menu .decorate-btn:hover { background: rgba(255, 220, 160, 0.12); }
 /* Daily Tree: under New tree, a quieter gold-edged row; mid-run it arms the same gold confirm. */
 .menu .daily-row {
-  all: unset; cursor: pointer; text-align: center; padding: 9px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  all: unset; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
   color: #f6d58e; background: rgba(255, 220, 160, 0.06); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.35); transition: background 0.15s;
 }
 .menu .daily-row:hover { background: rgba(255, 220, 160, 0.12); }
+/* "Played": this device has started today's Daily (the row still starts it, as a repeat). The menu's label voice. */
+.menu .daily-row .daily-note { font-size: 10px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; }
 .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
 input[type='range'] { width: 100%; accent-color: var(--accent); }
 .menu input[type='range'], .menu input[type='checkbox'] { accent-color: #e2b25a; }

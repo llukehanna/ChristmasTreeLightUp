@@ -9,7 +9,7 @@ beforeEach(() => {
     <button id="menu-btn"></button>
     <div id="menu" hidden>
       <button id="new-tree">New tree</button>
-      <button id="daily-row"><span>Daily Tree</span></button>
+      <button id="daily-row"><span id="daily-label">Daily Tree</span><span id="daily-note" hidden>Played</span></button>
       <button id="decorate-btn">Decorate</button>
       <button id="keys-row">Keyboard shortcuts</button>
       <input type="range" id="effects-volume" />
@@ -19,12 +19,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-function make(needsConfirm: boolean) {
+function make(needsConfirm: boolean, played: () => boolean = () => false) {
   const onNewTree = vi.fn();
   const onDaily = vi.fn();
-  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, needsConfirm: () => needsConfirm });
+  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, dailyPlayed: played, needsConfirm: () => needsConfirm });
   return { menu, onNewTree, onDaily };
 }
+const label = () => document.getElementById('daily-label')?.textContent;
+const note = () => document.getElementById('daily-note') as HTMLElement;
 
 it('starts a tree at once when no confirm is needed', () => {
   const { menu, onNewTree } = make(false);
@@ -115,13 +117,13 @@ it('mid-run the Daily Tree row asks the same 3 s confirm as New tree, armed on i
   const newTree = document.getElementById('new-tree') as HTMLButtonElement;
   row.click();
   expect(onDaily).not.toHaveBeenCalled();
-  expect(row.textContent).toBe('Tap again to start over');
+  expect(label()).toBe('Tap again to start over');
   expect(row.classList.contains('armed')).toBe(true);
   expect(newTree.textContent).toBe('New tree');
   // New tree is not armed by the Daily's first tap: it arms for itself.
   expect(menu.requestNewTree()).toBe('armed');
   expect(onNewTree).not.toHaveBeenCalled();
-  expect(row.textContent).toBe('Daily Tree');
+  expect(label()).toBe('Daily Tree');
   expect(menu.request('daily')).toBe('armed');
   vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS - 10);
   expect(menu.request('daily')).toBe('started');
@@ -132,4 +134,36 @@ it('mid-run the Daily Tree row asks the same 3 s confirm as New tree, armed on i
   vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS + 10);
   expect(late.menu.request('daily')).toBe('armed');
   expect(late.onDaily).not.toHaveBeenCalled();
+});
+
+it("the Daily Tree row says Played once this device has started today's Daily, checked each time the menu opens", () => {
+  let played = false;
+  const { menu, onDaily } = make(false, () => played);
+  menu.open();
+  expect(note().hidden).toBe(true);
+  menu.close();
+  // Started today's (or midnight passed): the next open shows it.
+  played = true;
+  menu.open();
+  expect(note().hidden).toBe(false);
+  expect(note().textContent).toBe('Played');
+  expect(label()).toBe('Daily Tree');
+  // It still starts the Daily (a repeat).
+  (document.getElementById('daily-row') as HTMLButtonElement).click();
+  expect(onDaily).toHaveBeenCalledTimes(1);
+  // A new day: the note goes at the next open.
+  played = false;
+  menu.open();
+  expect(note().hidden).toBe(true);
+});
+
+it('the Played note steps aside while the row asks to confirm', () => {
+  const { menu } = make(true, () => true);
+  menu.open();
+  menu.request('daily');
+  expect(label()).toBe('Tap again to start over');
+  expect(note().hidden).toBe(true);
+  vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS + 100);
+  expect(label()).toBe('Daily Tree');
+  expect(note().hidden).toBe(false);
 });

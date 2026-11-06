@@ -4,7 +4,7 @@ import { Board } from '../../../src/core/board';
 import { degree, rotCW } from '../../../src/core/dirs';
 import { GRID } from '../../../src/core/mask';
 import { mulberry32 } from '../../../src/core/rng';
-import { clearGame, loadGame, markReturn, saveGame, takeReturn, type GameSnapshot } from '../../../src/store/progress';
+import { clearGame, loadGame, markReturn, saveGame, savesAtStart, takeReturn, type GameSnapshot } from '../../../src/store/progress';
 
 const SNAP: GameSnapshot = { startEpoch: 0, online: null, log: [], won: null };
 
@@ -204,6 +204,18 @@ it('refuses a malformed daily', () => {
     localStorage.setItem('aglow.game', JSON.stringify(raw));
     expect(loadGame(GRID)).toBeNull();
   }
+});
+
+it('a Daily tree begun with no move is restorable (saved from its start: a reload is not a new attempt)', () => {
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: { day: '2026-11-06', past: false, repeat: false } };
+  expect(savesAtStart(online)).toBe(true);
+  // A random tree, online or local, still waits for the first move.
+  expect(savesAtStart({ ...online, daily: null })).toBe(false);
+  expect(savesAtStart(null)).toBe(false);
+  // Just begun: no time on the clock, nothing in the log.
+  const b = Board.random(GRID, mulberry32(4));
+  saveGame(b, 0, { startEpoch: 123, online, log: [], won: null });
+  expect(loadGame(GRID)).toMatchObject({ elapsedMs: 0, startEpoch: 123, online, log: [], won: null });
 });
 
 it('the return marker comes back once', () => {

@@ -8,6 +8,8 @@ export interface MenuHandlers {
   onNewTree(): void;
   /** "Daily Tree" was chosen (and confirmed mid-run): start today's Daily Tree. */
   onDaily(): void;
+  /** This device has already started today's Daily: its row says "Played" (asked each time the menu opens). */
+  dailyPlayed?(): boolean;
   /** True while a game is in progress (New tree and Daily Tree then need a second tap). */
   needsConfirm(): boolean;
   /** The menu is about to open (the app closes the radio panel). */
@@ -27,6 +29,9 @@ export class Menu {
   private readonly button = el('menu-btn');
   private readonly newTree = el('new-tree');
   private readonly daily = el('daily-row');
+  private readonly dailyLabel = el('daily-label');
+  private readonly dailyNote = el('daily-note');
+  private played = false;
   private readonly volume = el<HTMLInputElement>('effects-volume');
   private readonly haptics = el<HTMLInputElement>('haptics');
   /** The row whose first press is waiting for its confirming second one, and until when. */
@@ -72,6 +77,9 @@ export class Menu {
 
   open(): void {
     this.h.onOpen?.();
+    // Asked afresh at each open, so it is right after midnight.
+    this.played = this.h.dailyPlayed?.() ?? false;
+    this.render();
     this.root.hidden = false;
     this.button.setAttribute('aria-expanded', 'true');
     // Focus the first control so keyboard users start inside the dialog.
@@ -132,7 +140,8 @@ export class Menu {
     const armed = this.armed !== null && performance.now() < this.armed.until ? this.armed.action : null;
     this.newTree.textContent = armed === 'new' ? 'Tap again to start over' : 'New tree';
     this.newTree.classList.toggle('armed', armed === 'new');
-    this.daily.textContent = armed === 'daily' ? 'Tap again to start over' : 'Daily Tree';
+    this.dailyLabel.textContent = armed === 'daily' ? 'Tap again to start over' : 'Daily Tree';
     this.daily.classList.toggle('armed', armed === 'daily');
+    this.dailyNote.hidden = !this.played || armed === 'daily';
   }
 }

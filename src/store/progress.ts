@@ -88,6 +88,12 @@ export function saveGame(board: Board, elapsedMs: number, snap: GameSnapshot): v
 
 export const clearGame = (): void => removeKey(KEY);
 
+/**
+ * A Daily tree is saved from the moment it begins, so a reload before the first move resumes the same game (the attempt
+ * is spent at the start: a reload is never a new one). A random tree still waits for the first move.
+ */
+export const savesAtStart = (online: OnlineRun | null): boolean => online?.daily != null;
+
 const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const numOrNull = (x: unknown): boolean => x === null || num(x);
 
