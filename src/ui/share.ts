@@ -1,8 +1,14 @@
 import { formatTime } from '../core/score';
 import { drawBlurred } from '../render/blur';
 import type { Scene } from '../render/scenes';
+import { dailyLabel } from './format';
 
-export const shareText = (seconds: number): string => `Lit the tree in ${formatTime(seconds)} · aglow.lukeghanna.com`;
+/** The share's words; a Daily Tree (its day, YYYY-MM-DD) is named: "Lit the Daily Tree · Nov 6 in 0:42 · …". */
+export const shareText = (seconds: number, daily: string | null = null): string =>
+  `Lit the ${daily ? dailyLabel(daily) : 'tree'} in ${formatTime(seconds)} · aglow.lukeghanna.com`;
+
+/** The share image's line under the time: Home Alone's when there is one, else the Daily Tree's label, else none. */
+export const shareLine = (line: string | null, daily: string | null): string | null => line ?? (daily ? dailyLabel(daily) : null);
 
 const INK: Readonly<Record<Scene['id'], string>> = {
   midnight: '#f3ead8', fireside: '#f4e6cf', frost: '#15261f', sash: '#f3ead8', square: '#f3ead8', parlour: '#f4e6cf', aurora: '#eef0ff',
@@ -28,7 +34,7 @@ function context2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
   return x;
 }
 
-/** 1080×1350 image: blurred scene fill, the player's lit tree, their time, Home Alone's `line` if any, and the URL (spec §6, step 7). */
+/** 1080×1350 image: blurred scene fill, the player's lit tree, their time, a `line` if any (shareLine), and the URL (spec §6, step 7). */
 export async function makeShareImage(stage: HTMLCanvasElement, rect: { x: number; y: number; w: number; h: number }, seconds: number, ink: string, line: string | null = null): Promise<Blob> {
   await document.fonts.load('italic 88px "Instrument Serif"');
   const c = document.createElement('canvas');
@@ -116,8 +122,8 @@ export type ShareOutcome = 'shared' | 'cancelled' | 'copied-image' | 'copied-tex
  * Call it straight from the tap handler. WebKit only allows share and clipboard writes while the tap's user activation
  * lasts, so nothing is awaited before them: the image is prepared ahead, and the clipboard takes it as a promise.
  */
-export async function shareResult(image: ShareImage, seconds: number): Promise<ShareOutcome> {
-  const text = shareText(seconds);
+export async function shareResult(image: ShareImage, seconds: number, daily: string | null = null): Promise<ShareOutcome> {
+  const text = shareText(seconds, daily);
   const file = image.blob && new File([image.blob], 'aglow.png', { type: 'image/png' });
   if (file && navigator.canShare?.({ files: [file] })) {
     try {

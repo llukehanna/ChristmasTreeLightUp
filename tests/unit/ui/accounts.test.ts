@@ -183,3 +183,52 @@ it("a new local day: Today and This week start again from Loading, never yesterd
   clickAct('win-all');
   expect(names()).toEqual(['Nova']);
 });
+
+it('the Daily window fetches the day\'s Daily board, comes first, and is remembered', async () => {
+  calls.board.mockResolvedValue({ rows: [row('Comet', 9_000)], total: 1, you: null });
+  accounts.openBoard();
+  expect(document.querySelector('.acct-wins button')?.textContent).toBe('Daily');
+  clickAct('win-daily');
+  expect(calls.board).toHaveBeenLastCalledWith('daily');
+  expect(pressedWindow()).toBe('Daily');
+  expect(localStorage.getItem('aglow.boardWindow')).toBe('daily');
+  expect((document.activeElement as HTMLElement | null)?.dataset.act).toBe('win-daily');
+  await tick();
+  expect(names()).toEqual(['Comet']);
+  expect(document.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 1 ranked run");
+  // The results tag's Daily rosette opens the Daily window, without changing the remembered one.
+  localStorage.setItem('aglow.boardWindow', 'week');
+  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  fresh.openBoard(null, 'daily');
+  expect(calls.board).toHaveBeenLastCalledWith('daily');
+  expect(localStorage.getItem('aglow.boardWindow')).toBe('week');
+});
+
+it("a new local day: the Daily window starts again from Loading, never yesterday's Daily", async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 10, 6, 23, 50));
+  const note = (): string | null | undefined => document.querySelector('.acct-body .acct-note')?.textContent;
+  localStorage.setItem('aglow.boardWindow', 'daily');
+  const daily = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  calls.board.mockResolvedValueOnce({ rows: [row('Comet', 9_000)], total: 1, you: null });
+  daily.openBoard();
+  expect(calls.board).toHaveBeenLastCalledWith('daily');
+  await tick();
+  expect(names()).toEqual(['Comet']);
+  // An answer asked for before midnight that comes back after it is dropped.
+  const late = deferred<BoardResponse>();
+  calls.board.mockReturnValueOnce(late.promise);
+  clickAct('win-daily');
+  expect(names()).toEqual(['Comet']);
+  vi.setSystemTime(new Date(2026, 10, 7, 0, 5));
+  const fresh = deferred<BoardResponse>();
+  calls.board.mockReturnValueOnce(fresh.promise);
+  daily.openBoard();
+  expect(note()).toBe('Loading…');
+  late.resolve({ rows: [row('Comet', 9_000)], total: 1, you: null });
+  await tick();
+  expect(note()).toBe('Loading…');
+  fresh.resolve({ rows: [], total: 0, you: null });
+  await tick();
+  expect(note()).toBe("No one has lit today's Daily Tree yet.");
+});

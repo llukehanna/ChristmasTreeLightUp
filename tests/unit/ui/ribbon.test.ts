@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import type { FinishResult } from '../../../src/api/types';
-import { renderRibbon, ribbonModel } from '../../../src/ui/ribbon';
+import type { DailyResult, FinishResult } from '../../../src/api/types';
+import { awaitsClaim, renderRibbon, ribbonModel } from '../../../src/ui/ribbon';
 
 const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: true, daily: null, ...over });
 const me = { name: 'Comet', isAdmin: false, starHead: false };
@@ -52,6 +52,61 @@ describe('ribbonModel', () => {
     expect(ribbonModel({ kind: 'unverified' }, null)).toEqual({ kind: 'unranked', why: "couldn't verify this run" });
     expect(ribbonModel({ kind: 'saving' }, null)).toEqual({ kind: 'saving' });
     expect(ribbonModel({ kind: 'failed' }, null)).toEqual({ kind: 'retry', what: 'finish' });
+  });
+});
+
+describe('ribbonModel: the Daily Tree', () => {
+  const day: DailyResult = { day: '2026-11-06', past: false, first: true, rank: 2, total: 9 };
+  /** A Daily run: never ranked on the main board, its own place on the day's board. */
+  const daily = (over: Partial<FinishResult> = {}, d: Partial<DailyResult> = {}): FinishResult =>
+    result({ ranked: false, reason: 'daily', rank: null, best: null, newBest: false, daily: { ...day, ...d }, ...over });
+  const unnamed = { name: null, isAdmin: false, starHead: false };
+
+  it("a named player's first Daily run reads #2 of 9 on today's Daily board", () => {
+    expect(ribbonModel({ kind: 'done', result: daily() }, me)).toEqual({ kind: 'rank', rank: 2, of: 9, best: null, newBest: false, board: 'daily' });
+    // After a claim, the claimed result follows the same rule.
+    expect(ribbonModel({ kind: 'done', result: daily() }, me, { guest: false })).toMatchObject({ kind: 'rank', board: 'daily' });
+  });
+
+  it("a guest's first Daily run offers Save to the Daily board", () => {
+    expect(ribbonModel({ kind: 'done', result: daily() }, null, { guest: true })).toEqual({ kind: 'save', rank: 2, of: 9, signedIn: false, board: 'daily' });
+    expect(ribbonModel({ kind: 'done', result: daily() }, undefined, { guest: true })).toEqual({ kind: 'save', rank: 2, of: 9, signedIn: false, board: 'daily' });
+    // An account without a name: saving is the name card.
+    expect(ribbonModel({ kind: 'done', result: daily() }, unnamed)).toEqual({ kind: 'save', rank: 2, of: 9, signedIn: true, board: 'daily' });
+    expect(ribbonModel({ kind: 'done', result: daily() }, unnamed, { guest: true })).toEqual({ kind: 'save', rank: 2, of: 9, signedIn: true, board: 'daily' });
+  });
+
+  it("a guest's Daily run being claimed: Saving…, Retry or kept, as on the main board; back from Google, no flash of Save", () => {
+    expect(ribbonModel({ kind: 'done', result: daily() }, me, { guest: true })).toEqual({ kind: 'saving' });
+    expect(ribbonModel({ kind: 'done', result: daily() }, me, { guest: true, claim: 'stuck' })).toEqual({ kind: 'retry', what: 'claim' });
+    expect(ribbonModel({ kind: 'done', result: daily() }, me, { guest: true, claim: 'gone' })).toEqual({ kind: 'kept' });
+    expect(ribbonModel({ kind: 'done', result: daily() }, undefined, { guest: true, returning: true })).toEqual({ kind: 'saving' });
+    expect(awaitsClaim(daily(), true)).toBe(true);
+    expect(awaitsClaim(daily(), false)).toBe(false);
+    expect(awaitsClaim(daily({ reason: 'past' }, { past: true, first: false, rank: null }), true)).toBe(false);
+    expect(awaitsClaim(result({ ranked: false, reason: 'anonymous', rank: 5 }), false)).toBe(true);
+    expect(awaitsClaim(result(), true)).toBe(false);
+  });
+
+  it('a repeat reads Unranked: not your first go at this Daily Tree', () => {
+    const repeat = daily({}, { first: false, rank: null });
+    expect(ribbonModel({ kind: 'done', result: repeat }, me)).toEqual({ kind: 'unranked', why: 'not your first go at this Daily Tree' });
+    // A claimed run that wasn't the account's first go at the day reads the same.
+    expect(ribbonModel({ kind: 'done', result: repeat }, me, { guest: false })).toEqual({ kind: 'unranked', why: 'not your first go at this Daily Tree' });
+    const root = tag();
+    renderRibbon(root, ribbonModel({ kind: 'done', result: repeat }, me), handlers());
+    expect(root.querySelector('.rib-line')?.textContent).toBe('Unranked: not your first go at this Daily Tree');
+  });
+
+  it("a past day reads Unranked: a past day's tree", () => {
+    const past = daily({ reason: 'past' }, { past: true, first: false, rank: null });
+    expect(ribbonModel({ kind: 'done', result: past }, me)).toEqual({ kind: 'unranked', why: "a past day's tree" });
+    expect(ribbonModel({ kind: 'done', result: past }, null, { guest: true })).toEqual({ kind: 'unranked', why: "a past day's tree" });
+  });
+
+  it("a first attempt the judge couldn't vouch for gives the judge's reason", () => {
+    expect(ribbonModel({ kind: 'done', result: daily({ reason: 'clock' }, { rank: null }) }, me)).toEqual({ kind: 'unranked', why: "couldn't verify the clock" });
+    expect(ribbonModel({ kind: 'done', result: daily({ reason: 'paused' }, { rank: null }) }, null, { guest: true })).toEqual({ kind: 'unranked', why: 'paused too long' });
   });
 });
 
@@ -204,6 +259,27 @@ describe('renderRibbon', () => {
     root.querySelector<HTMLButtonElement>('#r-new')?.focus();
     renderRibbon(root, { kind: 'rank', rank: 3, of: 10, best: 81_000, newBest: true }, h);
     expect(document.activeElement?.id).toBe('r-new');
+  });
+
+  it("the Daily: its place on today's Daily board, and Save to the Daily board", () => {
+    const root = tag();
+    const h = handlers();
+    renderRibbon(root, { kind: 'rank', rank: 2, of: 9, best: null, newBest: false, board: 'daily' }, h);
+    expect(root.querySelector('.rib-line')?.textContent).toBe("#2 of 9 on today's Daily board");
+    const ros = root.querySelector<HTMLButtonElement>('.rib-ros');
+    expect(ros?.getAttribute('aria-label')).toBe("Rank 2 of 9 on today's Daily board: open the leaderboard");
+    expect(ros?.querySelector('.rib-ros-face')?.textContent).toBe('#2of 9');
+    expect(ros?.querySelector('.rib-ros-banner')).toBeNull();
+    ros?.click();
+    expect(h.board).toHaveBeenCalledTimes(1);
+    renderRibbon(root, { kind: 'save', rank: 2, of: 9, signedIn: false, board: 'daily' }, h);
+    expect(root.querySelector('.rib-line')?.textContent).toBe("Would place #2 of 9 on today's Daily board");
+    const ribbon = root.querySelector<HTMLButtonElement>('.rib-ribbon');
+    expect(ribbon?.textContent).toBe('Save to the Daily board');
+    expect(ribbon?.querySelector('.acct-g')).not.toBeNull();
+    renderRibbon(root, { kind: 'save', rank: 2, of: 9, signedIn: true, board: 'daily' }, h);
+    expect(root.querySelector('.rib-ribbon')?.textContent).toBe('Save to the Daily board');
+    expect(root.querySelector('.rib-ribbon .acct-g')).toBeNull();
   });
 
   it('signed out with no place to show: a plainer line, and still the ribbon', () => {

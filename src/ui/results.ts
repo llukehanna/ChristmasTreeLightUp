@@ -2,7 +2,7 @@ import type { AccountStats } from '../api/types';
 import { formatTime } from '../core/score';
 import { averageSeconds, type Stats } from '../store/stats';
 import { el } from './dom';
-import { count } from './format';
+import { count, dailyLabel } from './format';
 
 /** The three numbers under the badge: this device's, or (signed in) the account's (spec 2026-10-08 §6.2). */
 export interface StatsView {
@@ -28,6 +28,8 @@ export interface ResultsData {
   view: StatsView;
   /** Home Alone mode's line in place of "Merry & bright" (spec 2026-10-14 §6). */
   line?: string | null;
+  /** A Daily Tree's day (YYYY-MM-DD): its label is a small line above the time. Null or absent for a random tree. */
+  daily?: string | null;
 }
 
 /** Home Alone mode's line under the time (spec 2026-10-14 §6), on the tag and the share image. */
@@ -51,6 +53,7 @@ export class Results {
     badge.classList.toggle('quiet', !d.newBest);
     this.setStats(d.view);
     this.setLine(d.line ?? null);
+    this.setDaily(d.daily ?? null);
     this.root.hidden = false;
     requestAnimationFrame(() => requestAnimationFrame(() => this.root.classList.add('show')));
   }
@@ -66,6 +69,14 @@ export class Results {
   setLine(line: string | null): void {
     const m = document.getElementById('r-merry');
     if (m) m.textContent = line ?? MERRY;
+  }
+
+  /** "Daily Tree · Nov 6" above the time, or nothing. Looked up lazily: older fixtures have no #r-daily. */
+  private setDaily(day: string | null): void {
+    const line = document.getElementById('r-daily');
+    if (!line) return;
+    line.textContent = day ? dailyLabel(day) : '';
+    line.hidden = day === null;
   }
 
   hide(): void {

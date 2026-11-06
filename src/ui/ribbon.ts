@@ -1,12 +1,16 @@
 import type { RunOutcome } from '../api/outcome';
 import type { SessionState } from '../api/session';
+import type { DailyResult, FinishResult } from '../api/types';
 import { formatMs, plural, UNRANKED_TEXT } from './format';
 import { G_LOGO } from './icons';
 
+/** Which board the place is on: the main one (absent), or today's Daily board. */
+export type RibbonBoard = 'main' | 'daily';
+
 export type RibbonModel =
-  | { kind: 'rank'; rank: number; of: number; best: number | null; newBest: boolean }
+  | { kind: 'rank'; rank: number; of: number; best: number | null; newBest: boolean; board?: RibbonBoard }
   /** `signedIn`: an account without a name yet, so saving is the name card, not Google. */
-  | { kind: 'save'; rank: number | null; of: number; signedIn: boolean }
+  | { kind: 'save'; rank: number | null; of: number; signedIn: boolean; board?: RibbonBoard }
   /** `saved`: the server kept the run, unranked (a finish that arrived too late). */
   | { kind: 'unranked'; why: string; saved?: boolean }
   | { kind: 'saving' }
@@ -23,7 +27,21 @@ export interface RibbonContext {
   late?: boolean;
   /** Back from Google for this run: until /api/me answers, a claim is likely on its way. */
   returning?: boolean;
+  /** The result shown is the finish of a run played signed out, not yet replaced by its claim's (a Daily run says so only here). */
+  guest?: boolean;
 }
+
+/** A Daily run with a place on its day's board: a clean first attempt at a live day. */
+const dailyPlace = (r: FinishResult): (DailyResult & { rank: number }) | null => {
+  const d = r.daily;
+  return d && d.first && !d.past && d.rank !== null && r.reason === 'daily' ? { ...d, rank: d.rank } : null;
+};
+
+/** The result on the tag waits on its claim to be placed: a signed-out run, or a guest's place on a Daily board. */
+export const awaitsClaim = (r: FinishResult, guest: boolean): boolean => r.reason === 'anonymous' || (guest && dailyPlace(r) !== null);
+
+/** How the tag names the Daily board after a place on it ("#2 of 9 on today's Daily board"). */
+const DAILY_BOARD = "on today's Daily board";
 
 /** "Unranked: …" for a finish the server kept but couldn't time (controller ruling, fix round 1). */
 export const LATE_TEXT = 'reached the server too late';
@@ -41,6 +59,15 @@ export function ribbonModel(o: RunOutcome, user: SessionState, ctx: RibbonContex
       return { kind: 'retry', what: 'finish' };
     case 'done': {
       const r = o.result;
+      const daily = dailyPlace(r);
+      if (daily) {
+        // A guest's run being claimed (or back from Google), as on the main board below.
+        if (ctx.guest && user?.name) return ctx.claim === 'stuck' ? { kind: 'retry', what: 'claim' } : ctx.claim === 'gone' ? { kind: 'kept' } : { kind: 'saving' };
+        if (ctx.guest && user === undefined && ctx.returning) return { kind: 'saving' };
+        // The day's total already counts a run that would join the board.
+        if (user?.name) return { kind: 'rank', rank: daily.rank, of: daily.total, best: null, newBest: false, board: 'daily' };
+        return { kind: 'save', rank: daily.rank, of: daily.total, signedIn: !!user, board: 'daily' };
+      }
       // A run by a player still picking a name is placed but not yet counted in the total.
       if (r.ranked) return { kind: 'rank', rank: r.rank ?? r.total, of: Math.max(r.total, r.rank ?? 0), best: r.best, newBest: r.newBest };
       if (r.reason === 'anonymous') {
@@ -135,22 +162,27 @@ export function renderRibbon(root: HTMLElement, m: RibbonModel | null, h: Ribbon
       const rank = Number(m.rank);
       const of = Number(m.of);
       const best = m.best === null ? null : Number(m.best);
-      line.append(bold(`#${num(rank)}`), ` of ${plural(of, 'run')} · `);
-      if (m.newBest || best === null) line.append('New personal best!');
-      else line.append('Your best ', bold(formatMs(best)));
-      root.prepend(
-        rosette({ kind: m.newBest ? 'best' : '', big: `#${rank}`, small: `of ${short(of)}`, banner: m.newBest ? 'New best' : '', label: `Rank ${rank} of ${of}: open the leaderboard`, onClick: h.board }),
-      );
+      const daily = m.board === 'daily';
+      if (daily) line.append(bold(`#${num(rank)}`), ` of ${num(of)} ${DAILY_BOARD}`);
+      else {
+        line.append(bold(`#${num(rank)}`), ` of ${plural(of, 'run')} · `);
+        if (m.newBest || best === null) line.append('New personal best!');
+        else line.append('Your best ', bold(formatMs(best)));
+      }
+      const label = `Rank ${rank} of ${of}${daily ? ` ${DAILY_BOARD}` : ''}: open the leaderboard`;
+      root.prepend(rosette({ kind: m.newBest ? 'best' : '', big: `#${rank}`, small: `of ${short(of)}`, banner: m.newBest ? 'New best' : '', label, onClick: h.board }));
       break;
     }
     case 'save': {
+      const daily = m.board === 'daily';
       if (m.rank === null) line.textContent = 'Sign in to put this time on the leaderboard';
+      else if (daily) line.append('Would place ', bold(`#${num(Number(m.rank))}`), ` of ${num(Number(m.of))} ${DAILY_BOARD}`);
       else line.append('Would place ', bold(`#${num(Number(m.rank))}`), ` of ${plural(m.of, 'run')}`);
       const ribbon = document.createElement('button');
       ribbon.type = 'button';
       ribbon.className = 'rib rib-ribbon';
       // Google's mark only where the ribbon leads to Google.
-      ribbon.innerHTML = `${m.signedIn ? '' : G_LOGO}<span>Save to leaderboard</span>`;
+      ribbon.innerHTML = `${m.signedIn ? '' : G_LOGO}<span>${daily ? 'Save to the Daily board' : 'Save to leaderboard'}</span>`;
       ribbon.addEventListener('click', h.save);
       root.querySelector('.actions')?.before(ribbon);
       break;

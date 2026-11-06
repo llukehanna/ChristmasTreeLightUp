@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { AURORA, HOME_ALONE, SCENES, type Scene } from '../../../src/render/scenes';
-import { coverRect, shareInk, shareText } from '../../../src/ui/share';
+import { coverRect, shareInk, shareLine, shareText } from '../../../src/ui/share';
 
 it('writes the share line', () => {
   expect(shareText(84)).toBe('Lit the tree in 1:24 · aglow.lukeghanna.com');
+  expect(shareText(84, null)).toBe('Lit the tree in 1:24 · aglow.lukeghanna.com');
+});
+
+it('shareText with a day names the Daily Tree', () => {
+  expect(shareText(42, '2026-11-06')).toBe('Lit the Daily Tree · Nov 6 in 0:42 · aglow.lukeghanna.com');
+});
+
+it("the share image's line: Home Alone's when there is one, else the Daily's label, else none", () => {
+  expect(shareLine(null, null)).toBeNull();
+  expect(shareLine(null, '2026-11-06')).toBe('Daily Tree · Nov 6');
+  expect(shareLine('Keep the change, ya filthy animal.', '2026-11-06')).toBe('Keep the change, ya filthy animal.');
+  expect(shareLine('Keep the change, ya filthy animal.', null)).toBe('Keep the change, ya filthy animal.');
 });
 
 it('crops the stage to a centred 4:5 cover rectangle without stretching', () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '../../../src/api/types';
+import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse, RecentGame } from '../../../src/api/types';
 import { listView, loadBoardWindow, saveBoardWindow, type Loadable } from '../../../src/ui/board-sheets';
 
 const now = new Date(2026, 11, 3, 22, 0).getTime();
@@ -94,6 +94,52 @@ it('your games: best, rank, top-50 count, then recent games with their status', 
   expect(el.querySelector('.acct-pin')).toBeNull();
   const unknown = { ...games, games: [{ ...games.games[1], reason: 'cosmic_rays' as unknown as 'paused' }] };
   expect(render('games', { status: 'loading' }, { status: 'ready', data: unknown }, me, now).querySelector('.acct-status')?.textContent).toBe('Unranked');
+});
+
+describe('your games: Daily Tree runs', () => {
+  const g = (over: Partial<RecentGame>): RecentGame => ({ id: 'd', ms: 42_000, finishedAt: day, ranked: false, reason: 'daily', isBest: false, imported: false, daily: '2026-11-06', dailyFirst: true, ...over });
+  const rows = (...games: RecentGame[]) => render('games', { status: 'loading' }, { status: 'ready', data: { best: null, inTop: 0, total: 0, games } }, me, now);
+  const row = (game: RecentGame) => rows(game).querySelector('.acct-game');
+
+  it('a first attempt shows only its Daily tag, after the time: no Unranked', () => {
+    const r = row(g({}));
+    expect(r?.querySelector('.acct-gt .acct-daily')?.textContent).toBe('Daily Tree · Nov 6');
+    expect(r?.querySelector('.acct-gt')?.firstChild?.textContent).toBe('0:42.0');
+    expect(r?.querySelector('.acct-status')).toBeNull();
+    expect(r?.textContent).not.toContain('Unranked');
+    expect(r?.classList.contains('un')).toBe(false);
+  });
+
+  it('a repeat shows the tag and Unranked · not your first go at this Daily Tree', () => {
+    const r = row(g({ dailyFirst: false }));
+    expect(r?.querySelector('.acct-daily')?.textContent).toBe('Daily Tree · Nov 6');
+    expect(r?.querySelector('.acct-status')?.textContent).toBe('Unranked · not your first go at this Daily Tree');
+    expect(r?.classList.contains('un')).toBe(true);
+  });
+
+  it("a past day's tree shows the tag and Unranked · a past day's tree", () => {
+    const r = row(g({ reason: 'past', dailyFirst: false, daily: '2026-11-03' }));
+    expect(r?.querySelector('.acct-daily')?.textContent).toBe('Daily Tree · Nov 3');
+    expect(r?.querySelector('.acct-status')?.textContent).toBe("Unranked · a past day's tree");
+  });
+
+  it("a first attempt the judge couldn't vouch for shows the tag and the judge's reason", () => {
+    for (const [reason, why] of [
+      ['clock', "couldn't verify the clock"],
+      ['paused', 'paused too long'],
+      ['too_fast', 'too fast'],
+    ] as const) {
+      const r = row(g({ reason }));
+      expect(r?.querySelector('.acct-daily')?.textContent).toBe('Daily Tree · Nov 6');
+      expect(r?.querySelector('.acct-status')?.textContent).toBe(`Unranked · ${why}`);
+      expect(r?.classList.contains('un')).toBe(true);
+    }
+  });
+
+  it('a random game has no Daily tag; a day goes in as text', () => {
+    expect(row(g({ daily: null, dailyFirst: false, reason: 'paused' }))?.querySelector('.acct-daily')).toBeNull();
+    expect(row(g({ daily: '<b>x</b>' }))?.querySelector('.acct-daily b')).toBeNull();
+  });
 });
 
 it('your games: the account totals, and imported runs say so', () => {
@@ -245,6 +291,20 @@ describe('board windows: Today, This week, All time (spec 2026-10-14 §4)', () =
     expect(empty('today')).toBe('No runs yet today — be the first.');
     expect(empty('week')).toBe('No runs yet this week.');
     expect(empty('all')).toBe('No ranked runs yet. Light a tree and be the first.');
+  });
+
+  it('the Daily window comes first and has its own empty text', () => {
+    const el = render('board', { status: 'ready', data: { rows: [], total: 0, you: null } }, { status: 'loading' }, me, now, undefined, 'daily');
+    expect(texts(el, '.acct-wins button')[0]).toBe('Daily');
+    expect(el.querySelector('.acct-wins button')?.getAttribute('data-act')).toBe('win-daily');
+    expect(pressed(el)).toEqual(['Daily']);
+    expect(el.querySelector('.acct-body .acct-note')?.textContent).toBe("No one has lit today's Daily Tree yet.");
+    expect(el.querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · 0 ranked runs");
+    expect(render('board', { status: 'loading' }, { status: 'loading' }, me, now, undefined, 'daily').querySelector('.acct-sub')?.textContent).toBe("Today's Daily Tree · fastest trees");
+    // The remembered window is still Today until one is chosen.
+    expect(loadBoardWindow()).toBe('today');
+    saveBoardWindow('daily');
+    expect(loadBoardWindow()).toBe('daily');
   });
 
   it('no run of yours in the window: no pinned row; unnamed, the pick-a-name call to action as before', () => {

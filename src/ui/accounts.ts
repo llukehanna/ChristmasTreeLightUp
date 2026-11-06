@@ -31,10 +31,10 @@ export class Accounts {
   private tab: ListTab = 'board';
   /** The leaderboard's window (spec 2026-10-14 §4), as chosen last in this browser; each window keeps its own answer. */
   private chosen: BoardWindow = loadBoardWindow();
-  /** The window on screen: the chosen one, or All time when the results tag's all-time rank opened the board. */
+  /** The window on screen: the chosen one, or the board the results tag's rosette opened (All time, or the Daily). */
   private win: BoardWindow = this.chosen;
   private readonly boards: Record<BoardWindow, Loadable<BoardResponse>> = { daily: { status: 'loading' }, today: { status: 'loading' }, week: { status: 'loading' }, all: { status: 'loading' } };
-  /** The local day Today's and This week's answers are for: on a new day they start again from loading. */
+  /** The local day the Daily's, Today's and This week's answers are for: on a new day they start again from loading. */
   private boardsDay = '';
   private games: Loadable<MyGamesResponse> = { status: 'loading' };
   private stats: Loadable<AccountStats> = { status: 'loading' };
@@ -103,7 +103,7 @@ export class Accounts {
     if (user) this.sheet.open(deleteView(user), from);
   }
 
-  /** The leaderboard on the window chosen last, or on `win` (the results tag's all-time rank) without changing that choice. */
+  /** The leaderboard on the window chosen last, or on `win` (the board of the results tag's rank) without changing that choice. */
   openBoard(from?: HTMLElement | null, win: BoardWindow = this.chosen): void {
     this.tab = 'board';
     this.win = win;
@@ -112,11 +112,12 @@ export class Accounts {
     void this.loadBoard();
   }
 
-  /** Past midnight here, Today's and This week's answers are yesterday's: they go back to loading. */
+  /** Past midnight here, the Daily's, Today's and This week's answers are yesterday's: they go back to loading. */
   private newBoardDay(): void {
     const day = localDay(new Date());
     if (day === this.boardsDay) return;
     this.boardsDay = day;
+    this.boards.daily = { status: 'loading' };
     this.boards.today = { status: 'loading' };
     this.boards.week = { status: 'loading' };
   }
@@ -139,7 +140,7 @@ export class Accounts {
 
   /**
    * The shown window's board, into that window's own slot: an answer arriving after a switch never shows in another,
-   * and one for Today or This week asked for before midnight here is dropped once the day has moved on.
+   * and one for the Daily, Today or This week asked for before midnight here is dropped once the day has moved on.
    */
   private async loadBoard(): Promise<void> {
     const win = this.win;
@@ -305,10 +306,11 @@ export class Accounts {
         this.sheet.body.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
         this.loadTab();
         break;
+      case 'win-daily':
       case 'win-today':
       case 'win-week':
       case 'win-all':
-        this.win = this.chosen = act === 'win-today' ? 'today' : act === 'win-week' ? 'week' : 'all';
+        this.win = this.chosen = act.slice('win-'.length) as BoardWindow;
         saveBoardWindow(this.win);
         this.newBoardDay();
         this.sheet.update(this.listNow());

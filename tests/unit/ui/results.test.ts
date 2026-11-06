@@ -55,3 +55,17 @@ it("Home Alone: the line takes Merry & bright's place under the time, and gives 
   r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device) });
   expect(text('r-merry')).toBe('Merry & bright');
 });
+
+it("a Daily Tree: its label is a small line above the time; a random tree's tag has none", () => {
+  document.getElementById('r-time')?.insertAdjacentHTML('beforebegin', '<div id="r-daily" hidden></div>');
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), daily: '2026-11-06' });
+  const line = document.getElementById('r-daily');
+  expect(line?.textContent).toBe('Daily Tree · Nov 6');
+  expect(line?.hidden).toBe(false);
+  expect(line?.nextElementSibling?.id).toBe('r-time');
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), daily: null });
+  expect(line?.hidden).toBe(true);
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device) });
+  expect(line?.hidden).toBe(true);
+});

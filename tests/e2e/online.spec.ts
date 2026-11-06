@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test, testIp } from './fixtures';
-import { game, onlineTree, ready, solveByTapping, waitInteractive, type W } from './helpers';
+import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping, waitInteractive, type W } from './helpers';
 
 test('a tree solved by tapping is replayed by the server and saved as an anonymous run', async ({ page }) => {
   await ready(page);
@@ -308,6 +308,35 @@ test.describe('the Daily Tree', () => {
     expect(bodies[1]).toEqual({ daily: { today: day } });
     await expect(page.locator('#daily-pill')).toBeVisible();
   });
+
+  test("solving the Daily shows its place on the Daily board on the tag", async ({ page }) => {
+    test.setTimeout(120_000);
+    const player = await asPlayer(page);
+    await ready(page);
+    await dailyTree(page);
+    const { label } = await today(page);
+    await solveByTapping(page);
+    const results = page.locator('#results');
+    await expect(results).toBeVisible({ timeout: 15_000 });
+    // The tag names the tree above the time.
+    await expect(results.locator('#r-daily')).toBeVisible();
+    await expect(results.locator('#r-daily')).toHaveText(`Daily Tree · ${label}`);
+    await expect(results.locator('#r-daily + #r-time')).toHaveText(/^Lit in \d+:\d\d$/);
+    // Signed out: the place it would take on today's Daily board, and a ribbon to save it there.
+    await expect(results.locator('.rib-line')).toHaveText(/^Would place #\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    await results.getByRole('button', { name: 'Save to the Daily board' }).click();
+    await page.getByRole('dialog', { name: 'Sign in' }).getByRole('link', { name: 'Continue with Google' }).click();
+    await page.waitForURL(/\/\?test$/);
+    await pickName(page, player.name);
+    // Claimed: the run's place on today's Daily board, and its rosette opens that board.
+    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    await expect(results.locator('.rib-ribbon')).toHaveCount(0);
+    await results.getByRole('button', { name: /^Rank \d+ of \d+ on today's Daily board: open the leaderboard$/ }).click();
+    const board = page.getByRole('dialog', { name: 'Leaderboard' });
+    await expect(board.getByRole('group', { name: 'Time window' }).getByRole('button', { name: 'Daily', pressed: true })).toBeVisible();
+    await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(player.name);
+    expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBeNull();
+  });
 });
 
 test.describe('the Daily Tree on a first visit', () => {
@@ -337,5 +366,84 @@ test.describe('the Daily Tree on a first visit', () => {
     const label = await page.evaluate(() => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     await expect(page.locator('#daily-pill')).toBeVisible();
     await expect(page.locator('#daily-pill')).toHaveText(`Daily Tree · ${label}`);
+  });
+});
+
+test.describe('the Daily Tree from the menu, signed in', () => {
+  test.describe.configure({ timeout: 120_000 });
+
+  /** Signs in as a new player with a name, on the random first tree. */
+  async function namedPlayer(page: Page): Promise<string> {
+    const player = await asPlayer(page);
+    await ready(page);
+    await signInFromChip(page);
+    await pickName(page, player.name);
+    await resumeIfPaused(page);
+    return player.name;
+  }
+  /** The menu's Daily Tree row (pressed again when a run in progress arms it), then the Daily the server started. */
+  async function dailyFromMenu(page: Page): Promise<string> {
+    const before = (await game(page)).id;
+    await resumeIfPaused(page);
+    await page.click('#menu-btn');
+    await expect(page.locator('#daily-row')).toBeVisible();
+    // Both presses in one task: on a loaded machine the 3 s confirm window can't lapse between them.
+    await page.evaluate(() => {
+      const row = document.getElementById('daily-row');
+      row?.click();
+      if (row?.classList.contains('armed')) row.click();
+    });
+    await expect.poll(async () => (await game(page)).id, { timeout: 10_000 }).not.toBe(before);
+    await waitInteractive(page);
+    await expect(page.locator('#daily-pill')).toBeVisible();
+    return (await game(page)).id ?? '';
+  }
+
+  test("the board sheet's Daily window lists the run", async ({ page }) => {
+    const name = await namedPlayer(page);
+    await dailyFromMenu(page);
+    await solveByTapping(page);
+    const results = page.locator('#results');
+    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    await page.locator('#account-chip').click();
+    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+    const board = page.getByRole('dialog', { name: 'Leaderboard' });
+    const windows = board.getByRole('group', { name: 'Time window' });
+    await expect(windows.getByRole('button').first()).toHaveText('Daily');
+    // The remembered window is still Today until another is chosen.
+    await expect(windows.getByRole('button', { name: 'Today', pressed: true })).toBeVisible();
+    await windows.getByRole('button', { name: 'Daily' }).click();
+    await expect(windows.getByRole('button', { name: 'Daily', pressed: true })).toBeFocused();
+    await expect(board.locator('.acct-sub')).toHaveText(/^Today's Daily Tree · [\d,]+ ranked runs?$/);
+    await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(name);
+    expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBe('daily');
+    // Your games: the run carries its Daily tag, and no "Unranked".
+    await board.getByRole('tab', { name: 'Your games' }).click();
+    const first = page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game').first();
+    const label = await page.evaluate(() => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    await expect(first.locator('.acct-daily')).toHaveText(`Daily Tree · ${label}`);
+    await expect(first).not.toContainText('Unranked');
+  });
+
+  test('a second Daily from the menu is unranked: not your first go', async ({ page }) => {
+    await namedPlayer(page);
+    await dailyFromMenu(page);
+    await solveByTapping(page);
+    const results = page.locator('#results');
+    await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on today's Daily board$/, { timeout: 15_000 });
+    // The tag is up: the Daily row starts the day's tree again.
+    await dailyFromMenu(page);
+    await solveByTapping(page);
+    await expect(results.locator('.rib-line')).toHaveText('Unranked: not your first go at this Daily Tree', { timeout: 15_000 });
+    await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();
+    await expect(results.locator('.rib-ribbon')).toHaveCount(0);
+    // Your games: the repeat says so, the first attempt doesn't.
+    await page.locator('#account-chip').click();
+    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Your games' }).click();
+    const games = page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game');
+    await expect(games).toHaveCount(2);
+    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go at this Daily Tree');
+    await expect(games.nth(1).locator('.acct-status')).toHaveCount(0);
+    await expect(games.nth(1).locator('.acct-daily')).toBeVisible();
   });
 });

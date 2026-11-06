@@ -25,6 +25,8 @@ export interface WonRun {
   result: FinishResult | null;
   /** The finish was (re)sent too long after the win for the server's clock to vouch for it: kept, unranked 'clock'. */
   late?: boolean;
+  /** `result` is the claim's answer for a run played signed out, no longer its finish's (a Daily result looks the same either way). */
+  claimed?: boolean;
 }
 
 export interface GameSnapshot {
@@ -137,7 +139,8 @@ function isWon(v: unknown): v is WonRun {
     Number.isInteger(w.score) &&
     typeof w.newBest === 'boolean' &&
     (w.result === null || isFinishResult(w.result)) &&
-    (w.late === undefined || typeof w.late === 'boolean')
+    (w.late === undefined || typeof w.late === 'boolean') &&
+    (w.claimed === undefined || typeof w.claimed === 'boolean')
   );
 }
 

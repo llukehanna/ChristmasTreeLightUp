@@ -124,6 +124,15 @@ it('a won run sent too late keeps saying so after a reload', () => {
   expect(loadGame(GRID)?.won).toEqual(won);
 });
 
+it("a signed-out Daily run's claimed result stays known as the claim's after a reload", () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: 'c'.repeat(32), daily: { day: '2026-11-06', past: false, repeat: false } };
+  const result = { id: 'g'.repeat(22), ranked: false, reason: 'daily' as const, ms: 42_000, rank: null, total: 10, best: null, newBest: false, daily: { day: '2026-11-06', past: false, first: true, rank: 2, total: 9 } };
+  const won = { seconds: 42, score: 41_900, newBest: false, result, claimed: true };
+  saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
+  expect(loadGame(GRID)?.won).toEqual(won);
+});
+
 it('a save from before accounts (v1) restores as a local tree', () => {
   const b = Board.random(GRID, mulberry32(4));
   localStorage.setItem('aglow.game', JSON.stringify({ v: 1, solution: b.solution, bits: b.bits, colors: b.colors, elapsedMs: 9000 }));
@@ -139,6 +148,7 @@ it('refuses a v2 save with a bad log, half an online run or a malformed result',
     (raw) => (raw.gameId = 'short'),
     (raw) => (raw.won = { seconds: 1, score: 1, newBest: false, result: { id: 'x' } }),
     (raw) => (raw.won = { seconds: 1, score: 1, newBest: false, result: null, late: 'yes' }),
+    (raw) => (raw.won = { seconds: 1, score: 1, newBest: false, result: null, claimed: 'yes' }),
     (raw) => (raw.startEpoch = 'soon'),
   ];
   for (const mutate of mutations) {

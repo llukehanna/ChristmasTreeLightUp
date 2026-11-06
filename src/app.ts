@@ -50,8 +50,8 @@ import { markOpened, Opening, OPENING_MS, shouldOpen } from './ui/opening';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
-import { renderRibbon, ribbonModel } from './ui/ribbon';
-import { makeShareImage, prepareShareImage, shareInk, shareResult, type ShareImage } from './ui/share';
+import { awaitsClaim, renderRibbon, ribbonModel } from './ui/ribbon';
+import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, type ShareImage } from './ui/share';
 import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
@@ -724,6 +724,7 @@ export class App {
       this.prepareShare();
       this.results.show({
         seconds: won.seconds, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
+        daily: this.dailyDay,
       });
       this.hector?.tagShown();
       this.hectorStep();
@@ -866,7 +867,7 @@ export class App {
       // the claim out of storage): never leave "Saving…" up. Retry if the claim is still here to send, else the run
       // is in Your games.
       const o = this.outcome;
-      if (current !== null && !answered && stillHere() && o?.kind === 'done' && !o.result.ranked && o.result.reason === 'anonymous' && this.claimState === null) {
+      if (current !== null && !answered && stillHere() && o?.kind === 'done' && !o.result.ranked && awaitsClaim(o.result, this.guestResult) && this.claimState === null) {
         this.setClaimState(readClaims(Date.now()).some((c) => c.id === current) ? 'stuck' : 'gone');
       }
     }
@@ -889,6 +890,7 @@ export class App {
   private onClaimed(r: FinishResult): void {
     if (!this.won || this.online?.gameId !== r.id) return;
     this.won.result = r;
+    this.won.claimed = true;
     this.saveWon();
     this.setOutcome({ kind: 'done', result: r });
     void this.syncStats();
@@ -932,12 +934,24 @@ export class App {
   private setOutcome(o: RunOutcome | null): void {
     this.outcome = o;
     this.hectorStep(); // a Home Alone win waiting on the server's answer
-    const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning };
-    renderRibbon(el('results'), o && ribbonModel(o, this.session.current, ctx), {
-      board: () => this.accounts.openBoard(null, 'all'), // the rosette's rank and total are all-time ones
+    const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult };
+    const m = o && ribbonModel(o, this.session.current, ctx);
+    renderRibbon(el('results'), m, {
+      // The rosette's rank and total are all-time ones, or the Daily board's.
+      board: () => this.accounts.openBoard(null, m?.kind === 'rank' && m.board === 'daily' ? 'daily' : 'all'),
       save: () => this.saveRun(),
       retry: () => this.retry(),
     });
+  }
+
+  /** The result on the tag is the finish of a run played signed out, its claim not answered yet. */
+  private get guestResult(): boolean {
+    return !!this.online?.claim && this.won?.claimed !== true;
+  }
+
+  /** The day of the Daily Tree on screen (YYYY-MM-DD), or null for a random tree. */
+  private get dailyDay(): string | null {
+    return this.online?.daily?.day ?? null;
   }
 
   /**
@@ -960,9 +974,10 @@ export class App {
 
   /** Renders the share image from the stage as it is now (the lit tree, identity camera). */
   private prepareShare(): ShareImage {
-    const line = this.homeAlone ? HOME_ALONE_LINE : null;
+    const homeAlone = this.homeAlone ? HOME_ALONE_LINE : null;
     this.shareSeen.n++;
-    this.shareSeen.line = line !== null;
+    this.shareSeen.line = homeAlone !== null;
+    const line = shareLine(homeAlone, this.dailyDay);
     const image = prepareShareImage(() => makeShareImage(this.renderer.canvas, this.renderer.treeRect(), this.lastSeconds, shareInk(this.renderer.scene), line));
     this.shareImage = image;
     return image;
@@ -971,7 +986,7 @@ export class App {
   /** Straight from the tap: no await before the share sheet or clipboard write (WebKit user activation). */
   private async share(): Promise<void> {
     try {
-      const outcome = await shareResult(this.shareImage ?? this.prepareShare(), this.lastSeconds);
+      const outcome = await shareResult(this.shareImage ?? this.prepareShare(), this.lastSeconds, this.dailyDay);
       if (outcome === 'copied-image') this.toast.show('Image copied');
       else if (outcome === 'copied-text') this.toast.show('Copied to clipboard');
       else if (outcome === 'failed') this.toast.show("Couldn't share, try a screenshot");

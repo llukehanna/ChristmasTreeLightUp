@@ -1,5 +1,5 @@
 import { BOARD_TOP, BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardRow, type BoardWindow, type MyGamesResponse, type RecentGame, type User } from '../api/types';
-import { count, esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
+import { count, dailyLabel, esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
 import { G_LOGO, I } from './icons';
 import type { SheetView } from './sheet';
 
@@ -25,7 +25,7 @@ const WINDOWS: Record<BoardWindow, { button: string; sub: string; empty: string 
   all: { button: 'All time', sub: 'All-time', empty: 'No ranked runs yet. Light a tree and be the first.' },
 };
 
-/** The window chosen last in this browser; Today until one is chosen (or when storage is blocked). */
+/** The window chosen last in this browser; Today until one is chosen (or when storage is blocked), though Daily is the first button. */
 const WINDOW_KEY = 'aglow.boardWindow';
 export function loadBoardWindow(): BoardWindow {
   try {
@@ -43,7 +43,7 @@ export function saveBoardWindow(w: BoardWindow): void {
   }
 }
 
-/** Today · This week · All time: toggle buttons (aria-pressed), not tabs, so the tablist's arrow keys stay its own. */
+/** Daily · Today · This week · All time: toggle buttons (aria-pressed), not tabs, so the tablist's arrow keys stay its own. */
 const windowsHtml = (win: BoardWindow): string =>
   `<div class="acct-wins" role="group" aria-label="Time window">${BOARD_WINDOWS.map(
     (w) => `<button type="button" data-act="win-${w}" aria-pressed="${w === win}">${WINDOWS[w].button}</button>`,
@@ -75,6 +75,8 @@ function unrankedLabel(reason: RecentGame['reason']): string {
 }
 
 function gameHtml(g: RecentGame, now: number): string {
+  // A Daily run's first attempt, clean: on its day's board, so its tag says all (never "Unranked").
+  const placed = g.daily !== null && g.dailyFirst && g.reason === 'daily';
   const [cls, label] = g.isBest
     ? ['s-best', g.imported ? 'Personal best · Imported' : 'Personal best']
     : g.imported
@@ -82,10 +84,11 @@ function gameHtml(g: RecentGame, now: number): string {
       : g.ranked
         ? ['s-counted', 'Ranked']
         : ['', unrankedLabel(g.reason)];
-  return `<li class="acct-game${g.ranked ? '' : ' un'}">
-    <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}</span>
+  const tag = g.daily === null ? '' : `<span class="acct-daily">${esc(dailyLabel(g.daily))}</span>`;
+  return `<li class="acct-game${g.ranked || placed ? '' : ' un'}">
+    <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}${tag}</span>
     <span class="acct-when">${esc(formatWhen(g.finishedAt, now))}</span>
-    <span class="acct-status ${cls}">${label}</span></li>`;
+    ${placed ? '' : `<span class="acct-status ${cls}">${label}</span>`}</li>`;
 }
 
 /** The account's totals (GET /api/me/stats), the same on every device; dashes until they arrive. */
