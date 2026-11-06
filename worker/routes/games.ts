@@ -151,7 +151,8 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
   const log = parseLog(body.log, GRID);
   const verdict = log && judge({ seed: game.seed, genVersion: game.gen_version, log, serverElapsedMs: receivedAt - game.started_at });
   if (!log || !verdict) {
-    await env.DB.prepare('DELETE FROM games WHERE id = ? AND finished_at IS NULL').bind(id).run();
+    // A Daily row stays (unfinished: the day is forfeited, housekeeping clears it), so garbage can't erase a first attempt.
+    await env.DB.prepare('DELETE FROM games WHERE id = ? AND finished_at IS NULL AND daily_day IS NULL').bind(id).run();
     throw new HttpError(422, 'unverified', "This run couldn't be verified.");
   }
   // Everything checks out but nobody owns it yet: it ranks once claimed.

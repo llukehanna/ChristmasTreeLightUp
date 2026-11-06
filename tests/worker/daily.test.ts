@@ -82,6 +82,11 @@ describe('starting the Daily Tree', () => {
       { today: '2026-12-20' },
       { today: '2026-12-01' },
       { today: 'nope' },
+      '2026-12-10',
+      [],
+      5,
+      {},
+      { today: '2026-12-10', day: null },
     ]) {
       const res = await startDaily(daily as DailyRequest);
       expect(res.status, JSON.stringify(daily)).toBe(400);
@@ -134,5 +139,23 @@ describe('starting the Daily Tree', () => {
     await age(daily.id, 3.5);
     await startDaily(undefined);
     expect(await row(daily.id)).toBeNull();
+  });
+
+  it("an unverifiable finish deletes a random game but never a Daily attempt: the player's next start of that day is a repeat", async () => {
+    at('2026-12-10T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com');
+    const garbage = (id: string) => call(env, 'POST', `/api/games/${id}/finish`, { cookie: ana, body: { log: 'x' } });
+    const daily = await json<StartResponse>(await startDaily({ today: '2026-12-10' }, ana));
+    expect((await garbage(daily.id)).status).toBe(422);
+    expect(await row(daily.id)).toMatchObject({ finished_at: null, daily_day: dayNumber('2026-12-10') });
+    expect((await json<StartResponse>(await startDaily({ today: '2026-12-10' }, ana))).daily?.repeat).toBe(true);
+    const random = await json<StartResponse>(await startDaily(undefined, ana));
+    expect((await garbage(random.id)).status).toBe(422);
+    expect(await row(random.id)).toBeNull();
+  });
+
+  it('the repeat lookup reads through games_daily, not a scan of every game', async () => {
+    const plan = JSON.stringify((await db.prepare('EXPLAIN QUERY PLAN SELECT 1 AS one FROM games WHERE daily_day = ? AND user_id = ? AND daily_past = 0 LIMIT 1').bind(1, 1).all()).results);
+    expect(plan).toContain('games_daily');
   });
 });
