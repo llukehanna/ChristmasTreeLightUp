@@ -33,12 +33,15 @@ export function asThreeCounterClockwise(log: readonly LogEntry[], start = 1000, 
   return out;
 }
 
-/** Like solvingTaps, but a tile that needs three clockwise turns gets one counter-clockwise turn (logged ~i) instead. */
-export function shortestTaps(board: Board, start = 1000, gap = 50): LogEntry[] {
+/**
+ * Like solvingTaps, but a tile that needs three clockwise turns gets one counter-clockwise turn (logged ~i) instead.
+ * `tiles` picks which tiles to solve and in what order (every tile, in grid order, by default).
+ */
+export function shortestTaps(board: Board, start = 1000, gap = 50, tiles: readonly number[] = board.grid.ids): LogEntry[] {
   if (board.rotating.size) throw new Error('shortestTaps needs a settled board');
   const out: LogEntry[] = [];
   let t = start;
-  for (const i of board.grid.ids) {
+  for (const i of tiles) {
     let k = 0;
     for (let b = board.bits[i]; k < 4 && b !== board.solution[i]; k++) b = rotCW(b);
     const taps = k === 3 ? [~i] : Array.from({ length: k }, () => i);

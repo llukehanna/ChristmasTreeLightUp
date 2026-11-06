@@ -21,7 +21,7 @@ export interface Replay {
 export const MAX_REPLAY_BFS = 50;
 
 /** Taps earlier than this are refused: an honest client can't tap before the reveal ends (less slack for rounding and jitter). */
-const EARLIEST_TAP_MS = REVEAL_MS - 50;
+export const EARLIEST_TAP_MS = REVEAL_MS - 50;
 
 /**
  * Plays `log` on `board` (a fresh headless board from the game's seed; the log must have passed parseLog) the way the

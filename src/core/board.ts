@@ -12,9 +12,12 @@ export interface Lighting {
   entry: number[];
   /** Lit tiles in BFS order. */
   order: number[];
-  children: number[][];
+  children: (readonly number[])[];
   count: number;
 }
+
+/** Shared by every lit tile with no lit children (a lighting pass runs on every turn, so it allocates no array per tile). Never push to it. */
+const NO_CHILDREN: readonly number[] = [];
 
 /** Faithful port of the original Game.og/Ke: BFS from the root, neighbours in U,D,L,R order. */
 export function computeLighting(g: Grid, bits: readonly number[]): Lighting {
@@ -22,7 +25,7 @@ export function computeLighting(g: Grid, bits: readonly number[]): Lighting {
   const lit = new Array<boolean>(n).fill(false);
   const parent = new Array<number>(n).fill(-1);
   const entry = new Array<number>(n).fill(0);
-  const children: number[][] = Array.from({ length: n }, () => []);
+  const children: (readonly number[])[] = new Array<readonly number[]>(n).fill(NO_CHILDREN);
   const order: number[] = [];
   if (bits[g.root] & D) {
     lit[g.root] = true;
@@ -40,7 +43,7 @@ export function computeLighting(g: Grid, bits: readonly number[]): Lighting {
         lit[j] = true;
         parent[j] = i;
         entry[j] = o;
-        children[i].push(j);
+        children[i] = children[i] === NO_CHILDREN ? [j] : [...children[i], j];
         order.push(j);
       }
     }
