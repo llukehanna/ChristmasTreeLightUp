@@ -110,17 +110,27 @@ export interface RunFlags {
   live: boolean;
   /** A new tree is waiting for the server's seed. */
   starting: boolean;
-  /** The tree is won (the results are up, or were). */
-  won: boolean;
+  /** When the tree was won (performance.now()), or null. */
+  winAt: number | null;
   paused: boolean;
+  /** performance.now(), as the gate is asked. */
+  now: number;
 }
 
 /**
- * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
- * behind the pause or after the win. Never while a tree is in play: not during its reveal (animation the player
- * watches) and not once the clock runs, which it does from the reveal's end (Run.frame), first move or not.
+ * The win's staging has played out by this long after it: the topper's 1200 ms burst, the results tag's 500 ms delay
+ * and its arrival, and some margin.
  */
-export const quietForWork = (f: RunFlags): boolean => !f.live || f.starting || f.paused || f.won;
+const WIN_SETTLE_MS = 2000;
+
+/**
+ * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
+ * behind the pause or once the win has settled (not during its confetti, the topper's flare and the tag's arrival).
+ * Never while a tree is in play: not during its reveal (animation the player watches) and not once the clock runs,
+ * which it does from the reveal's end (Run.frame), first move or not.
+ */
+export const quietForWork = (f: RunFlags): boolean =>
+  !f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS);
 
 export class App {
   /**
@@ -1304,7 +1314,7 @@ export class App {
   }
 
   private runFlags(): RunFlags {
-    return { live: this.live, starting: this.starting, won: this.winAt !== null, paused: this.paused };
+    return { live: this.live, starting: this.starting, winAt: this.winAt, paused: this.paused, now: performance.now() };
   }
 
   private bindLifecycle(): void {
