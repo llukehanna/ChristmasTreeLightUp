@@ -4,6 +4,7 @@ import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
 import { dailySeed } from '../../worker/lib/daily';
+import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, cachedDailyTopAndTotal, cachedDailyTotal, dailyGrew, resetBoardCache } from '../../worker/lib/board-cache';
 import { DAILY_FIRSTS_SQL, dailyTopAndTotal } from '../../worker/lib/daily-board';
 import { dayNumber } from '../../worker/lib/days';
 import type { Db } from '../../worker/lib/db';
@@ -401,6 +402,131 @@ describe('finishing a Daily run', () => {
     // the session, the main total and the owner's best, then per claim its read and update, and per Daily day its
     // total, the owner's first attempt and the run's place.
     expect(statements).toBeLessThanOrEqual(3 + 5 * MAX_CLAIMS_PER_REQUEST);
+  });
+});
+
+describe('the Daily board cache (isolate memory, BOARD_TTL_MS)', () => {
+  /** A Db that counts the statements it prepares. */
+  function counted(): { db: Db; n: () => number } {
+    let statements = 0;
+    return {
+      db: {
+        prepare: (q) => {
+          statements++;
+          return db.prepare(q);
+        },
+        batch: (s) => db.batch(s),
+      },
+      n: () => statements,
+    };
+  }
+  const userId = async (email: string) => (await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: number }>())?.id;
+  /** A named player's clean first attempt at `day`, straight into D1 (another isolate's finish, say). */
+  async function elsewhere(email: string, day: string, ms: number): Promise<void> {
+    const id = `else-${email.slice(0, 3)}-${String(ms).padStart(10, '0')}`;
+    await db
+      .prepare("INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, ranked, unranked_reason, daily_day, daily_past) VALUES (?, ?, 1, 1, ?, ?, ?, 0, 'daily', ?, 0)")
+      .bind(id, await userId(email), Date.now() - ms - 1000, Date.now() - 1, ms, dayNumber(day))
+      .run();
+  }
+
+  it("serves a day's top 50 and total from memory until they expire", async () => {
+    at('2026-12-10T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    await signIn(env, 'bo@example.com', 'Comet');
+    await play({ today: '2026-12-10' }, { cookie: ana });
+    const t0 = Date.now();
+    expect((await dailyBoard('2026-12-10')).total).toBe(1);
+    await elsewhere('bo@example.com', '2026-12-10', 5_000);
+    vi.setSystemTime(t0 + BOARD_TTL_MS - 1);
+    const cached = await dailyBoard('2026-12-10');
+    expect(cached.total).toBe(1);
+    expect(cached.rows.map((r) => r.name)).toEqual(['Meridian']);
+    vi.setSystemTime(t0 + BOARD_TTL_MS);
+    const fresh = await dailyBoard('2026-12-10');
+    expect(fresh.total).toBe(2);
+    expect(fresh.rows.map((r) => r.name)).toEqual(['Comet', 'Meridian']);
+  });
+
+  it("reads a day's board once per BOARD_TTL_MS, each day apart, and the finish's total from the same copy", async () => {
+    at('2026-12-10T12:00:00Z');
+    await signIn(env, 'ana@example.com', 'Meridian');
+    await elsewhere('ana@example.com', '2026-12-10', 50_000);
+    const c = counted();
+    const t = Date.now();
+    const day = dayNumber('2026-12-10') as number;
+    expect(await cachedDailyTopAndTotal(c.db, day, t)).toMatchObject({ total: 1 });
+    expect(c.n()).toBe(2); // the top and the total, in one batch
+    expect(await cachedDailyTopAndTotal(c.db, day, t + BOARD_TTL_MS - 1)).toMatchObject({ total: 1 });
+    expect(await cachedDailyTotal(c.db, day, t + BOARD_TTL_MS - 1)).toBe(1);
+    expect(c.n()).toBe(2);
+    expect(await cachedDailyTopAndTotal(c.db, day - 1, t)).toMatchObject({ top: [], total: 0 }); // another day: its own copy
+    expect(c.n()).toBe(4);
+    expect(await cachedDailyTotal(c.db, day, t + BOARD_TTL_MS)).toBe(1);
+    expect(c.n()).toBe(5);
+  });
+
+  it("a finish that joins a day's board in this isolate is counted at once: in its own total and the board's", async () => {
+    at('2026-12-10T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const bo = await signIn(env, 'bo@example.com', 'Comet');
+    await play({ today: '2026-12-10' }, { cookie: ana, gap: 90 });
+    const t0 = Date.now();
+    expect((await dailyBoard('2026-12-10')).total).toBe(1);
+    // Faster, so its live place (#1) can't lift a stale total.
+    const { result } = await play({ today: '2026-12-10' }, { cookie: bo, gap: 50 });
+    expect(Date.now() - t0).toBeLessThan(BOARD_TTL_MS); // still inside the copy's life
+    expect(result.daily).toMatchObject({ first: true, rank: 1, total: 2 });
+    const b = await dailyBoard('2026-12-10');
+    expect([b.total, b.rows.map((r) => r.name)]).toEqual([2, ['Comet', 'Meridian']]);
+  });
+
+  it("a claim that joins a day's board in this isolate is counted at once, too", async () => {
+    at('2026-12-10T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    await play({ today: '2026-12-10' }, { cookie: ana, gap: 90 });
+    later();
+    const guest = await play({ today: '2026-12-10' }, { gap: 50 });
+    const bo = await signIn(env, 'bo@example.com', 'Comet');
+    const t0 = Date.now();
+    expect((await dailyBoard('2026-12-10')).total).toBe(1);
+    const { results } = await json<ClaimResponse>(await call(env, 'POST', '/api/games/claim', { cookie: bo, body: { claims: [{ id: guest.game.id, claim: guest.game.claim }] } }));
+    expect(Date.now() - t0).toBeLessThan(BOARD_TTL_MS);
+    expect(results[0].daily).toMatchObject({ first: true, rank: 1, total: 2 });
+    expect((await dailyBoard('2026-12-10')).total).toBe(2);
+  });
+
+  it('dailyGrew drops only the copies of the days it names', async () => {
+    at('2026-12-10T12:00:00Z');
+    await signIn(env, 'ana@example.com', 'Meridian');
+    const day = dayNumber('2026-12-10') as number;
+    const c = counted();
+    const t = Date.now();
+    await cachedDailyTopAndTotal(c.db, day, t);
+    await cachedDailyTopAndTotal(c.db, day + 1, t);
+    expect(c.n()).toBe(4);
+    dailyGrew([day + 1]);
+    await cachedDailyTopAndTotal(c.db, day, t);
+    expect(c.n()).toBe(4);
+    await cachedDailyTopAndTotal(c.db, day + 1, t);
+    expect(c.n()).toBe(6);
+    dailyGrew([]);
+    await cachedDailyTopAndTotal(c.db, day + 1, t);
+    expect(c.n()).toBe(6);
+  });
+
+  it(`holds at most ${BOARD_CACHE_WINDOWS} days, dropping the oldest; resetBoardCache forgets them all`, async () => {
+    const c = counted();
+    const t = 1_800_000_000_000;
+    for (let k = 0; k <= BOARD_CACHE_WINDOWS; k++) await cachedDailyTopAndTotal(c.db, 20_000 + k, t);
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 1));
+    await cachedDailyTopAndTotal(c.db, 20_001, t); // still held
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 1));
+    await cachedDailyTopAndTotal(c.db, 20_000, t); // the first was dropped for the seventeenth
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 2));
+    resetBoardCache();
+    await cachedDailyTopAndTotal(c.db, 20_001, t);
+    expect(c.n()).toBe(2 * (BOARD_CACHE_WINDOWS + 3));
   });
 });
 

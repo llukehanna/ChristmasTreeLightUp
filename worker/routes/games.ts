@@ -6,9 +6,9 @@ import { GEN_VERSION } from '../../src/core/seeded.js';
 import { hmac, randomSeed, randomToken } from '../lib/crypto.js';
 import type { AppEnv, Ctx } from '../lib/env.js';
 import { clientIp, HttpError, json, rateKey, readJson } from '../lib/http.js';
-import { boardGrew, cachedTotal } from '../lib/board-cache.js';
+import { boardGrew, cachedDailyTotal, cachedTotal, dailyGrew } from '../lib/board-cache.js';
 import { dailyClosesAt, dailySeed, DAILY_FIRST_DAY, liveDay } from '../lib/daily.js';
-import { dailyFirstId, dailyRankOf, dailyTotal } from '../lib/daily-board.js';
+import { dailyFirstId, dailyRankOf } from '../lib/daily-board.js';
 import { DAY_MS, dayNumber, dayText } from '../lib/days.js';
 import { bestOf, rankOf } from '../lib/ranks.js';
 import { authSecret, currentUser, requireUser } from '../lib/users.js';
@@ -56,6 +56,12 @@ const finished = (g: GameRow): g is FinishedGame => g.finished_at !== null && g.
 /** Ranked and owned by a named player: on the leaderboard. */
 const onBoard = (g: GameRow): boolean => g.ranked === 1 && g.named === 1;
 const notFound = () => new HttpError(404, 'not_found', "That game isn't on record.");
+/**
+ * A live day's game of a named player: as their first attempt it decides their place on the day's Daily board. A clean
+ * finish ('daily') may join that board; a claim may join it, or (starting earlier) take the place of the account's own
+ * run. Either way the isolate's copy of that day is dropped (dailyGrew). A repeat drops it too, needlessly but safely.
+ */
+const decidesDaily = <G extends GameRow>(g: G): g is G & { daily_day: number } => g.daily_day !== null && g.daily_past === 0 && g.named === 1;
 
 const dayClosed = () => new HttpError(400, 'invalid', "That day's tree isn't open.");
 
@@ -125,8 +131,9 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
 }
 
 /**
- * The Daily block for a finished Daily game owned by `userId` (null: a guest's), from its day's board, which is read
- * live (daily-board.ts). `dayOf` gives the day's total and the owner's first attempt, read once per day for a request.
+ * The Daily block for a finished Daily game owned by `userId` (null: a guest's), from its day's board (daily-board.ts).
+ * `dayOf` gives the day's total (the isolate's copy, BOARD_TTL_MS, dropped by dailyGrew when this request's own run may
+ * have joined) and the owner's first attempt (live), read once per day for a request. The place is live.
  */
 async function dailyOf(
   env: AppEnv,
@@ -159,7 +166,7 @@ async function resultsOf(env: AppEnv, userId: number | null, games: readonly Fin
   const dayOf = (day: number) => {
     let p = days.get(day);
     if (!p) {
-      p = Promise.all([dailyTotal(env.DB, day), userId === null ? null : dailyFirstId(env.DB, userId, day)]).then(([total, firstId]) => ({ total, firstId }));
+      p = Promise.all([cachedDailyTotal(env.DB, day), userId === null ? null : dailyFirstId(env.DB, userId, day)]).then(([total, firstId]) => ({ total, firstId }));
       days.set(day, p);
     }
     return p;
@@ -225,6 +232,7 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
   }
   const done: FinishedGame = { ...game, finished_at: receivedAt, ms: verdict.ms, ranked, unranked_reason: reason };
   boardGrew(onBoard(done) ? [done.finished_at] : []);
+  dailyGrew(decidesDaily(done) && reason === 'daily' ? [done.daily_day] : []);
   return json(await resultOf(env, done));
 }
 
@@ -257,6 +265,7 @@ export async function claimGames(req: Request, env: AppEnv): Promise<Response> {
     if (res.meta.changes > 0) claimed.push(owned);
   }
   boardGrew(claimed.filter(onBoard).map((g) => g.finished_at));
+  dailyGrew(claimed.filter(decidesDaily).map((g) => g.daily_day));
   // Results after every claim, so best and newBest reflect the whole batch.
   const results = await resultsOf(env, user.id, claimed);
   return json({ results } satisfies ClaimResponse);

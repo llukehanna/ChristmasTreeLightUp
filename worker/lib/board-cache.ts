@@ -1,4 +1,5 @@
 import type { Db } from './db.js';
+import { dailyTopAndTotal, dailyTotal } from './daily-board.js';
 import { boardTotal, topAndTotal, type TopRow } from './ranks.js';
 
 /**
@@ -17,19 +18,22 @@ interface Entry {
 
 /** Each window's copy, keyed by its start (epoch ms; 0 is all time), oldest written first. */
 const windows = new Map<number, Entry>();
+/** Each Daily board's copy, keyed by its day number, oldest written first. */
+const dailies = new Map<number, Entry>();
 
 const fresh = (e: { at: number } | null, now: number): boolean => e !== null && now - e.at < BOARD_TTL_MS;
 
-/** Stores a window's copy as the newest, dropping the oldest past BOARD_CACHE_WINDOWS. */
-function put(since: number, e: Entry): void {
-  windows.delete(since);
-  windows.set(since, e);
-  while (windows.size > BOARD_CACHE_WINDOWS) windows.delete(windows.keys().next().value as number);
+/** Stores a copy (a window's, or a Daily board's) as the newest in `map`, dropping the oldest past BOARD_CACHE_WINDOWS. */
+function put(map: Map<number, Entry>, key: number, e: Entry): void {
+  map.delete(key);
+  map.set(key, e);
+  while (map.size > BOARD_CACHE_WINDOWS) map.delete(map.keys().next().value as number);
 }
 
-/** Forget the cached board (a name picked or an account deleted in this isolate; tests). */
+/** Forget the cached boards, the Daily boards too (a name picked or an account deleted in this isolate; tests). */
 export function resetBoardCache(): void {
   windows.clear();
+  dailies.clear();
 }
 
 /**
@@ -52,7 +56,7 @@ export async function cachedTotal(db: Db, now = Date.now(), since = 0): Promise<
   const e = windows.get(since);
   if (e?.total && fresh(e.total, now)) return e.total.n;
   const n = await boardTotal(db, since);
-  put(since, { top: e?.top ?? null, total: { n, at: now } });
+  put(windows, since, { top: e?.top ?? null, total: { n, at: now } });
   return n;
 }
 
@@ -64,6 +68,36 @@ export async function cachedTopAndTotal(db: Db, now = Date.now(), since = 0): Pr
   const e = windows.get(since);
   if (e?.top && e.total && fresh(e.top, now) && fresh(e.total, now)) return { top: e.top.rows, total: e.total.n };
   const r = await topAndTotal(db, since);
-  put(since, { top: { rows: r.top, at: now }, total: { n: r.total, at: now } });
+  put(windows, since, { top: { rows: r.top, at: now }, total: { n: r.total, at: now } });
+  return r;
+}
+
+/**
+ * Runs may just have joined these days' Daily boards in this isolate (a finish or a claim by a named player): their
+ * copies are dropped, so the next read (the finish's own "#r of total" first) counts them. Dropped rather than bumped:
+ * a claimed run that started earlier can take the place of the account's own run, so a join isn't always one more.
+ */
+export function dailyGrew(days: readonly number[]): void {
+  for (const day of days) dailies.delete(day);
+}
+
+/** The runs on day `day`'s Daily board, at most BOARD_TTL_MS old. */
+export async function cachedDailyTotal(db: Db, day: number, now = Date.now()): Promise<number> {
+  const e = dailies.get(day);
+  if (e?.total && fresh(e.total, now)) return e.total.n;
+  const n = await dailyTotal(db, day);
+  put(dailies, day, { top: e?.top ?? null, total: { n, at: now } });
+  return n;
+}
+
+/**
+ * Day `day`'s Daily board: its top BOARD_TOP and its total (one batch on a miss), at most BOARD_TTL_MS old. Your own
+ * run on it and its place stay live.
+ */
+export async function cachedDailyTopAndTotal(db: Db, day: number, now = Date.now()): Promise<{ top: TopRow[]; total: number }> {
+  const e = dailies.get(day);
+  if (e?.top && e.total && fresh(e.top, now) && fresh(e.total, now)) return { top: e.top.rows, total: e.total.n };
+  const r = await dailyTopAndTotal(db, day);
+  put(dailies, day, { top: { rows: r.top, at: now }, total: { n: r.total, at: now } });
   return r;
 }

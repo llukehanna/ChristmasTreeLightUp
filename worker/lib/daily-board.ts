@@ -7,7 +7,9 @@ import type { TopRow } from './ranks.js';
  * live game for the day (daily_past = 0; a tie in started_at goes to the lower id), when it finished clean (reason
  * 'daily'). That first attempt counts finished or not, so one abandoned or judged unranked keeps the player off the
  * day's board: a later attempt never takes its place. Both lookups seek games_daily (daily_day, user_id, started_at).
- * No isolate cache: the index bounds every read to the day's attempts.
+ * The index bounds every read to the day's attempts, yet each still reads a few rows per attempt: the board's top and
+ * total go through the isolate's copy of the day (board-cache.ts), as the main board's do; your own run and its place
+ * are read live.
  */
 const ON_DAILY =
   "FROM games g JOIN users u ON u.id = g.user_id WHERE g.daily_day = ?1 AND g.daily_past = 0 AND g.unranked_reason = 'daily' AND u.name IS NOT NULL" +

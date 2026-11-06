@@ -1,9 +1,9 @@
 import { BOARD_WINDOWS, type BoardResponse, type BoardRow, type BoardWindow } from '../../src/api/types.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json } from '../lib/http.js';
-import { cachedTopAndTotal } from '../lib/board-cache.js';
+import { cachedDailyTopAndTotal, cachedTopAndTotal } from '../lib/board-cache.js';
 import { DAY_MS, localMidnight, mondayOf, viewerDay } from '../lib/days.js';
-import { dailyBestRow, dailyRankOf, dailyTopAndTotal } from '../lib/daily-board.js';
+import { dailyBestRow, dailyRankOf } from '../lib/daily-board.js';
 import { bestOf, rankOf, rankRows, type TopRow } from '../lib/ranks.js';
 import { currentUser, type SessionUser } from '../lib/users.js';
 
@@ -46,7 +46,8 @@ async function boardOf(top: readonly TopRow[], total: number, user: SessionUser 
  * total, and your best in it. Varies with the cookie (your rows), so the cache is private and short; each window and
  * day is its own URL, so the browser never mixes them. The main windows' top BOARD_TOP and total come from the
  * isolate's copy of that window (BOARD_TTL_MS); your pinned best is read live. The Daily window is the viewer's day's
- * Daily board (daily-board.ts), read live: its first attempts only, and your own first attempt pinned.
+ * Daily board (daily-board.ts): its first attempts only, its top and total from the isolate's copy of that day, and your
+ * own first attempt pinned, read live.
  */
 export async function getBoard(req: Request, env: AppEnv): Promise<Response> {
   const q = new URL(req.url).searchParams;
@@ -56,7 +57,7 @@ export async function getBoard(req: Request, env: AppEnv): Promise<Response> {
   if (w === 'daily') {
     const { today: day } = viewerToday(q);
     const user = await currentUser(req, env);
-    const { top, total } = await dailyTopAndTotal(env.DB, day);
+    const { top, total } = await cachedDailyTopAndTotal(env.DB, day);
     body = await boardOf(top, total, user, async (u) => {
       const mine = await dailyBestRow(env.DB, u.id, day);
       return mine && { rank: await dailyRankOf(env.DB, day, mine.ms, mine.finished_at), name: u.name, ms: mine.ms, finishedAt: mine.finished_at, mine: true };

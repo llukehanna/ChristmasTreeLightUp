@@ -382,6 +382,7 @@ describe('the Daily board (GET /api/board?window=daily)', () => {
     // Fifty faster first attempts push Ana's below the list: pinned with its place among first attempts.
     const fast = await Promise.all(Array.from({ length: 50 }, (_, k) => user(`p${k}@example.com`, `Player${k}`)));
     for (const [k, id] of fast.entries()) await attempt(id, '2026-12-10', noon + k, 30_000 + k);
+    resetBoardCache(); // runs straight into D1 show once the isolate's copy of the day expires
     const anaCookie = await signIn(env, 'ana@example.com');
     const pinned = await daily('2026-12-10', anaCookie);
     expect(pinned.rows).toHaveLength(BOARD_TOP);
