@@ -299,3 +299,9 @@ button:focus-visible, .menu button:focus-visible, .results button:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* The spark cursor (src/ui/spark-cursor.ts): chrome over everything that takes no pointer events; the system cursor hides,
+   except over a text field. */
+.spark-cursor { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 9500; pointer-events: none; }
+body.spark-on, body.spark-on * { cursor: none !important; }
+body.spark-on :is(input, textarea, [contenteditable='true']) { cursor: auto !important; }

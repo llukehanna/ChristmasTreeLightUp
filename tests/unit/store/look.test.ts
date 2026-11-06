@@ -105,3 +105,23 @@ it('the egg worlds reset the garland and the tag too', () => {
   for (const w of ['secret', 'home-alone'] as const) expect(worldLook(mine, w)).toMatchObject({ garland: 'game', tag: 'plain', palette: 'scene' });
   expect(worldLook(mine, 'secret').topper).toBe('goldstar');
 });
+
+it('the starter look strings the game bulbs on the fir, with the plain cursor; parseLook keeps known strands, trees and cursors', () => {
+  expect(STARTER_LOOK).toMatchObject({ strand: 'bulbs', tree: 'fir', cursor: 'plain' });
+  expect(parseLook({ ...STARTER_LOOK, strand: 'candle', tree: 'tinsel', cursor: 'spark' })).toMatchObject({ strand: 'candle', tree: 'tinsel', cursor: 'spark' });
+  expect(parseLook({ ...STARTER_LOOK, strand: 'icicle', tree: 7, cursor: undefined })).toEqual(STARTER_LOOK);
+  for (const i of ITEMS.filter((x) => x.slot === 'strand' || x.slot === 'tree' || x.slot === 'cursor'))
+    expect(parseLook({ ...STARTER_LOOK, [i.slot]: i.value })[i.slot as 'strand' | 'tree' | 'cursor'], i.id).toBe(i.value);
+});
+it('effectiveLook locks the strand, the tree and the cursor', () => {
+  const saved: Look = { ...STARTER_LOOK, strand: 'bubble', tree: 'flocked', cursor: 'spark' };
+  expect(effectiveLook(saved, () => false)).toMatchObject({ strand: 'bulbs', tree: 'fir', cursor: 'plain' });
+  expect(effectiveLook(saved, (id) => id === 'strand:bubble')).toMatchObject({ strand: 'bubble', tree: 'fir', cursor: 'plain' });
+  expect(effectiveLook(saved, (id) => id === 'tree:flocked')).toMatchObject({ strand: 'bulbs', tree: 'flocked', cursor: 'plain' });
+  expect(effectiveLook(saved, (id) => id === 'cursor:spark')).toMatchObject({ strand: 'bulbs', tree: 'fir', cursor: 'spark' });
+  expect(saved).toMatchObject({ strand: 'bubble', tree: 'flocked', cursor: 'spark' });
+});
+it('the egg worlds reset the strand, the tree and the cursor', () => {
+  const mine: Look = { ...STARTER_LOOK, strand: 'c9', tree: 'feather', cursor: 'spark' };
+  for (const w of ['secret', 'home-alone'] as const) expect(worldLook(mine, w)).toMatchObject({ strand: 'bulbs', tree: 'fir', cursor: 'plain' });
+});

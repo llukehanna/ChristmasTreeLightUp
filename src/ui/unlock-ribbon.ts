@@ -33,7 +33,7 @@ export function tryPatch(look: Look, item: ItemDef): Partial<Look> | null {
   return patched[slot] === item.value ? ({ [slot]: item.value } as Partial<Look>) : null;
 }
 
-const LOOK_SLOTS = ['scene', 'path', 'palette', 'topper', 'presents', 'garland', 'tag'] as const;
+const LOOK_SLOTS = ['scene', 'path', 'palette', 'strand', 'tree', 'topper', 'presents', 'garland', 'tag', 'cursor'] as const;
 
 /** The items a pick names: each slot it changed, and each decoration it switched on (starter values name none). */
 export function picked(before: Look, after: Look): string[] {

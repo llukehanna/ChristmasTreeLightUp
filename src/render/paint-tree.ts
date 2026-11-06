@@ -1,7 +1,10 @@
 import { mulberry32, type Rng } from '../core/rng';
+import type { TreeKind } from '../store/look';
 import { blurredLayer } from './blur';
 import { envelope, X, Y, type Layout } from './layout';
 import type { Scene } from './scenes';
+import { paintFeather, paintFlocked } from './trees/firs';
+import { paintTinsel } from './trees/tinsel';
 
 interface NeedlePass {
   blur: number;
@@ -18,8 +21,19 @@ const PASSES: readonly NeedlePass[] = [
   { blur: 0, bright: 1.15, frac: 0.55, alpha: 0.85, len: 0.9 },
 ];
 
-/** Procedural fir, painted once per resize/scene change. */
-export function paintTree(c: CanvasRenderingContext2D, L: Layout, sc: Scene): void {
+/**
+ * The tree layer, painted once per resize, scene change or change of tree: the procedural fir, or the flocked, feather
+ * or tinsel aluminium tree (season two, C3: src/render/trees). Each clears the layer first.
+ */
+export function paintTree(c: CanvasRenderingContext2D, L: Layout, sc: Scene, kind: TreeKind = 'fir'): void {
+  if (kind === 'flocked') return paintFlocked(c, L, sc);
+  if (kind === 'feather') return paintFeather(c, L, sc);
+  if (kind === 'tinsel') return paintTinsel(c, L, sc);
+  paintFir(c, L, sc);
+}
+
+/** Procedural fir. */
+function paintFir(c: CanvasRenderingContext2D, L: Layout, sc: Scene): void {
   const r = mulberry32(11);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.clearRect(0, 0, c.canvas.width, c.canvas.height);

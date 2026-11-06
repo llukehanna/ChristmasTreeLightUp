@@ -5,7 +5,7 @@
 import type { PathStyle } from '../render/paths';
 import { SET_PAPERS, type PaperSet } from '../render/present-sets';
 import type { SceneId } from '../render/scenes';
-import type { Decor, PresentSet, TagStyle, TopperKind } from '../store/look';
+import type { CursorKind, Decor, PresentSet, StrandKind, TagStyle, TopperKind, TreeKind } from '../store/look';
 
 let n = 0;
 /** Gives every `P-` id and `#P-` reference in an SVG string its own prefix, so swatches never share gradients. */
@@ -240,6 +240,143 @@ export const SCENE_ART: Record<SceneId, string> = {
   ),
 };
 
+/* ---------------- trees (60×72), from the lab ---------------- */
+
+const tierPaths = (cx: number, top: number, h: number, fill: string, extra = ''): string =>
+  [
+    [top, top + h * 0.4, h * 0.21],
+    [top + h * 0.2, top + h * 0.67, h * 0.32],
+    [top + h * 0.42, top + h * 0.94, h * 0.43],
+  ]
+    .map(
+      ([t, b, w]) =>
+        `<path d="M${cx} ${t}L${cx + w} ${b}Q${cx + w * 0.5} ${b + 2.4} ${cx} ${b - 0.6}Q${cx - w * 0.5} ${b + 2.4} ${cx - w} ${b}Z" fill="${fill}" ${extra}/>`,
+    )
+    .join('');
+
+const needles = (cx: number, top: number, h: number, color: string, op: number): string => {
+  let out = '';
+  let s = 17;
+  const r = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 70; i++) {
+    const f = 0.12 + r() * 0.85;
+    const y = top + h * f;
+    const half = h * 0.43 * f;
+    const x = cx + (r() * 2 - 1) * half * 0.9;
+    const dx = (x < cx ? -1 : 1) * (1 + r() * 1.4);
+    out += `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l${dx.toFixed(1)} 1.6" />`;
+  }
+  return `<g stroke="${color}" stroke-width=".55" stroke-linecap="round" opacity="${op}">${out}</g>`;
+};
+
+const treeBulbs = (cx: number, top: number, h: number, colors: readonly string[]): string => {
+  const pts: [number, number][] = [];
+  [0.3, 0.48, 0.64, 0.8, 0.92].forEach((f, ri) => {
+    const half = h * 0.43 * f * 0.8;
+    const k = ri + 1;
+    for (let j = 0; j < k; j++) pts.push([k === 1 ? cx + 2 : cx - half + (j / (k - 1)) * half * 2, top + h * f]);
+  });
+  return bulbs(pts, colors, 1.7);
+};
+
+const STAR = (cx: number, y: number): string =>
+  `<g filter="url(#P-bb)"><circle cx="${cx}" cy="${y}" r="4.5" fill="#ffcc70" opacity=".8"/></g><path d="M${cx} ${y - 4.4}L${cx + 1.2} ${y - 1.2}L${cx + 4.4} ${y}L${cx + 1.2} ${y + 1.2}L${cx} ${y + 4.4}L${cx - 1.2} ${y + 1.2}L${cx - 4.4} ${y}L${cx - 1.2} ${y - 1.2}Z" fill="#fff0c4"/>`;
+
+export const TREE_ART: Record<TreeKind, string> = {
+  fir: svg(
+    '0 0 60 72',
+    `<defs><linearGradient id="P-t" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a8a58"/><stop offset=".5" stop-color="#17502f"/><stop offset="1" stop-color="#072112"/></linearGradient></defs>
+    <rect x="27.6" y="60" width="4.8" height="8" fill="#4a2814"/>
+    ${tierPaths(30, 8, 56, 'url(#P-t)')}${needles(30, 8, 56, '#6fc08a', 0.45)}${treeBulbs(30, 8, 56, WARM)}${STAR(30, 8)}`,
+  ),
+  tinsel: svg(
+    '0 0 60 72',
+    `<defs><linearGradient id="P-t" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7d8794"/><stop offset=".35" stop-color="#f4f7fa"/><stop offset=".55" stop-color="#c3ccd6"/><stop offset="1" stop-color="#5b6470"/></linearGradient>
+    <clipPath id="P-c">${tierPaths(30, 8, 56, '#000')}</clipPath></defs>
+    <rect x="29" y="60" width="2" height="8" fill="#b9c2cc"/><path d="M22 68h16" stroke="#8d96a2" stroke-width="2" stroke-linecap="round"/>
+    ${tierPaths(30, 8, 56, 'url(#P-t)')}
+    <g clip-path="url(#P-c)">
+    <g stroke="#fff" stroke-width=".5" opacity=".75">${Array.from({ length: 26 }, (_, i) => `<path d="M${30 - 26 + ((i * 7) % 52)} ${12 + i * 2}l${i % 2 ? 4 : -4} 2"/>`).join('')}</g></g>
+    <g fill="#fff">${[
+      [24, 30],
+      [36, 40],
+      [27, 52],
+      [40, 56],
+      [33, 22],
+    ]
+      .map(([x, y]) => `<path d="M${x} ${y - 2.6}l.5 2.1 2.1.5-2.1.5-.5 2.1-.5-2.1-2.1-.5 2.1-.5z"/>`)
+      .join('')}</g>${STAR(30, 8)}`,
+  ),
+  flocked: svg(
+    '0 0 60 72',
+    `<defs><linearGradient id="P-t" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a8a68"/><stop offset=".5" stop-color="#245a40"/><stop offset="1" stop-color="#0d2a1c"/></linearGradient>
+    <linearGradient id="P-snow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d6e4ec"/></linearGradient></defs>
+    <rect x="27.6" y="60" width="4.8" height="8" fill="#4a2814"/>
+    ${tierPaths(30, 8, 56, 'url(#P-t)')}
+    ${[
+      [8, 30.4, 11.8],
+      [19.2, 45.5, 17.9],
+      [31.5, 60.6, 24],
+    ]
+      .map(
+        ([t, b, w]) =>
+          `<path d="M30 ${t}L${30 + w * 0.42} ${t + (b - t) * 0.42}Q30 ${t + (b - t) * 0.5} ${30 - w * 0.42} ${t + (b - t) * 0.42}Z" fill="url(#P-snow)" opacity=".92"/><path d="M${30 - w} ${b}Q${30 - w * 0.5} ${b - 3.6} 30 ${b - 1.6}Q${30 + w * 0.5} ${b - 3.6} ${30 + w} ${b}Q${30 + w * 0.5} ${b + 1.6} 30 ${b - 0.2}Q${30 - w * 0.5} ${b + 1.6} ${30 - w} ${b}Z" fill="url(#P-snow)"/>`,
+      )
+      .join('')}
+    <g fill="#fff">${Array.from({ length: 30 }, (_, i) => `<circle cx="${(30 + Math.sin(i * 2.3) * (4 + (i % 9) * 2.4)).toFixed(1)}" cy="${(16 + ((i * 13) % 44)).toFixed(1)}" r="${(0.35 + (i % 3) * 0.2).toFixed(2)}" opacity=".8"/>`).join('')}</g>
+    ${treeBulbs(30, 8, 56, ['#ffd27a', '#ff6a5c', '#ffd27a', '#fff1d6'])}${STAR(30, 8)}`,
+  ),
+  feather: svg(
+    '0 0 60 72',
+    `<defs><linearGradient id="P-base" x1="0" x2="1"><stop offset="0" stop-color="#bfb3a0"/><stop offset=".4" stop-color="#fffaf0"/><stop offset="1" stop-color="#9c8f7c"/></linearGradient></defs>
+    <path d="M30 9V63" stroke="#5a3a1c" stroke-width="1.6"/>
+    ${[
+      [17, 7],
+      [26, 11],
+      [35, 15],
+      [44, 19],
+      [53, 23],
+    ]
+      .map(([y, w]) => {
+        let n = '';
+        for (const side of [-1, 1]) {
+          const x2 = 30 + side * w;
+          n += `<path d="M30 ${y}Q${30 + side * w * 0.5} ${y - 2} ${x2} ${y + 1}" fill="none" stroke="#2a6a3e" stroke-width="1.1"/>`;
+          for (let k = 1; k <= Math.floor(w / 1.6); k++) {
+            const px = 30 + side * k * 1.6;
+            const py = y - 1.2 * Math.sin((k / (w / 1.6)) * Math.PI) + (k / (w / 1.6)) * 1;
+            n += `<path d="M${px.toFixed(1)} ${py.toFixed(1)}l${side * 0.8} -1.8M${px.toFixed(1)} ${py.toFixed(1)}l${side * 0.8} 1.6" stroke="#3f8a54" stroke-width=".55"/>`;
+          }
+          n += `<circle cx="${x2}" cy="${y + 1}" r="1.5" fill="#d42a2e"/><circle cx="${x2 - 0.5}" cy="${y + 0.5}" r=".5" fill="#ffb0a0"/>`;
+        }
+        return n;
+      })
+      .join('')}
+    <g filter="url(#P-b)">${[
+      [30 - 7, 13],
+      [30 + 11, 22],
+      [30 - 15, 31],
+      [30 + 19, 40],
+      [30 - 19, 49],
+    ]
+      .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.2" fill="#ffc46a"/>`)
+      .join('')}</g>
+    ${[
+      [30 - 7, 13],
+      [30 + 11, 22],
+      [30 - 15, 31],
+      [30 + 19, 40],
+      [30 - 19, 49],
+    ]
+      .map(
+        ([x, y]) =>
+          `<rect x="${x - 0.8}" y="${y + 1}" width="1.6" height="3.6" fill="#fff6e6"/><path d="M${x} ${y - 1.6}q1 1.6 0 2.6q-1-1 0-2.6z" fill="#fff3c0"/>`,
+      )
+      .join('')}
+    <path d="M22 70h16l-2.5-7h-11z" fill="url(#P-base)"/>${STAR(30, 8)}`,
+  ),
+};
+
 /* ---------------- light paths (84×44) ---------------- */
 
 const along = (count: number, a = 0.06, b = 0.94): [number, number][] =>
@@ -270,6 +407,58 @@ export const PATH_ART: Record<PathStyle, string> = {
     '0 0 84 44',
     `<g filter="url(#P-bb)"><path d="M4 12Q42 40 80 12" fill="none" stroke="#ff3fa8" stroke-width="10"/><path d="M4 12Q42 40 80 12" fill="none" stroke="#ff5cb8" stroke-width="5"/></g>
     <path d="M4 12Q42 40 80 12" fill="none" stroke="#ff8ad0" stroke-width="3.6"/><path d="M4 12Q42 40 80 12" fill="none" stroke="#fff4fa" stroke-width="1.6"/>`,
+  ),
+};
+
+/* ---------------- strands (84×44), from the lab ---------------- */
+
+/** What the end tiles' bulbs become: the game's glass bulbs on their wire, or a strand with its own. */
+export const STRAND_ART: Record<StrandKind, string> = {
+  bulbs: svg(
+    '0 0 84 44',
+    `${WIRE('#163a24', 1)}${along(5, 0.1, 0.9)
+      .map(([x, y], i) => {
+        const c = ['#ffcf7a', '#ff6a5c', '#7fd0ff', '#8cf0a8', '#ffb0e0'][i];
+        return `<g filter="url(#P-b)"><circle cx="${x.toFixed(1)}" cy="${(y + 6).toFixed(1)}" r="5" fill="${c}" opacity=".75"/></g>
+        <rect x="${(x - 1.4).toFixed(1)}" y="${(y - 0.5).toFixed(1)}" width="2.8" height="2.8" rx=".5" fill="#2a3a2a"/>
+        <circle cx="${x.toFixed(1)}" cy="${(y + 6).toFixed(1)}" r="3.4" fill="${c}"/><circle cx="${(x - 0.9).toFixed(1)}" cy="${(y + 5).toFixed(1)}" r="1.3" fill="#fff" opacity=".85"/>`;
+      })
+      .join('')}`,
+  ),
+  bubble: svg(
+    '0 0 84 44',
+    `${WIRE('#163a24', 1)}${along(4, 0.14, 0.86)
+      .map(([x, y], i) => {
+        const c = ['#ff5a5a', '#4ab8ff', '#ffc24a', '#5ad87a'][i];
+        return `<g filter="url(#P-b)"><rect x="${x - 2.2}" y="${y - 15}" width="4.4" height="13" rx="2.2" fill="${c}" opacity=".7"/></g>
+        <rect x="${x - 1.5}" y="${y - 14.5}" width="3" height="12" rx="1.5" fill="${c}" opacity=".85"/><rect x="${x - 0.8}" y="${y - 13.6}" width=".7" height="10" rx=".35" fill="#fff" opacity=".7"/>
+        <circle cx="${x}" cy="${y - 5}" r=".55" fill="#fff"/><circle cx="${x + 0.3}" cy="${y - 8}" r=".45" fill="#fff"/><circle cx="${x - 0.2}" cy="${y - 11}" r=".4" fill="#fff"/>
+        <path d="M${x - 2.6} ${y + 2.5}L${x + 2.6} ${y + 2.5}L${x + 1.7} ${y - 2.5}L${x - 1.7} ${y - 2.5}Z" fill="${['#c2303a', '#2a6ad0', '#d09030', '#2a9a50'][i]}"/>`;
+      })
+      .join('')}`,
+  ),
+  candle: svg(
+    '0 0 84 44',
+    `${WIRE('#2a5a3a', 1.6)}${along(4, 0.12, 0.88)
+      .map(
+        ([x, y]) => `<path d="M${x - 2.2} ${y}h4.4" stroke="#c9a45a" stroke-width="1.6"/>
+        <rect x="${x - 1.6}" y="${y - 12}" width="3.2" height="12" rx=".6" fill="#fbf3e2"/><rect x="${x - 1.6}" y="${y - 12}" width="1" height="12" fill="#fff" opacity=".8"/><rect x="${x + 0.6}" y="${y - 12}" width="1" height="12" fill="#d9ccb3"/>
+        <g filter="url(#P-bb)"><circle cx="${x}" cy="${y - 15}" r="3.6" fill="#ffb84a" opacity=".85"/></g>
+        <path d="M${x} ${y - 19.5}q2 3.2 0 5q-2-1.8 0-5z" fill="#ffd27a"/><path d="M${x} ${y - 17}q.8 1.4 0 2.2q-.8-.8 0-2.2z" fill="#fffbe8"/>`,
+      )
+      .join('')}`,
+  ),
+  c9: svg(
+    '0 0 84 44',
+    `${WIRE('#163a24', 1.3)}${along(5, 0.1, 0.9)
+      .map(([x, y], i) => {
+        const c = ['#ff4a4a', '#ffb43a', '#3aa0ff', '#3ad07a', '#ff7ac8'][i];
+        return `<g filter="url(#P-bb)"><ellipse cx="${x}" cy="${y + 6}" rx="4.4" ry="5.6" fill="${c}" opacity=".85"/></g>
+        <rect x="${x - 1.5}" y="${y - 0.5}" width="3" height="2.6" fill="#2a4a2a"/>
+        <path d="M${x - 1.8} ${y + 2}C${x - 3.8} ${y + 5} ${x - 3} ${y + 10.5} ${x} ${y + 11}C${x + 3} ${y + 10.5} ${x + 3.8} ${y + 5} ${x + 1.8} ${y + 2}Z" fill="${c}"/>
+        <path d="M${x - 1} ${y + 3}C${x - 2.2} ${y + 5} ${x - 1.8} ${y + 8} ${x - 0.6} ${y + 9}" fill="none" stroke="#fff" stroke-width=".8" opacity=".75"/>`;
+      })
+      .join('')}`,
   ),
 };
 
@@ -520,3 +709,30 @@ export const BOW_ART = uniq(`<svg class="deco-bow" viewBox="0 0 64 40" aria-hidd
   <path d="M12 9.5c4-3 10-1 15 5M52 9.5c-4-3-10-1-15 5" fill="none" stroke="rgba(255,248,220,.7)" stroke-width=".9" stroke-linecap="round"/>
   <ellipse cx="32" cy="20" rx="5.2" ry="4.6" fill="url(#P-k)"/>
 </svg>`);
+
+/* ---------------- the cursor (56×44) ---------------- */
+
+/** The pointer: the system's arrow, or the spark's ember with a few sparkles. */
+export const CURSOR_ART: Record<CursorKind, string> = {
+  plain: svg(
+    '0 0 56 44',
+    `<path d="M22 8v24l6-6 4.4 9.4 3.6-1.7-4.4-9.3H40z" fill="#000" opacity=".35" transform="translate(1 1.5)" filter="url(#P-b)"/>
+    <path d="M22 8v24l6-6 4.4 9.4 3.6-1.7-4.4-9.3H40z" fill="#f6efe2" stroke="#2a1c10" stroke-width="1.2" stroke-linejoin="round"/>`,
+  ),
+  spark: svg(
+    '0 0 56 44',
+    `<defs><radialGradient id="P-e" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffecbe" stop-opacity=".9"/><stop offset=".3" stop-color="#ffb050" stop-opacity=".55"/><stop offset="1" stop-color="#ff7828" stop-opacity="0"/></radialGradient></defs>
+    <circle cx="28" cy="22" r="16" fill="url(#P-e)"/>
+    <g fill="#ffd27a">${[
+      [14, 30, 1.1],
+      [40, 12, 0.9],
+      [43, 30, 1.3],
+      [18, 13, 0.8],
+    ]
+      .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" opacity=".85"/>`)
+      .join('')}</g>
+    <path d="M38 33l.7 2.4 2.4.7-2.4.7-.7 2.4-.7-2.4-2.4-.7 2.4-.7z" fill="#fff3c8"/>
+    <path d="M12 21l.6 2 2 .6-2 .6-.6 2-.6-2-2-.6 2-.6z" fill="#fff3c8"/>
+    <circle cx="28" cy="22" r="3.6" fill="#fff"/><circle cx="28" cy="22" r="5.2" fill="#fff2c8" opacity=".5" filter="url(#P-b)"/>`,
+  ),
+};

@@ -56,6 +56,7 @@ import type { HectorDesk, HectorGlare } from './ui/hector';
 import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { awaitsClaim, renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, type ShareImage } from './ui/share';
+import { SparkCursor } from './ui/spark-cursor';
 import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
@@ -293,6 +294,13 @@ export class App {
   private booted = false;
   /** The star-head egg: taps on the star and "hohoho" swap the topper (src/ui/star-egg.ts). */
   private readonly egg: StarEgg;
+  /** The spark cursor (an unlock): on while the worn look has it, driven by the frame loop. */
+  private readonly spark = new SparkCursor({
+    overTile: (x, y) => {
+      const [wx, wy] = toWorld(this.camera, x, y);
+      return tileAt(this.renderer.layout, GRID, wx, wy) >= 0;
+    },
+  });
   /** Secret mode (spec 2026-10-08 secret mode): on exactly while the head tops the tree. */
   private secret = false;
   /** Home Alone mode (spec 2026-10-14): on exactly while the switch is. */
@@ -1174,6 +1182,8 @@ export class App {
 
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
+    // The spark cursor follows the mouse at the display's rate, calm or not (nothing while off or asleep).
+    this.spark.frame(now);
     // Ambient-only frames draw at 30 Hz. Never calm: during a sky sweep or a topper flip (the player caused them), and,
     // unpaused, while the player's motion settles, the post-win light show runs, or secret mode's beat is on (they
     // follow the music). A paused loop is calm: one blurred frame, so no wake at every vsync.
@@ -1393,6 +1403,8 @@ export class App {
     const worn = worldLook(this.shownLook, this.world);
     const repainted = this.renderer.setDress({ ...worn, pile });
     this.results.setTag(worn.tag);
+    if (worn.cursor === 'spark') this.spark.start();
+    else this.spark.stop();
     this.decorate.sync();
     return repainted;
   }

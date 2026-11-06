@@ -14,10 +14,13 @@ import { PALETTES, withPalette } from '../render/palettes';
 import type { PathStyle } from '../render/paths';
 import { SCENES, type SceneId } from '../render/scenes';
 import {
-  effectiveLook, type Decor, type GarlandSet, type Look, type PaletteId, type PresentSet, type TagStyle, type TopperKind,
+  effectiveLook, type CursorKind, type Decor, type GarlandSet, type Look, type PaletteId, type PresentSet, type StrandKind, type TagStyle,
+  type TopperKind, type TreeKind,
 } from '../store/look';
 import type { SavedLook } from '../store/saved-looks';
-import { BOW_ART, DECOR_ART, garlandArt, PATH_ART, PRESENT_ART, SCENE_ART, TAG_ART, TOPPER_ART } from './decorate-art';
+import {
+  BOW_ART, CURSOR_ART, DECOR_ART, garlandArt, PATH_ART, PRESENT_ART, SCENE_ART, STRAND_ART, TAG_ART, TOPPER_ART, TREE_ART,
+} from './decorate-art';
 import { count, formatMs } from './format';
 
 export interface DecorateHandlers {
@@ -83,7 +86,10 @@ const SLOTS = [0, 1, 2] as const;
 const SCENE_ITEMS: readonly [SceneId, string][] = [
   ['fireside', 'Fireside'], ['midnight', 'Midnight'], ['sash', 'Sash'], ['square', 'Town square'], ['parlour', 'Parlour'], ['frost', 'Frost'],
 ];
+// The aluminium tree is the lab's "tinsel" tree: named for its foil, so it doesn't read as the tinsel decoration.
+const TREE_ITEMS: readonly [TreeKind, string][] = [['fir', 'Fir'], ['flocked', 'Flocked'], ['feather', 'Feather'], ['tinsel', 'Aluminium']];
 const PATH_ITEMS: readonly [PathStyle, string][] = [['filament', 'Filament'], ['fairy', 'Fairy lights'], ['neon', 'Neon'], ['neonbright', 'Neon bright']];
+const STRAND_ITEMS: readonly [StrandKind, string][] = [['bulbs', 'Bulbs'], ['bubble', 'Bubble'], ['c9', 'C9'], ['candle', 'Candles']];
 const BULB_ITEMS: readonly [PaletteId, string][] = [
   ['scene', 'Scene'], ['gilded', 'Gilded'], ['golden', 'Golden'], ['classic', 'Classic'], ['candy', 'Candy'], ['emerald', 'Emerald'],
   ['ice', 'Ice'], ['snow', 'Snow'], ['sapphire', 'Sapphire'], ['goldsilver', 'Gold & silver'], ['pastel', 'Pastel'], ['peppermint', 'Peppermint'],
@@ -108,6 +114,7 @@ const TAG_ITEMS: readonly [TagStyle, string][] = [
   ['ember', 'Ember'], ['frost', 'Frost'], ['gingerbread', 'Gingerbread'], ['snowflake', 'Snowflake'], ['kraft', 'Kraft'], ['candystripe', 'Candy stripe'],
   ['starry', 'Starry night'],
 ];
+const CURSOR_ITEMS: readonly [CursorKind, string][] = [['plain', 'Plain cursor'], ['spark', 'Spark cursor']];
 
 /** The pointer events the remap re-sends in stage coordinates while the stage is scaled into its frame. */
 const REMAPPED = ['pointerdown', 'pointermove', 'pointerup', 'contextmenu', 'click', 'wheel'] as const;
@@ -115,6 +122,8 @@ const REMAPPED = ['pointerdown', 'pointermove', 'pointerup', 'contextmenu', 'cli
 const OUT_OF_REACH = '.hud, #keys-hint, .corner';
 
 const WORLD_LINE = 'Your look comes back when you leave.';
+/** Decision 10: a strand other than the bulbs brings its own wire, so the light path waits (dimmed) until it is back. */
+const OWN_WIRE = 'Your strand brings its own wire.';
 
 export class Decorate {
   private root: HTMLElement | null = null;
@@ -126,6 +135,9 @@ export class Decorate {
   /** The Matching garland swatch's bulbs: they show the bulbs on the tree (the scene's, or the look's palette). */
   private matchDots: SVGElement[] = [];
   private worldLine: HTMLElement | null = null;
+  /** The Light path section and its note: dimmed while a strand brings its own wire (Decision 10). */
+  private pathSection: HTMLElement | null = null;
+  private pathNote: HTMLElement | null = null;
   /** The line above the footer that spells out a locked swatch's goal. */
   private hint: HTMLElement | null = null;
   private chips: HTMLButtonElement[] = [];
@@ -220,6 +232,9 @@ export class Decorate {
     const tree = withPalette(SCENES[shown.scene], shown.palette).bulbs;
     this.matchDots.forEach((b, i) => b.style.setProperty('--c', tree[i % tree.length]));
     this.worldLine!.hidden = this.h.world() === null;
+    const ownWire = shown.strand !== 'bulbs';
+    this.pathSection!.classList.toggle('deco-dim', ownWire);
+    this.pathNote!.hidden = !ownWire;
     this.renderLooks();
   }
 
@@ -421,12 +436,20 @@ export class Decorate {
       const id = `${key}:${v}`;
       return { id, def: itemOf(id), label, art, on, patch };
     };
-    type Key = 'scene' | 'path' | 'palette' | 'topper' | 'presents' | 'garland' | 'tag';
+    type Key = 'scene' | 'path' | 'palette' | 'strand' | 'tree' | 'topper' | 'presents' | 'garland' | 'tag' | 'cursor';
     const items = <V extends string>(list: readonly [V, string][], art: (v: V) => string, key: Key): Item[] =>
       list.map(([v, label]) => item(key, v, label, art(v), (l) => l[key] === v, () => ({ [key]: v }) as Partial<Look>));
+    this.pathSection = this.section('Light path', 'What the wires become', 'strand', 3, items(PATH_ITEMS, (v) => PATH_ART[v], 'path'));
+    this.pathNote = document.createElement('p');
+    this.pathNote.className = 'deco-note';
+    this.pathNote.textContent = OWN_WIRE;
+    this.pathNote.hidden = true;
+    this.pathSection.querySelector('h3')!.after(this.pathNote);
     body.append(
       this.section('Scene', 'Where it stands', 'scene', 4, items(SCENE_ITEMS, (v) => SCENE_ART[v], 'scene')),
-      this.section('Light path', 'What the wires become', 'strand', 3, items(PATH_ITEMS, (v) => PATH_ART[v], 'path')),
+      this.section('Tree', 'The tree itself', 'tree', 4, items(TREE_ITEMS, (v) => TREE_ART[v], 'tree')),
+      this.pathSection,
+      this.section('Strand', 'What the bulbs become', 'strand', 3, items(STRAND_ITEMS, (v) => STRAND_ART[v], 'strand')),
       this.section('Bulbs', 'Their colours', 'pal', 3, items(BULB_ITEMS, () => '<span class="deco-pal"></span>', 'palette')),
       this.section('Garland', 'Across the top', 'garl', 3, items(GARLAND_ITEMS, garlandArt, 'garland')),
       this.section('Topper', 'Crowning the tree', 'top', 4, items(TOPPER_ITEMS, (v) => TOPPER_ART[v], 'topper')),
@@ -435,6 +458,7 @@ export class Decorate {
         DECOR_ITEMS.map(([k, label]) => item('decor', k, label, DECOR_ART[k], (l) => l.decor[k], (l) => ({ decor: { ...l.decor, [k]: !l.decor[k] } })))),
       this.section('Presents', 'Under the tree', 'gift', 4, items(PRESENT_ITEMS, (v) => PRESENT_ART[v], 'presents')),
       this.section('Tag', 'Your results', 'tag', 4, items(TAG_ITEMS, (v) => TAG_ART[v], 'tag')),
+      this.section('Extras', 'The pointer', 'cursor', 4, items(CURSOR_ITEMS, (v) => CURSOR_ART[v], 'cursor')),
     );
     // The bulbs: six lit drops each, the Scene swatch's in the current scene's colours (sync).
     body.querySelectorAll<HTMLElement>('.deco-pal').forEach((pal, i) => {

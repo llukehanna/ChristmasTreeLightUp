@@ -5,7 +5,7 @@ import type { EggModules } from '../eggs/load';
 import type { Aurora } from './aurora';
 import { paintBackdrop, type Backdrop } from './backdrop';
 import { drawBlurred } from './blur';
-import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb } from './bulbs';
+import { drawBulb, drawBulbGlint, drawBulbHalo, drawFaceBulb, drawStrandBulb, drawStrandHalo } from './bulbs';
 import type { Camera } from './camera';
 import { paintDecor, skirtBottom } from './decor';
 import {
@@ -28,6 +28,7 @@ import { Topper } from './topper';
 import { QualityGovernor } from './quality';
 import { SCENES, type Scene } from './scenes';
 import { SkySweep, type SceneChange } from './sky-sweep';
+import { wireGlow, wireLit, wireUnlit } from './strands/wire';
 import { TILE_FILL_MS, type VisualState } from './visual-state';
 import type { Opening } from '../ui/opening';
 
@@ -48,6 +49,18 @@ const EXPOSURE_POW = 1.3;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 /** How much of a feature shows during a fade at `alpha`: the leaving scene's (`had`) at 1 − alpha, the arriving one's (`has`) at alpha. */
 export const share = (had: boolean, has: boolean, alpha: number): number => (had ? 1 - alpha : 0) + (has ? alpha : 0);
+
+/**
+ * A strand's bubbles and flame hold still from this quality tier up: the governor has stepped down, so the device is
+ * struggling, and ambient motion is the first thing to go.
+ */
+export const STRAND_STILL_TIER = 1;
+
+/**
+ * Whether a strand's motion (the bubbles rising, the candle's flicker) holds still this frame: on a calm frame (ambient
+ * motion only, at the calm rate, so it adds no per-frame work), under reduced motion, or at a stepped-down tier.
+ */
+export const strandStill = (tier: number, calm: boolean, reduced: boolean): boolean => calm || reduced || tier >= STRAND_STILL_TIER;
 
 /** Secret mode's beat (spec 2026-10-08 secret mode §5): when the last onset landed, how hard (0.3..1), the palette step. */
 export interface BeatFrame {
@@ -111,8 +124,8 @@ export class Renderer {
   style: PathStyle = 'filament';
   /** What the tree is dressed with, from the look (src/store/look.ts). */
   private dress: Dress = {
-    palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: STARTER_LOOK.decor, presents: STARTER_LOOK.presents,
-    garland: STARTER_LOOK.garland, pile: Infinity,
+    palette: STARTER_LOOK.palette, strand: STARTER_LOOK.strand, tree: STARTER_LOOK.tree, topper: STARTER_LOOK.topper,
+    decor: STARTER_LOOK.decor, presents: STARTER_LOOK.presents, garland: STARTER_LOOK.garland, pile: Infinity,
   };
   readonly quality = new QualityGovernor();
   private readonly snow = new Snowfall();
@@ -197,17 +210,19 @@ export class Renderer {
   }
 
   /**
-   * The tree's dress: the topper, decorations, presents and garland are drawn from it. The palette is kept but never read
-   * here: it reaches the stage as the scene's colours (setScene), so a palette alone repaints nothing. Says whether it
-   * repainted (a change, on a sized stage), so the share image can follow.
+   * The tree's dress: the tree, the strand, the topper, decorations, presents and garland are drawn from it. The palette
+   * is kept but never read here: it reaches the stage as the scene's colours (setScene), so a palette alone repaints
+   * nothing. Says whether the stage changed (a change, on a sized stage), so the share image can follow. A strand alone
+   * repaints nothing either (it is drawn each frame), but the stage changes.
    */
   setDress(d: Dress): boolean {
     const same = this.dress.topper === d.topper && this.dress.presents === d.presents && this.dress.pile === d.pile &&
-      (Object.keys(d.decor) as (keyof Dress['decor'])[]).every((k) => this.dress.decor[k] === d.decor[k]);
+      this.dress.tree === d.tree && (Object.keys(d.decor) as (keyof Dress['decor'])[]).every((k) => this.dress.decor[k] === d.decor[k]);
     const garland = this.dress.garland !== d.garland;
+    const strand = this.dress.strand !== d.strand;
     this.dress = d;
     this.garland.setSet(d.garland);
-    if (same && !garland) return false;
+    if (same && !garland) return strand && this.sized;
     this.topper.setKind(d.topper);
     if (!this.sized) return false;
     // A garland alone repaints just its own back layer (its dark glass).
@@ -275,7 +290,7 @@ export class Renderer {
       if (!this.backdrop) paintBackground(bg, this.layout, this.scene, this.eggs?.homeAloneRoom.paintHomeAlone ?? null);
     }
     const tree = ctx2d(this.tree);
-    paintTree(tree, this.layout, this.scene);
+    paintTree(tree, this.layout, this.scene, this.dress.tree);
     // The decorations go on the tree layer, which is drawn before every wire, glass and bulb: they never cover one.
     tree.setTransform(this.layout.dpr, 0, 0, this.layout.dpr, 0, 0);
     paintDecor(tree, this.layout, this.scene, this.dress.decor);
@@ -328,6 +343,9 @@ export class Renderer {
     const litFrac = won ? 1 : board.lighting.count / GRID.ids.length;
     const motionDt = f.reducedMotion ? 0 : f.dt;
     const density = tier >= 2 ? 0.5 : 1;
+    // The look's strand, in place of the light path's wire and the glass bulbs (Decision 10); 'bulbs' draws the path.
+    const strand = this.dress.strand;
+    const still = strandStill(tier, f.calm === true, f.reducedMotion);
     const world = (c: CanvasRenderingContext2D, k: number) => c.setTransform(k * cam.scale, 0, 0, k * cam.scale, k * cam.tx, k * cam.ty);
 
     vis.prune(now);
@@ -462,10 +480,12 @@ export class Renderer {
       ctx.translate(cx, cy);
       ctx.rotate(angle);
       ctx.scale(k, k);
-      drawUnlit(ctx, tileGeometry(shown, 0), s, sc, style);
+      if (strand !== 'bulbs') wireUnlit(ctx, strand, tileGeometry(shown, 0), s, sc);
+      else drawUnlit(ctx, tileGeometry(shown, 0), s, sc, style);
       if (isBulb) {
         const face = i === faceTile && faces ? faces.get('ornament', facePx, false) : null;
         if (face) drawFaceBulb(ctx, shown, 0, s, sc, face, angle);
+        else if (strand !== 'bulbs') drawStrandBulb(ctx, strand, shown, sc.bulbs[board.colors[i]], 0, s, sc, now, i, still);
         else drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style);
       }
       ctx.restore();
@@ -478,8 +498,15 @@ export class Renderer {
       g.save();
       g.translate(cx, cy);
       g.scale(k, k);
-      drawLitGlow(g, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT, flicker });
-      if (isBulb && q >= 1) drawBulbHalo(g, sc.bulbs[(board.colors[i] + hue) % nb], this.bulbAmount(f, i, pulse) * alpha, s);
+      const lit = { q, alpha, seed: i, now, twinkleT, flicker };
+      if (strand !== 'bulbs') wireGlow(g, strand, prims, s, sc, lit);
+      else drawLitGlow(g, prims, s, sc, style, lit);
+      if (isBulb && q >= 1) {
+        const color = sc.bulbs[(board.colors[i] + hue) % nb];
+        const amt = this.bulbAmount(f, i, pulse) * alpha;
+        if (strand !== 'bulbs') drawStrandHalo(g, strand, board.bits[i], color, amt, s, now, i, still);
+        else drawBulbHalo(g, color, amt, s);
+      }
       g.restore();
       if (q >= 1 && board.lighting.lit[i] && !won) drawFrontier(g, board, L, i, now, sc, false);
     }
@@ -545,12 +572,16 @@ export class Renderer {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(k, k);
-      drawLitCore(ctx, prims, s, sc, style, { q, alpha, seed: i, now, twinkleT, flicker });
+      const lit = { q, alpha, seed: i, now, twinkleT, flicker };
+      if (strand !== 'bulbs') wireLit(ctx, strand, prims, s, sc, lit);
+      else drawLitCore(ctx, prims, s, sc, style, lit);
       if (degree(board.solution[i]) === 1 && q >= 1) {
         const amt = this.bulbAmount(f, i, pulse) * alpha;
+        const color = sc.bulbs[(board.colors[i] + hue) % nb];
         const face = i === faceTile && faces ? faces.get('ornament', facePx, true) : null;
         if (face) drawFaceBulb(ctx, board.bits[i], amt, s, sc, face);
-        else drawBulb(ctx, board.bits[i], sc.bulbs[(board.colors[i] + hue) % nb], amt, s, sc, style);
+        else if (strand !== 'bulbs') drawStrandBulb(ctx, strand, board.bits[i], color, amt, s, sc, now, i, still);
+        else drawBulb(ctx, board.bits[i], color, amt, s, sc, style);
         if (!f.reducedMotion) drawBulbGlint(ctx, now - (vis.litStart[i] + TILE_FILL_MS), s);
       }
       ctx.restore();

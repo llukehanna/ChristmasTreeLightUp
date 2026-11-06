@@ -2,6 +2,10 @@ import { D, L, U } from '../core/dirs';
 import { hexRgb, mix, rgba, shade } from './color';
 import { GLINT_NEAR, GLINT_WIDE, unlitOf, type PathStyle } from './paths';
 import type { Scene } from './scenes';
+import { bubbleBulb, bubbleHalo } from './strands/bubble';
+import { c9Bulb, c9Halo } from './strands/c9';
+import { candleBulb, candleHalo } from './strands/candle';
+import type { StrandId } from './strands/wire';
 
 const TAU = Math.PI * 2;
 
@@ -135,4 +139,22 @@ export function drawFaceBulb(c: CanvasRenderingContext2D, b: number, amt: number
   c.rotate(-tilt);
   c.drawImage(sprite, -w / 2, -h * 0.55, w, h);
   c.restore();
+}
+
+/**
+ * A strand's light in place of the glass bulb (season two, C3): a bubble light, a C9 or a candle. `amt` as drawBulb's;
+ * `b` the tile's links (the light faces its wire). `now` moves the bubbles and the flame unless `still` (a calm frame,
+ * reduced motion, a stepped-down quality tier); `seed` (the tile) keeps neighbours out of step.
+ */
+export function drawStrandBulb(c: CanvasRenderingContext2D, strand: StrandId, b: number, color: string, amt: number, s: number, sc: Scene, now: number, seed: number, still: boolean): void {
+  if (strand === 'bubble') bubbleBulb(c, b, color, amt, s, sc, now, seed, still);
+  else if (strand === 'candle') candleBulb(c, b, color, amt, s, sc, now, seed, still);
+  else c9Bulb(c, b, color, amt, s, sc);
+}
+
+/** The strand light's halo on the glow layer, in place of drawBulbHalo. */
+export function drawStrandHalo(c: CanvasRenderingContext2D, strand: StrandId, b: number, color: string, amt: number, s: number, now: number, seed: number, still: boolean): void {
+  if (strand === 'bubble') bubbleHalo(c, b, color, amt, s);
+  else if (strand === 'candle') candleHalo(c, color, amt, s, now, seed, still);
+  else c9Halo(c, b, color, amt, s);
 }

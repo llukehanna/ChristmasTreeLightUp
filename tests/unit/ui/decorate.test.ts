@@ -55,30 +55,37 @@ function make(look: Look = LOOK, world: ReturnType<DecorateHandlers['world']> = 
   return { d, h, sections, tiles, label, tile };
 }
 
-it('eight sections in order, with the current look pressed', () => {
+it('eleven sections in order, with the current look pressed', () => {
   const { sections, tiles, label } = make();
-  expect(sections.map((s) => s.querySelector('h3 span')!.textContent)).toEqual(['Scene', 'Light path', 'Bulbs', 'Garland', 'Topper', 'Decorations', 'Presents', 'Tag']);
+  expect(sections.map((s) => s.querySelector('h3 span')!.textContent)).toEqual([
+    'Scene', 'Tree', 'Light path', 'Strand', 'Bulbs', 'Garland', 'Topper', 'Decorations', 'Presents', 'Tag', 'Extras',
+  ]);
+  expect(sections.map((s) => s.querySelector('h3 em')!.textContent)).toContain('What the bulbs become');
+  expect(sections.map((s) => s.querySelector('h3 em')!.textContent)).toContain('The tree itself');
   expect(sections.map((s) => s.querySelector('h3 em')!.textContent)).toContain('Across the top');
   expect(sections.map((s) => s.querySelector('h3 em')!.textContent)).toContain('Your results');
   expect(sections.map((s) => tiles(s).map(label))).toEqual([
     ['Fireside', 'Midnight', 'Sash', 'Town square', 'Parlour', 'Frost'],
+    ['Fir', 'Flocked', 'Feather', 'Aluminium'],
     ['Filament', 'Fairy lights', 'Neon', 'Neon bright'],
+    ['Bulbs', 'Bubble', 'C9', 'Candles'],
     ['Scene', 'Gilded', 'Golden', 'Classic', 'Candy', 'Emerald', 'Ice', 'Snow', 'Sapphire', 'Gold & silver', 'Pastel', 'Peppermint', 'Rose gold', 'Copper', 'Disco'],
     ['Matching', 'Candlelight', 'Gold', 'Mercury', 'Champagne', 'Silver', 'Ice', 'Pastel', 'Classic', 'Peppermint', 'Rose gold'],
     ['Snowflake', 'Star', 'Silver star', 'Gold star', 'Angel', 'Bow'],
     ['Tinsel', 'Beads', 'Candy canes', 'Skirt'],
     ['None', 'Festive', 'Luxe', 'Kraft', 'Silver', 'Tartan', 'Starry', 'Candy stripe', 'Gold foil'],
     ['Plain', 'Silver', 'Gold foil', 'Velvet', 'Tartan', 'Holly', 'Plaid', 'Ember', 'Frost', 'Gingerbread', 'Snowflake', 'Kraft', 'Candy stripe', 'Starry night'],
+    ['Plain cursor', 'Spark cursor'],
   ]);
   const pressed = sections.map((s) => tiles(s).filter((b) => b.getAttribute('aria-pressed') === 'true').map(label));
-  expect(pressed).toEqual([['Sash'], ['Neon'], ['Ice'], ['Matching'], ['Bow'], ['Beads'], ['Festive'], ['Plain']]);
+  expect(pressed).toEqual([['Sash'], ['Fir'], ['Neon'], ['Bulbs'], ['Ice'], ['Matching'], ['Bow'], ['Beads'], ['Festive'], ['Plain'], ['Plain cursor']]);
   // No tree section and no Surprise button from the lab.
   expect(document.querySelector('[data-act="surprise"]')).toBeNull();
 });
 
 it('a swatch for every catalogue item whose slot the drawer shows (the catalogue and the art cannot drift)', () => {
   make();
-  const shown = new Set(['scene', 'path', 'palette', 'garland', 'topper', 'decor', 'presents', 'tag']);
+  const shown = new Set(['scene', 'path', 'palette', 'strand', 'tree', 'garland', 'topper', 'decor', 'presents', 'tag', 'cursor']);
   const items = ITEMS.filter((i) => shown.has(i.slot));
   expect(items.length).toBeGreaterThan(60);
   for (const i of items) expect(byId(i.id), i.id).not.toBeNull();
@@ -96,7 +103,7 @@ it('a garland and a tag pick send one field; the Matching garland shows the bulb
   // LOOK has the Ice bulbs: the Matching garland wears them; a set wears its own.
   expect(dots('garland:game')).toEqual([...PALETTES.ice]);
   expect(dots('garland:gold')).toEqual([...GARLAND_SETS.gold]);
-  expect(sections).toHaveLength(8);
+  expect(sections).toHaveLength(11);
 });
 
 it("a locked secret's swatch says ??? to assistive tech too, never its name", () => {
@@ -138,7 +145,7 @@ it('sync presses what the look now holds, and the Scene bulbs follow the scene',
   const sashDots = sceneDots();
   look = { ...LOOK, scene: 'frost', presents: 'none', decor: NO_DECOR };
   d.sync();
-  expect(pressed()).toEqual(['Frost', 'Neon', 'Ice', 'Matching', 'Bow', 'None', 'Plain']);
+  expect(pressed()).toEqual(['Frost', 'Fir', 'Neon', 'Bulbs', 'Ice', 'Matching', 'Bow', 'None', 'Plain', 'Plain cursor']);
   expect(sceneDots()).not.toEqual(sashDots);
   expect(sceneDots()).toHaveLength(6);
 });
@@ -317,4 +324,37 @@ it('three saved looks: save names a slot, apply sends the whole look', () => {
   field().dispatchEvent(esc);
   expect(field().closest<HTMLElement>('.deco-save-form')!.hidden).toBe(true);
   expect(document.querySelector('#decorate')!.classList.contains('open')).toBe(true);
+});
+
+it('a strand, a tree and the cursor are picked like any slot, and a locked one says its goal', () => {
+  const { h } = make(LOOK, null, { owns: (id) => id !== 'tree:tinsel' });
+  byId('strand:candle').click();
+  byId('tree:feather').click();
+  byId('cursor:spark').click();
+  expect(vi.mocked(h.onLook).mock.calls).toEqual([[{ strand: 'candle' }], [{ tree: 'feather' }], [{ cursor: 'spark' }]]);
+  byId('tree:tinsel').click();
+  expect(vi.mocked(h.onLook)).toHaveBeenCalledTimes(3);
+  expect(byId('tree:tinsel').classList.contains('deco-locked')).toBe(true);
+  expect(document.querySelector('.deco-hint')!.textContent).toMatch(/1,000|1000/);
+});
+
+it('Decision 10: with a strand other than the bulbs, the Light path section is dimmed with its note', () => {
+  const pathSection = () => byId('path:filament').closest<HTMLElement>('.deco-sec')!;
+  const note = () => pathSection().querySelector<HTMLElement>('.deco-note')!;
+  const d = make({ ...LOOK, strand: 'bubble' }).d;
+  expect(pathSection().classList.contains('deco-dim')).toBe(true);
+  expect(note().hidden).toBe(false);
+  expect(note().textContent).toBe('Your strand brings its own wire.');
+  d.close();
+  made.splice(0);
+  document.body.innerHTML = '<canvas id="stage"></canvas><div class="hud"></div>';
+  make({ ...LOOK, strand: 'bulbs' });
+  expect(pathSection().classList.contains('deco-dim')).toBe(false);
+  expect(note().hidden).toBe(true);
+});
+
+it('Decision 10 follows what the stage shows: a strand not owned yet dims nothing', () => {
+  make({ ...LOOK, strand: 'c9' }, null, { owns: (id) => id !== 'strand:c9' });
+  const sec = byId('path:filament').closest<HTMLElement>('.deco-sec')!;
+  expect(sec.classList.contains('deco-dim')).toBe(false);
 });

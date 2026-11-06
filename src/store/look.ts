@@ -15,6 +15,12 @@ export type TagStyle =
   | 'plain' | 'silver' | 'goldfoil' | 'velvet' | 'tartan' | 'holly' | 'plaid' | 'ember' | 'frost' | 'gingerbread' | 'snowflake' | 'kraft'
   | 'candystripe' | 'starry';
 export interface Decor { tinsel: boolean; beads: boolean; canes: boolean; skirt: boolean }
+/** What the end tiles' bulbs become: the game's glass bulbs, or one of the lab's strands, each with its own wire (src/render/strands). */
+export type StrandKind = 'bulbs' | 'bubble' | 'c9' | 'candle';
+/** The tree itself, painted once into the tree layer (src/render/paint-tree.ts). */
+export type TreeKind = 'fir' | 'flocked' | 'feather' | 'tinsel';
+/** The pointer: the system's own, or the spark (src/ui/spark-cursor.ts). */
+export type CursorKind = 'plain' | 'spark';
 
 /** Every cosmetic choice in one record (spec: Part B). Saved on its own, apart from the settings. */
 export interface Look {
@@ -22,23 +28,27 @@ export interface Look {
   scene: SceneId;
   path: PathStyle;
   palette: PaletteId;
+  strand: StrandKind;
+  tree: TreeKind;
   topper: TopperKind;
   decor: Decor;
   presents: PresentSet;
   garland: GarlandSet;
   tag: TagStyle;
+  cursor: CursorKind;
 }
 
 /**
- * What the renderer dresses the tree with: everything in the look but the scene, the light path and the results tag, and
- * how many of the placed presents to show (the pile: Decision 9).
+ * What the renderer dresses the tree with: everything in the look but the scene, the light path, the results tag and the
+ * cursor, and how many of the placed presents to show (the pile: Decision 9).
  */
-export type Dress = Pick<Look, 'palette' | 'topper' | 'decor' | 'presents' | 'garland'> & { pile: number };
+export type Dress = Pick<Look, 'palette' | 'strand' | 'tree' | 'topper' | 'decor' | 'presents' | 'garland'> & { pile: number };
 
 export const NO_DECOR: Decor = { tinsel: false, beads: false, canes: false, skirt: false };
 
 export const STARTER_LOOK: Look = {
-  v: 1, scene: 'fireside', path: 'filament', palette: 'scene', topper: 'snowflake', decor: NO_DECOR, presents: 'none', garland: 'game', tag: 'plain',
+  v: 1, scene: 'fireside', path: 'filament', palette: 'scene', strand: 'bulbs', tree: 'fir', topper: 'snowflake', decor: NO_DECOR, presents: 'none',
+  garland: 'game', tag: 'plain', cursor: 'plain',
 };
 
 const KEY = 'aglow.look';
@@ -48,6 +58,9 @@ const PATHS: readonly string[] = ['filament', 'fairy', 'neon', 'neonbright'];
 const PALETTES: readonly string[] = [
   'scene', 'gilded', 'classic', 'ice', 'goldsilver', 'pastel', 'golden', 'candy', 'emerald', 'disco', 'peppermint', 'snow', 'rosegold', 'copper', 'sapphire',
 ];
+const STRANDS: readonly string[] = ['bulbs', 'bubble', 'c9', 'candle'];
+const TREES: readonly string[] = ['fir', 'flocked', 'feather', 'tinsel'];
+const CURSORS: readonly string[] = ['plain', 'spark'];
 const TOPPERS: readonly string[] = ['snowflake', 'star', 'angel', 'bow', 'silverstar', 'goldstar'];
 const PRESENTS: readonly string[] = ['none', 'game', 'luxe', 'kraft', 'silver', 'tartan', 'starry', 'candystripe', 'goldfoil'];
 const GARLANDS: readonly string[] = ['game', 'candlelight', 'gold', 'mercury', 'champagne', 'silver', 'ice', 'pastel', 'classic', 'peppermint', 'rosegold'];
@@ -74,11 +87,14 @@ export function parseLook(raw: unknown): Look {
     scene: pick(SCENES, o.scene, STARTER_LOOK.scene),
     path: pick(PATHS, o.path, STARTER_LOOK.path),
     palette: pick(PALETTES, o.palette, STARTER_LOOK.palette),
+    strand: pick(STRANDS, o.strand, STARTER_LOOK.strand),
+    tree: pick(TREES, o.tree, STARTER_LOOK.tree),
     topper: pick(TOPPERS, o.topper, STARTER_LOOK.topper),
     decor: parseDecor(o.decor),
     presents: pick(PRESENTS, o.presents, STARTER_LOOK.presents),
     garland: pick(GARLANDS, o.garland, STARTER_LOOK.garland),
     tag: pick(TAGS, o.tag, STARTER_LOOK.tag),
+    cursor: pick(CURSORS, o.cursor, STARTER_LOOK.cursor),
   };
 }
 
@@ -114,13 +130,15 @@ export function loadLook(): Look {
 export const saveLook = (l: Look): void => writeJSON(KEY, l);
 
 /**
- * The look the stage shows in an egg world. Secret mode and Home Alone keep their own sky and tree, garland and tag: only
- * the light path (and the scene id, which steers the radio) carry in. The topper is kept in secret mode: the star-head
+ * The look the stage shows in an egg world. Secret mode and Home Alone keep their own sky and tree, bulbs, garland, tag and
+ * cursor: only the light path (and the scene id, which steers the radio) carry in. The topper is kept in secret mode: the star-head
  * egg flips from it.
  */
 export function worldLook(l: Look, world: 'secret' | 'home-alone' | null): Look {
   if (world === null) return l;
-  const w: Look = { ...l, palette: 'scene', decor: NO_DECOR, presents: 'game', garland: 'game', tag: 'plain' };
+  const w: Look = {
+    ...l, palette: 'scene', strand: 'bulbs', tree: 'fir', decor: NO_DECOR, presents: 'game', garland: 'game', tag: 'plain', cursor: 'plain',
+  };
   return world === 'home-alone' ? { ...w, topper: 'star' } : w;
 }
 
@@ -130,7 +148,7 @@ export function worldLook(l: Look, world: 'secret' | 'home-alone' | null): Look 
  */
 export function effectiveLook(l: Look, owns: (id: ItemId) => boolean): Look {
   const has = (slot: Slot, value: string): boolean => value === STARTER[slot] || owns(`${slot}:${value}` as ItemId);
-  const keep = <K extends 'scene' | 'path' | 'palette' | 'topper' | 'presents' | 'garland' | 'tag'>(slot: K): Look[K] =>
+  const keep = <K extends 'scene' | 'path' | 'palette' | 'strand' | 'tree' | 'topper' | 'presents' | 'garland' | 'tag' | 'cursor'>(slot: K): Look[K] =>
     has(slot, l[slot]) ? l[slot] : (STARTER[slot] as Look[K]);
   const decor = (k: keyof Decor): boolean => l.decor[k] && has('decor', k);
   return {
@@ -138,10 +156,13 @@ export function effectiveLook(l: Look, owns: (id: ItemId) => boolean): Look {
     scene: keep('scene'),
     path: keep('path'),
     palette: keep('palette'),
+    strand: keep('strand'),
+    tree: keep('tree'),
     topper: keep('topper'),
     presents: keep('presents'),
     garland: keep('garland'),
     tag: keep('tag'),
+    cursor: keep('cursor'),
     decor: { tinsel: decor('tinsel'), beads: decor('beads'), canes: decor('canes'), skirt: decor('skirt') },
   };
 }
