@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, FINISH_RETRY_MS, finishWithRetry, setUnauthorizedHandler, signInHref, START_TIMEOUT_MS } from '../../../src/api/client';
+import { api, ApiError, DAILY_START_TIMEOUT_MS, FINISH_RETRY_MS, finishWithRetry, setUnauthorizedHandler, signInHref, START_TIMEOUT_MS } from '../../../src/api/client';
 import type { FinishResult } from '../../../src/api/types';
 
 afterEach(() => {
@@ -51,6 +51,22 @@ describe('api client', () => {
     );
     const caught = api.start().catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(START_TIMEOUT_MS);
+    expect(await caught).toMatchObject({ status: 0 });
+  });
+
+  it('a Daily start waits 5 s (its attempt is spent at the start: a late Daily beats a forfeited one); a random one still 1.5 s', async () => {
+    expect(DAILY_START_TIMEOUT_MS).toBe(5000);
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))),
+    );
+    let settled = false;
+    const caught = api.start({ today: '2026-11-06' }).catch((e: unknown) => e).finally(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(START_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(DAILY_START_TIMEOUT_MS - START_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
     expect(await caught).toMatchObject({ status: 0 });
   });
 

@@ -16,6 +16,11 @@ export class ApiError extends Error {
 
 /** A new tree never waits longer than this for the server's seed; past it, it starts offline (spec §5.1). */
 export const START_TIMEOUT_MS = 1500;
+/**
+ * A Daily Tree start waits this long instead: the server spends the day's one counted attempt when the start arrives,
+ * so a late Daily is better than a forfeited one (a start given up on, its row already written).
+ */
+export const DAILY_START_TIMEOUT_MS = 5000;
 /** A failed finish is sent again once, this much later (spec §5.3). */
 export const FINISH_RETRY_MS = 800;
 const TIMEOUT_MS = 10_000;
@@ -85,8 +90,8 @@ export const api = {
   setName: (name: string) => changesBoard(request<{ user: User }>('POST', '/api/auth/name', { name })),
   signOut: () => changesBoard(request<Record<string, never>>('POST', '/api/auth/signout', {})),
   deleteAccount: (confirm: string) => changesBoard(request<Record<string, never>>('DELETE', '/api/me', { confirm })),
-  /** A random tree, or with `daily` the Daily Tree (or a past day's). */
-  start: (daily?: DailyRequest) => request<StartResponse>('POST', '/api/games', daily ? { daily } : {}, START_TIMEOUT_MS),
+  /** A random tree, or with `daily` the Daily Tree (or a past day's), which waits longer for the server. */
+  start: (daily?: DailyRequest) => request<StartResponse>('POST', '/api/games', daily ? { daily } : {}, daily ? DAILY_START_TIMEOUT_MS : START_TIMEOUT_MS),
   finish: (id: string, log: readonly LogEntry[]) => changesBoard(request<FinishResult>('POST', `/api/games/${encodeURIComponent(id)}/finish`, { log })),
   claim: (claims: readonly { id: string; claim: string }[]) => changesBoard(request<ClaimResponse>('POST', '/api/games/claim', { claims })),
   board,

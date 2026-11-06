@@ -177,7 +177,7 @@ test.describe('the Daily Tree', () => {
         label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       };
     });
-  /** The Daily from the server. A cold local Worker can miss the 1.5 s start; a failed start marks nothing, so a reload asks again. */
+  /** The Daily from the server. A cold local Worker can miss even the Daily's 5 s start; a failed start marks nothing, so a reload asks again. */
   async function dailyTree(page: Page): Promise<string> {
     for (let attempt = 0; attempt < 3; attempt++) {
       await waitInteractive(page);
@@ -293,6 +293,19 @@ test.describe('the Daily Tree', () => {
     expect(result.ms).toBeLessThan(solvedIn + 2000);
   });
 
+  test('a Daily start answered after 3 s still lands on the Daily: it waits longer than a random start', async ({ page }) => {
+    const bodies = starts(page);
+    await page.route('**/api/games', async (route) => {
+      await new Promise((r) => setTimeout(r, 3000));
+      await route.fallback();
+    });
+    await ready(page);
+    expect((await game(page)).id).not.toBeNull();
+    await expect(page.locator('#daily-pill')).toBeVisible();
+    expect(bodies).toEqual([{ daily: { today: (await today(page)).day } }]);
+    await expect(page.locator('#toast')).not.toHaveText("Couldn't reach the Daily Tree · playing a random one");
+  });
+
   test('a Daily begun in a hidden tab logs the time unseen as a pause: the ranked time is only the time played', async ({ page }) => {
     const HIDDEN_MS = 6000;
     // A tab loaded in the background: hidden from the start, and no frames until it is shown (as a browser does).
@@ -335,6 +348,8 @@ test.describe('the Daily Tree', () => {
     await ready(page);
     expect((await game(page)).id).toBeNull();
     await expect(page.locator('#daily-pill')).toBeHidden();
+    // The player is told: the Daily wasn't reached, and this tree is a random one.
+    await expect(page.locator('#toast')).toHaveText("Couldn't reach the Daily Tree · playing a random one");
     expect(await page.evaluate(() => localStorage.getItem('aglow.daily'))).toBeNull();
     const { day } = await today(page);
     expect(bodies).toEqual([{ daily: { today: day } }]);

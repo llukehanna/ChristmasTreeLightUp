@@ -148,6 +148,17 @@ export function beginsAway(run: Run, hidden: boolean, now: number): boolean {
   return hidden;
 }
 
+/** How long a new tree's toast stays: long enough to read over the reveal. */
+const START_TOAST_MS = 3600;
+
+/** The toast for a Daily asked for (boot, or the menu's row) that the server didn't start: the tree is a local random one. */
+export const DAILY_UNREACHED = "Couldn't reach the Daily Tree · playing a random one";
+
+/** What a new tree says as it begins: a Daily asked for but not reached says so; otherwise nothing. */
+export function startToast(kind: 'daily' | 'random', online: OnlineRun | null): string | null {
+  return kind === 'daily' && !online?.daily ? DAILY_UNREACHED : null;
+}
+
 /** The toast for a resumed tree; none for one reloaded before anything was logged (a Daily saved at its start). */
 export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[] }): string | null =>
   saved.log.length === 0 ? null : `Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`;
@@ -212,7 +223,7 @@ export class App {
   private readonly accounts: Accounts;
   /** The signed-in player (spec 2026-10-07): loaded at start, changed by sign-in, naming and sign-out. */
   readonly session = new Session();
-  /** A board exists: the first tree waits for the server (1.5 s at most). */
+  /** A board exists: the first tree waits for the server (1.5 s at most, 5 s for the Daily). */
   private live = false;
   /** A new tree is waiting for the server's seed. */
   private starting = false;
@@ -564,9 +575,9 @@ export class App {
   }
 
   /**
-   * The server's seed when it answers within 1.5 s, else nothing (a local tree, unranked "offline"). Marks the start under
-   * way. A live Daily the server started is marked on this device (the next fresh boot lands on a random tree); a failed
-   * start marks nothing, so the next load asks for the Daily again.
+   * The server's seed when it answers in time (1.5 s, or 5 s for the Daily: DAILY_START_TIMEOUT_MS), else nothing (a
+   * local tree, unranked "offline"). Marks the start under way. A live Daily the server started is marked on this device
+   * (the next fresh boot lands on a random tree); a failed start marks nothing, so the next load asks for the Daily again.
    */
   private async fetchTree(kind: 'daily' | 'random'): Promise<{ board: Board | null; online: OnlineRun | null }> {
     this.starting = true;
@@ -592,13 +603,15 @@ export class App {
     this.beginGame(now, board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
     beginsAway(this.run, document.hidden, now);
     if (this.shouldSave()) this.save(now);
+    const toast = startToast(kind, online);
+    if (toast) this.toast.show(toast, START_TOAST_MS);
   }
 
   /** N, New tree and the results tag's button give a random tree; the menu's Daily Tree row gives the Daily. */
   newGame(kind: 'daily' | 'random' = 'random'): void {
     if (this.starting) return;
     clearGame();
-    // The old tree stays on screen until the new one is ready (1.5 s at most), without its results card.
+    // The old tree stays on screen until the new one is ready (1.5 s at most, 5 s for the Daily), without its results card.
     this.results.hide();
     this.glare?.cancel();
     el('corner-new').hidden = true;

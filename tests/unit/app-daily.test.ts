@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it } from 'vitest';
-import { savesNow, welcomeBack } from '../../src/app';
+import { savesNow, startToast, welcomeBack } from '../../src/app';
 
 const daily = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: { day: '2026-11-06', past: false, repeat: false } };
 
@@ -17,4 +17,12 @@ it('Welcome back shows the time played, but not for a tree reloaded before anyth
   expect(welcomeBack({ elapsedMs: 0, log: [] })).toBeNull();
   // A pause before the first move is in the log: the tree was played (paused), so it is welcomed back.
   expect(welcomeBack({ elapsedMs: 1200, log: [{ t: 1300, a: 'p' }] })).toBe('Welcome back · 0:01');
+});
+
+it("a Daily asked for but not reached says so, and that the tree is a random one; a random tree, or a reached Daily, says nothing", () => {
+  expect(startToast('daily', null)).toBe("Couldn't reach the Daily Tree · playing a random one");
+  expect(startToast('daily', { ...daily, daily: null })).toBe("Couldn't reach the Daily Tree · playing a random one");
+  expect(startToast('daily', daily)).toBeNull();
+  expect(startToast('random', null)).toBeNull();
+  expect(startToast('random', { ...daily, daily: null })).toBeNull();
 });
