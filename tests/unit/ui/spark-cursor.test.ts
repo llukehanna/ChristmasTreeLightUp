@@ -30,10 +30,15 @@ const setHidden = (hidden: boolean): void => {
   document.dispatchEvent(new Event('visibilitychange'));
 };
 
-function move(x: number, y: number, type = 'pointermove'): void {
+/**
+ * A mouse event at (x, y). jsdom can't make a trusted event, so the cursor is told which are the user's: all but those
+ * marked `remapped` (the drawer's re-sent copies).
+ */
+function move(x: number, y: number, type = 'pointermove', remapped = false, target: Element = document.body): void {
   const e = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
   Object.defineProperty(e, 'pointerType', { value: 'mouse' });
-  document.body.dispatchEvent(e);
+  if (remapped) Object.defineProperty(e, 'remapped', { value: true });
+  target.dispatchEvent(e);
 }
 
 const canvas = (): HTMLCanvasElement | null => document.querySelector('canvas.spark-cursor');
@@ -43,6 +48,7 @@ beforeEach(() => {
   media = { '(pointer: fine)': true, '(prefers-reduced-motion: reduce)': false };
   listeners.clear();
   document.body.innerHTML = '';
+  document.body.className = '';
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => sink()) as never);
   vi.stubGlobal('matchMedia', (q: string) => ({
     get matches() {
@@ -55,11 +61,15 @@ beforeEach(() => {
   setHidden(false);
 });
 afterEach(() => {
+  // Every cursor made here is stopped, so none listens on into the next test.
+  for (const s of made.splice(0)) s.stop();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-const make = () => new SparkCursor({ overTile: () => false });
+const made: SparkCursor[] = [];
+const track = (s: SparkCursor): SparkCursor => (made.push(s), s);
+const make = () => track(new SparkCursor({ overTile: () => false, trusted: (e) => !(e as Event & { remapped?: boolean }).remapped }));
 
 it('off, it costs nothing: no canvas, no listeners, and a frame draws nothing', () => {
   const add = vi.spyOn(window, 'addEventListener');
@@ -78,9 +88,9 @@ it('on, it follows the mouse with an ember on its own canvas, and hides the syst
   s.start();
   expect(s.running).toBe(true);
   expect(canvas()).not.toBeNull();
-  expect(document.body.classList.contains('spark-on')).toBe(true);
   move(120, 140);
   s.frame(16);
+  expect(document.body.classList.contains('spark-on')).toBe(true);
   expect(drawn).toContain('arc');
   // The canvas takes no pointer events (chrome only: taps reach the board).
   expect(canvas()!.getAttribute('aria-hidden')).toBe('true');
@@ -154,4 +164,54 @@ it('it sleeps once the mouse rests and the sparks have burnt out', () => {
   move(220, 210);
   s.frame(now + 48);
   expect(drawn).toContain('arc');
+});
+
+it('the system cursor stays until the ember is drawn: after start, after the tab comes back, after leaving the page or over a text field', () => {
+  const on = () => document.body.classList.contains('spark-on');
+  const s = make();
+  s.start();
+  expect(on()).toBe(false);
+  move(50, 60);
+  expect(on()).toBe(true);
+  document.documentElement.dispatchEvent(new Event('pointerleave'));
+  expect(on()).toBe(false);
+  move(50, 60);
+  setHidden(true);
+  expect(on()).toBe(false);
+  setHidden(false);
+  expect(on()).toBe(false);
+  const field = document.createElement('input');
+  document.body.append(field);
+  move(70, 80, 'pointermove', false, field);
+  expect(on()).toBe(false);
+  move(70, 80);
+  expect(on()).toBe(true);
+  s.stop();
+  expect(on()).toBe(false);
+});
+
+it("the drawer's re-sent pointer events (stage coordinates) never move the ember or burst it", () => {
+  const s = make();
+  const inside = s as unknown as { x: number; y: number; ps: unknown[] };
+  s.start();
+  move(300, 200);
+  s.frame(16);
+  const sparks = inside.ps.length;
+  move(900, 700, 'pointermove', true);
+  move(900, 700, 'pointerdown', true);
+  expect([inside.x, inside.y]).toEqual([300, 200]);
+  expect(inside.ps.length).toBe(sparks);
+  // The real ones still count: a real press bursts at the pointer.
+  move(300, 200, 'pointerdown');
+  expect(inside.ps.length).toBeGreaterThan(sparks);
+});
+
+it('by default only trusted events count (a synthetic one, as jsdom makes, is ignored)', () => {
+  const s = track(new SparkCursor({ overTile: () => false }));
+  s.start();
+  move(120, 140);
+  s.frame(16);
+  expect(drawn).not.toContain('arc');
+  expect(document.body.classList.contains('spark-on')).toBe(false);
+  s.stop();
 });

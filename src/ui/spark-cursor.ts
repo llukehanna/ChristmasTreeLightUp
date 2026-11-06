@@ -5,7 +5,11 @@
  * It is chrome: its own fixed canvas over the page that takes no pointer events, drawn additively (it brightens, never
  * covers, a tile), with only the dirty rectangle cleared each frame. The app's frame loop drives it (`frame`); it sleeps
  * once the mouse has rested a while and its sparks have burnt out, leaving the ember drawn. It never runs while the tab
- * is hidden or under prefers-reduced-motion, and off it holds no canvas and no listeners.
+ * is hidden or under prefers-reduced-motion, and off it holds no canvas and no listeners. The system cursor hides only
+ * while the ember is shown (after a real mouse move inside the page), so there is never no cursor at all.
+ *
+ * Only trusted events move it: the Decorate drawer re-sends pointer events on the scaled stage in stage coordinates
+ * (src/ui/decorate.ts, remap), and those are not where the pointer is.
  */
 
 interface Spark {
@@ -23,6 +27,8 @@ interface Spark {
 export interface SparkHooks {
   /** Whether a viewport point is over a tile of the board. */
   overTile(x: number, y: number): boolean;
+  /** Whether a pointer event came from the user (default: `isTrusted`; a test stands in for it, as jsdom can't make one). */
+  trusted?(e: Event): boolean;
 }
 
 /** How long the ember keeps shedding sparks after the mouse last moved; then it sleeps until the next move. */
@@ -100,7 +106,6 @@ export class SparkCursor {
     this.cv = cv;
     this.c = cv.getContext('2d');
     this.resize();
-    document.body.classList.add('spark-on');
     addEventListener('pointermove', this.move, true);
     addEventListener('pointerdown', this.down, true);
     addEventListener('resize', this.resize);
@@ -116,7 +121,7 @@ export class SparkCursor {
     this.inside = false;
     this.over = 0;
     this.dirty = { x0: 0, y0: 0, x1: 0, y1: 0 };
-    document.body.classList.remove('spark-on');
+    this.hideCursor(false);
     removeEventListener('pointermove', this.move, true);
     removeEventListener('pointerdown', this.down, true);
     removeEventListener('resize', this.resize);
@@ -132,6 +137,15 @@ export class SparkCursor {
     this.wake();
   };
 
+  /** The system cursor hides exactly while the ember stands in for it. */
+  private hideCursor(v: boolean): void {
+    document.body.classList.toggle('spark-on', v);
+  }
+
+  private trusted(e: Event): boolean {
+    return this.h.trusted ? this.h.trusted(e) : e.isTrusted;
+  }
+
   private wake(): void {
     if (this.awake) return;
     this.awake = true;
@@ -139,12 +153,13 @@ export class SparkCursor {
   }
 
   private readonly move = (e: PointerEvent): void => {
-    if (e.pointerType !== 'mouse') return;
+    if (e.pointerType !== 'mouse' || !this.trusted(e)) return;
     this.x = e.clientX;
     this.y = e.clientY;
     this.inside = true;
     const t = e.target as Element | null;
     this.overUi = !!t?.closest?.(OWN_CURSOR);
+    this.hideCursor(!this.overUi);
     this.moved = true;
     const d = Math.hypot(this.x - this.px, this.y - this.py);
     if (!this.overUi) this.spawn(Math.min(4, Math.floor(d / (9 - this.over * 4))));
@@ -152,13 +167,14 @@ export class SparkCursor {
   };
 
   private readonly down = (e: PointerEvent): void => {
-    if (e.pointerType !== 'mouse' || this.overUi) return;
+    if (e.pointerType !== 'mouse' || this.overUi || !this.trusted(e)) return;
     this.spawn(16 + Math.round(this.over * 12), true);
     this.wake();
   };
 
   private readonly leave = (): void => {
     this.inside = false;
+    this.hideCursor(false);
     this.wake();
   };
 
