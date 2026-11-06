@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest';
-import { NO_DECOR, STARTER_LOOK, loadLook, parseLook, saveLook, worldLook, type Look } from '../../../src/store/look';
+import { effectiveLook, NO_DECOR, STARTER_LOOK, loadLook, parseLook, saveLook, worldLook, type Look } from '../../../src/store/look';
 
 beforeEach(() => {
   localStorage.clear();
@@ -63,4 +63,17 @@ it('the egg worlds keep the scene, path and topper and drop the rest; Home Alone
   expect(worldLook(mine, null)).toBe(mine);
   expect(worldLook(mine, 'secret')).toEqual({ ...mine, palette: 'scene', decor: NO_DECOR, presents: 'game' });
   expect(worldLook(mine, 'home-alone')).toEqual({ ...mine, palette: 'scene', decor: NO_DECOR, presents: 'game', topper: 'star' });
+});
+it('effectiveLook shows only owned slots and never touches the saved look', () => {
+  const saved = { ...STARTER_LOOK, scene: 'sash', path: 'neon', topper: 'star', presents: 'game' } as Look;
+  const l = effectiveLook(saved, (id) => ['scene:sash', 'presents:game'].includes(id));
+  expect([l.scene, l.path, l.topper, l.presents]).toEqual(['sash', 'filament', 'snowflake', 'game']);
+  expect(saved.path).toBe('neon');
+});
+it('effectiveLook: starter values need no item, a palette falls back alone, and each decoration needs its own', () => {
+  expect(effectiveLook(STARTER_LOOK, () => false)).toEqual(STARTER_LOOK);
+  const saved: Look = { ...STARTER_LOOK, palette: 'gilded', decor: { tinsel: true, beads: true, canes: false, skirt: true } };
+  const l = effectiveLook(saved, (id) => id === 'decor:tinsel' || id === 'decor:canes');
+  expect(l).toEqual({ ...STARTER_LOOK, decor: { ...NO_DECOR, tinsel: true } });
+  expect(effectiveLook(saved, () => true)).toEqual(saved);
 });

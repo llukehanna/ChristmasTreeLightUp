@@ -2,10 +2,11 @@ import { ApiError, api, finishWithRetry, setUnauthorizedHandler } from './api/cl
 import { addClaim, claimBatches, coalesced, readClaims, removeClaims } from './api/claims';
 import type { RunOutcome } from './api/outcome';
 import { Session } from './api/session';
-import type { AccountStats, ClaimResponse, FinishResult } from './api/types';
+import type { AccountStats, ClaimResponse, FinishResult, ProgressResponse } from './api/types';
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
 import type { Turn } from './core/dirs';
+import { pileOf } from './core/goals';
 import { CLOCK_TOLERANCE_MS } from './core/judge';
 import type { LogEntry } from './core/log';
 import { GRID } from './core/mask';
@@ -33,11 +34,12 @@ import { VisualState } from './render/visual-state';
 import { dailyStart, landsOnDaily } from './store/daily';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, savesAtStart, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
-import { loadLook, saveLook, worldLook, type Look } from './store/look';
+import { effectiveLook, loadLook, saveLook, worldLook, type Look } from './store/look';
 import { loadSettings, saveSettings, type Settings } from './store/settings';
 import { loadStarHead, saveStarHead } from './store/star-head';
 import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
+import { lastPlayer } from './store/unlocks';
 import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
@@ -55,6 +57,7 @@ import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, ty
 import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
+import { UnlockState } from './unlock-state';
 
 /** A win hurries the flow still in flight this much, and the results tag follows this long after the last bulb. */
 const LAST_WAVE_SPEEDUP = 4;
@@ -248,6 +251,10 @@ export class App {
   private accountStats: AccountStats | null = null;
   /** Bumped by each syncStats and each new tree, so an older answer never paints over a newer one. */
   private statsSeq = 0;
+  /** What the player owns: the look shows only that (the saved look is never changed). A change re-applies the look. */
+  private readonly unlocks = new UnlockState({ onChange: () => this.applyLook(this.look, false) });
+  /** Bumped by each progress fetch, so an older answer (another player's, after a switch) never lands. */
+  private progressSeq = 0;
   /** The star-head egg: taps on the star and "hohoho" swap the topper (src/ui/star-egg.ts). */
   private readonly egg: StarEgg;
   /** Secret mode (spec 2026-10-08 secret mode): on exactly while the head tops the tree. */
@@ -401,6 +408,7 @@ export class App {
 
   start(): void {
     this.applySettings(this.settings, false);
+    this.unlocks.setPlayer(this.player, this.stats.solved);
     this.applyLook(this.look, false);
     this.resize();
     addEventListener('resize', () => {
@@ -709,7 +717,10 @@ export class App {
     const { stats, newBest } = recordWin(this.stats, seconds, score, localDay(new Date()));
     this.stats = stats;
     saveStats(stats);
-    this.won = { seconds, score, newBest, result: null };
+    this.unlocks.setPlayer(this.player, stats.solved);
+    // The context the calendar and secret goals read, kept with the run so a resend after a reload reports the same.
+    const ctx = { tz: new Date().getTimezoneOffset(), station: this.radio.nowPlaying, world: this.world };
+    this.won = { seconds, score, newBest, result: null, ctx };
     if (this.online && !this.run.log.overflowed) {
       this.saveWon();
       void this.sendFinish();
@@ -842,7 +853,7 @@ export class App {
     };
     this.setOutcome({ kind: 'saving' });
     try {
-      const result = await finishWithRetry(run.gameId, entries, undefined, markLate);
+      const result = await finishWithRetry(run.gameId, entries, undefined, markLate, won.ctx);
       // Started signed out: the run (ranked once claimed, or not) waits on this browser to be claimed (90 days), even
       // if a new tree has started meanwhile.
       if (run.claim) addClaim({ id: run.gameId, claim: run.claim }, Date.now());
@@ -931,6 +942,7 @@ export class App {
 
   /** Who is playing changed (sign-in, a new name, sign-out): claim what waits here, and redraw the run's outcome. */
   accountChanged(): void {
+    this.unlocks.setPlayer(this.player, this.stats.solved);
     void this.claimAll();
     this.setOutcome(this.outcome);
     void this.syncStats();
@@ -947,6 +959,7 @@ export class App {
    * recording its own either way.
    */
   private async syncStats(): Promise<void> {
+    void this.syncProgress();
     const seq = ++this.statsSeq;
     if (!this.won || !this.session.current) {
       this.accountStats = null;
@@ -961,6 +974,25 @@ export class App {
     } catch {
       // offline, or signed out meanwhile: the device's numbers stay
     }
+  }
+
+  /** The account's unlocks, signed in: a failed fetch keeps the cached set. */
+  private async syncProgress(): Promise<void> {
+    const seq = ++this.progressSeq;
+    if (!this.session.current) return;
+    let p: ProgressResponse | null = null;
+    try {
+      p = await api.progress();
+    } catch {
+      // offline, or signed out meanwhile
+    }
+    if (seq === this.progressSeq) this.unlocks.setServer(p);
+  }
+
+  /** Whose unlocks: the account's id (none: no key yet), null for a guest; while the session loads, the last player here. */
+  private get player(): number | null | undefined {
+    const u = this.session.current;
+    return u === undefined ? lastPlayer() : u && u.id;
   }
 
   /** The run's outcome on the results tag (pick 3B): drawn now, so it is there when the tag appears. */
@@ -1233,16 +1265,25 @@ export class App {
     if (this.homeAlone) this.sounds?.preload(); // the effects volume may just have come up
   }
 
-  /** The scene and light path, and the dress. A change of any of them re-renders the share image. */
+  /**
+   * The scene and light path, and the dress. A change of any of them re-renders the share image. The stage shows what
+   * the player owns of `l` (effectiveLook); `l` itself is what is saved.
+   */
   private applyLook(l: Look, persist = true): void {
     this.look = l;
     this.pausedDrawn = false;
     if (persist) saveLook(l);
-    const restyle = l.path !== this.renderer.style;
-    if (restyle) this.renderer.setStyle(l.path);
-    const rescene = this.setScene(l.scene);
+    const shown = this.shownLook;
+    const restyle = shown.path !== this.renderer.style;
+    if (restyle) this.renderer.setStyle(shown.path);
+    const rescene = this.setScene(shown.scene);
     const redressed = this.dress();
     if (restyle || rescene || redressed) this.refreshShare();
+  }
+
+  /** The look, less what the player doesn't own yet. */
+  private get shownLook(): Look {
+    return effectiveLook(this.look, (id) => this.unlocks.owns(id));
   }
 
   /** The egg world the stage is in, if any (secret mode and Home Alone keep their own tree). */
@@ -1255,7 +1296,9 @@ export class App {
    * Says whether the stage repainted.
    */
   private dress(): boolean {
-    const repainted = this.renderer.setDress(worldLook(this.look, this.world));
+    // One present per PILE_STEP trees lit; the egg worlds keep the full pile.
+    const pile = this.world ? Infinity : pileOf(this.unlocks.treesLit(), Infinity);
+    const repainted = this.renderer.setDress({ ...worldLook(this.shownLook, this.world), pile });
     this.decorate.sync();
     return repainted;
   }
@@ -1334,7 +1377,7 @@ export class App {
    */
   private setScene(id: SceneId, change: SceneChange | null = null): boolean {
     this.radio.setScene(id);
-    const scene = withPalette(sceneFor(id, this.secret, this.homeAlone), worldLook(this.look, this.world).palette);
+    const scene = withPalette(sceneFor(id, this.secret, this.homeAlone), worldLook(this.shownLook, this.world).palette);
     if (id === this.sceneId && this.renderer.scene === scene) return false;
     this.sceneId = id;
     document.body.dataset.scene = scene.id;

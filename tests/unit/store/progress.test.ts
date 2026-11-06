@@ -124,6 +124,18 @@ it('a won run sent too late keeps saying so after a reload', () => {
   expect(loadGame(GRID)?.won).toEqual(won);
 });
 
+it("a won run's context (zone, station, world) survives a reload, so a resend reports the same", () => {
+  const b = Board.random(GRID, mulberry32(4));
+  const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: null };
+  const won = { seconds: 81, score: 41_900, newBest: false, result: null, ctx: { tz: -60, station: 'fireplace', world: 'home-alone' as const } };
+  saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
+  expect(loadGame(GRID)?.won).toEqual(won);
+  for (const ctx of [{ tz: 'x', station: null, world: null }, { tz: 0, station: 3, world: null }, { tz: 0, station: null, world: 'moon' }, null]) {
+    saveGame(b, 5000, { startEpoch: 123, online, log: [], won: { ...won, ctx } as never });
+    expect(loadGame(GRID), JSON.stringify(ctx)).toBeNull();
+  }
+});
+
 it("a signed-out Daily run's claimed result stays known as the claim's after a reload", () => {
   const b = Board.random(GRID, mulberry32(4));
   const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: 'c'.repeat(32), daily: { day: '2026-11-06', past: false, repeat: false } };

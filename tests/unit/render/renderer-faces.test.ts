@@ -40,7 +40,7 @@ it('the faces are laid out only in secret mode, never asked for in the other sce
   vi.spyOn(r.topper, 'image', 'get').mockReturnValue({ naturalWidth: 240, naturalHeight: 256 } as HTMLImageElement);
   const get = vi.spyOn(r.faces!, 'get');
   // The app's dress in secret mode: the game's presents (the starter look has none), for the face paper.
-  r.setDress(worldLook(STARTER_LOOK, 'secret'));
+  r.setDress({ ...worldLook(STARTER_LOOK, 'secret'), pile: Infinity });
   r.setScene(SCENES.midnight);
   r.resize(390, 844, 2);
   expect(r.faces!.ready).toBe(true);

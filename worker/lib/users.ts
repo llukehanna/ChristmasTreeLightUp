@@ -73,7 +73,8 @@ export async function requireAdmin(req: Request, env: AppEnv): Promise<SessionUs
 }
 
 /** What the browser may know about the signed-in player (never the email). */
-export const publicUser = (env: AppEnv, u: { name: string | null; email: string; starHead: boolean; homeAlone: boolean }): User => ({
+export const publicUser = (env: AppEnv, u: { id: number; name: string | null; email: string; starHead: boolean; homeAlone: boolean }): User => ({
+  id: u.id,
   name: u.name,
   isAdmin: isAdmin(env, u.email),
   starHead: u.starHead,

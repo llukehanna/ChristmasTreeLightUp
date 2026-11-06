@@ -65,7 +65,7 @@ describe('PUT /api/me/star-head', () => {
   it('sets it both ways, answers { starHead }, and /api/me follows; other accounts are untouched', async () => {
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const bo = await signIn(env, 'bo@example.com', 'Comet');
-    expect(await me(ana)).toEqual({ user: { name: 'Meridian', isAdmin: false, starHead: false, homeAlone: false } });
+    expect(await me(ana)).toEqual({ user: { id: expect.any(Number), name: 'Meridian', isAdmin: false, starHead: false, homeAlone: false } });
     const on = await put(ana, { on: true });
     expect(on.status).toBe(200);
     expect(on.headers.get('Cache-Control')).toBe('no-store');
@@ -80,7 +80,7 @@ describe('PUT /api/me/star-head', () => {
     const cookie = await signIn(env, 'ana@example.com');
     expect((await put(cookie, { on: true })).status).toBe(200);
     const named = await call(env, 'POST', '/api/auth/name', { cookie, body: { name: 'Meridian' } });
-    expect(await named.json()).toEqual({ user: { name: 'Meridian', isAdmin: false, starHead: true, homeAlone: false } });
+    expect(await named.json()).toEqual({ user: { id: expect.any(Number), name: 'Meridian', isAdmin: false, starHead: true, homeAlone: false } });
   });
 
   it('GET is 405', async () => {

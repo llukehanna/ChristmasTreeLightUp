@@ -110,7 +110,7 @@ export class Renderer {
   scene: Scene = SCENES.fireside;
   style: PathStyle = 'filament';
   /** What the tree is dressed with, from the look (src/store/look.ts). */
-  private dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: STARTER_LOOK.decor, presents: STARTER_LOOK.presents };
+  private dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: STARTER_LOOK.decor, presents: STARTER_LOOK.presents, pile: Infinity };
   readonly quality = new QualityGovernor();
   private readonly snow = new Snowfall();
   private readonly embers = new Embers();
@@ -199,7 +199,7 @@ export class Renderer {
    * repainted (a change, on a sized stage), so the share image can follow.
    */
   setDress(d: Dress): boolean {
-    const same = this.dress.topper === d.topper && this.dress.presents === d.presents &&
+    const same = this.dress.topper === d.topper && this.dress.presents === d.presents && this.dress.pile === d.pile &&
       (Object.keys(d.decor) as (keyof Dress['decor'])[]).every((k) => this.dress.decor[k] === d.decor[k]);
     this.dress = d;
     if (same) return false;
@@ -275,7 +275,7 @@ export class Renderer {
   /** Presents and garland: in secret mode, once the sticker has loaded, with the face paper and the face bulb. */
   private layFaces(): void {
     const faces = this.readyFaces();
-    this.presents.layout(this.layout, GRID, this.scene, faces, this.dress.presents);
+    this.presents.layout(this.layout, GRID, this.scene, faces, this.dress.presents, this.dress.pile);
     this.garland.paint(this.scene, this.layout.dpr, faces && this.eggs ? this.eggs.faces.faceGarlandIndex(this.garland.geo) : -1);
     this.faced = faces !== null;
   }

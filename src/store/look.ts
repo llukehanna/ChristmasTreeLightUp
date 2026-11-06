@@ -1,3 +1,4 @@
+import { STARTER, type ItemId, type Slot } from '../core/catalogue';
 import type { PathStyle } from '../render/paths';
 import type { SceneId } from '../render/scenes';
 import { hasPlayed, readJSON, writeJSON } from './storage';
@@ -18,8 +19,11 @@ export interface Look {
   presents: PresentSet;
 }
 
-/** What the renderer dresses the tree with: everything in the look but the scene and the light path. */
-export type Dress = Pick<Look, 'palette' | 'topper' | 'decor' | 'presents'>;
+/**
+ * What the renderer dresses the tree with: everything in the look but the scene and the light path, and how many of the
+ * placed presents to show (the pile: Decision 9).
+ */
+export type Dress = Pick<Look, 'palette' | 'topper' | 'decor' | 'presents'> & { pile: number };
 
 export const NO_DECOR: Decor = { tinsel: false, beads: false, canes: false, skirt: false };
 
@@ -64,9 +68,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 /**
  * The look the first load of this device gets. A device that has played here before (any play data: most players never
- * changed a setting, so had no settings record) keeps today's tree, the star and the game's presents (until the
- * recompute in C2), and a v1 settings record's scene and path; Auto, which is gone, becomes Fireside. A new device gets
- * the starter look.
+ * changed a setting, so had no settings record) keeps today's tree, the star and the game's presents (shown once
+ * earned: effectiveLook), and a v1 settings record's scene and path; Auto, which is gone, becomes Fireside. A new device
+ * gets the starter look.
  */
 function migrate(): Look {
   if (!hasPlayed()) return STARTER_LOOK;
@@ -99,4 +103,24 @@ export function worldLook(l: Look, world: 'secret' | 'home-alone' | null): Look 
   if (world === null) return l;
   const w: Look = { ...l, palette: 'scene', decor: NO_DECOR, presents: 'game' };
   return world === 'home-alone' ? { ...w, topper: 'star' } : w;
+}
+
+/**
+ * The look as the player may show it: each slot they don't own takes the starter's value, and each decoration they don't
+ * own is off. The saved look is left as it is, so an item earned later comes back.
+ */
+export function effectiveLook(l: Look, owns: (id: ItemId) => boolean): Look {
+  const has = (slot: Slot, value: string): boolean => value === STARTER[slot] || owns(`${slot}:${value}` as ItemId);
+  const keep = <K extends 'scene' | 'path' | 'palette' | 'topper' | 'presents'>(slot: K): Look[K] =>
+    has(slot, l[slot]) ? l[slot] : (STARTER[slot] as Look[K]);
+  const decor = (k: keyof Decor): boolean => l.decor[k] && has('decor', k);
+  return {
+    ...l,
+    scene: keep('scene'),
+    path: keep('path'),
+    palette: keep('palette'),
+    topper: keep('topper'),
+    presents: keep('presents'),
+    decor: { tinsel: decor('tinsel'), beads: decor('beads'), canes: decor('canes'), skirt: decor('skirt') },
+  };
 }

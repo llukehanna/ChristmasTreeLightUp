@@ -18,6 +18,24 @@ describe('api client', () => {
     expect(fetch.mock.calls[0][1].cache).toBe('no-store');
   });
 
+  it('asks for the progress with the local day and the offset, never from the cache', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    const at = new Date(2026, 11, 24, 21, 0);
+    await api.progress(at);
+    expect(fetch.mock.calls[0][0]).toBe(`/api/me/progress?today=2026-12-24&tz=${at.getTimezoneOffset()}`);
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET', cache: 'no-store' });
+  });
+
+  it('a finish sends its context when it has one', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    const ctx = { tz: -60, station: 'fireplace', world: null };
+    await api.finish('g', [{ t: 1, a: 'p' }], ctx);
+    await api.finish('g', []);
+    expect(fetch.mock.calls.map((c) => JSON.parse(String(c[1].body)))).toEqual([{ log: [{ t: 1, a: 'p' }], ctx }, { log: [] }]);
+  });
+
   it('sends same-origin JSON and reads JSON', async () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ id: 'x', seed: 1, genVersion: 1, claim: null }));
     vi.stubGlobal('fetch', fetch);
@@ -189,6 +207,14 @@ describe('finishWithRetry', () => {
       expect(fetch).toHaveBeenCalledTimes(2);
     }
     expect(waits).toEqual([FINISH_RETRY_MS, FINISH_RETRY_MS]);
+  });
+
+  it('sends the same context on the retry', async () => {
+    const fetch = vi.fn().mockImplementationOnce(async () => Promise.reject(new TypeError('offline'))).mockImplementationOnce(async () => Response.json(result));
+    vi.stubGlobal('fetch', fetch);
+    const ctx = { tz: 300, station: null, world: 'secret' as const };
+    await finishWithRetry('g', [], async () => undefined, undefined, ctx);
+    expect(fetch.mock.calls.map((c) => JSON.parse(String((c[1] as RequestInit).body)).ctx)).toEqual([ctx, ctx]);
   });
 
   it('calls beforeSend ahead of each attempt, the automatic retry included', async () => {

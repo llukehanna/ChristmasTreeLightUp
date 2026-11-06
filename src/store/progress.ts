@@ -1,4 +1,4 @@
-import type { DailyInfo, DailyResult, FinishResult } from '../api/types';
+import type { DailyInfo, DailyResult, FinishResult, RunContext } from '../api/types';
 import { computeLighting, type Board, type BoardState } from '../core/board';
 import { parseLog, type LogEntry } from '../core/log';
 import type { Grid } from '../core/mask';
@@ -27,6 +27,8 @@ export interface WonRun {
   late?: boolean;
   /** `result` is the claim's answer for a run played signed out, no longer its finish's (a Daily result looks the same either way). */
   claimed?: boolean;
+  /** The context at the win (zone, station, world), kept so a resend after a reload reports the same. */
+  ctx?: RunContext;
 }
 
 export interface GameSnapshot {
@@ -130,6 +132,14 @@ function isFinishResult(v: unknown): v is FinishResult {
   );
 }
 
+const WORLDS: readonly unknown[] = [null, 'secret', 'home-alone'];
+
+function isRunContext(v: unknown): v is RunContext {
+  if (typeof v !== 'object' || v === null) return false;
+  const c = v as Record<string, unknown>;
+  return num(c.tz) && (c.station === null || typeof c.station === 'string') && WORLDS.includes(c.world);
+}
+
 function isWon(v: unknown): v is WonRun {
   if (typeof v !== 'object' || v === null) return false;
   const w = v as Record<string, unknown>;
@@ -140,7 +150,8 @@ function isWon(v: unknown): v is WonRun {
     typeof w.newBest === 'boolean' &&
     (w.result === null || isFinishResult(w.result)) &&
     (w.late === undefined || typeof w.late === 'boolean') &&
-    (w.claimed === undefined || typeof w.claimed === 'boolean')
+    (w.claimed === undefined || typeof w.claimed === 'boolean') &&
+    (w.ctx === undefined || isRunContext(w.ctx))
   );
 }
 

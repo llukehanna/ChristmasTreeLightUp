@@ -1,11 +1,12 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { game, openDecorate, ready, silentWav, solveByTapping, swatch, typeStill, type W } from './helpers';
+import { game, openDecorate, owning, ready, silentWav, solveByTapping, swatch, typeStill, type W } from './helpers';
 
 const look = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('aglow.look') ?? 'null') as { scene: string; path: string } | null);
 const drawerOpen = (page: Page) => page.locator('#decorate').evaluate((n) => n.classList.contains('open'));
 
 test('Decorate opens from the menu; Neon and Sash apply live and survive a reload', async ({ page }) => {
+  await owning(page, ['path:neon', 'scene:sash']);
   await ready(page);
   await openDecorate(page);
   await swatch(page, 'Neon').click();
@@ -26,6 +27,7 @@ test('Decorate opens from the menu; Neon and Sash apply live and survive a reloa
 
 test('a topper picked over the results is in the share image', async ({ page }) => {
   const shares = () => page.evaluate(() => (window as unknown as W).__aglow.homeAlone().shares);
+  await owning(page, ['topper:angel']);
   await ready(page);
   await solveByTapping(page);
   await expect(page.locator('#results')).toBeVisible({ timeout: 15_000 });
@@ -83,6 +85,7 @@ test('a look picked in Home Alone waits for the house to go', async ({ page }) =
       : r.fulfill({ body: silentWav(1), contentType: 'audio/wav', headers: { 'Access-Control-Allow-Origin': '*' } }),
   );
   await page.clock.install();
+  await owning(page, ['scene:midnight']);
   await ready(page);
   await typeStill(page, 'kevin');
   await expect(page.locator('body')).toHaveAttribute('data-scene', 'home-alone');

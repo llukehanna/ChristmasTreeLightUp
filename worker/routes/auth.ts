@@ -200,7 +200,7 @@ export async function setName(req: Request, env: AppEnv): Promise<Response> {
   }
   // The account's ranked runs join the board now.
   resetBoardCache();
-  return json({ user: publicUser(env, { name, email: user.email, starHead: user.starHead, homeAlone: user.homeAlone }) });
+  return json({ user: publicUser(env, { id: user.id, name, email: user.email, starHead: user.starHead, homeAlone: user.homeAlone }) });
 }
 
 /** POST /api/auth/signout */

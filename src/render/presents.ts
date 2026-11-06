@@ -517,10 +517,11 @@ export class Presents {
   /**
    * Places and pre-renders the gifts. Call on layout, scene or set change. `faces`: secret mode, with the sticker loaded.
    * `set`: 'none' lays out no gifts; Luxe and Kraft paint every box but the face paper (always the game's) in their own.
+   * `pile`: only the first `pile` gifts of the placement, where they stand, so a new one never moves the others.
    */
-  layout(L: Layout, grid: Grid, sc: Scene, faces: FaceSprites | null = null, set: PresentSet = 'game'): void {
+  layout(L: Layout, grid: Grid, sc: Scene, faces: FaceSprites | null = null, set: PresentSet = 'game', pile = Infinity): void {
     for (const sp of this.sprites) sp.base.width = sp.light.width = 0;
-    this.gifts = set === 'none' ? [] : placePresents(L, grid);
+    this.gifts = set === 'none' ? [] : placePresents(L, grid).slice(0, pile);
     this.faceIndex = faces?.ready ? faceGiftIndex(this.gifts) : -1;
     if (this.faceIndex >= 0) this.gifts[this.faceIndex] = { ...this.gifts[this.faceIndex], paper: FACE_PAPER };
     const lt = lighting(sc);

@@ -16,6 +16,20 @@ export async function waitInteractive(page: Page): Promise<void> {
   });
 }
 
+/**
+ * This device's guest already owns `ids` (aglow.unlocks, src/store/unlocks.ts), for tests of a look a fresh device
+ * hasn't earned. Call before the page loads.
+ */
+export async function owning(page: Page, ids: readonly string[]): Promise<void> {
+  await page.addInitScript((earned) => {
+    try {
+      localStorage.setItem('aglow.unlocks', JSON.stringify({ guest: { earned, known: earned, seen: earned, synced: false, treesLit: 0 } }));
+    } catch {
+      // A page without storage (about:blank).
+    }
+  }, [...ids]);
+}
+
 export const game = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.game());
 
 /** The id of a tree the server started. A cold local Worker can miss the 1.5 s start; then a new tree is asked for. */

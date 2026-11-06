@@ -1,6 +1,6 @@
 import type { LogEntry } from '../core/log';
 import { localDay } from '../store/stats';
-import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type ClaimResponse, type DailyRequest, type FinishResult, type HomeAloneResponse, type MeResponse, type MyGamesResponse, type NameCheck, type StarHeadResponse, type StartResponse, type User } from './types';
+import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type ClaimResponse, type DailyRequest, type FinishResult, type HomeAloneResponse, type MeResponse, type MyGamesResponse, type NameCheck, type ProgressResponse, type RunContext, type StarHeadResponse, type StartResponse, type User } from './types';
 
 /** An API failure: the HTTP status (0 when the server couldn't be reached), the Worker's error code and message. */
 export class ApiError extends Error {
@@ -97,7 +97,9 @@ export const api = {
   deleteAccount: (confirm: string) => changesBoard(request<Record<string, never>>('DELETE', '/api/me', { confirm })),
   /** A random tree, or with `daily` the Daily Tree (or a past day's), which waits longer for the server. */
   start: (daily?: DailyRequest) => request<StartResponse>('POST', '/api/games', daily ? { daily } : {}, daily ? DAILY_START_TIMEOUT_MS : START_TIMEOUT_MS),
-  finish: (id: string, log: readonly LogEntry[]) => changesBoard(request<FinishResult>('POST', `/api/games/${encodeURIComponent(id)}/finish`, { log })),
+  /** `ctx`: the zone, station and world at the win, for the calendar and secret goals (left out when unknown). */
+  finish: (id: string, log: readonly LogEntry[], ctx?: RunContext) =>
+    changesBoard(request<FinishResult>('POST', `/api/games/${encodeURIComponent(id)}/finish`, ctx ? { log, ctx } : { log })),
   claim: (claims: readonly { id: string; claim: string }[]) => changesBoard(request<ClaimResponse>('POST', '/api/games/claim', { claims })),
   board,
   myGames: () => request<MyGamesResponse>('GET', '/api/me/games'),
@@ -107,6 +109,8 @@ export const api = {
   setHomeAlone: (on: boolean) => request<HomeAloneResponse>('PUT', '/api/me/home-alone', { on }),
   /** The account's stats in this browser's day and zone (spec 2026-10-08 §3.2). */
   myStats: (now: Date = new Date()) => request<AccountStats>('GET', `/api/me/stats?today=${localDay(now)}&tz=${now.getTimezoneOffset()}`),
+  /** What the account has earned, and how far along each goal is. The server reads no query: the day and zone ride along as myStats's do. */
+  progress: (now: Date = new Date()) => request<ProgressResponse>('GET', `/api/me/progress?today=${localDay(now)}&tz=${now.getTimezoneOffset()}`),
 };
 
 /** Where the browser goes to sign in; the Worker sends it on to Google and back to `returnPath`. */
@@ -116,21 +120,23 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /**
  * Sends a finish, and once more after FINISH_RETRY_MS on a network error or a 5xx. An answer (4xx) is final.
- * `beforeSend` runs just ahead of each attempt (the retry too), so the caller can note how late that attempt is.
+ * `beforeSend` runs just ahead of each attempt (the retry too), so the caller can note how late that attempt is. Both
+ * attempts carry the same `ctx`.
  */
 export async function finishWithRetry(
   id: string,
   log: readonly LogEntry[],
   wait: (ms: number) => Promise<void> = sleep,
   beforeSend: () => void = () => undefined,
+  ctx?: RunContext,
 ): Promise<FinishResult> {
   try {
     beforeSend();
-    return await api.finish(id, log);
+    return await api.finish(id, log, ctx);
   } catch (e) {
     if (e instanceof ApiError && e.status > 0 && e.status < 500) throw e;
     await wait(FINISH_RETRY_MS);
     beforeSend();
-    return api.finish(id, log);
+    return api.finish(id, log, ctx);
   }
 }

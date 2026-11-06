@@ -169,6 +169,22 @@ describe('present sets', () => {
     });
   }
 
+  it('a pile of n keeps the first n gifts where they stand', () => {
+    const full = new Presents();
+    full.layout(L, GRID, SCENES.midnight, null, 'game');
+    expect(full.gifts.length).toBe(6);
+    for (const n of [0, 1, 2, 5]) {
+      const p = new Presents();
+      p.layout(L, GRID, SCENES.midnight, null, 'game', n);
+      expect(p.gifts).toEqual(full.gifts.slice(0, n));
+    }
+    const p = new Presents();
+    p.layout(L, GRID, SCENES.midnight, null, 'luxe', 40);
+    expect(p.gifts).toEqual(full.gifts);
+    p.layout(L, GRID, SCENES.midnight, null, 'game', 0);
+    expect(p.bounds()).toBeNull();
+  });
+
   it('the game set paints the game box and never the set painter', () => {
     paintSet.mockImplementation(() => {});
     new Presents().layout(L, GRID, SCENES.midnight, null, 'game');

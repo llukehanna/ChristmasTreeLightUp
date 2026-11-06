@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 import { rotCCW, rotCW } from '../../src/core/dirs';
 import { GRID } from '../../src/core/mask';
 import type { AglowProbe } from '../../src/debug';
-import { openDecorate, swatch } from './helpers';
+import { openDecorate, owning, swatch } from './helpers';
 
 type W = Window & { __aglow: AglowProbe };
 
@@ -120,6 +120,7 @@ test('solving shows the results card and sharing copies to the clipboard', async
 });
 
 test('Sash puts the window up', async ({ page }) => {
+  await owning(page, ['scene:sash']);
   await ready(page);
   await openDecorate(page);
   await swatch(page, 'Sash').click();
@@ -134,6 +135,7 @@ for (const [label, id, what] of [['Town square', 'square', 'the square at blue h
   test(`${label} puts up ${what}`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
+    await owning(page, [`scene:${id}`]);
     await ready(page);
     await openDecorate(page);
     await swatch(page, label).click();

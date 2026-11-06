@@ -318,6 +318,11 @@ export class Radio {
     return this.settings.lightShow && this.kind !== null && this.kind !== 'embed' && this.isPlaying();
   }
 
+  /** The source playing now (a station's or a built-in's id), or null: a finished run's context. */
+  get nowPlaying(): string | null {
+    return this.kind === 'celesta' ? CELESTA_ID : this.snapshotNow().source;
+  }
+
   view(): RadioView {
     const snap = this.player.snapshot();
     const box = this.kind === 'musicbox' ? this.musicbox : this.kind === 'celesta' ? this.celesta : null;

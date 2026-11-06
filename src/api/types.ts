@@ -17,6 +17,11 @@ export const BOARD_WINDOWS = ['daily', 'today', 'week', 'all'] as const;
 export type BoardWindow = (typeof BOARD_WINDOWS)[number];
 
 export interface User {
+  /**
+   * The account's id: whose unlocks this device keeps (src/store/unlocks.ts). The Worker always sends it; a user without
+   * one (hand-made in tests) has no key, and sees this device's unlocks alone.
+   */
+  id?: number;
   /** null until the player picks one. */
   name: string | null;
   isAdmin: boolean;
