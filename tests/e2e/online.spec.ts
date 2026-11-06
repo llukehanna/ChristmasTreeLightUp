@@ -188,7 +188,7 @@ test.describe('the Daily Tree', () => {
     throw new Error('the local Worker never started the Daily');
   }
 
-  test('a first visit lands on the Daily Tree: the pill reads Daily Tree · <today>', async ({ page }) => {
+  test("a returning visitor who hasn't started today's Daily lands on it: the pill reads Daily Tree · <today>", async ({ page }) => {
     const bodies = starts(page);
     await ready(page);
     await dailyTree(page);
@@ -253,13 +253,44 @@ test.describe('the Daily Tree', () => {
     await expect.poll(() => game(page)).toMatchObject({ id, outcome: 'done', reason: 'daily' });
   });
 
-  test("the menu's Daily Tree row says Played once today's Daily is started", async ({ page }) => {
+  test("the menu's Daily Tree row says Played once today's Daily is started, and on that Daily just closes the menu", async ({ page }) => {
+    const bodies = starts(page);
     await ready(page);
-    await dailyTree(page);
+    const id = await dailyTree(page);
     await page.click('#menu-btn');
     await expect(page.locator('#daily-row')).toBeVisible();
     await expect(page.locator('#daily-note')).toBeVisible();
     await expect(page.locator('#daily-note')).toHaveText('Played');
+    const sent = bodies.length;
+    await page.click('#daily-row');
+    await expect(page.locator('#menu')).toBeHidden();
+    await page.waitForTimeout(400);
+    expect(bodies.length).toBe(sent);
+    expect((await game(page)).id).toBe(id);
+  });
+
+  test('a pause before the first move on the Daily survives a reload: the time away is never ranked play', async ({ page }) => {
+    const WAIT_MS = 8000;
+    await ready(page);
+    const id = await dailyTree(page);
+    await page.keyboard.press('p');
+    await expect(page.locator('#pause')).toBeVisible();
+    // The pause is saved at once, before any move.
+    const savedLog = () => page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.game') ?? '{}') as { log?: { a: unknown }[] }).log ?? []);
+    expect((await savedLog()).map((e) => e.a)).toEqual(['p']);
+    await page.waitForTimeout(WAIT_MS);
+    await page.reload();
+    await waitInteractive(page);
+    expect((await game(page)).id).toBe(id);
+    expect((await savedLog()).map((e) => e.a)[0]).toBe('p');
+    const finish = page.waitForResponse((r) => r.request().method() === 'POST' && /\/api\/games\/[^/]+\/finish$/.test(new URL(r.url()).pathname));
+    const solveFrom = Date.now();
+    await solveByTapping(page);
+    const solvedIn = Date.now() - solveFrom;
+    const result = (await (await finish).json()) as { ms: number; reason: string | null };
+    expect(result.reason).toBe('daily');
+    // Only the play after the reload is on the clock (plus the moment before the P), never the 8 s away.
+    expect(result.ms).toBeLessThan(solvedIn + 2000);
   });
 
   test('with /api/games failing, the tree is local with no pill, and the next load asks for the Daily again', async ({ page }) => {
@@ -276,5 +307,35 @@ test.describe('the Daily Tree', () => {
     await dailyTree(page);
     expect(bodies[1]).toEqual({ daily: { today: day } });
     await expect(page.locator('#daily-pill')).toBeVisible();
+  });
+});
+
+test.describe('the Daily Tree on a first visit', () => {
+  test.use({ daily: true, firstVisit: true });
+
+  test('the opening plays, then the room lands on the Daily Tree, its pill up', async ({ page }) => {
+    const bodies: unknown[] = [];
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/games') bodies.push(r.postDataJSON());
+    });
+    await page.goto('/?test');
+    await expect(page.locator('body')).toHaveClass(/\bm-open\b/);
+    expect(bodies).toEqual([]); // nothing asked for in the dark
+    await waitInteractive(page);
+    await expect(page.locator('body')).not.toHaveClass(/\bm-open\b/, { timeout: 15_000 });
+    const day = await page.evaluate(() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
+    expect(bodies[0]).toEqual({ daily: { today: day } });
+    // A cold local Worker can miss the 1.5 s start: then the tree is local, with no pill (and the Daily is not marked).
+    if ((await game(page)).id === null) {
+      await expect(page.locator('#daily-pill')).toBeHidden();
+      test.info().annotations.push({ type: 'note', description: 'cold Worker: the start missed its 1.5 s' });
+      return;
+    }
+    const label = await page.evaluate(() => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    await expect(page.locator('#daily-pill')).toBeVisible();
+    await expect(page.locator('#daily-pill')).toHaveText(`Daily Tree · ${label}`);
   });
 });

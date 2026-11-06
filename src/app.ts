@@ -42,7 +42,7 @@ import { Accounts } from './ui/accounts';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
 import { Decorate } from './ui/decorate';
-import { dailyLabel } from './ui/format';
+import { dailyLabelParts } from './ui/format';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { whenIdle } from './ui/idle';
 import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
@@ -131,6 +131,16 @@ const WIN_SETTLE_MS = 2000;
  * Never while a tree is in play: not during its reveal (animation the player watches) and not once the clock runs,
  * which it does from the reveal's end (Run.frame), first move or not.
  */
+/**
+ * Whether the tree in play is saved on a pause, a hidden tab or a page hide: once moved, or a Daily from its start (its
+ * attempt is spent at the start, so a pause before the first move must survive a reload, or the time away counts).
+ */
+export const savesNow = (moved: boolean, online: OnlineRun | null): boolean => moved || savesAtStart(online);
+
+/** The toast for a resumed tree; none for one reloaded before anything was logged (a Daily saved at its start). */
+export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[] }): string | null =>
+  saved.log.length === 0 ? null : `Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`;
+
 export const quietForWork = (f: RunFlags): boolean =>
   !f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS);
 
@@ -262,6 +272,10 @@ export class App {
       onNewTree: () => this.newGame(),
       onDaily: () => this.newGame('daily'),
       dailyPlayed: () => !landsOnDaily(localDay(new Date())),
+      playingDaily: () => {
+        const d = this.online?.daily;
+        return this.live && this.winAt === null && !!d && !d.past && d.day === localDay(new Date());
+      },
       needsConfirm: () => this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
       onOpen: () => {
         this.radioPanel.close();
@@ -413,7 +427,8 @@ export class App {
     } else if (saved && resume) {
       this.beginGame(now, new Board(GRID, saved.state), saved.elapsedMs, saved);
       this.moved = true;
-      this.toast.show(`Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`, 2600);
+      const welcome = welcomeBack(saved);
+      if (welcome) this.toast.show(welcome, 2600);
       // A reload counts as a pause (spec §5.2): the log resumes when the clock does, after the reveal.
       this.run.markAway(now);
       // Saved during the final turn: the restored board is already solved, so finish the win properly.
@@ -590,9 +605,16 @@ export class App {
     else {
       pill.dataset.day = day;
       // 'Daily' and the rest ' Tree · Nov 6', so a phone (or a tight HUD) can show the first word alone.
-      el('daily-pill-rest').textContent = dailyLabel(day).slice('Daily'.length);
+      const { word, rest } = dailyLabelParts(day);
+      el('daily-pill-word').textContent = word;
+      el('daily-pill-rest').textContent = rest;
     }
     this.fitHud();
+  }
+
+  /** See savesNow. */
+  private shouldSave(): boolean {
+    return savesNow(this.moved, this.online);
   }
 
   private snapshot(won: WonRun | null = null) {
@@ -1288,7 +1310,8 @@ export class App {
     if (pill && hud && mark) {
       const markRight = mark.getBoundingClientRect().right;
       const clear = (): boolean => hud.getBoundingClientRect().left - markRight >= 16;
-      fit: for (const dailyFit of ['full', 'short']) {
+      // A hidden pill takes no room: no need to try it short.
+      fit: for (const dailyFit of daily && !daily.hidden ? ['full', 'short'] : ['full']) {
         if (daily) daily.dataset.fit = dailyFit;
         for (const chipFit of ['full', 'icon']) {
           if (chip) chip.dataset.fit = chipFit;
@@ -1368,7 +1391,7 @@ export class App {
         // During the reveal the clock hasn't started: the log notes the time away (it resumes with the clock), and a
         // restored game is still saved.
         this.run.markAway(now);
-        if (this.moved) this.save(now);
+        if (this.shouldSave()) this.save(now);
       }
     });
     // "Kevin!" (spec 2026-10-14 §5): back after ≥ 3 s away while a run is in progress.
@@ -1392,7 +1415,7 @@ export class App {
       // A reload counts as a pause (spec §5.2): the log says so, and a page back from the back-forward cache shows the pause overlay.
       if (this.canPause(now)) this.pause(false);
       else this.run.markAway(now);
-      if (this.moved) this.save(now);
+      if (this.shouldSave()) this.save(now);
     });
     const overlay = el('pause');
     // The overlay sits above the stage, so the tap that resumes never reaches a tile underneath.
@@ -1481,7 +1504,7 @@ export class App {
     this.run.pause(now);
     this.setPaused(true);
     if (focus) el('pause').focus({ preventScroll: true });
-    if (this.moved) this.save(now);
+    if (this.shouldSave()) this.save(now);
   }
 
   private resume(): void {

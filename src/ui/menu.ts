@@ -10,6 +10,8 @@ export interface MenuHandlers {
   onDaily(): void;
   /** This device has already started today's Daily: its row says "Played" (asked each time the menu opens). */
   dailyPlayed?(): boolean;
+  /** The tree in play is today's live Daily: its row just closes the menu (there is nothing to start over to). */
+  playingDaily?(): boolean;
   /** True while a game is in progress (New tree and Daily Tree then need a second tap). */
   needsConfirm(): boolean;
   /** The menu is about to open (the app closes the radio panel). */
@@ -106,15 +108,24 @@ export class Menu {
 
   /** A new random tree, from the button or the N key: see request. */
   requestNewTree(): 'started' | 'armed' {
-    return this.request('new');
+    return this.armOrStart('new');
   }
 
   /**
    * A new tree (New tree, N) or the Daily Tree (its row). While a run is in progress the first call only arms a 3 s
    * confirm ('armed'); a second call for the same row inside the window, or any call when nothing is at stake, starts
-   * it ('started'). Each row arms for itself: a press of one never confirms the other.
+   * it ('started'). Each row arms for itself: a press of one never confirms the other. On today's live Daily the Daily
+   * row only closes the menu ('closed').
    */
-  request(action: TreeAction): 'started' | 'armed' {
+  request(action: TreeAction): 'started' | 'armed' | 'closed' {
+    if (action === 'daily' && this.h.playingDaily?.()) {
+      this.close();
+      return 'closed';
+    }
+    return this.armOrStart(action);
+  }
+
+  private armOrStart(action: TreeAction): 'started' | 'armed' {
     const now = performance.now();
     if (!this.h.needsConfirm() || (this.armed?.action === action && now < this.armed.until)) {
       this.close();

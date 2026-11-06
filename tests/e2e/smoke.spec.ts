@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { rotCCW, rotCW } from '../../src/core/dirs';
+import { GRID } from '../../src/core/mask';
 import type { AglowProbe } from '../../src/debug';
 import { openDecorate, swatch } from './helpers';
 
@@ -367,6 +368,16 @@ test('N mid-run asks once, then starts', async ({ page }) => {
   await expect(page.locator('#time')).not.toHaveText('0:00', { timeout: 3000 });
   await page.waitForFunction(() => (window as unknown as W).__aglow.clock().ms > 3200);
   await tapTile(page, await middleTile(page));
+  // N asks only while a tile is lit, and a random tree can start fully dark: turn the root to its solution (it lights).
+  await page.evaluate((root) => {
+    const a = (window as unknown as W).__aglow;
+    const rot = (b: number): number => (b & 1 ? 8 : 0) | (b & 8 ? 2 : 0) | (b & 2 ? 4 : 0) | (b & 4 ? 1 : 0);
+    const s = a.state();
+    if (s.litCount > 0) return;
+    for (let b = s.bits[root], k = 0; b !== s.solution[root] && k < 4; b = rot(b), k++) a.tap(root);
+  }, GRID.root);
+  await expect.poll(async () => (await state(page)).rotating).toBe(0);
+  expect((await state(page)).litCount).toBeGreaterThan(0);
   const before = await solutionKey(page);
   await page.keyboard.press('n');
   await expect(page.locator('#toast')).toHaveText('Press N again for a new tree');

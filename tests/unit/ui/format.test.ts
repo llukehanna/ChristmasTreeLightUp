@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { dailyLabel, esc, formatDay, formatMs, formatWhen, initial, plural, UNRANKED_TEXT } from '../../../src/ui/format';
+import { dailyLabel, dailyLabelParts, esc, formatDay, formatMs, formatWhen, initial, plural, UNRANKED_TEXT } from '../../../src/ui/format';
 
 it('formats ranked times as m:ss.t, never rounding a time up', () => {
   expect(formatMs(81_049)).toBe('1:21.0');
@@ -39,4 +39,10 @@ it("dailyLabel('2026-11-06') is 'Daily Tree · Nov 6'; '2026-12-25' is 'Daily Tr
   expect(dailyLabel('2026-11-06')).toBe('Daily Tree · Nov 6');
   expect(dailyLabel('2026-12-25')).toBe('Daily Tree · Dec 25');
   expect(dailyLabel('2027-01-01')).toBe('Daily Tree · Jan 1');
+});
+
+it("dailyLabelParts splits the label into 'Daily' and the rest, which make dailyLabel", () => {
+  expect(dailyLabelParts('2026-11-06')).toEqual({ word: 'Daily', rest: ' Tree · Nov 6' });
+  const { word, rest } = dailyLabelParts('2026-12-25');
+  expect(word + rest).toBe(dailyLabel('2026-12-25'));
 });

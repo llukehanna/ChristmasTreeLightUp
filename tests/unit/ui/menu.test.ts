@@ -19,10 +19,12 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-function make(needsConfirm: boolean, played: () => boolean = () => false) {
+function make(needsConfirm: boolean, played: () => boolean = () => false, playing: () => boolean = () => false) {
   const onNewTree = vi.fn();
   const onDaily = vi.fn();
-  const menu = new Menu({ ...DEFAULT_SETTINGS }, { onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, dailyPlayed: played, needsConfirm: () => needsConfirm });
+  const menu = new Menu({ ...DEFAULT_SETTINGS }, {
+    onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, dailyPlayed: played, playingDaily: playing, needsConfirm: () => needsConfirm,
+  });
   return { menu, onNewTree, onDaily };
 }
 const label = () => document.getElementById('daily-label')?.textContent;
@@ -166,4 +168,19 @@ it('the Played note steps aside while the row asks to confirm', () => {
   vi.advanceTimersByTime(NEW_TREE_CONFIRM_MS + 100);
   expect(label()).toBe('Daily Tree');
   expect(note().hidden).toBe(false);
+});
+
+it("on today's live Daily, its row just closes the menu: no confirm, no restart", () => {
+  for (const midRun of [true, false]) {
+    const { menu, onDaily, onNewTree } = make(midRun, () => true, () => true);
+    menu.open();
+    expect(menu.request('daily')).toBe('closed');
+    expect(menu.isOpen).toBe(false);
+    expect(onDaily).not.toHaveBeenCalled();
+    expect(label()).toBe('Daily Tree');
+    expect(document.getElementById('daily-row')?.classList.contains('armed')).toBe(false);
+    // New tree is unchanged on the Daily.
+    expect(menu.requestNewTree()).toBe(midRun ? 'armed' : 'started');
+    expect(onNewTree).toHaveBeenCalledTimes(midRun ? 0 : 1);
+  }
 });
