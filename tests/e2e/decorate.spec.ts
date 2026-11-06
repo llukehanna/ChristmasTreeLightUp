@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { game, openDecorate, owning, ready, silentWav, solveByTapping, swatch, typeStill, type W } from './helpers';
+import { game, openDecorate, owning, ready, silentWav, solveByTapping, swatch, typeStill, waitInteractive, type W } from './helpers';
 
 const look = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('aglow.look') ?? 'null') as { scene: string; path: string } | null);
 const drawerOpen = (page: Page) => page.locator('#decorate').evaluate((n) => n.classList.contains('open'));
@@ -52,6 +52,39 @@ test('launch day: a saved look the player has only partly earned shows what they
   await expect(page.locator('#decorate .deco-hint')).toHaveText('Light 25 trees · 12/25');
   await page.keyboard.press('Escape');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('aglow.look') ?? 'null'))).toEqual(saved);
+});
+
+test('the unseen dot waits out a run, a reload mid-run included, and clears once the drawer has been opened', async ({ page }) => {
+  // Tinsel is earned and not yet seen, on every load.
+  await page.addInitScript(() => {
+    localStorage.setItem('aglow.unlocks', JSON.stringify({ guest: { earned: ['decor:tinsel'], known: ['decor:tinsel'], seen: [], synced: false, treesLit: 1 } }));
+  });
+  const dot = page.locator('#menu-btn');
+  await ready(page);
+  // No run yet: the dot is up.
+  await expect(dot).toHaveClass(/\bhas-new\b/);
+  // A move starts the run; a reload resumes it, and the dot stays down.
+  const tile = await page.evaluate(() => {
+    const a = (window as unknown as W).__aglow;
+    return a.ids[Math.floor(a.ids.length / 2)];
+  });
+  const [x, y] = await page.evaluate((t) => (window as unknown as W).__aglow.tileCenter(t), tile);
+  await page.mouse.click(x, y);
+  await expect.poll(async () => (await game(page)).log).toBeGreaterThan(0);
+  await page.waitForTimeout(400);
+  await page.reload();
+  await waitInteractive(page);
+  await expect(page.locator('#toast')).toHaveText(/welcome back/i);
+  await page.waitForTimeout(800); // the session's answer re-checks the unlocks
+  await expect(dot).not.toHaveClass(/\bhas-new\b/);
+  // The win ends the run: the dot comes up, and opening the drawer clears it.
+  await page.evaluate(() => (window as unknown as W).__aglow.solve());
+  await expect(page.locator('#results')).toBeVisible({ timeout: 15_000 });
+  await expect(dot).toHaveClass(/\bhas-new\b/);
+  await openDecorate(page);
+  await expect(page.locator('#decorate .deco-sw[data-id="decor:tinsel"] .deco-new')).toHaveText('New');
+  await page.keyboard.press('Escape');
+  await expect(dot).not.toHaveClass(/\bhas-new\b/);
 });
 
 test('a topper picked over the results is in the share image', async ({ page }) => {

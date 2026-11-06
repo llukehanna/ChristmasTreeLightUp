@@ -215,6 +215,8 @@ body.decorating .vignette { opacity: 0; }
 
 /* Phones (the app's and the radio sheet's breakpoint): a bottom sheet, with the stage risen above it. */
 @media (max-width: 600px) {
+  /* 16 px: iOS Safari zooms into a smaller field, shifting the fixed sheet (as account.css's phone field). */
+  .deco-name { font-size: 16px; }
   .deco {
     top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; height: min(56vh, 520px);
     /* The footer clears the home indicator, as in the radio sheet (the sheet keeps its height: the stage's frame is

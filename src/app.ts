@@ -268,6 +268,8 @@ export class App {
   });
   /** Bumped by each progress fetch, so an older answer (another player's, after a switch) never lands. */
   private progressSeq = 0;
+  /** boot() has put the first tree up: until then a reload mid-run can't tell it is one, so the dot waits. */
+  private booted = false;
   /** The star-head egg: taps on the star and "hohoho" swap the topper (src/ui/star-egg.ts). */
   private readonly egg: StarEgg;
   /** Secret mode (spec 2026-10-08 secret mode): on exactly while the head tops the tree. */
@@ -445,7 +447,6 @@ export class App {
     this.applySettings(this.settings, false);
     this.unlocks.setPlayer(this.player, this.stats.solved);
     this.applyLook(this.look, false);
-    this.showDot();
     this.resize();
     addEventListener('resize', () => {
       if (this.resizeQueued) return;
@@ -517,6 +518,9 @@ export class App {
       await this.freshTree(landsOnDaily(localDay(new Date())) ? 'daily' : 'random');
     }
     if (!this.board.won) this.showIntro();
+    // The first tree is up (a resumed one already moved): from now the dot may show, when no run is in progress.
+    this.booted = true;
+    this.showDot();
     this.startLoop();
     // Otherwise the eggs load once the first tree takes taps and the browser has a moment.
     setTimeout(() => whenIdle(() => void this.requestEggs()), Math.max(0, this.interactiveAt - performance.now()));
@@ -1350,11 +1354,12 @@ export class App {
 
   /**
    * The unseen dot on the menu button and its Decorate row. Never put up during a run (the first move to the win or a new
-   * tree): it waits for the run to end. Taking it down (everything seen) is always fine.
+   * tree), nor before boot() knows whether the first tree resumes one: it waits for the run to end. Taking it down
+   * (everything seen) is always fine.
    */
   private showDot(): void {
     const on = this.unlocks.unseen().length > 0;
-    if (on && runInProgress({ live: this.live, moved: this.moved, winAt: this.winAt })) return;
+    if (on && (!this.booted || runInProgress({ live: this.live, moved: this.moved, winAt: this.winAt }))) return;
     this.menu.setDot(on);
   }
 
