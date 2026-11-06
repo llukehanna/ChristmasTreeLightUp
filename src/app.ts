@@ -157,9 +157,12 @@ export function startToast(kind: 'daily' | 'random', online: OnlineRun | null): 
   return online?.daily?.repeat ? DAILY_REPEAT : null;
 }
 
-/** The toast for a resumed tree; none for one reloaded before anything was logged (a Daily saved at its start). */
+/**
+ * The toast for a resumed tree, once it has a tap in its log; none for one reloaded before its first move (a Daily saved
+ * at its start, its log empty or only pauses: begun hidden, or paused before a move).
+ */
 export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[] }): string | null =>
-  saved.log.length === 0 ? null : `Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`;
+  saved.log.some((e) => typeof e.a === 'number') ? `Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}` : null;
 
 /**
  * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
@@ -589,7 +592,8 @@ export class App {
       const s = await api.start(kind === 'daily' ? { today: localDay(new Date()) } : undefined);
       const board = seededBoard(s.seed, s.genVersion);
       if (board) {
-        const daily = s.daily ? dailyStart(s.daily) : null;
+        // No claim: the server knew the player, so its repeat is final (dailyStart).
+        const daily = s.daily ? dailyStart(s.daily, s.claim === null) : null;
         return { board, online: { gameId: s.id, seed: s.seed, genVersion: s.genVersion, claim: s.claim, daily } };
       }
     } catch {
@@ -607,7 +611,8 @@ export class App {
     beginsAway(this.run, document.hidden, now);
     if (this.shouldSave()) this.save(now);
     const toast = startToast(kind, online);
-    if (toast) this.toast.show(toast, START_TOAST_MS);
+    // Begun in a hidden tab, it waits to be seen (Toast.showWhenSeen).
+    if (toast) this.toast.showWhenSeen(toast, START_TOAST_MS);
   }
 
   /** N, New tree and the results tag's button give a random tree; the menu's Daily Tree row gives the Daily. */

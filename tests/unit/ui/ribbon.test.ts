@@ -103,7 +103,10 @@ describe('ribbonModel: the Daily Tree', () => {
     const unranked = { kind: 'unranked', why: 'not your first go' };
     expect(ribbonModel({ kind: 'done', result: daily() }, null, { guest: true, repeat: true })).toEqual(unranked);
     expect(ribbonModel({ kind: 'done', result: daily() }, undefined, { guest: true, repeat: true })).toEqual(unranked);
-    expect(ribbonModel({ kind: 'done', result: daily() }, unnamed, { repeat: true })).toEqual(unranked);
+    // A guest's run, its player signed in since (no name yet): still the device's repeat.
+    expect(ribbonModel({ kind: 'done', result: daily() }, unnamed, { guest: true, repeat: true })).toEqual(unranked);
+    // A run played signed in is the server's to judge: its place stands, and an unnamed account still gets the name card.
+    expect(ribbonModel({ kind: 'done', result: daily() }, unnamed, { repeat: true })).toEqual({ kind: 'save', rank: 2, of: 9, signedIn: true, board: 'daily' });
     const root = tag();
     renderRibbon(root, ribbonModel({ kind: 'done', result: daily() }, null, { guest: true, repeat: true }), handlers());
     expect(root.querySelector('.rib-ribbon')).toBeNull();

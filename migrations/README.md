@@ -16,6 +16,8 @@ order against a deploy doesn't matter, and rolling back leaves an unused index.
 
 0007 splits the stale-game sweep across two partial indexes, `games_stale` (a random game or a guest's Daily, swept
 after a day) and `games_stale_daily` (a signed-in player's Daily, kept three days), and drops `games_abandoned`, which
-only the old sweep read. Apply it before the Worker that reads it, as `npm run deploy` does: a Worker from before it
-still runs correctly against it, but its sweep has no index to seek and scans the unfinished games on every start (a
-cost, never an error). Rolling a Worker back past 0007 has the same cost until it is rolled forward again.
+only the old sweep read. Apply it before the Worker that reads it, as `npm run deploy` does. A Worker from before it
+still runs correctly against it (never an error), but its sweep plans as `SCAN games` once `games_abandoned` is gone: it
+reads the whole games table, finished games included, on every start. So the old Worker's few seconds between the
+migration and the deploy are fine, but any rollback of the Worker past 0007 must be short: roll forward (or put back
+`games_abandoned`) quickly.

@@ -36,27 +36,37 @@ it('a corrupt value lands on it', () => {
   expect(landsOnDaily('2026-11-06')).toBe(true);
 });
 
-it("a start of the Daily is a repeat when the server says so, or when this device had started that day's before; it marks the device", () => {
+it("a guest's start of the Daily is a repeat when this device had started that day's before; it marks the device", () => {
   const live = { day: '2026-11-06', past: false, repeat: false };
   // A first go: as the server said, and the device is marked from now.
-  expect(dailyStart(live)).toEqual(live);
+  expect(dailyStart(live, false)).toEqual(live);
   expect(landsOnDaily('2026-11-06')).toBe(false);
   // The device was marked before this start (a guest's second go, which the server can't know): a repeat.
-  expect(dailyStart(live)).toEqual({ ...live, repeat: true });
-  // The server knows the account's earlier go (on another device, say): a repeat, and the device is marked.
-  localStorage.clear();
-  expect(dailyStart({ ...live, repeat: true })).toEqual({ ...live, repeat: true });
-  expect(landsOnDaily('2026-11-06')).toBe(false);
+  expect(dailyStart(live, false)).toEqual({ ...live, repeat: true });
   // Marked for another day: not this day's repeat.
   markDailyStarted('2026-11-05');
-  expect(dailyStart(live)).toEqual(live);
+  expect(dailyStart(live, false)).toEqual(live);
+});
+
+it("a signed-in player's repeat is the server's to decide: the device mark never makes one, though it is still written", () => {
+  const live = { day: '2026-11-06', past: false, repeat: false };
+  // Marked by a guest go this account never finished, or by another account on this device: still a first go.
+  markDailyStarted('2026-11-06');
+  expect(dailyStart(live, true)).toEqual(live);
+  localStorage.clear();
+  expect(dailyStart(live, true)).toEqual(live);
+  expect(landsOnDaily('2026-11-06')).toBe(false);
+  // The server knows the account's earlier go (on another device, say): a repeat.
+  localStorage.clear();
+  expect(dailyStart({ ...live, repeat: true }, true)).toEqual({ ...live, repeat: true });
+  expect(landsOnDaily('2026-11-06')).toBe(false);
 });
 
 it("a past day's tree is never a repeat, and never marks the device", () => {
   const past = { day: '2026-11-03', past: true, repeat: false };
   markDailyStarted('2026-11-03');
-  expect(dailyStart(past)).toEqual(past);
+  expect(dailyStart(past, false)).toEqual(past);
   localStorage.clear();
-  expect(dailyStart(past)).toEqual(past);
+  expect(dailyStart(past, false)).toEqual(past);
   expect(localStorage.getItem('aglow.daily')).toBeNull();
 });

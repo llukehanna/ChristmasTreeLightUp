@@ -29,7 +29,7 @@ export interface RibbonContext {
   returning?: boolean;
   /** The result shown is the finish of a run played signed out, not yet replaced by its claim's (a Daily run says so only here). */
   guest?: boolean;
-  /** A Daily known at its start not to be the first go (dailyStart): the server's repeat, or this device's. */
+  /** A Daily known at its start not to be the first go (dailyStart): the server's repeat, or for a guest this device's. */
   repeat?: boolean;
 }
 
@@ -68,8 +68,9 @@ export function ribbonModel(o: RunOutcome, user: SessionState, ctx: RibbonContex
         if (ctx.guest && user === undefined && ctx.returning) return { kind: 'saving' };
         // The day's total already counts a run that would join the board.
         if (user?.name) return { kind: 'rank', rank: daily.rank, of: daily.total, best: null, newBest: false, board: 'daily' };
-        // A place the server offers but this device knows isn't the first go (a guest's repeat): no promise of one.
-        if (ctx.repeat) return { kind: 'unranked', why: UNRANKED_TEXT.daily };
+        // A guest's run the server offers a place but this device knows isn't the first go: no promise of one. A run
+        // played signed in is the server's to judge (its repeat would have no place here).
+        if (ctx.repeat && ctx.guest) return { kind: 'unranked', why: UNRANKED_TEXT.daily };
         return { kind: 'save', rank: daily.rank, of: daily.total, signedIn: !!user, board: 'daily' };
       }
       // A run by a player still picking a name is placed but not yet counted in the total.
