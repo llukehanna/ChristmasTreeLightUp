@@ -177,3 +177,18 @@ it("a dress change keeps the Sash's backdrop and its snow; a resize or a change 
   expect(backdrop()).toBeInstanceOf(WindowSnow);
   expect(backdrop()).not.toBe(resized);
 });
+
+it('setDress says whether it repainted: a real change does, the same dress or a palette alone (the scene carries it) does not', () => {
+  const dress: Dress = { palette: STARTER_LOOK.palette, topper: STARTER_LOOK.topper, decor: NO_DECOR, presents: STARTER_LOOK.presents };
+  const r = new Renderer(document.createElement('canvas'));
+  r.setScene(SCENES.midnight);
+  r.resize(1280, 800, 1);
+  const repaint = vi.spyOn(r as unknown as { repaint(): void }, 'repaint');
+  expect(r.setDress({ ...dress, decor: { ...NO_DECOR } })).toBe(false);
+  expect(r.setDress({ ...dress, palette: 'ice' })).toBe(false);
+  expect(repaint).not.toHaveBeenCalled();
+  expect(r.setDress({ ...dress, palette: 'ice', topper: 'angel' })).toBe(true);
+  expect(r.setDress({ ...dress, palette: 'ice', topper: 'angel', presents: 'luxe' })).toBe(true);
+  expect(r.setDress({ ...dress, palette: 'ice', topper: 'angel', presents: 'luxe', decor: { ...NO_DECOR, beads: true } })).toBe(true);
+  expect(repaint).toHaveBeenCalledTimes(3);
+});

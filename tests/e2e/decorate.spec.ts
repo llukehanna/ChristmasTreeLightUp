@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { game, openDecorate, ready, silentWav, swatch, typeStill, type W } from './helpers';
+import { game, openDecorate, ready, silentWav, solveByTapping, swatch, typeStill, type W } from './helpers';
 
 const look = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('aglow.look') ?? 'null') as { scene: string; path: string } | null);
 const drawerOpen = (page: Page) => page.locator('#decorate').evaluate((n) => n.classList.contains('open'));
@@ -22,6 +22,20 @@ test('Decorate opens from the menu; Neon and Sash apply live and survive a reloa
   await openDecorate(page);
   await expect(swatch(page, 'Neon')).toHaveAttribute('aria-pressed', 'true');
   await expect(swatch(page, 'Sash')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('a topper picked over the results is in the share image', async ({ page }) => {
+  const shares = () => page.evaluate(() => (window as unknown as W).__aglow.homeAlone().shares);
+  await ready(page);
+  await solveByTapping(page);
+  await expect(page.locator('#results')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(shares).toBeGreaterThan(0);
+  const before = await shares();
+  // The drawer reopens over the tag; a dress pick alone (no scene or path) re-renders the image.
+  await openDecorate(page);
+  await swatch(page, 'Angel').click();
+  await expect(swatch(page, 'Angel')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(shares).toBeGreaterThan(before);
 });
 
 test('the board stays playable with the drawer open', async ({ page }) => {

@@ -190,14 +190,20 @@ export class Renderer {
     this.current.clear();
   }
 
-  /** The tree's dress (palette, topper, decorations, presents). The topper is drawn from it; later tasks draw the rest. */
-  setDress(d: Dress): void {
-    const same = this.dress.palette === d.palette && this.dress.topper === d.topper && this.dress.presents === d.presents &&
+  /**
+   * The tree's dress: the topper, decorations and presents are drawn from it. The palette is kept but never read here:
+   * it reaches the stage as the scene's colours (setScene), so a palette alone repaints nothing. Says whether it
+   * repainted (a change, on a sized stage), so the share image can follow.
+   */
+  setDress(d: Dress): boolean {
+    const same = this.dress.topper === d.topper && this.dress.presents === d.presents &&
       (Object.keys(d.decor) as (keyof Dress['decor'])[]).every((k) => this.dress.decor[k] === d.decor[k]);
-    if (same) return;
     this.dress = d;
+    if (same) return false;
     this.topper.setKind(d.topper);
-    if (this.sized) this.repaint();
+    if (!this.sized) return false;
+    this.repaint();
+    return true;
   }
 
   /** Secret mode: the aurora scene is up. */

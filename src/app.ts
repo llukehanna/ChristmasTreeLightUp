@@ -1130,7 +1130,7 @@ export class App {
     if (this.homeAlone) this.sounds?.preload(); // the effects volume may just have come up
   }
 
-  /** The scene and light path, and the dress. A change of either re-renders the share image. */
+  /** The scene and light path, and the dress. A change of any of them re-renders the share image. */
   private applyLook(l: Look, persist = true): void {
     this.look = l;
     this.pausedDrawn = false;
@@ -1138,8 +1138,8 @@ export class App {
     const restyle = l.path !== this.renderer.style;
     if (restyle) this.renderer.setStyle(l.path);
     const rescene = this.setScene(l.scene);
-    this.dress();
-    if (restyle || rescene) this.refreshShare();
+    const redressed = this.dress();
+    if (restyle || rescene || redressed) this.refreshShare();
   }
 
   /** The egg world the stage is in, if any (secret mode and Home Alone keep their own tree). */
@@ -1147,10 +1147,14 @@ export class App {
     return this.secret ? 'secret' : this.homeAlone ? 'home-alone' : null;
   }
 
-  /** Dress the tree: the look, less what the egg world takes away. The drawer shows the look, and the world it waits out. */
-  private dress(): void {
-    this.renderer.setDress(worldLook(this.look, this.world));
+  /**
+   * Dress the tree: the look, less what the egg world takes away. The drawer shows the look, and the world it waits out.
+   * Says whether the stage repainted.
+   */
+  private dress(): boolean {
+    const repainted = this.renderer.setDress(worldLook(this.look, this.world));
     this.decorate.sync();
+    return repainted;
   }
 
   /** From the menu (closed by now): whatever would sit over the drawer or the framed stage goes first. */
