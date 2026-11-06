@@ -47,6 +47,8 @@ export const UNRANKED_TEXT: Readonly<Record<UnrankedReason | 'offline' | 'unveri
   paused: 'paused too long',
   too_fast: 'too fast',
   clock: "couldn't verify the clock",
+  daily: 'not your first go at this Daily Tree',
+  past: "a past day's tree",
   offline: 'offline',
   unverified: "couldn't verify this run",
 };

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FinishResult } from '../../../src/api/types';
 import { renderRibbon, ribbonModel } from '../../../src/ui/ribbon';
 
-const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: true, ...over });
+const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: true, daily: null, ...over });
 const me = { name: 'Comet', isAdmin: false, starHead: false };
 
 describe('ribbonModel', () => {

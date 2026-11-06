@@ -3,6 +3,8 @@ import { BOARD_TOP, type BoardResponse, type MyGamesResponse } from '../../src/a
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, boardGrew, cachedTopAndTotal, cachedTotal, resetBoardCache } from '../../worker/lib/board-cache';
+import { DAILY_BEST_SQL, DAILY_FIRST_SQL, DAILY_RANK_SQL, DAILY_TOP_SQL, DAILY_TOTAL_SQL } from '../../worker/lib/daily-board';
+import { dayNumber } from '../../worker/lib/days';
 import { BEST_SQL, TOP_SQL, topSql, totalSql } from '../../worker/lib/ranks';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
@@ -265,7 +267,7 @@ describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
     }
     const odd = await call(env, 'GET', '/api/board?window=month&today=2026-10-14&tz=0');
     expect(odd.status).toBe(400);
-    expect(await odd.json()).toEqual({ error: 'invalid', message: 'window must be today, week or all.' });
+    expect(await odd.json()).toEqual({ error: 'invalid', message: 'window must be daily, today, week or all.' });
   });
 
   it("a window's offset must be a whole quarter hour, and a day more than one from the server's is clamped to it: no window keys made up", async () => {
@@ -314,6 +316,135 @@ describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
     const total = await plan(totalSql());
     expect(g(total)).toBe('SCAN g USING COVERING INDEX games_best');
     expect(total.join()).not.toContain('games_recent');
+  });
+});
+
+let attempts = 0;
+/**
+ * A Daily attempt straight into D1: day `day`, started at `startedAt`, finished `ms` later with `reason` (null:
+ * never finished). `past` marks a past day's tree.
+ */
+async function attempt(
+  userId: number | null,
+  day: string,
+  startedAt: number,
+  ms: number,
+  reason: string | null = 'daily',
+  { past = false, id }: { past?: boolean; id?: string } = {},
+): Promise<string> {
+  const gameId = id ?? `day-${String(++attempts).padStart(16, '0')}`;
+  const done = reason !== null;
+  await db
+    .prepare('INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, paused_ms, pauses, ranked, unranked_reason, daily_day, daily_past) VALUES (?, ?, 1, 1, ?, ?, ?, 0, 0, 0, ?, ?, ?)')
+    .bind(gameId, userId, startedAt, done ? startedAt + ms : null, done ? ms : null, reason, dayNumber(day), past ? 1 : 0)
+    .run();
+  return gameId;
+}
+
+describe('the Daily board (GET /api/board?window=daily)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    serverOn('2026-12-10');
+  });
+  afterEach(() => vi.useRealTimers());
+  const daily = (today: string, cookie?: string) => windowed(`window=daily&today=${today}&tz=0`, cookie);
+  const noon = Date.parse('2026-12-10T12:00:00Z');
+
+  it("GET /api/board?window=daily ranks first attempts by ms, then finish; pins 'you' when outside the top", async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    const bo = await user('bo@example.com', 'Comet');
+    const cy = await user('cy@example.com', 'Nova');
+    const di = await user('di@example.com', 'Vega');
+    const nameless = await user('ed@example.com', null);
+    await attempt(ana, '2026-12-10', noon, 50_000);
+    await attempt(ana, '2026-12-10', noon + 100_000, 10_000); // a second attempt: off the board
+    await attempt(bo, '2026-12-10', noon + 1000, 40_000);
+    await attempt(cy, '2026-12-10', noon + 2000, 50_000); // as fast as Ana's first, finished later
+    await attempt(di, '2026-12-10', noon + 2000, 50_000); // tied with Cy on (ms, finish): they share a rank
+    await attempt(nameless, '2026-12-10', noon, 1_000); // no name: off the board
+    await attempt(null, '2026-12-10', noon, 1_000); // a guest's: off the board until claimed
+    await attempt(bo, '2026-12-09', noon - 86_400_000, 5_000); // yesterday's board
+    await attempt(cy, '2026-12-10', noon - 86_400_000, 2_000, 'past', { past: true }); // a past start of the day: never on the board, never the first attempt
+    await run(ana, 1_000, noon); // a random run: the main board's
+    const b = await daily('2026-12-10');
+    expect(b.total).toBe(4);
+    expect(b.rows).toEqual([
+      { rank: 1, name: 'Comet', ms: 40_000, finishedAt: noon + 41_000, mine: false },
+      { rank: 2, name: 'Meridian', ms: 50_000, finishedAt: noon + 50_000, mine: false },
+      { rank: 3, name: 'Nova', ms: 50_000, finishedAt: noon + 52_000, mine: false },
+      { rank: 3, name: 'Vega', ms: 50_000, finishedAt: noon + 52_000, mine: false },
+    ]);
+    expect((await daily('2026-12-09')).rows.map((r) => r.ms)).toEqual([5_000]);
+    // The headers are the other windows'.
+    const res = await call(env, 'GET', '/api/board?window=daily&today=2026-12-10&tz=0');
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=15');
+    expect(res.headers.get('Vary')).toBe('Cookie');
+    // Fifty faster first attempts push Ana's below the list: pinned with its place among first attempts.
+    const fast = await Promise.all(Array.from({ length: 50 }, (_, k) => user(`p${k}@example.com`, `Player${k}`)));
+    for (const [k, id] of fast.entries()) await attempt(id, '2026-12-10', noon + k, 30_000 + k);
+    const anaCookie = await signIn(env, 'ana@example.com');
+    const pinned = await daily('2026-12-10', anaCookie);
+    expect(pinned.rows).toHaveLength(BOARD_TOP);
+    expect(pinned.total).toBe(54);
+    expect(pinned.rows.some((r) => r.mine)).toBe(false);
+    expect(pinned.you).toEqual({ rank: 52, name: 'Meridian', ms: 50_000, finishedAt: noon + 50_000, mine: true });
+    expect((await daily('2026-12-10', await signIn(env, 'bo@example.com'))).you).toMatchObject({ rank: 51, ms: 40_000 });
+    // A run in the top: marked, nothing pinned.
+    const top = await daily('2026-12-10', await signIn(env, 'p3@example.com'));
+    expect(top.rows.filter((r) => r.mine).map((r) => r.ms)).toEqual([30_003]);
+    expect(top.you).toBeNull();
+    // A player whose first attempt was abandoned, or judged too fast, has nothing pinned.
+    for (const [email, name, reason] of [['fy@example.com', 'Lyra', null], ['gu@example.com', 'Orion', 'too_fast']] as const) {
+      const id = await user(email, name);
+      await attempt(id, '2026-12-10', noon, 60_000, reason);
+      await attempt(id, '2026-12-10', noon + 1, 1_000);
+      const b2 = await daily('2026-12-10', await signIn(env, email));
+      expect(b2.you).toBeNull();
+      expect(b2.total).toBe(54);
+    }
+  });
+
+  it('first attempts that start at the same instant go to the lower id', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    await attempt(ana, '2026-12-10', noon, 50_000, 'daily', { id: 'day-b000000000000000' });
+    await attempt(ana, '2026-12-10', noon, 40_000, 'daily', { id: 'day-a000000000000000' });
+    expect((await daily('2026-12-10')).rows.map((r) => r.ms)).toEqual([40_000]);
+  });
+
+  it("the viewer's day is clamped to the server's day ±1, the offset must be a whole quarter hour, and the day must be real", async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    await attempt(ana, '2026-12-09', noon - 86_400_000, 10_000);
+    await attempt(ana, '2026-12-11', noon + 86_400_000, 30_000);
+    expect(msOf(await daily('2026-12-01'))).toEqual([10_000]);
+    expect(msOf(await daily('2027-03-01'))).toEqual([30_000]);
+    expect((await daily('2026-12-10')).total).toBe(0);
+    const bad = await call(env, 'GET', '/api/board?window=daily&today=2026-12-10&tz=7');
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'invalid', message: 'tz must be a whole quarter hour.' });
+    for (const q of ['', 'today=2026-12-10', 'today=2026-02-30&tz=0']) expect((await call(env, 'GET', `/api/board?window=daily&${q}`)).status).toBe(400);
+  });
+
+  it("reads each day's attempts through games_daily (migration 0006): seeks only, the first-attempt check per run included", async () => {
+    const plan = async (sql: string, ...bind: number[]): Promise<string[]> =>
+      (await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...bind).all<{ detail: string }>()).results.map((r) => r.detail);
+    const day = 'SEARCH g USING INDEX games_daily (daily_day=?)';
+    const earlier = 'SEARCH e USING INDEX games_daily (daily_day=? AND user_id=? AND started_at<?)';
+    const user = 'SEARCH u USING INTEGER PRIMARY KEY (rowid=?)';
+    for (const [sql, bind] of [
+      [DAILY_TOP_SQL, [1]],
+      [DAILY_TOTAL_SQL, [1]],
+      [DAILY_RANK_SQL, [1, 1, 1]],
+    ] as const) {
+      const p = await plan(sql, ...bind);
+      expect(p, sql).toEqual(expect.arrayContaining([day, earlier, user]));
+      expect(p.join(), sql).not.toContain('SCAN');
+    }
+    const best = await plan(DAILY_BEST_SQL, 1, 1);
+    expect(best).toEqual(expect.arrayContaining(['SEARCH g USING INDEX games_daily (daily_day=? AND user_id=?)', earlier]));
+    expect(best.join()).not.toContain('SCAN');
+    const first = await plan(DAILY_FIRST_SQL, 1, 1);
+    expect(first[0]).toBe('SEARCH games USING INDEX games_daily (daily_day=? AND user_id=?)');
+    expect(first.join()).not.toContain('SCAN');
   });
 });
 
@@ -464,9 +595,9 @@ describe('your games', () => {
       inTop: 2,
       total: 3,
       games: [
-        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false },
-        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false },
-        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false },
+        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false, daily: null },
+        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false, daily: null },
+        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false, daily: null },
       ],
     });
   });

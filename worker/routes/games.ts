@@ -1,4 +1,4 @@
-import { MAX_CLAIMS_PER_REQUEST, type ClaimResponse, type DailyInfo, type FinishResult, type StartResponse } from '../../src/api/types.js';
+import { MAX_CLAIMS_PER_REQUEST, type ClaimResponse, type DailyInfo, type DailyResult, type FinishResult, type StartResponse } from '../../src/api/types.js';
 import { judge, type UnrankedReason } from '../../src/core/judge.js';
 import { parseLog } from '../../src/core/log.js';
 import { GRID } from '../../src/core/mask.js';
@@ -8,6 +8,7 @@ import type { AppEnv, Ctx } from '../lib/env.js';
 import { clientIp, HttpError, json, rateKey, readJson } from '../lib/http.js';
 import { boardGrew, cachedTotal } from '../lib/board-cache.js';
 import { dailySeed, DAILY_FIRST_DAY, liveDay } from '../lib/daily.js';
+import { dailyFirstId, dailyRankOf, dailyTotal } from '../lib/daily-board.js';
 import { DAY_MS, dayNumber, dayText } from '../lib/days.js';
 import { bestOf, rankOf } from '../lib/ranks.js';
 import { authSecret, currentUser, requireUser } from '../lib/users.js';
@@ -35,10 +36,14 @@ interface GameRow {
   unranked_reason: UnrankedReason | null;
   /** 1 when the owner has a name, so a ranked run is on the board. */
   named: number;
+  /** The Daily Tree's day number; null for a random game. */
+  daily_day: number | null;
+  /** 1 when that day was already over for the player (a past day's tree). */
+  daily_past: number;
 }
 type FinishedGame = GameRow & { finished_at: number; ms: number };
 const SELECT_GAME =
-  'SELECT g.id, g.user_id, g.claim_hash, g.gen_version, g.seed, g.started_at, g.finished_at, g.ms, g.ranked, g.unranked_reason, (u.name IS NOT NULL) AS named FROM games g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?';
+  'SELECT g.id, g.user_id, g.claim_hash, g.gen_version, g.seed, g.started_at, g.finished_at, g.ms, g.ranked, g.unranked_reason, (u.name IS NOT NULL) AS named, g.daily_day, g.daily_past FROM games g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?';
 const finished = (g: GameRow): g is FinishedGame => g.finished_at !== null && g.ms !== null;
 /** Ranked and owned by a named player: on the leaderboard. */
 const onBoard = (g: GameRow): boolean => g.ranked === 1 && g.named === 1;
@@ -106,18 +111,50 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
 }
 
 /**
+ * The Daily block for a finished Daily game owned by `userId` (null: a guest's), from its day's board, which is read
+ * live (daily-board.ts). `dayOf` gives the day's total and the owner's first attempt, read once per day for a request.
+ */
+async function dailyOf(
+  env: AppEnv,
+  userId: number | null,
+  g: FinishedGame & { daily_day: number },
+  dayOf: (day: number) => Promise<{ total: number; firstId: string | null }>,
+): Promise<DailyResult> {
+  const past = g.daily_past === 1;
+  const { total, firstId } = await dayOf(g.daily_day);
+  // A guest can't prove a first attempt beforehand (plan C1, decision 5): every live run of theirs is one until claimed.
+  const first = !past && (userId === null || firstId === g.id);
+  const rank = first && g.unranked_reason === 'daily' ? await dailyRankOf(env.DB, g.daily_day, g.ms, g.finished_at) : null;
+  // A run with a place that isn't on the day's board yet (signed out, or no name) would join it: "#r of total + 1".
+  const shown = rank !== null && !(userId !== null && g.named === 1) ? total + 1 : total;
+  return { day: dayText(g.daily_day), past, first, rank, total: rank === null ? shown : Math.max(shown, rank) };
+}
+
+/**
  * What the browser shows for finished games, all owned by `userId` (or all signed out, null). The board total and the
  * owner's best are the same for every one, so they are read once: a full claim stays well inside D1's query budget.
  * The total is the isolate's copy (BOARD_TTL_MS): runs finished in other isolates within that window may be missing
- * from "#r of total", never this request's own (boardGrew counts them first). Ranks and the best are live.
+ * from "#r of total", never this request's own (boardGrew counts them first). Ranks and the best are live. A Daily
+ * game also gets its `daily` block (every other field stays the main board's); each day's total and first attempt
+ * are read once, however many of the games are that day's.
  */
 async function resultsOf(env: AppEnv, userId: number | null, games: readonly FinishedGame[]): Promise<FinishResult[]> {
   if (games.length === 0) return [];
   const placed = (g: FinishedGame) => g.ranked === 1 || g.unranked_reason === 'anonymous';
-  const [total, best, ranks] = await Promise.all([
+  const days = new Map<number, Promise<{ total: number; firstId: string | null }>>();
+  const dayOf = (day: number) => {
+    let p = days.get(day);
+    if (!p) {
+      p = Promise.all([dailyTotal(env.DB, day), userId === null ? null : dailyFirstId(env.DB, userId, day)]).then(([total, firstId]) => ({ total, firstId }));
+      days.set(day, p);
+    }
+    return p;
+  };
+  const [total, best, ranks, daily] = await Promise.all([
     cachedTotal(env.DB),
     userId === null ? Promise.resolve(null) : bestOf(env.DB, userId),
     Promise.all(games.map((g) => (placed(g) ? rankOf(env.DB, g.ms, g.finished_at) : Promise.resolve(null)))),
+    Promise.all(games.map((g) => (g.daily_day === null ? Promise.resolve(null) : dailyOf(env, userId, { ...g, daily_day: g.daily_day }, dayOf)))),
   ]);
   return games.map((g, k) => {
     const rank = ranks[k];
@@ -133,6 +170,7 @@ async function resultsOf(env: AppEnv, userId: number | null, games: readonly Fin
       total: rank === null ? shown : Math.max(shown, rank),
       best: best?.ms ?? null,
       newBest: g.ranked === 1 && best?.id === g.id,
+      daily: daily[k],
     };
   });
 }
@@ -155,8 +193,10 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
     await env.DB.prepare('DELETE FROM games WHERE id = ? AND finished_at IS NULL AND daily_day IS NULL').bind(id).run();
     throw new HttpError(422, 'unverified', "This run couldn't be verified.");
   }
-  // Everything checks out but nobody owns it yet: it ranks once claimed.
-  const reason: UnrankedReason | null = verdict.reason ?? (game.user_id === null ? 'anonymous' : null);
+  // The judge's reason first. A Daily run never ranks on the main board: a past day's is on no board, a live day's on
+  // its own (daily-board.ts). Otherwise, everything checks out but nobody owns it yet: it ranks once claimed.
+  const reason: UnrankedReason | null =
+    verdict.reason ?? (game.daily_past === 1 ? 'past' : game.daily_day !== null ? 'daily' : game.user_id === null ? 'anonymous' : null);
   const ranked = reason === null ? 1 : 0;
   const saved = await env.DB.prepare(
     'UPDATE games SET finished_at = ?, ms = ?, paused_ms = ?, pauses = ?, ranked = ?, unranked_reason = ?, log = ? WHERE id = ? AND finished_at IS NULL',
@@ -187,6 +227,7 @@ export async function claimGames(req: Request, env: AppEnv): Promise<Response> {
     if (typeof id !== 'string' || typeof claim !== 'string' || !GAME_ID.test(id)) continue;
     const game = await env.DB.prepare(`${SELECT_GAME} AND g.user_id IS NULL`).bind(id).first<GameRow>();
     if (!game || !finished(game) || game.claim_hash === null || game.claim_hash !== (await hmac(secret, `claim:${claim}`))) continue;
+    // Only 'anonymous' clears: a Daily run keeps 'daily' or 'past', so it never joins the main board.
     const ranks = game.unranked_reason === 'anonymous';
     const owned: FinishedGame = {
       ...game,

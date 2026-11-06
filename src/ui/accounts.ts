@@ -33,7 +33,7 @@ export class Accounts {
   private chosen: BoardWindow = loadBoardWindow();
   /** The window on screen: the chosen one, or All time when the results tag's all-time rank opened the board. */
   private win: BoardWindow = this.chosen;
-  private readonly boards: Record<BoardWindow, Loadable<BoardResponse>> = { today: { status: 'loading' }, week: { status: 'loading' }, all: { status: 'loading' } };
+  private readonly boards: Record<BoardWindow, Loadable<BoardResponse>> = { daily: { status: 'loading' }, today: { status: 'loading' }, week: { status: 'loading' }, all: { status: 'loading' } };
   /** The local day Today's and This week's answers are for: on a new day they start again from loading. */
   private boardsDay = '';
   private games: Loadable<MyGamesResponse> = { status: 'loading' };

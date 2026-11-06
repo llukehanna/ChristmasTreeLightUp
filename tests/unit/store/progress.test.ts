@@ -110,7 +110,7 @@ it('v2 keeps the online run, its log and a won run', () => {
     seconds: 81,
     score: 41_900,
     newBest: true,
-    result: { id: 'g'.repeat(22), ranked: false, reason: 'anonymous' as const, ms: 80_400, rank: 3, total: 10, best: null, newBest: false },
+    result: { id: 'g'.repeat(22), ranked: false, reason: 'anonymous' as const, ms: 80_400, rank: 3, total: 10, best: null, newBest: false, daily: null },
   };
   saveGame(b, 5000, { startEpoch: 123, online, log, won });
   expect(loadGame(GRID)).toEqual({ state: { solution: [...b.solution], bits: b.bits, colors: [...b.colors] }, elapsedMs: 5000, startEpoch: 123, online, log, won });

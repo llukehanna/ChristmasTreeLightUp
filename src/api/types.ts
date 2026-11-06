@@ -7,8 +7,11 @@ export type { UnrankedReason };
 export const MAX_CLAIMS_PER_REQUEST = 8;
 /** How many runs the leaderboard shows (and Your games counts "in the top"). */
 export const BOARD_TOP = 50;
-/** The leaderboard's windows (spec 2026-10-14): since the viewer's midnight, since their Monday's, or every run. */
-export const BOARD_WINDOWS = ['today', 'week', 'all'] as const;
+/**
+ * The leaderboard's windows (spec 2026-10-14): the viewer's day's Daily Tree (its first attempts only), since the
+ * viewer's midnight, since their Monday's, or every run.
+ */
+export const BOARD_WINDOWS = ['daily', 'today', 'week', 'all'] as const;
 export type BoardWindow = (typeof BOARD_WINDOWS)[number];
 
 export interface User {
@@ -81,6 +84,21 @@ export interface FinishResult {
   best: number | null;
   /** This run is now the owner's best ranked run. */
   newBest: boolean;
+  /** Set for a Daily Tree run (every field above stays the main board's); null for a random game. */
+  daily: DailyResult | null;
+}
+
+/** A finished Daily Tree run on its day's own board. */
+export interface DailyResult {
+  /** YYYY-MM-DD */
+  day: string;
+  past: boolean;
+  /** This game is the owner's earliest-started live game for the day (always true for a guest's live game). */
+  first: boolean;
+  /** Place on the day's board, or the place it would take once claimed or named; null unless first and reason 'daily'. */
+  rank: number | null;
+  /** Runs on the day's board (+1 when this run would join it). */
+  total: number;
 }
 
 export interface ClaimResponse {
@@ -116,6 +134,8 @@ export interface RecentGame {
   isBest: boolean;
   /** Imported from a device's pre-accounts stats (spec 2026-10-08), not played on Aglow. */
   imported: boolean;
+  /** A Daily Tree run's day (YYYY-MM-DD); null for a random game. A past day's tree is known by its reason, 'past'. */
+  daily: string | null;
 }
 
 export interface MyGamesResponse {

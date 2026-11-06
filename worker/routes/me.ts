@@ -60,6 +60,7 @@ interface RecentRow {
   ranked: number;
   unranked_reason: UnrankedReason | null;
   source: string;
+  daily_day: number | null;
 }
 
 /** GET /api/me/games: your best and its rank, how many of the top BOARD_TOP are yours, and your last 30 games. */
@@ -67,7 +68,7 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
   const [best, recent, { top, total }] = await Promise.all([
     bestOf(env.DB, user.id),
-    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
+    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source, daily_day FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
       .bind(user.id)
       .all<RecentRow>(),
     // The top BOARD_TOP and the total from the isolate's copy (BOARD_TTL_MS); your best and its rank are read live.
@@ -82,6 +83,7 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
     reason: g.unranked_reason,
     isBest: g.id === best?.id,
     imported: g.source === 'import',
+    daily: g.daily_day === null ? null : dayText(g.daily_day),
   }));
   return json({
     best: best && { ms: best.ms, rank, finishedAt: best.finished_at },

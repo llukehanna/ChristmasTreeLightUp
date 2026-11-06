@@ -19,6 +19,7 @@ function rowHtml(r: BoardRow, now: number): string {
 
 /** The windows as the control and the subtitle name them, and what an empty one says (spec 2026-10-14 §4). */
 const WINDOWS: Record<BoardWindow, { button: string; sub: string; empty: string }> = {
+  daily: { button: 'Daily', sub: "Today's Daily Tree", empty: "No one has lit today's Daily Tree yet." },
   today: { button: 'Today', sub: 'Today', empty: 'No runs yet today — be the first.' },
   week: { button: 'This week', sub: 'This week', empty: 'No runs yet this week.' },
   all: { button: 'All time', sub: 'All-time', empty: 'No ranked runs yet. Light a tree and be the first.' },

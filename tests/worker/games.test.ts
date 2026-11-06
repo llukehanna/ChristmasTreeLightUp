@@ -169,7 +169,7 @@ describe('finishing a game', () => {
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const { game, log, result } = await play(ana);
     const ms = spanOf(game.seed, log) - REVEAL_MS;
-    expect(result).toEqual({ id: game.id, ranked: true, reason: null, ms, rank: 1, total: 1, best: ms, newBest: true });
+    expect(result).toEqual({ id: game.id, ranked: true, reason: null, ms, rank: 1, total: 1, best: ms, newBest: true, daily: null });
     expect(await row(game.id)).toMatchObject({ ranked: 1, unranked_reason: null, ms, paused_ms: 0, pauses: 0, log: JSON.stringify(log) });
   });
 

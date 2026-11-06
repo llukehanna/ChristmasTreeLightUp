@@ -11,8 +11,12 @@ export const MIN_RANKED_MS = 5000;
 export const FAST_GAP_MS = 40;
 export const MAX_FAST_GAP_SHARE = 0.1;
 
-/** Why a verified run doesn't rank. 'anonymous' (played signed out) clears when the run is claimed. */
-export type UnrankedReason = 'anonymous' | 'paused' | 'too_fast' | 'clock';
+/**
+ * Why a verified run doesn't rank. 'anonymous' (played signed out) clears when the run is claimed. 'daily' (a Daily
+ * Tree run: its own board, never the main one) and 'past' (a past day's tree: no board at all) are set by the route
+ * from the game row, never by judge(), and survive a claim.
+ */
+export type UnrankedReason = 'anonymous' | 'paused' | 'too_fast' | 'clock' | 'daily' | 'past';
 
 export interface Verdict {
   /** Ranked time: the span from the local start to the solve, minus pauses, minus the reveal. */
@@ -20,7 +24,7 @@ export interface Verdict {
   pausedMs: number;
   pauses: number;
   /** null: the run ranks (once it has an owner). */
-  reason: Exclude<UnrankedReason, 'anonymous'> | null;
+  reason: Exclude<UnrankedReason, 'anonymous' | 'daily' | 'past'> | null;
 }
 
 export interface JudgeInput {
