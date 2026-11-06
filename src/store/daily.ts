@@ -1,3 +1,4 @@
+import type { DailyInfo } from '../api/types';
 import { readJSON, writeJSON } from './storage';
 
 /** The day (YYYY-MM-DD, local) of the last live Daily Tree this device started. */
@@ -16,4 +17,17 @@ export function markDailyStarted(day: string): void {
  */
 export function landsOnDaily(today: string): boolean {
   return readJSON(KEY, isDay) !== today;
+}
+
+/**
+ * The Daily the server just started, as this device plays it: a repeat when the server says so (the account's earlier
+ * go), or when this device had already started that day's live Daily before this start (a guest's second go too, which
+ * the server can't know: decision 5). A live day's start marks the device; a past day's tree is never a repeat and
+ * marks nothing.
+ */
+export function dailyStart(daily: DailyInfo): DailyInfo {
+  if (daily.past) return daily;
+  const known = readJSON(KEY, isDay) === daily.day;
+  markDailyStarted(daily.day);
+  return known && !daily.repeat ? { ...daily, repeat: true } : daily;
 }

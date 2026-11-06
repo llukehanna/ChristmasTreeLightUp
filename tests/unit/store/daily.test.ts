@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { landsOnDaily, markDailyStarted } from '../../../src/store/daily';
+import { dailyStart, landsOnDaily, markDailyStarted } from '../../../src/store/daily';
 
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
@@ -34,4 +34,29 @@ it('a corrupt value lands on it', () => {
   expect(landsOnDaily('2026-11-06')).toBe(true);
   localStorage.setItem('aglow.daily', '7');
   expect(landsOnDaily('2026-11-06')).toBe(true);
+});
+
+it("a start of the Daily is a repeat when the server says so, or when this device had started that day's before; it marks the device", () => {
+  const live = { day: '2026-11-06', past: false, repeat: false };
+  // A first go: as the server said, and the device is marked from now.
+  expect(dailyStart(live)).toEqual(live);
+  expect(landsOnDaily('2026-11-06')).toBe(false);
+  // The device was marked before this start (a guest's second go, which the server can't know): a repeat.
+  expect(dailyStart(live)).toEqual({ ...live, repeat: true });
+  // The server knows the account's earlier go (on another device, say): a repeat, and the device is marked.
+  localStorage.clear();
+  expect(dailyStart({ ...live, repeat: true })).toEqual({ ...live, repeat: true });
+  expect(landsOnDaily('2026-11-06')).toBe(false);
+  // Marked for another day: not this day's repeat.
+  markDailyStarted('2026-11-05');
+  expect(dailyStart(live)).toEqual(live);
+});
+
+it("a past day's tree is never a repeat, and never marks the device", () => {
+  const past = { day: '2026-11-03', past: true, repeat: false };
+  markDailyStarted('2026-11-03');
+  expect(dailyStart(past)).toEqual(past);
+  localStorage.clear();
+  expect(dailyStart(past)).toEqual(past);
+  expect(localStorage.getItem('aglow.daily')).toBeNull();
 });

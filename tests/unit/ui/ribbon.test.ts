@@ -98,6 +98,22 @@ describe('ribbonModel: the Daily Tree', () => {
     expect(root.querySelector('.rib-line')?.textContent).toBe('Unranked: not your first go at this Daily Tree');
   });
 
+  it('a repeat this device knew of at the start reads Unranked: not your first go, never a would-place or a save, guests included', () => {
+    // The server can't know a guest's repeat (decision 5): its result still offers a place. The device knew.
+    const unranked = { kind: 'unranked', why: 'not your first go at this Daily Tree' };
+    expect(ribbonModel({ kind: 'done', result: daily() }, null, { guest: true, repeat: true })).toEqual(unranked);
+    expect(ribbonModel({ kind: 'done', result: daily() }, undefined, { guest: true, repeat: true })).toEqual(unranked);
+    expect(ribbonModel({ kind: 'done', result: daily() }, unnamed, { repeat: true })).toEqual(unranked);
+    const root = tag();
+    renderRibbon(root, ribbonModel({ kind: 'done', result: daily() }, null, { guest: true, repeat: true }), handlers());
+    expect(root.querySelector('.rib-ribbon')).toBeNull();
+    expect(root.querySelector('.rib-line')?.textContent).toBe('Unranked: not your first go at this Daily Tree');
+    // The server's own answer for an account stands: a place it gave is a place on the board, not a promise.
+    expect(ribbonModel({ kind: 'done', result: daily() }, me, { repeat: true })).toMatchObject({ kind: 'rank', board: 'daily' });
+    // A result the judge refused keeps the judge's reason.
+    expect(ribbonModel({ kind: 'done', result: daily({ reason: 'paused' }, { rank: null }) }, null, { guest: true, repeat: true })).toEqual({ kind: 'unranked', why: 'paused too long' });
+  });
+
   it("a past day reads Unranked: a past day's tree", () => {
     const past = daily({ reason: 'past' }, { past: true, first: false, rank: null });
     expect(ribbonModel({ kind: 'done', result: past }, me)).toEqual({ kind: 'unranked', why: "a past day's tree" });

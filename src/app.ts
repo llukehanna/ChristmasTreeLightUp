@@ -30,7 +30,7 @@ import { withPalette } from './render/palettes';
 import { sceneFor, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
-import { landsOnDaily, markDailyStarted } from './store/daily';
+import { dailyStart, landsOnDaily } from './store/daily';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, savesAtStart, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { loadLook, saveLook, worldLook, type Look } from './store/look';
@@ -154,9 +154,13 @@ const START_TOAST_MS = 3600;
 /** The toast for a Daily asked for (boot, or the menu's row) that the server didn't start: the tree is a local random one. */
 export const DAILY_UNREACHED = "Couldn't reach the Daily Tree · playing a random one";
 
-/** What a new tree says as it begins: a Daily asked for but not reached says so; otherwise nothing. */
+/** The toast for a Daily that won't rank, known at its start (dailyStart): the server's repeat, or this device's. */
+export const DAILY_REPEAT = "Not your first go today · this one won't rank";
+
+/** What a new tree says as it begins: a Daily asked for but not reached, or a Daily that is a repeat; otherwise nothing. */
 export function startToast(kind: 'daily' | 'random', online: OnlineRun | null): string | null {
-  return kind === 'daily' && !online?.daily ? DAILY_UNREACHED : null;
+  if (kind === 'daily' && !online?.daily) return DAILY_UNREACHED;
+  return online?.daily?.repeat ? DAILY_REPEAT : null;
 }
 
 /** The toast for a resumed tree; none for one reloaded before anything was logged (a Daily saved at its start). */
@@ -585,8 +589,7 @@ export class App {
       const s = await api.start(kind === 'daily' ? { today: localDay(new Date()) } : undefined);
       const board = seededBoard(s.seed, s.genVersion);
       if (board) {
-        const daily = s.daily ?? null;
-        if (daily && !daily.past) markDailyStarted(daily.day);
+        const daily = s.daily ? dailyStart(s.daily) : null;
         return { board, online: { gameId: s.id, seed: s.seed, genVersion: s.genVersion, claim: s.claim, daily } };
       }
     } catch {
@@ -959,7 +962,7 @@ export class App {
   private setOutcome(o: RunOutcome | null): void {
     this.outcome = o;
     this.hectorStep(); // a Home Alone win waiting on the server's answer
-    const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult };
+    const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult, repeat: this.online?.daily?.repeat === true };
     const m = o && ribbonModel(o, this.session.current, ctx);
     renderRibbon(el('results'), m, {
       // The rosette's rank and total are all-time ones, or the Daily board's.

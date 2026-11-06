@@ -483,8 +483,9 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await solveByTapping(page);
     const results = page.locator('#results');
     await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
-    // The tag is up: the Daily row starts the day's tree again.
+    // The tag is up: the Daily row starts the day's tree again, and says up front that it won't rank.
     await dailyFromMenu(page);
+    await expect(page.locator('#toast')).toHaveText("Not your first go today · this one won't rank");
     await solveByTapping(page);
     await expect(results.locator('.rib-line')).toHaveText('Unranked: not your first go at this Daily Tree', { timeout: 15_000 });
     await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();

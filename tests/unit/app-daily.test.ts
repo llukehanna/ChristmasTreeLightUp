@@ -26,3 +26,8 @@ it("a Daily asked for but not reached says so, and that the tree is a random one
   expect(startToast('random', null)).toBeNull();
   expect(startToast('random', { ...daily, daily: null })).toBeNull();
 });
+
+it("a repeat says up front that it won't rank; a first go says nothing", () => {
+  expect(startToast('daily', { ...daily, daily: { ...daily.daily, repeat: true } })).toBe("Not your first go today · this one won't rank");
+  expect(startToast('daily', daily)).toBeNull();
+});
