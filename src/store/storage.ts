@@ -26,10 +26,10 @@ export function removeKey(key: string): void {
   }
 }
 
-/** Whether `key` holds anything at all (false when storage is unavailable). */
-export function hasKey(key: string): boolean {
+/** Whether `key` holds anything at all in local (or session) storage; false when storage is unavailable. */
+export function hasKey(key: string, store: 'local' | 'session' = 'local'): boolean {
   try {
-    return localStorage.getItem(key) !== null;
+    return (store === 'session' ? sessionStorage : localStorage).getItem(key) !== null;
   } catch {
     return false;
   }

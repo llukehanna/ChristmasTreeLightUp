@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { bindInput, type InputHandlers } from '../../../src/input';
 import { IDENTITY } from '../../../src/render/camera';
 import { garlandGeometry } from '../../../src/render/garland';
 import { computeLayout } from '../../../src/render/layout';
@@ -27,6 +28,7 @@ beforeEach(() => {
   reduced = false;
   drawn = 0;
   localStorage.clear();
+  sessionStorage.clear();
   document.body.className = '';
   vi.useFakeTimers();
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('reduce') && reduced, media: q }));
@@ -45,6 +47,13 @@ const opening = (): Opening => {
   return new Opening({ garland: () => geo, bulbs: () => SCENES.fireside.bulbs, camera: () => IDENTITY });
 };
 const body = (c: string): boolean => document.body.classList.contains(c);
+/** jsdom has no PointerEvent: a MouseEvent with the pointer's type and id on top. */
+function pointer(type: string, pointerType: string, pointerId: number): MouseEvent {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 5, clientY: 6 });
+  Object.defineProperty(e, 'pointerType', { value: pointerType });
+  Object.defineProperty(e, 'pointerId', { value: pointerId });
+  return e;
+}
 
 it('plays on a first visit only', () => {
   expect(shouldOpen()).toBe(true);
@@ -53,11 +62,18 @@ it('plays on a first visit only', () => {
 });
 
 it('not on a device with play data (the look alone, which a first load writes, is none)', () => {
-  for (const key of ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio', 'aglow.return']) {
+  for (const key of ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio']) {
     localStorage.clear();
     localStorage.setItem(key, '{}');
     expect(shouldOpen(), key).toBe(false);
   }
+  // Back from Google ("Save to leaderboard"): the return marker is in sessionStorage.
+  localStorage.clear();
+  sessionStorage.setItem('aglow.return', 'g1');
+  expect(shouldOpen()).toBe(false);
+  sessionStorage.clear();
+  localStorage.setItem('aglow.return', 'g1');
+  expect(shouldOpen()).toBe(true);
   localStorage.clear();
   localStorage.setItem('aglow.look', '{}');
   expect(shouldOpen()).toBe(true);
@@ -143,10 +159,10 @@ it('the skip gesture is swallowed whole: a click on a HUD button fires nothing, 
   const button = document.createElement('button');
   document.body.append(button);
   const fired: string[] = [];
-  for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'keydown', 'keyup']) button.addEventListener(t, () => fired.push(t));
+  for (const t of ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup']) button.addEventListener(t, () => fired.push(t));
   document.addEventListener('click', () => fired.push('document click'));
   const press = () => {
-    for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) button.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true }));
+    for (const t of ['pointerdown', 'pointerup', 'click']) button.dispatchEvent(pointer(t, 'mouse', 1));
   };
   const o = opening();
   o.play(performance.now());
@@ -157,7 +173,7 @@ it('the skip gesture is swallowed whole: a click on a HUD button fires nothing, 
   vi.advanceTimersByTime(900);
   expect(o.on).toBe(false);
   press();
-  expect(fired).toEqual(['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'document click']);
+  expect(fired).toEqual(['pointerdown', 'pointerup', 'click', 'document click']);
 
   // A key: its keyup (a Space on a focused button clicks on keyup) is swallowed too; another key's is not.
   fired.length = 0;
@@ -185,4 +201,66 @@ it('a hidden tab ends it at once (no replay on return)', () => {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
   document.dispatchEvent(new Event('visibilitychange'));
   expect(o.on).toBe(false);
+});
+
+it("a skip swallows only its own pointer: another finger's tap during the tail reaches the stage, and touch stays sane", () => {
+  const stage = document.createElement('div');
+  document.body.append(stage);
+  const h = { tap: vi.fn(), hover: vi.fn(), leave: vi.fn(), zoom: vi.fn(), pan: vi.fn() };
+  const unbind = bindInput(stage, h as unknown as InputHandlers);
+  const o = opening();
+  o.play(performance.now());
+  vi.advanceTimersByTime(500);
+  // Two fingers: the first skips (and is still down), the second taps a tile during the fade.
+  stage.dispatchEvent(pointer('pointerdown', 'touch', 1));
+  stage.dispatchEvent(pointer('pointerdown', 'touch', 2));
+  stage.dispatchEvent(pointer('pointerup', 'touch', 2));
+  expect(h.tap).toHaveBeenCalledTimes(1);
+  // The skipping finger lifts: swallowed (the stage never had it).
+  stage.dispatchEvent(pointer('pointerup', 'touch', 1));
+  expect(h.tap).toHaveBeenCalledTimes(1);
+  // The stage's bookkeeping is empty again: a later tap is a tap, not half a pinch.
+  stage.dispatchEvent(pointer('pointerdown', 'touch', 3));
+  stage.dispatchEvent(pointer('pointerup', 'touch', 3));
+  expect(h.tap).toHaveBeenCalledTimes(2);
+  expect(h.zoom).not.toHaveBeenCalled();
+  unbind();
+  stage.remove();
+  vi.advanceTimersByTime(3000);
+});
+
+it('the room is lit (the first tree may start) at the HUD mark, at once on a skip, or when it ends', async () => {
+  const settled = (p: Promise<void>) => {
+    let done = false;
+    void p.then(() => (done = true));
+    return async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      return done;
+    };
+  };
+  const o = opening();
+  expect(await settled(o.roomLit())()).toBe(true);
+  o.play(performance.now());
+  let lit = settled(o.roomLit());
+  vi.advanceTimersByTime(2749);
+  expect(await lit()).toBe(false);
+  vi.advanceTimersByTime(1);
+  expect(await lit()).toBe(true);
+  vi.advanceTimersByTime(3000);
+
+  o.play(performance.now());
+  lit = settled(o.roomLit());
+  vi.advanceTimersByTime(300);
+  expect(await lit()).toBe(false);
+  o.skip(performance.now());
+  expect(await lit()).toBe(true);
+  vi.advanceTimersByTime(3000);
+
+  o.play(performance.now());
+  lit = settled(o.roomLit());
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+  expect(await lit()).toBe(true);
 });

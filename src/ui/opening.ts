@@ -44,7 +44,9 @@ const KEY = 'aglow.opened';
  * Play data: a device holding any of these has played before, so it isn't on a first visit. Not 'aglow.look', which
  * loadLook writes on a first load.
  */
-const PLAYED = ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio', 'aglow.return'];
+const PLAYED = ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio'];
+/** "Save to leaderboard"'s round trip (sessionStorage, src/store/progress.ts): back from Google, not a first visit. */
+const RETURNING = 'aglow.return';
 const CLASSES = ['m-open', 'm-o-mark', 'm-o-tag', 'm-o-hud', 'm-o-fast'];
 /** The skip's click follows its pointerup at once; a press that ends in no click is let go after this. */
 const TAIL_MS = 400;
@@ -56,7 +58,7 @@ const TAIL_MAX_MS = 3000;
  * Alone). Read before this page load writes anything (the App asks first thing).
  */
 export function shouldOpen(): boolean {
-  if (readJSON(KEY, (v): v is true => v === true) || PLAYED.some(hasKey)) return false;
+  if (readJSON(KEY, (v): v is true => v === true) || PLAYED.some((k) => hasKey(k)) || hasKey(RETURNING, 'session')) return false;
   if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
   return !loadStarHead() && !loadHomeAlone();
 }
@@ -72,8 +74,11 @@ function swallow(e: Event): void {
   e.stopImmediatePropagation();
   if (!(e instanceof KeyboardEvent && (e.metaKey || e.ctrlKey || e.altKey))) e.preventDefault();
 }
-/** The rest of a skipping gesture: a press's release and click (and the mouse events beside them), a key's keyup. */
-const TAIL = { pointer: ['pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click'], key: ['keyup'] } as const;
+/**
+ * The rest of a skipping gesture: a press's release and click, a key's keyup. (The press's compatibility mouse events
+ * never fire: its pointerdown's default was prevented.)
+ */
+const TAIL = { pointer: ['pointerup', 'pointercancel', 'click'], key: ['keyup'] } as const;
 const bodyClass = (name: string, on: boolean): void => void document.body.classList.toggle(name, on);
 
 export class Opening {
@@ -89,10 +94,14 @@ export class Opening {
   private lit = new Float32Array(0);
   /** toScreen's answer (reused). */
   private readonly pt = { x: 0, y: 0 };
-  /** The skipping gesture still being swallowed (its press or key not yet released), and the key's code. */
+  /** The skipping gesture still being swallowed (its press or key not yet released), and its pointer or key code. */
   private tail: keyof typeof TAIL | null = null;
+  private tailPointer = 0;
   private tailCode = '';
   private tailTimer = 0;
+  /** Resolves when the room is lit (see roomLit). */
+  private lit$: Promise<void> = Promise.resolve();
+  private lightRoom: () => void = () => undefined;
 
   constructor(private readonly d: OpeningDeps) {}
 
@@ -107,21 +116,34 @@ export class Opening {
     this.at = now;
     this.skipAt = -1;
     this.seed = (Math.random() * 1e9) | 0;
+    this.lit$ = new Promise((r) => (this.lightRoom = r));
     for (const c of CLASSES) bodyClass(c, false);
     bodyClass('m-open', true);
     const at = (s: number, fn: () => void) => this.timers.push(window.setTimeout(fn, s * 1000));
     at(T.mark, () => bodyClass('m-o-mark', true));
     at(T.tag, () => bodyClass('m-o-tag', true));
-    at(T.hud, () => bodyClass('m-o-hud', true));
+    at(T.hud, () => {
+      bodyClass('m-o-hud', true);
+      this.lightRoom();
+    });
     at(T.done, () => this.end());
     addEventListener('pointerdown', this.onInput, true);
     addEventListener('keydown', this.onInput, true);
     document.addEventListener('visibilitychange', this.onHidden);
   }
 
+  /**
+   * The room is lit: the HUD comes in (2.75 s), the opening is skipped, or it ends. The first tree waits for this to
+   * start (src/app.ts), so the time spent in the dark is never on its clock. At once when no opening plays.
+   */
+  roomLit(): Promise<void> {
+    return this.lit$;
+  }
+
   /** The overlay fades over 650 ms and the chrome comes in fast; the opening ends at 900 ms. */
   skip(now: number): void {
     if (!this.playing || this.skipAt >= 0) return;
+    this.lightRoom();
     this.skipAt = now;
     this.clearTimers();
     for (const c of ['m-o-fast', 'm-o-mark', 'm-o-tag', 'm-o-hud']) bodyClass(c, true);
@@ -136,14 +158,19 @@ export class Opening {
   private readonly onInput = (e: Event): void => {
     if (!this.playing || this.skipAt >= 0) return;
     swallow(e);
-    this.follow(e instanceof KeyboardEvent ? 'key' : 'pointer', e instanceof KeyboardEvent ? e.code : '');
+    if (e instanceof KeyboardEvent) this.follow('key', 0, e.code);
+    else this.follow('pointer', (e as Partial<PointerEvent>).pointerId ?? -1, '');
     this.skip(performance.now());
   };
 
-  /** Swallows the rest of the skipping gesture, until it is over (whether or not the opening still is). */
-  private follow(kind: keyof typeof TAIL, code: string): void {
+  /**
+   * Swallows the rest of the skipping gesture, until it is over (whether or not the opening still is). Only its own
+   * pointer or key: another finger's tap, or another key, goes through as ever.
+   */
+  private follow(kind: keyof typeof TAIL, pointer: number, code: string): void {
     this.release();
     this.tail = kind;
+    this.tailPointer = pointer;
     this.tailCode = code;
     for (const t of TAIL[kind]) addEventListener(t, this.onTail, true);
     this.tailTimer = window.setTimeout(() => this.release(), TAIL_MAX_MS);
@@ -156,6 +183,9 @@ export class Opening {
       this.release();
       return;
     }
+    // A click with no pointer id (a browser whose click isn't a PointerEvent) can only be the press's own.
+    const id = (e as Partial<PointerEvent>).pointerId;
+    if (id !== undefined && id !== this.tailPointer) return;
     swallow(e);
     if (e.type === 'click' || e.type === 'pointercancel') this.release();
     else if (e.type === 'pointerup') {
@@ -185,6 +215,7 @@ export class Opening {
   private end(): void {
     if (!this.playing) return;
     this.playing = false;
+    this.lightRoom();
     this.clearTimers();
     for (const c of CLASSES) bodyClass(c, false);
     removeEventListener('pointerdown', this.onInput, true);

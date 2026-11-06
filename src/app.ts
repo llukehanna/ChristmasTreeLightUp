@@ -155,6 +155,7 @@ export class App {
   /** The test probe's view of the share images: how many this win, and whether the last carries Home Alone's line. */
   private readonly shareSeen = { n: 0, line: null as boolean | null };
   private lastFrame = 0;
+  private looping = false;
   /** Full frame rate until then: something the player caused is still moving. */
   private busyUntil = 0;
   private lastTime = '';
@@ -233,7 +234,7 @@ export class App {
   private glares = 0;
   /** The beat handed to the renderer, reused every frame. */
   private readonly beat: BeatFrame = { at: Number.NEGATIVE_INFINITY, strength: 0, hue: 0 };
-  /** The room lighting up on a first visit (src/ui/opening.ts): it draws over the first tree, which is fetched as ever. */
+  /** The room lighting up on a first visit (src/ui/opening.ts): the first tree is asked for once the room is lit. */
   private readonly opening = new Opening({
     garland: () => this.renderer.garland.geo,
     bulbs: () => this.renderer.scene.bulbs,
@@ -357,8 +358,8 @@ export class App {
     this.touchOnly.addEventListener?.('change', () => this.fitKeyCard());
     this.bindControls();
     this.bindLifecycle();
-    // A first visit opens in the dark while the first tree loads (never in a tab opened in the background, where it
-    // would play unseen: it waits for a visit that shows it). The first key or press skips it.
+    // A first visit opens in the dark, and the first tree waits for the room to light (boot). Never in a tab opened in
+    // the background, where it would play unseen: it waits for a visit that shows it. The first key or press skips it.
     if (!document.hidden && this.firstVisit) {
       markOpened();
       const now = performance.now();
@@ -403,10 +404,16 @@ export class App {
       // Saved during the final turn: the restored board is already solved, so finish the win properly.
       if (this.board.lighting.count === GRID.ids.length) this.handle(this.board.settleWin(), now);
     } else {
+      // A first visit: the room lights up before the tree is asked for, so the server's start and the clock begin
+      // with the room lit (or the skip), and the time in the dark is never on the run.
+      if (this.opening.on) {
+        this.prelude();
+        await this.opening.roomLit();
+      }
       await this.freshTree();
     }
     if (!this.board.won) this.showIntro();
-    requestAnimationFrame((t) => this.loop(t));
+    this.startLoop();
     // Otherwise the eggs load once the first tree takes taps and the browser has a moment.
     setTimeout(() => whenIdle(() => void this.requestEggs()), Math.max(0, this.interactiveAt - performance.now()));
   }
@@ -494,6 +501,18 @@ export class App {
     // The source "switches on" as the reveal finishes and the initial connected region flows out.
     this.vis.onLightingChanged(board, board.lighting.order, [], this.interactiveAt - 200, false);
     this.busy(this.vis.lastLitAt(board));
+  }
+
+  /**
+   * The room under the opening, drawn before the first tree is asked for: a stand-in board that is never revealed (no
+   * tile is drawn, none lit) and never live (it takes no taps, has no clock to run and is never saved).
+   */
+  private prelude(): void {
+    this.run = new Run(Board.random(GRID, Math.random), {
+      now: Number.POSITIVE_INFINITY, epochNow: Date.now(), startEpoch: Date.now(), elapsedMs: 0, log: [],
+    });
+    this.vis = new VisualState(GRID.w * GRID.h);
+    this.startLoop();
   }
 
   /** Something the player caused is moving until `until`: hold the full frame rate (plus a grace period). */
@@ -910,6 +929,13 @@ export class App {
   }
 
   /* ---------- frame loop ---------- */
+
+  /** The frame loop, once (the opening's prelude may have started it before the first tree). */
+  private startLoop(): void {
+    if (this.looping) return;
+    this.looping = true;
+    requestAnimationFrame((t) => this.loop(t));
+  }
 
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
