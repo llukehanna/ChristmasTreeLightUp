@@ -22,15 +22,18 @@ describe('migrations', () => {
 
   it('create the tables and the indexes the spec names', async () => {
     const names = (await db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'").all<{ name: string }>()).results.map((r) => r.name);
-    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_best', 'games_abandoned', 'games_recent', 'starts', 'starts_ip', 'starts_at']));
+    expect(names).toEqual(expect.arrayContaining(['users', 'sessions', 'games', 'games_board', 'games_user', 'games_best', 'games_stale', 'games_stale_daily', 'games_recent', 'starts', 'starts_ip', 'starts_at']));
   });
 
-  it('games_board, games_best, games_recent and games_abandoned are partial indexes', async () => {
+  it('games_board, games_best, games_recent, games_stale and games_stale_daily are partial indexes', async () => {
     const sql = async (name: string) => (await db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?").bind(name).first<{ sql: string }>())?.sql ?? '';
     expect(await sql('games_board')).toMatch(/WHERE ranked = 1$/);
     expect(await sql('games_best')).toMatch(/WHERE ranked = 1$/);
     expect(await sql('games_recent')).toMatch(/WHERE ranked = 1$/);
-    expect(await sql('games_abandoned')).toMatch(/WHERE finished_at IS NULL$/);
+    // Migration 0007: abandoned games in two kinds, each swept on its own index; games_abandoned is gone.
+    expect(await sql('games_stale')).toMatch(/WHERE finished_at IS NULL AND \(daily_day IS NULL OR user_id IS NULL\)$/);
+    expect(await sql('games_stale_daily')).toMatch(/WHERE finished_at IS NULL AND daily_day IS NOT NULL AND user_id IS NOT NULL$/);
+    expect(await sql('games_abandoned')).toBe('');
   });
 
   it('games.daily_day is null and daily_past 0 by default; games_daily is a partial index (migration 0006)', async () => {

@@ -13,3 +13,9 @@ the session lookup reads `users.star_head`. Rolling a Worker back past a migrati
 0005 adds `games_recent`, a partial index on ranked runs by finish time, so today's and this week's boards seek to the
 window's start instead of scanning every ranked run. No Worker needs it to run correctly (it only reads faster), so its
 order against a deploy doesn't matter, and rolling back leaves an unused index.
+
+0007 splits the stale-game sweep across two partial indexes, `games_stale` (a random game or a guest's Daily, swept
+after a day) and `games_stale_daily` (a signed-in player's Daily, kept three days), and drops `games_abandoned`, which
+only the old sweep read. Apply it before the Worker that reads it, as `npm run deploy` does: a Worker from before it
+still runs correctly against it, but its sweep has no index to seek and scans the unfinished games on every start (a
+cost, never an error). Rolling a Worker back past 0007 has the same cost until it is rolled forward again.

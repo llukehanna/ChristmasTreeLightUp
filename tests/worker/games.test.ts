@@ -6,7 +6,7 @@ import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
-import { STARTS_PER_HOUR, UNCLAIMED_KEEP_DAYS } from '../../worker/routes/games';
+import { STALE_DAILY_SQL, STALE_SQL, STARTS_PER_HOUR, UNCLAIMED_KEEP_DAYS } from '../../worker/routes/games';
 import { solvingTaps, withPause } from '../unit/core/solver';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
@@ -153,8 +153,15 @@ describe('starting a game', () => {
 
   it('housekeeping finds stale games through indexes, not a scan of every game', async () => {
     const plan = async (sql: string, ...binds: number[]) => JSON.stringify((await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...(binds.length ? binds : [1, 25])).all()).results);
-    expect(await plan('SELECT id FROM games WHERE finished_at IS NULL AND started_at < ? AND (daily_day IS NULL OR started_at < ?) LIMIT ?', 1, 1, 25)).toContain('games_abandoned');
     expect(await plan('SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?')).toContain('games_user');
+  });
+
+  it("each abandoned-game delete SEARCHes its own partial index: it never walks rows it won't delete (migration 0007)", async () => {
+    const plan = async (sql: string) => (await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(1, 25).all<{ detail: string }>()).results.map((r) => r.detail);
+    expect(await plan(STALE_SQL)).toEqual([expect.stringMatching(/^SEARCH games USING (COVERING )?INDEX games_stale \(started_at<\?\)$/)]);
+    expect(await plan(STALE_DAILY_SQL)).toEqual([expect.stringMatching(/^SEARCH games USING (COVERING )?INDEX games_stale_daily \(started_at<\?\)$/)]);
+    // The old one-index sweep is gone: nothing else read it.
+    expect(await db.prepare("SELECT name FROM sqlite_master WHERE name = 'games_abandoned'").first()).toBeNull();
   });
 
   it('the start limit and its pruning read through indexes, not a scan of every start', async () => {

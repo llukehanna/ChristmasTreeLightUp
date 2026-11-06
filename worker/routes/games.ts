@@ -17,8 +17,16 @@ const HOUR_MS = 3_600_000;
 export const STARTS_PER_HOUR = 200;
 /** Finished games nobody has claimed are kept this long, so signing in later on the same browser still finds them. */
 export const UNCLAIMED_KEEP_DAYS = 90;
-/** Each start clears at most this many stale games of each kind: up to 50 in all (spec §2). */
+/** Each start clears at most this many stale games of each kind: up to 75 in all (spec §2). */
 const STALE_BATCH = 25;
+/**
+ * Abandoned games, bound (cutoff, limit): each kind is swept on its own partial index (migration 0007), its WHERE
+ * repeating the index's exactly, so neither walks rows it won't delete. STALE_SQL: a random game or a guest's Daily
+ * (never claimable unfinished), after a day. STALE_DAILY_SQL: a signed-in player's Daily, their first attempt finished
+ * or not (plan C1, decision 1), kept until its day has closed everywhere: three days.
+ */
+export const STALE_SQL = 'SELECT id FROM games WHERE finished_at IS NULL AND (daily_day IS NULL OR user_id IS NULL) AND started_at < ? LIMIT ?';
+export const STALE_DAILY_SQL = 'SELECT id FROM games WHERE finished_at IS NULL AND daily_day IS NOT NULL AND user_id IS NOT NULL AND started_at < ? LIMIT ?';
 /** Each start prunes at most this many start records older than an hour. */
 const STARTS_PRUNE = 50;
 export const GAME_ID = /^[A-Za-z0-9_-]{16,64}$/;
@@ -96,8 +104,9 @@ export async function startGame(req: Request, env: AppEnv): Promise<Response> {
   // Stamped last, right before the insert, so nothing above counts against the player's clock.
   const now = Date.now();
   await env.DB.batch([
-    // Lazy housekeeping (no cron): abandoned games after a day (a Daily's first attempt, until its day has closed), unclaimed finished games after 90 days.
-    env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE finished_at IS NULL AND started_at < ? AND (daily_day IS NULL OR started_at < ?) LIMIT ?)').bind(now - DAY_MS, now - 3 * DAY_MS, STALE_BATCH),
+    // Lazy housekeeping (no cron): abandoned games after a day (a signed-in player's Daily after three), unclaimed finished games after 90 days.
+    env.DB.prepare(`DELETE FROM games WHERE id IN (${STALE_SQL})`).bind(now - DAY_MS, STALE_BATCH),
+    env.DB.prepare(`DELETE FROM games WHERE id IN (${STALE_DAILY_SQL})`).bind(now - 3 * DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM games WHERE id IN (SELECT id FROM games WHERE user_id IS NULL AND finished_at < ? LIMIT ?)').bind(now - UNCLAIMED_KEEP_DAYS * DAY_MS, STALE_BATCH),
     env.DB.prepare('DELETE FROM starts WHERE rowid IN (SELECT rowid FROM starts WHERE at < ? LIMIT ?)').bind(now - HOUR_MS, STARTS_PRUNE),
     env.DB.prepare('INSERT INTO starts (ip_hash, at) VALUES (?, ?)').bind(ipHash, now),

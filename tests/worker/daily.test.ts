@@ -154,18 +154,23 @@ describe('starting the Daily Tree', () => {
     expect(await row(random.id)).toMatchObject({ daily_day: null, daily_past: 0 });
   });
 
-  it('an unfinished daily game survives the one-day housekeeping and is deleted after three days; an unfinished random game still goes after one', async () => {
+  it("a signed-in player's unfinished Daily survives the one-day housekeeping and goes after three days; a guest's, like a random game, goes after one", async () => {
     at('2026-12-10T12:00:00Z');
-    const daily = await json<StartResponse>(await startDaily({ today: '2026-12-10' }));
-    const dailyOld = await json<StartResponse>(await startDaily({ today: '2026-12-10', day: '2026-12-08' }));
+    const ana = await signIn(env, 'ana@example.com');
+    const daily = await json<StartResponse>(await startDaily({ today: '2026-12-10' }, ana));
+    const dailyOld = await json<StartResponse>(await startDaily({ today: '2026-12-10', day: '2026-12-08' }, ana));
+    // A guest's unfinished Daily can never be claimed (a claim needs a finished run), so nothing is kept for it.
+    const guest = await json<StartResponse>(await startDaily({ today: '2026-12-10' }));
     const random = await json<StartResponse>(await startDaily(undefined));
     const age = (id: string, days: number) => db.prepare('UPDATE games SET started_at = ? WHERE id = ?').bind(Date.now() - days * DAY, id).run();
     await age(daily.id, 2);
     await age(dailyOld.id, 4);
+    await age(guest.id, 1.5);
     await age(random.id, 2);
     await startDaily(undefined);
     expect(await row(daily.id)).not.toBeNull();
     expect(await row(dailyOld.id)).toBeNull();
+    expect(await row(guest.id)).toBeNull();
     expect(await row(random.id)).toBeNull();
     await age(daily.id, 3.5);
     await startDaily(undefined);
