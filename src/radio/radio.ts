@@ -1,6 +1,7 @@
 import { audio } from '../audio/context';
 import type { SceneId } from '../render/scenes';
 import { loadRadioSettings, saveRadioSettings, type RadioSettings } from '../store/radio-settings';
+import { whenIdle } from '../ui/idle';
 import { AMBIENT_ID, type AmbientKind, ambientKind, CELESTA_ID, isAmbient, isSynthSource, MUSIC_BOX_ID, SCENE_STATION } from './builtin';
 import type { AmbientSynth } from './ambient-kit';
 import { CAROLS } from './carols';
@@ -38,6 +39,22 @@ export interface RadioView {
 
 const FIRST_FADE_S = 2;
 
+/** The order the ambiences are pre-generated in, after the remembered one. */
+const WARM_ORDER: readonly AmbientKind[] = ['fireplace', 'rain', 'storm'];
+
+/** `whenIdle`, but a hidden tab does no work: a slice that comes due there waits for the tab to be visible again. */
+function idleWhileVisible(fn: () => void): void {
+  whenIdle(() => {
+    if (document.visibilityState === 'visible') return fn();
+    const back = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', back);
+      idleWhileVisible(fn);
+    };
+    document.addEventListener('visibilitychange', back);
+  });
+}
+
 export class Radio {
   onChange: (() => void) | null = null;
   readonly show: LightShow;
@@ -71,6 +88,8 @@ export class Radio {
   private catalogSeq = 0;
   private sceneId: SceneId = 'fireside';
   private analyser: AnalyserNode | null = null;
+  /** prewarm() has run. */
+  private warmed = false;
 
   constructor() {
     this.player.onChange = () => this.onChange?.();
@@ -121,6 +140,24 @@ export class Radio {
     if (this.greeted) return;
     this.greeted = true;
     if (this.settings.on && this.kind === null && !this.pendingStart && !this.pendingSecret) this.startPreferred();
+    this.prewarm();
+  }
+
+  /**
+   * Makes the ambiences' noise at idle, a buffer at a time, so starting one never stalls (100 to 190 ms in Chrome otherwise):
+   * the remembered ambience first, then the others. Once only, and nothing before the context exists.
+   */
+  prewarm(): void {
+    const ctx = audio.ctx;
+    if (this.warmed || !ctx) return;
+    this.warmed = true;
+    const first = ambientKind(this.remembered());
+    const order = [...(first ? [first] : []), ...WARM_ORDER.filter((k) => k !== first)];
+    void (async () => {
+      for (const kind of order) await this.ambience(kind).prewarm(ctx, idleWhileVisible);
+    })().catch(() => {
+      /* nothing is lost: a start makes whatever is missing (and reports a real failure itself) */
+    });
   }
 
   setScene(id: SceneId): void {

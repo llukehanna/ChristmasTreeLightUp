@@ -1,9 +1,10 @@
-import { expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, expect, it, vi } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import { Biquad, brownLoop, pinkLoop, smoothRandomLoop, Stream } from '../../../src/radio/ambient-kit';
-import { settleGap, strike } from '../../../src/radio/fireplace';
-import { patterLoop } from '../../../src/radio/rain';
-import { thunderGap } from '../../../src/radio/storm';
+import { Fireplace, settleGap, strike } from '../../../src/radio/fireplace';
+import { patterLoop, Rain } from '../../../src/radio/rain';
+import { Storm, thunderGap } from '../../../src/radio/storm';
 
 const maxStep = (d: Float32Array): number => {
   let m = 0;
@@ -83,4 +84,124 @@ it('thunder rolls every 20 to 60 s', () => {
     expect(g).toBeGreaterThanOrEqual(20);
     expect(g).toBeLessThanOrEqual(60);
   }
+});
+
+/* ---------- pre-generating the noise at idle ---------- */
+
+const param = () => ({ value: 1, setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined, cancelScheduledValues: () => undefined, setTargetAtTime: () => undefined });
+const node = () => ({ connect: (n: unknown) => n, disconnect: () => undefined });
+
+/** Just enough of an audio context to start an ambience, at a low rate so the noise is quick to make. `made` counts buffers. */
+function fakeCtx() {
+  const ctx = {
+    made: 0,
+    sampleRate: 4000,
+    currentTime: 0,
+    state: 'running',
+    createBuffer(_channels: number, length: number, rate: number) {
+      ctx.made++;
+      return { duration: length / rate, copyToChannel: () => undefined };
+    },
+    createGain: () => ({ ...node(), gain: param() }),
+    createBiquadFilter: () => ({ ...node(), type: 'lowpass', frequency: param(), Q: param() }),
+    createStereoPanner: () => ({ ...node(), pan: param() }),
+    createBufferSource: () => ({ ...node(), buffer: null, loop: false, playbackRate: param(), start: () => undefined, stop: () => undefined }),
+  };
+  return ctx;
+}
+const as = (c: ReturnType<typeof fakeCtx>) => c as unknown as BaseAudioContext;
+const out = () => node() as unknown as AudioNode;
+
+/** A hand-run idle scheduler: each queued slice runs only when the test says so. */
+function manualIdle() {
+  const queue: (() => void)[] = [];
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  return {
+    queue,
+    idle: (fn: () => void) => void queue.push(fn),
+    async slice() {
+      queue.shift()?.();
+      await settle();
+    },
+    async drain() {
+      await settle();
+      while (queue.length) await this.slice();
+    },
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+it('after prewarm, start generates nothing', async () => {
+  for (const make of [() => new Fireplace(mulberry32(1)), () => new Rain(mulberry32(1)), () => new Storm(mulberry32(1))]) {
+    const ctx = fakeCtx();
+    const s = make();
+    const sched = manualIdle();
+    const done = s.prewarm(as(ctx), sched.idle);
+    await sched.drain();
+    await done;
+    const made = ctx.made;
+    expect(made).toBeGreaterThan(0);
+    s.start(as(ctx), out());
+    expect(ctx.made).toBe(made);
+    s.stop();
+  }
+});
+
+it('prewarm yields between buffers', async () => {
+  const ctx = fakeCtx();
+  const sched = manualIdle();
+  let finished = false;
+  void new Fireplace(mulberry32(2)).prewarm(as(ctx), sched.idle).then(() => (finished = true));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(ctx.made).toBe(0); // nothing is made before the first idle slice
+  let slices = 0;
+  while (sched.queue.length) {
+    expect(sched.queue.length).toBe(1); // one slice at a time
+    const before = ctx.made;
+    await sched.slice();
+    slices++;
+    expect(ctx.made).toBeGreaterThan(before); // each slice makes one more set of buffers
+  }
+  expect(finished).toBe(true);
+  expect(slices).toBe(6); // the beds and five crackle pools
+});
+
+it('starting while prewarm is half done builds each buffer once', async () => {
+  const fresh = fakeCtx();
+  const first = new Fireplace(mulberry32(3));
+  first.start(as(fresh), out());
+  first.stop();
+  const all = fresh.made;
+
+  const ctx = fakeCtx();
+  const fire = new Fireplace(mulberry32(3));
+  const sched = manualIdle();
+  const done = fire.prewarm(as(ctx), sched.idle);
+  await new Promise((r) => setTimeout(r, 0));
+  await sched.slice();
+  await sched.slice();
+  expect(ctx.made).toBeGreaterThan(0);
+  expect(ctx.made).toBeLessThan(all);
+  fire.start(as(ctx), out()); // makes the rest at once
+  expect(ctx.made).toBe(all);
+  await sched.drain(); // the rest of the prewarm finds every buffer made
+  await done;
+  expect(ctx.made).toBe(all);
+  fire.stop();
+});
+
+it('Rain and Storm share their beds', async () => {
+  const ctx = fakeCtx();
+  const sched = manualIdle();
+  const done = new Rain(mulberry32(4)).prewarm(as(ctx), sched.idle);
+  await sched.drain();
+  await done;
+  const afterRain = ctx.made;
+  const storm = new Storm(mulberry32(4));
+  storm.start(as(ctx), out());
+  expect(ctx.made - afterRain).toBe(2); // only its own heavier patter loops
+  storm.stop();
 });

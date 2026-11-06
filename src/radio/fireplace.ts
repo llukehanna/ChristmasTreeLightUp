@@ -49,14 +49,14 @@ export class Fireplace extends AmbientSynth {
     super(rng);
   }
 
+  protected buffers(ctx: Ctx): ReadonlyArray<() => void> {
+    const p = this.poolMakers(ctx);
+    return [() => this.bedLoops(ctx), p.tick, p.snap, p.pop, p.hiss, p.thud];
+  }
+
   protected build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[] {
     const r = this.rng;
-    const fs = ctx.sampleRate;
-    const [roarBuf, flameBuf, flickerBuf] = cached(ctx, 'fire:beds', () => [
-      toBuffer(ctx, stereoNoise(Math.floor(fs * 13), r, brownLoop, 0.8)),
-      toBuffer(ctx, stereoNoise(Math.floor(fs * 11), r, pinkLoop, 0.6)),
-      toBuffer(ctx, [smoothRandomLoop(Math.floor(fs * 9.3), fs, 0.06, r)]),
-    ]);
+    const [roarBuf, flameBuf, flickerBuf] = this.bedLoops(ctx);
 
     const roar = loop(ctx, roarBuf);
     const roarLp = filter(ctx, 'lowpass', 380, 0.5);
@@ -75,7 +75,8 @@ export class Fireplace extends AmbientSynth {
     const crackleBus = gainNode(ctx, 1);
     crackleBus.connect(filter(ctx, 'lowpass', 6500, 0.6)).connect(out);
     this.pans = panBuses(ctx, crackleBus, [-0.6, -0.3, 0, 0.3, 0.6]);
-    this.pools = this.poolsFrom(ctx);
+    const p = this.poolMakers(ctx);
+    this.pools = { tick: p.tick(), snap: p.snap(), pop: p.pop(), hiss: p.hiss(), thud: p.thud() };
     this.roarGain = roarGain;
     this.roarLp = roarLp;
     this.flameGain = flameGain;
@@ -107,10 +108,22 @@ export class Fireplace extends AmbientSynth {
     this.roarLp = null;
   }
 
-  private poolsFrom(ctx: Ctx): NonNullable<Fireplace['pools']> {
+  /** The roar, the flames and the flicker that moves them: the long loops, made once per context. */
+  private bedLoops(ctx: Ctx): AudioBuffer[] {
+    const r = this.rng;
+    const fs = ctx.sampleRate;
+    return cached(ctx, 'fire:beds', () => [
+      toBuffer(ctx, stereoNoise(Math.floor(fs * 13), r, brownLoop, 0.8)),
+      toBuffer(ctx, stereoNoise(Math.floor(fs * 11), r, pinkLoop, 0.6)),
+      toBuffer(ctx, [smoothRandomLoop(Math.floor(fs * 9.3), fs, 0.06, r)]),
+    ]);
+  }
+
+  /** Each crackle pool, made (once per context) when its function is called. */
+  private poolMakers(ctx: Ctx): Record<keyof NonNullable<Fireplace['pools']>, () => AudioBuffer[]> {
     const fs = ctx.sampleRate;
     const r = this.rng;
-    const one = (key: string, n: number, make: () => Float32Array) => cached(ctx, key, () => Array.from({ length: n }, () => toBuffer(ctx, [make()])));
+    const one = (key: string, n: number, make: () => Float32Array) => () => cached(ctx, key, () => Array.from({ length: n }, () => toBuffer(ctx, [make()])));
     return {
       tick: one('fire:tick', 16, () => strike(fs, r, { burstMs: between(r, 0.2, 0.8), modes: [[logBetween(r, 1800, 4200), between(r, 1.2, 3), 1]], click: 0.6, lp: 6500, maxMs: 15 })),
       snap: one('fire:snap', 32, () => {

@@ -66,15 +66,16 @@ export class RainBed {
     private readonly lvl: RainLevel,
   ) {}
 
+  /** One thunk per buffer set, in the order `build` reads them (AmbientSynth.buffers). */
+  buffers(ctx: Ctx): ReadonlyArray<() => void> {
+    const p = this.poolMakers(ctx);
+    return [() => rainBeds(ctx, this.rng), () => this.patter(ctx), p.tap, p.plop, p.drip];
+  }
+
   build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[] {
     const r = this.rng;
-    const fs = ctx.sampleRate;
-    const heavy = this.lvl === HEAVY;
     const [washBuf, roofBuf] = rainBeds(ctx, r);
-    const [fineBuf, dropsBuf] = cached(ctx, heavy ? 'rain:patter-heavy' : 'rain:patter', () => [
-      toBuffer(ctx, patterLoop(fs, 7.3, heavy ? 650 : 420, r, [1500, 5000], [0.4, 1.4])),
-      toBuffer(ctx, patterLoop(fs, 11.9, heavy ? 90 : 55, r, [900, 3500], [1, 4])),
-    ]);
+    const [fineBuf, dropsBuf] = this.patter(ctx);
 
     const wash = loop(ctx, washBuf);
     const washLp = filter(ctx, 'lowpass', 2900, 0.5);
@@ -96,19 +97,8 @@ export class RainBed {
     const bus = gainNode(ctx, 1);
     bus.connect(filter(ctx, 'lowpass', 6500, 0.6)).connect(out);
     this.pans = panBuses(ctx, bus, [-0.8, -0.4, 0, 0.4, 0.8]);
-    const pool = (key: string, n: number, make: () => Float32Array) => cached(ctx, key, () => Array.from({ length: n }, () => toBuffer(ctx, [make()])));
-    this.pools = {
-      tap: pool('rain:tap', 24, () => {
-        const f = logBetween(r, 1500, 4500);
-        const q = logBetween(r, 5, 16);
-        return strike(fs, r, { burstMs: between(r, 0.2, 0.8), modes: [[f, q, 1], [f * between(r, 1.3, 2.1), q * 0.8, between(r, 0.2, 0.5)]], click: 0.5, lp: 6500, maxMs: 50 });
-      }),
-      plop: pool('rain:plop', 8, () => {
-        const f = logBetween(r, 500, 1300);
-        return strike(fs, r, { burstMs: between(r, 0.8, 2.5), modes: [[f, between(r, 3, 6), 1], [f * between(r, 2, 2.6), 6, 0.4]], click: 0.3, lp: 4000, maxMs: 80 });
-      }),
-      drip: pool('rain:drip', 6, () => gutterDrip(fs, r)),
-    };
+    const p = this.poolMakers(ctx);
+    this.pools = { tap: p.tap(), plop: p.plop(), drip: p.drip() };
 
     const t0 = ctx.currentTime;
     this.intensity = 1;
@@ -135,6 +125,36 @@ export class RainBed {
     this.streams = [];
     this.wash = this.roof = this.fine = this.drops = null;
     this.washLp = null;
+  }
+
+  /** The two loops of tiny impacts (fine patter and fatter drops), denser for the heavy rain: one set per level. */
+  private patter(ctx: Ctx): AudioBuffer[] {
+    const r = this.rng;
+    const fs = ctx.sampleRate;
+    const heavy = this.lvl === HEAVY;
+    return cached(ctx, heavy ? 'rain:patter-heavy' : 'rain:patter', () => [
+      toBuffer(ctx, patterLoop(fs, 7.3, heavy ? 650 : 420, r, [1500, 5000], [0.4, 1.4])),
+      toBuffer(ctx, patterLoop(fs, 11.9, heavy ? 90 : 55, r, [900, 3500], [1, 4])),
+    ]);
+  }
+
+  /** Each one-shot pool, made (once per context, shared by both levels) when its function is called. */
+  private poolMakers(ctx: Ctx): Record<keyof NonNullable<RainBed['pools']>, () => AudioBuffer[]> {
+    const fs = ctx.sampleRate;
+    const r = this.rng;
+    const pool = (key: string, n: number, make: () => Float32Array) => () => cached(ctx, key, () => Array.from({ length: n }, () => toBuffer(ctx, [make()])));
+    return {
+      tap: pool('rain:tap', 24, () => {
+        const f = logBetween(r, 1500, 4500);
+        const q = logBetween(r, 5, 16);
+        return strike(fs, r, { burstMs: between(r, 0.2, 0.8), modes: [[f, q, 1], [f * between(r, 1.3, 2.1), q * 0.8, between(r, 0.2, 0.5)]], click: 0.5, lp: 6500, maxMs: 50 });
+      }),
+      plop: pool('rain:plop', 8, () => {
+        const f = logBetween(r, 500, 1300);
+        return strike(fs, r, { burstMs: between(r, 0.8, 2.5), modes: [[f, between(r, 3, 6), 1], [f * between(r, 2, 2.6), 6, 0.4]], click: 0.3, lp: 4000, maxMs: 80 });
+      }),
+      drip: pool('rain:drip', 6, () => gutterDrip(fs, r)),
+    };
   }
 
   /** Showers come and go: a new target every 15–40 s on average, eased into over ~10 s. */
@@ -210,6 +230,9 @@ export class Rain extends AmbientSynth {
   constructor(rng: Rng = Math.random) {
     super(rng);
     this.bed = new RainBed(rng, LIGHT);
+  }
+  protected buffers(ctx: Ctx): ReadonlyArray<() => void> {
+    return this.bed.buffers(ctx);
   }
   protected build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[] {
     return this.bed.build(ctx, out);

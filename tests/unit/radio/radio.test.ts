@@ -766,3 +766,46 @@ describe('secret mode (spec §4.4)', () => {
     expect(gain.calls.filter((c) => c[0] === 'linearRampToValueAtTime').at(-1)).toEqual(['linearRampToValueAtTime', 0.5, 4.28]);
   });
 });
+
+it('the remembered ambience warms first, and nothing runs in a hidden tab', async () => {
+  const order: string[] = [];
+  let idle!: (fn: () => void) => void;
+  for (const [name, synth] of [['fireplace', Fireplace], ['rain', Rain], ['storm', Storm]] as const) {
+    vi.spyOn(synth.prototype, 'prewarm').mockImplementation(async (_ctx, i) => {
+      order.push(name);
+      idle = i;
+    });
+  }
+  const slices: (() => void)[] = [];
+  vi.stubGlobal('requestIdleCallback', (fn: () => void) => slices.push(fn));
+  let state: DocumentVisibilityState = 'visible';
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  try {
+    saveRadioSettings({ ...DEFAULT_RADIO, on: false, source: 'storm' });
+    new Radio().prewarm(); // no audio context yet: nothing to warm
+    await Promise.resolve();
+    expect(order).toEqual([]);
+
+    fakeAudio();
+    const r = new Radio();
+    r.firstGesture();
+    r.prewarm(); // once only
+    await vi.waitFor(() => expect(order).toEqual(['storm', 'fireplace', 'rain']));
+
+    let ran = 0;
+    idle(() => ran++);
+    state = 'hidden'; // the tab is hidden before the browser gets round to the slice
+    slices.shift()!();
+    expect(ran).toBe(0);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(slices).toHaveLength(0); // still hidden: nothing queued
+    state = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(ran).toBe(0); // back, but it waits for an idle moment again
+    slices.shift()!();
+    expect(ran).toBe(1);
+  } finally {
+    Reflect.deleteProperty(document, 'visibilityState');
+    vi.unstubAllGlobals();
+  }
+});

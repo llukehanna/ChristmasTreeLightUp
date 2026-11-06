@@ -25,6 +25,11 @@ export class Storm extends AmbientSynth {
     this.bed = new RainBed(rng, HEAVY);
   }
 
+  /** The heavy rain's buffers; the wind and thunder play the rain's noise beds, so they need none of their own. */
+  protected buffers(ctx: Ctx): ReadonlyArray<() => void> {
+    return this.bed.buffers(ctx);
+  }
+
   protected build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[] {
     const r = this.rng;
     const beds = this.bed.build(ctx, out);

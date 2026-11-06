@@ -42,6 +42,7 @@ import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
 import { Decorate } from './ui/decorate';
 import { HomeAloneSwitch } from './ui/home-alone';
+import { whenIdle } from './ui/idle';
 import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
@@ -101,12 +102,6 @@ const NO_LAYER: HomeAloneLayerState = {
 const noClips = (): Record<HomeAloneClip, number> => ({
   scream: 0, kevin: 0, 'filthy-animal': 0, 'hector-credit-card': 0, 'hector-mistaken': 0, 'hector-love': 0,
 });
-
-/** Calls `fn` when the browser is idle (soon, where it can't say). */
-function whenIdle(fn: () => void): void {
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 3000 });
-  else setTimeout(fn, 200);
-}
 
 export class App {
   readonly sfx = new Sfx();

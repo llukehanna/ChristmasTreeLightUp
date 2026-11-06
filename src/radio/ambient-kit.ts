@@ -41,6 +41,8 @@ export abstract class AmbientSynth {
     g.gain.linearRampToValueAtTime(1, ctx.currentTime + FADE_IN_S);
     g.connect(out);
     this.gain = g;
+    // Whatever prewarm hasn't made yet is made now, in the same order, so the noise is the same either way.
+    for (const fill of this.buffers(ctx)) fill();
     this.beds = this.build(ctx, g);
     for (const s of this.beds) {
       const b = (s as Partial<AudioBufferSourceNode>).buffer;
@@ -81,6 +83,31 @@ export abstract class AmbientSynth {
     }, FADE_OUT_S * 1000 + 100);
   }
 
+  /**
+   * Makes the buffers ahead of the first start, one `buffers` thunk per idle slice (`idle` schedules a slice), so a
+   * start never stalls on noise generation. A buffer already made (by an earlier slice, a start or another ambience
+   * sharing it) is skipped. A start halfway through just makes the rest.
+   */
+  async prewarm(ctx: Ctx, idle: (fn: () => void) => void): Promise<void> {
+    for (const fill of this.buffers(ctx)) {
+      await new Promise<void>((done, fail) =>
+        idle(() => {
+          try {
+            fill();
+            done();
+          } catch (e) {
+            fail(e);
+          }
+        }),
+      );
+    }
+  }
+
+  /**
+   * One thunk per `cached()` key this ambience uses, in the order `build` first reads them: each makes its buffers,
+   * or does nothing if they exist. start() runs them all before `build`.
+   */
+  protected abstract buffers(ctx: Ctx): ReadonlyArray<() => void>;
   /** Continuous layers, connected to `out` and not yet started (start() starts them). */
   protected abstract build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[];
   /** Lay down every event in [from, to) on the audio clock. Called with contiguous windows. */
