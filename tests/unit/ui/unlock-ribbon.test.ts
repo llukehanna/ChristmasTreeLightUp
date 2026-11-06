@@ -2,11 +2,11 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { ProgressResponse } from '../../../src/api/types';
 import { itemOf, type ItemId } from '../../../src/core/catalogue';
-import { evaluate } from '../../../src/core/goals';
+import { evaluate, pileOf } from '../../../src/core/goals';
 import { effectiveLook, STARTER_LOOK, type Look } from '../../../src/store/look';
 import { Results } from '../../../src/ui/results';
 import { renderRibbon } from '../../../src/ui/ribbon';
-import { tryPatch, unlockLine, UnlockNews, type UnlockLine } from '../../../src/ui/unlock-ribbon';
+import { picked, tryPatch, unlockLine, UnlockNews, type UnlockLine } from '../../../src/ui/unlock-ribbon';
 import { UnlockState } from '../../../src/unlock-state';
 
 const noop = (): void => undefined;
@@ -77,22 +77,39 @@ const progress = (treesLit: number, extra: ItemId[] = []): ProgressResponse => {
   return { earned: [...e.earned, ...extra], goals: e.goals, treesLit };
 };
 
-/** The App's part, with fakes: a run, a tag, a session, and the renderer's path (what applyLook would set). */
+/**
+ * The App's part, with fakes: a run, a tag, a session, and the stage as App.applyLook leaves it (the look's path and
+ * topper as shown, and the pile), read from the news' ownership as the App's stage is.
+ */
 function world(saved: Look) {
-  const f = { inRun: false, tagUp: false, known: true, path: 'unset', lines: [] as (UnlockLine | null)[], applied: 0 };
+  const f = { inRun: false, tagUp: false, known: true, look: saved, path: 'unset', topper: 'unset', pile: -1, lines: [] as (UnlockLine | null)[], applied: 0 };
   const news: { n: UnlockNews | null } = { n: null };
   const unlocks = new UnlockState({ onChange: () => news.n?.changed() });
-  news.n = new UnlockNews(unlocks, {
+  const paint = (): void => {
+    const shown = effectiveLook(f.look, (id) => n.owns(id));
+    f.path = shown.path;
+    f.topper = shown.topper;
+    f.pile = pileOf(n.treesLit(), Infinity);
+  };
+  const n = new UnlockNews(unlocks, {
     inRun: () => f.inRun,
     tagUp: () => f.tagUp,
     known: () => f.known,
     apply: () => {
       f.applied++;
-      f.path = effectiveLook(saved, (id) => unlocks.owns(id)).path;
+      paint();
     },
     ribbon: (line) => f.lines.push(line),
   });
-  return { f, unlocks, news: news.n };
+  news.n = n;
+  /** A pick by the player (the drawer, a saved look, Try it): App.applyLook with persist. */
+  const pick = (patch: Partial<Look>): void => {
+    const next = { ...f.look, ...patch };
+    n.reveal(picked(f.look, next));
+    f.look = next;
+    paint();
+  };
+  return { f, unlocks, news: n, pick };
 }
 
 it('progress landing mid-run waits for the next tag (no dot, no ribbon until then)', () => {
@@ -124,6 +141,38 @@ it('progress landing mid-run waits for the next tag (no dot, no ribbon until the
   // Once told, the next tag says nothing.
   news.tagShown();
   expect(f.lines.at(-1)).toBeNull();
+});
+
+it("a pick mid-run shows what it names, but never brings a held unlock along (the path, the pile); those wait for the tag", () => {
+  // Saved: the Neon path. Owned: the Star topper, 20 trees (a pile of 4).
+  const { f, unlocks, news, pick } = world({ ...STARTER_LOOK, path: 'neon' });
+  unlocks.setPlayer(7, 0);
+  unlocks.setServer(progress(20, ['topper:star']));
+  expect([f.path, f.pile]).toEqual(['filament', 4]);
+  // Mid-run, progress earns m25 (Neon, beads) and five more trees.
+  f.inRun = true;
+  unlocks.setServer(progress(25, ['topper:star']));
+  // A drawer pick of another slot: the topper changes, the path and the pile don't.
+  pick({ topper: 'star' });
+  expect([f.topper, f.path, f.pile]).toEqual(['star', 'filament', 4]);
+  // A decoration switched on that is held too (the beads): picked by the player, it shows; the path still waits.
+  pick({ decor: { ...f.look.decor, beads: true } });
+  expect(news.owns('decor:beads')).toBe(true);
+  expect([f.path, f.pile]).toEqual(['filament', 4]);
+  expect(f.lines).toEqual([]);
+  // The tag: the held path and pile appear, and the news is told.
+  f.inRun = false;
+  f.tagUp = true;
+  news.tagShown();
+  expect([f.topper, f.path, f.pile]).toEqual(['star', 'neon', 5]);
+  expect(f.lines.at(-1)).toMatchObject({ best: { id: 'path:neon' }, more: 1 });
+});
+
+it('a pick names the slots it changed and the decorations it switched on', () => {
+  const before: Look = { ...STARTER_LOOK, decor: { ...STARTER_LOOK.decor, skirt: true } };
+  expect(picked(before, { ...before, topper: 'star', decor: { ...before.decor, tinsel: true } })).toEqual(['topper:star', 'decor:tinsel']);
+  expect(picked(before, { ...before, decor: { ...before.decor, skirt: false } })).toEqual([]);
+  expect(picked(before, before)).toEqual([]);
 });
 
 it('a new tree ends the run: the held look applies, and the ribbon waits for a tag', () => {

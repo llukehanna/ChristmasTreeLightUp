@@ -59,7 +59,7 @@ import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, ty
 import { FrostPause } from './ui/frost-pause';
 import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
-import { tryPatch, UnlockNews } from './ui/unlock-ribbon';
+import { picked, tryPatch, UnlockNews } from './ui/unlock-ribbon';
 import { UnlockState } from './unlock-state';
 
 /** A win hurries the flow still in flight this much, and the results tag follows this long after the last bulb. */
@@ -462,7 +462,8 @@ export class App {
   start(): void {
     this.applySettings(this.settings, false);
     this.unlocks.setPlayer(this.player, this.stats.solved);
-    this.applyLook(this.look, false);
+    // No run yet: the stage takes what is owned now, and puts the look up.
+    this.news.changed();
     this.resize();
     addEventListener('resize', () => {
       if (this.resizeQueued) return;
@@ -1354,6 +1355,8 @@ export class App {
    * the player owns of `l` (effectiveLook); `l` itself is what is saved.
    */
   private applyLook(l: Look, persist = true): void {
+    // A pick by the player (persisted) shows what it names at once; anything else owned meanwhile waits on the news.
+    if (persist) this.news.reveal(picked(this.look, l));
     this.look = l;
     this.pausedDrawn = false;
     if (persist) saveLook(l);
@@ -1365,9 +1368,9 @@ export class App {
     if (restyle || rescene || redressed) this.refreshShare();
   }
 
-  /** The look, less what the player doesn't own yet. */
+  /** The look, less what the player doesn't own yet (as the stage shows ownership: held through a run). */
   private get shownLook(): Look {
-    return effectiveLook(this.look, (id) => this.unlocks.owns(id));
+    return effectiveLook(this.look, (id) => this.news.owns(id));
   }
 
   /** The egg world the stage is in, if any (secret mode and Home Alone keep their own tree). */
@@ -1381,7 +1384,7 @@ export class App {
    */
   private dress(): boolean {
     // One present per PILE_STEP trees lit; the egg worlds keep the full pile.
-    const pile = this.world ? Infinity : pileOf(this.unlocks.treesLit(), Infinity);
+    const pile = this.world ? Infinity : pileOf(this.news.treesLit(), Infinity);
     const repainted = this.renderer.setDress({ ...worldLook(this.shownLook, this.world), pile });
     this.decorate.sync();
     return repainted;

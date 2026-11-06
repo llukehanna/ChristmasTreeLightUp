@@ -33,19 +33,33 @@ export function tryPatch(look: Look, item: ItemDef): Partial<Look> | null {
   return patched[slot] === item.value ? ({ [slot]: item.value } as Partial<Look>) : null;
 }
 
+const LOOK_SLOTS = ['scene', 'path', 'palette', 'topper', 'presents'] as const;
+
+/** The items a pick names: each slot it changed, and each decoration it switched on (starter values name none). */
+export function picked(before: Look, after: Look): string[] {
+  const ids = LOOK_SLOTS.filter((k) => after[k] !== before[k]).map((k) => `${k}:${after[k]}`);
+  for (const k of Object.keys(after.decor) as (keyof Decor)[]) if (after.decor[k] && !before.decor[k]) ids.push(`decor:${k}`);
+  return ids;
+}
+
 /**
  * When unlock news reaches the screen (season two, Parts C2+C3). Never during a run: a change UnlockState reports then
  * (the look it re-applies, the pile, the dot) is held until the run ends, at the tag or a new tree (ruling R9). What is
  * new goes on the results tag of the run just won, once the session is known (until /api/me answers, the player's key is
  * a guess), and is then known.
+ *
+ * The stage reads what is owned from here (`owns`, `treesLit`): a snapshot taken whenever a change is shown, so a look
+ * change mid-run (a pick, an egg world) can't bring a held unlock along. A player's own pick reveals just what it names.
  */
 export class UnlockNews {
   private held = false;
+  private shown: ReadonlySet<string> = new Set();
+  private shownTrees = 0;
   /** What this tag has announced. */
   private told: ItemId[] = [];
 
   constructor(
-    private readonly unlocks: { fresh(): ItemId[]; markKnown(ids: readonly ItemId[]): void },
+    private readonly unlocks: { owns(id: ItemId): boolean; treesLit(): number; fresh(): ItemId[]; markKnown(ids: readonly ItemId[]): void },
     private readonly h: {
       /** A run is in progress (the first move to the win or a new tree). */
       inRun(): boolean;
@@ -59,23 +73,43 @@ export class UnlockNews {
     },
   ) {}
 
+  /** Owned, as the stage shows it. */
+  owns(id: ItemId): boolean {
+    return this.shown.has(id);
+  }
+
+  /** Trees lit, as the stage's pile shows it. */
+  treesLit(): number {
+    return this.shownTrees;
+  }
+
+  /** The player's own pick: what it names that they own now shows at once (a held unlock it doesn't name still waits). */
+  reveal(ids: readonly string[]): void {
+    const owned = ids.filter((id) => this.unlocks.owns(id as ItemId));
+    if (owned.length) this.shown = new Set([...this.shown, ...owned]);
+  }
+
   /** UnlockState's onChange: shown now, or held while a run is in progress. */
   changed(): void {
     if (this.h.inRun()) {
       this.held = true;
       return;
     }
-    this.held = false;
-    this.h.apply();
+    this.show();
     this.tell();
   }
 
   /** The run has ended (a new tree, or the win): what was held shows. */
   settle(): void {
-    if (this.held && !this.h.inRun()) {
-      this.held = false;
-      this.h.apply();
-    }
+    if (this.held && !this.h.inRun()) this.show();
+  }
+
+  /** The stage catches up with what is owned now. */
+  private show(): void {
+    this.held = false;
+    this.shown = new Set(ITEMS.filter((i) => this.unlocks.owns(i.id)).map((i) => i.id));
+    this.shownTrees = this.unlocks.treesLit();
+    this.h.apply();
   }
 
   /** A results tag has just come up: nothing on it yet, then what was held and what is new. */
