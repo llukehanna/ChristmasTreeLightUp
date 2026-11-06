@@ -9,7 +9,7 @@ import { X, Y, type Layout } from '../render/layout';
 import { clamp01, smooth } from '../render/paint-util';
 import { loadHomeAlone } from '../store/home-alone';
 import { loadStarHead } from '../store/star-head';
-import { readJSON, writeJSON } from '../store/storage';
+import { hasKey, readJSON, writeJSON } from '../store/storage';
 
 export interface OpeningDeps {
   garland(): GarlandGeometry;
@@ -40,11 +40,23 @@ const T = {
 };
 
 const KEY = 'aglow.opened';
+/**
+ * Play data: a device holding any of these has played before, so it isn't on a first visit. Not 'aglow.look', which
+ * loadLook writes on a first load.
+ */
+const PLAYED = ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio', 'aglow.return'];
 const CLASSES = ['m-open', 'm-o-mark', 'm-o-tag', 'm-o-hud', 'm-o-fast'];
+/** The skip's click follows its pointerup at once; a press that ends in no click is let go after this. */
+const TAIL_MS = 400;
+/** The longest a skipping press or key is followed (one held past it, or released outside the window, is let go). */
+const TAIL_MAX_MS = 3000;
 
-/** First visit: no 'aglow.opened', no reduced motion, and no saved egg world (secret head or Home Alone). */
+/**
+ * First visit: no 'aglow.opened' and no play data, no reduced motion, and no saved egg world (secret head or Home
+ * Alone). Read before this page load writes anything (the App asks first thing).
+ */
 export function shouldOpen(): boolean {
-  if (readJSON(KEY, (v): v is true => v === true)) return false;
+  if (readJSON(KEY, (v): v is true => v === true) || PLAYED.some(hasKey)) return false;
   if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
   return !loadStarHead() && !loadHomeAlone();
 }
@@ -55,6 +67,13 @@ export function markOpened(): void {
 }
 
 const ease = (v: number): number => smooth(clamp01(v));
+/** The event reaches nothing else; a key with Cmd, Ctrl or Alt (a browser shortcut) keeps its default. */
+function swallow(e: Event): void {
+  e.stopImmediatePropagation();
+  if (!(e instanceof KeyboardEvent && (e.metaKey || e.ctrlKey || e.altKey))) e.preventDefault();
+}
+/** The rest of a skipping gesture: a press's release and click (and the mouse events beside them), a key's keyup. */
+const TAIL = { pointer: ['pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click'], key: ['keyup'] } as const;
 const bodyClass = (name: string, on: boolean): void => void document.body.classList.toggle(name, on);
 
 export class Opening {
@@ -70,6 +89,10 @@ export class Opening {
   private lit = new Float32Array(0);
   /** toScreen's answer (reused). */
   private readonly pt = { x: 0, y: 0 };
+  /** The skipping gesture still being swallowed (its press or key not yet released), and the key's code. */
+  private tail: keyof typeof TAIL | null = null;
+  private tailCode = '';
+  private tailTimer = 0;
 
   constructor(private readonly d: OpeningDeps) {}
 
@@ -79,6 +102,7 @@ export class Opening {
 
   play(now: number): void {
     if (this.playing) this.end();
+    this.release();
     this.playing = true;
     this.at = now;
     this.skipAt = -1;
@@ -105,16 +129,48 @@ export class Opening {
   }
 
   /**
-   * The first press or key, anywhere, skips (captured on the window, ahead of everything else): it never reaches the
-   * game, so a press on the stage turns no tile and a key is never N, P, Escape or Tab. A browser shortcut (with a
-   * modifier) keeps its default.
+   * The first press or key, anywhere, skips (captured on the window, ahead of everything else). The whole gesture is
+   * swallowed: the press, its release and its click, or the key and its keyup, reach nothing else. So a press on the
+   * stage turns no tile, one on an unseen HUD button fires nothing, and a key is never N, P, Escape or Tab.
    */
   private readonly onInput = (e: Event): void => {
     if (!this.playing || this.skipAt >= 0) return;
-    e.stopPropagation();
-    if (!(e instanceof KeyboardEvent && (e.metaKey || e.ctrlKey || e.altKey))) e.preventDefault();
+    swallow(e);
+    this.follow(e instanceof KeyboardEvent ? 'key' : 'pointer', e instanceof KeyboardEvent ? e.code : '');
     this.skip(performance.now());
   };
+
+  /** Swallows the rest of the skipping gesture, until it is over (whether or not the opening still is). */
+  private follow(kind: keyof typeof TAIL, code: string): void {
+    this.release();
+    this.tail = kind;
+    this.tailCode = code;
+    for (const t of TAIL[kind]) addEventListener(t, this.onTail, true);
+    this.tailTimer = window.setTimeout(() => this.release(), TAIL_MAX_MS);
+  }
+
+  private readonly onTail = (e: Event): void => {
+    if (this.tail === 'key') {
+      if (!(e instanceof KeyboardEvent) || e.code !== this.tailCode) return;
+      swallow(e);
+      this.release();
+      return;
+    }
+    swallow(e);
+    if (e.type === 'click' || e.type === 'pointercancel') this.release();
+    else if (e.type === 'pointerup') {
+      // A press that ended off its target may bring no click: let go shortly after the release.
+      clearTimeout(this.tailTimer);
+      this.tailTimer = window.setTimeout(() => this.release(), TAIL_MS);
+    }
+  };
+
+  private release(): void {
+    if (!this.tail) return;
+    for (const t of TAIL[this.tail]) removeEventListener(t, this.onTail, true);
+    clearTimeout(this.tailTimer);
+    this.tail = null;
+  }
 
   /** A hidden tab draws no frames: the opening ends rather than play on unseen (or replay on return). */
   private readonly onHidden = (): void => {

@@ -52,6 +52,17 @@ it('plays on a first visit only', () => {
   expect(shouldOpen()).toBe(false);
 });
 
+it('not on a device with play data (the look alone, which a first load writes, is none)', () => {
+  for (const key of ['aglow.stats', 'aglow.game', 'aglow.settings', 'aglow.radio', 'aglow.return']) {
+    localStorage.clear();
+    localStorage.setItem(key, '{}');
+    expect(shouldOpen(), key).toBe(false);
+  }
+  localStorage.clear();
+  localStorage.setItem('aglow.look', '{}');
+  expect(shouldOpen()).toBe(true);
+});
+
 it('not under reduced motion or a saved egg world', () => {
   reduced = true;
   expect(shouldOpen()).toBe(false);
@@ -124,7 +135,43 @@ it('a key or click skips: faded by 650 ms, off at 900 ms', () => {
     expect(game).toHaveBeenCalledTimes(1);
     document.removeEventListener('keydown', game);
     stage.remove();
+    vi.advanceTimersByTime(3000);
   }
+});
+
+it('the skip gesture is swallowed whole: a click on a HUD button fires nothing, and after the opening it does', () => {
+  const button = document.createElement('button');
+  document.body.append(button);
+  const fired: string[] = [];
+  for (const t of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'keydown', 'keyup']) button.addEventListener(t, () => fired.push(t));
+  document.addEventListener('click', () => fired.push('document click'));
+  const press = () => {
+    for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) button.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true }));
+  };
+  const o = opening();
+  o.play(performance.now());
+  vi.advanceTimersByTime(500);
+  press();
+  expect(fired).toEqual([]);
+  expect(body('m-o-fast')).toBe(true);
+  vi.advanceTimersByTime(900);
+  expect(o.on).toBe(false);
+  press();
+  expect(fired).toEqual(['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'document click']);
+
+  // A key: its keyup (a Space on a focused button clicks on keyup) is swallowed too; another key's is not.
+  fired.length = 0;
+  o.play(performance.now());
+  const key = (type: string, code: string) => button.dispatchEvent(new KeyboardEvent(type, { code, key: code === 'Space' ? ' ' : 'a', bubbles: true, cancelable: true }));
+  key('keydown', 'Space');
+  key('keyup', 'KeyA');
+  key('keyup', 'Space');
+  expect(fired).toEqual(['keyup']);
+  vi.advanceTimersByTime(900);
+  key('keydown', 'Space');
+  key('keyup', 'Space');
+  expect(fired).toEqual(['keyup', 'keydown', 'keyup']);
+  button.remove();
 });
 
 it('a hidden tab ends it at once (no replay on return)', () => {

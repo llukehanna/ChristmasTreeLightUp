@@ -123,6 +123,11 @@ export interface RunFlags {
 export const quietForWork = (f: RunFlags): boolean => !f.live || f.starting || f.paused || f.won;
 
 export class App {
+  /**
+   * A first visit (src/ui/opening.ts), read first of all: before this page load writes any of the play data it looks
+   * for (the fields below load the settings, the look, the stats and the radio's settings).
+   */
+  private readonly firstVisit = shouldOpen();
   readonly sfx = new Sfx();
   readonly renderer: Renderer;
   readonly radio = new Radio();
@@ -354,7 +359,7 @@ export class App {
     this.bindLifecycle();
     // A first visit opens in the dark while the first tree loads (never in a tab opened in the background, where it
     // would play unseen: it waits for a visit that shows it). The first key or press skips it.
-    if (!document.hidden && shouldOpen()) {
+    if (!document.hidden && this.firstVisit) {
       markOpened();
       const now = performance.now();
       this.opening.play(now);

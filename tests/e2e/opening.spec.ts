@@ -9,6 +9,22 @@ const state = (page: Page) => page.evaluate(() => (window as unknown as W).__agl
 const opening = (page: Page) => expect(page.locator('body'));
 
 test('a first visit shows the opening, and a click skips it without turning a tile', async ({ page }) => {
+  // The skip click lands where the (unseen) menu button is: it opens nothing.
+  await page.goto('/?test');
+  await opening(page).toHaveClass(/\bm-open\b/);
+  const menuBtn = page.locator('#menu-btn');
+  const box = (await menuBtn.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await opening(page).not.toHaveClass(/\bm-open\b/);
+  await expect(page.locator('#menu')).toBeHidden();
+  await expect(menuBtn).toHaveAttribute('aria-expanded', 'false');
+  // Over: the button works again.
+  await menuBtn.click();
+  await expect(page.locator('#menu')).toBeVisible();
+
+  // A first visit again (storage cleared away from the game, so its page-hide saves nothing): skip on a tile.
+  await page.goto('/privacy');
+  await page.evaluate(() => localStorage.clear());
   await page.goto('/?test');
   await opening(page).toHaveClass(/\bm-open\b/);
   // The tree takes taps (the reveal is over) while the opening still plays: a click now would turn a tile.
