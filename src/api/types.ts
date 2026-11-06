@@ -136,6 +136,8 @@ export interface RecentGame {
   imported: boolean;
   /** A Daily Tree run's day (YYYY-MM-DD); null for a random game. A past day's tree is known by its reason, 'past'. */
   daily: string | null;
+  /** This game is the owner's earliest-started live game for its day (finished or not); false for a repeat or a random game. */
+  dailyFirst: boolean;
 }
 
 export interface MyGamesResponse {

@@ -1,4 +1,4 @@
-import type { BoardResponse, BoardRow } from '../../src/api/types.js';
+import { BOARD_WINDOWS, type BoardResponse, type BoardRow, type BoardWindow } from '../../src/api/types.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json } from '../lib/http.js';
 import { cachedTopAndTotal } from '../lib/board-cache.js';
@@ -24,15 +24,14 @@ function viewerToday(q: URLSearchParams): { today: number; tz: number } {
  * The window's start in epoch ms, 0 for all time (spec 2026-10-14 §1): the viewer's local midnight today, or on the
  * Monday that starts this week. No window is all time (older pages).
  */
-function windowStart(w: 'today' | 'week' | 'all', q: URLSearchParams): number {
+function windowStart(w: Exclude<BoardWindow, 'daily'>, q: URLSearchParams): number {
   if (w === 'all') return 0;
   const { today, tz } = viewerToday(q);
   const since = localMidnight(w === 'today' ? today : mondayOf(today), tz);
   return since > 0 ? since : 0;
 }
 
-type Window = 'daily' | 'today' | 'week' | 'all';
-const isWindow = (w: string): w is Window => w === 'daily' || w === 'today' || w === 'week' || w === 'all';
+const isWindow = (w: string): w is BoardWindow => (BOARD_WINDOWS as readonly string[]).includes(w);
 
 /** The board's rows from its top BOARD_TOP, and your row pinned below them when none of those is yours. */
 async function boardOf(top: readonly TopRow[], total: number, user: SessionUser | null, yours: (u: SessionUser & { name: string }) => Promise<BoardRow | null>): Promise<BoardResponse> {

@@ -80,9 +80,9 @@ it('your games: best, rank, top-50 count, then recent games with their status', 
     inTop: 2,
     total: 340,
     games: [
-      { id: 'a', ms: 94_200, finishedAt: now - 3_600_000, ranked: true, reason: null, isBest: false, imported: false, daily: null },
-      { id: 'b', ms: 125_100, finishedAt: day, ranked: false, reason: 'paused', isBest: false, imported: false, daily: null },
-      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: false, daily: null },
+      { id: 'a', ms: 94_200, finishedAt: now - 3_600_000, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false },
+      { id: 'b', ms: 125_100, finishedAt: day, ranked: false, reason: 'paused', isBest: false, imported: false, daily: null, dailyFirst: false },
+      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: false, daily: null, dailyFirst: false },
     ],
   };
   const el = render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now);
@@ -102,8 +102,8 @@ it('your games: the account totals, and imported runs say so', () => {
     inTop: 0,
     total: 340,
     games: [
-      { id: 'a', ms: 94_200, finishedAt: day, ranked: true, reason: null, isBest: false, imported: true, daily: null },
-      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: true, daily: null },
+      { id: 'a', ms: 94_200, finishedAt: day, ranked: true, reason: null, isBest: false, imported: true, daily: null, dailyFirst: false },
+      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: true, daily: null, dailyFirst: false },
     ],
   };
   const stats: AccountStats = { userId: 1, solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 81_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-12-03', imported: 300 };

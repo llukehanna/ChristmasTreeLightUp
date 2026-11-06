@@ -2,6 +2,7 @@ import type { AccountStats, HomeAloneResponse, MeResponse, MyGamesResponse, Rece
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
 import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
+import { dailyFirstIds } from '../lib/daily-board.js';
 import { dayText, streaksOf, viewerDay } from '../lib/days.js';
 import { BEST_SQL, bestOf, rankOf, type BestRun } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
@@ -61,6 +62,7 @@ interface RecentRow {
   unranked_reason: UnrankedReason | null;
   source: string;
   daily_day: number | null;
+  daily_past: number;
 }
 
 /** GET /api/me/games: your best and its rank, how many of the top BOARD_TOP are yours, and your last 30 games. */
@@ -68,13 +70,15 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
   const [best, recent, { top, total }] = await Promise.all([
     bestOf(env.DB, user.id),
-    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source, daily_day FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
+    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source, daily_day, daily_past FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
       .bind(user.id)
       .all<RecentRow>(),
     // The top BOARD_TOP and the total from the isolate's copy (BOARD_TTL_MS); your best and its rank are read live.
     user.name ? cachedTopAndTotal(env.DB) : cachedTotal(env.DB).then((n) => ({ top: [], total: n })),
   ]);
-  const rank = best && user.name ? await rankOf(env.DB, best.ms, best.finished_at) : null;
+  // One read for the first attempts at every Daily day in the list (live runs only: a past day's tree is never one).
+  const days = [...new Set(recent.results.flatMap((g) => (g.daily_day !== null && g.daily_past === 0 ? [g.daily_day] : [])))];
+  const [rank, firsts] = await Promise.all([best && user.name ? rankOf(env.DB, best.ms, best.finished_at) : null, dailyFirstIds(env.DB, user.id, days)]);
   const games: RecentGame[] = recent.results.map((g) => ({
     id: g.id,
     ms: g.ms,
@@ -84,6 +88,7 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
     isBest: g.id === best?.id,
     imported: g.source === 'import',
     daily: g.daily_day === null ? null : dayText(g.daily_day),
+    dailyFirst: firsts.has(g.id),
   }));
   return json({
     best: best && { ms: best.ms, rank, finishedAt: best.finished_at },

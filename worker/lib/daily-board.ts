@@ -24,6 +24,15 @@ export const DAILY_BEST_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_
 /** Player ?2's first attempt at day ?1, finished or not. */
 export const DAILY_FIRST_SQL = 'SELECT id FROM games WHERE daily_day = ?1 AND user_id = ?2 AND daily_past = 0 ORDER BY started_at, id LIMIT 1';
 
+/**
+ * Player ?1's first attempt (finished or not) at each day in ?2, a JSON array of day numbers: one read for Your games,
+ * by the same rule as DAILY_FIRST_SQL (earliest started_at, then the lower id). CROSS JOIN keeps the days outermost
+ * (SQLite never reorders it), so each day seeks games_daily rather than the planner walking all the player's games.
+ */
+export const DAILY_FIRSTS_SQL =
+  'SELECT g.id FROM json_each(?2) d CROSS JOIN games g WHERE g.daily_day = d.value AND g.user_id = ?1 AND g.daily_past = 0' +
+  ' AND NOT EXISTS (SELECT 1 FROM games e WHERE e.daily_day = g.daily_day AND e.user_id = ?1 AND e.daily_past = 0 AND e.started_at <= g.started_at AND (e.started_at < g.started_at OR e.id < g.id))';
+
 /** The runs on the day's board. */
 export async function dailyTotal(db: Db, day: number): Promise<number> {
   return (await db.prepare(DAILY_TOTAL_SQL).bind(day).first<{ n: number }>())?.n ?? 0;
@@ -43,6 +52,13 @@ export async function dailyRankOf(db: Db, day: number, ms: number, finishedAt: n
 /** The id of the player's first attempt at the day's tree (finished or not); null before they start it. */
 export async function dailyFirstId(db: Db, userId: number, day: number): Promise<string | null> {
   return (await db.prepare(DAILY_FIRST_SQL).bind(day, userId).first<{ id: string }>())?.id ?? null;
+}
+
+/** The ids of the player's first attempts at `days` (one read; none when there are no days). */
+export async function dailyFirstIds(db: Db, userId: number, days: readonly number[]): Promise<Set<string>> {
+  if (days.length === 0) return new Set();
+  const { results } = await db.prepare(DAILY_FIRSTS_SQL).bind(userId, JSON.stringify(days)).all<{ id: string }>();
+  return new Set(results.map((r) => r.id));
 }
 
 /** The player's own run on the day's board (the board's "you" pin); null when they have none there. */

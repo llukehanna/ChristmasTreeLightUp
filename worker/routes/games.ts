@@ -7,7 +7,7 @@ import { hmac, randomSeed, randomToken } from '../lib/crypto.js';
 import type { AppEnv, Ctx } from '../lib/env.js';
 import { clientIp, HttpError, json, rateKey, readJson } from '../lib/http.js';
 import { boardGrew, cachedTotal } from '../lib/board-cache.js';
-import { dailySeed, DAILY_FIRST_DAY, liveDay } from '../lib/daily.js';
+import { dailyClosesAt, dailySeed, DAILY_FIRST_DAY, liveDay } from '../lib/daily.js';
 import { dailyFirstId, dailyRankOf, dailyTotal } from '../lib/daily-board.js';
 import { DAY_MS, dayNumber, dayText } from '../lib/days.js';
 import { bestOf, rankOf } from '../lib/ranks.js';
@@ -53,7 +53,8 @@ const dayClosed = () => new HttpError(400, 'invalid', "That day's tree isn't ope
 
 /**
  * The day a start asks for, from `daily: { today, day? }`: `today` is the player's local date (within a day of ours),
- * `day` (default today) is the tree they want, from the first Daily Tree up to today. Null when there is no `daily`.
+ * `day` (default today) is the tree they want, from the first Daily Tree up to today; an earlier day only once it has
+ * closed (dailyClosesAt). Null when there is no `daily`.
  */
 function dailyAsked(daily: unknown, nowMs: number): { day: number; past: boolean } | null {
   if (daily === undefined || daily === null) return null;
@@ -64,7 +65,11 @@ function dailyAsked(daily: unknown, nowMs: number): { day: number; past: boolean
   const wanted = day === undefined ? todayNo : dayNumber(day);
   const first = dayNumber(DAILY_FIRST_DAY);
   if (wanted === null || first === null || wanted < first || wanted > todayNo) throw dayClosed();
-  return { day: wanted, past: wanted < todayNo };
+  // A past day's tree opens only once that day has closed for everyone, so nobody can practise a day still live
+  // somewhere (their own, say) as a past run before their live attempt.
+  const past = wanted < todayNo;
+  if (past && nowMs < dailyClosesAt(wanted)) throw dayClosed();
+  return { day: wanted, past };
 }
 
 /** POST /api/games { daily? } */

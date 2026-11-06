@@ -595,9 +595,9 @@ describe('your games', () => {
       inTop: 2,
       total: 3,
       games: [
-        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false, daily: null },
-        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false, daily: null },
-        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false, daily: null },
+        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false, daily: null, dailyFirst: false },
+        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false },
+        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false, daily: null, dailyFirst: false },
       ],
     });
   });

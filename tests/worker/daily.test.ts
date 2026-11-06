@@ -1,14 +1,15 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardResponse, ClaimResponse, DailyRequest, FinishResult, MyGamesResponse, StartResponse } from '../../src/api/types';
+import { MAX_CLAIMS_PER_REQUEST, type BoardResponse, type ClaimResponse, type DailyRequest, type FinishResult, type MyGamesResponse, type StartResponse } from '../../src/api/types';
 import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
 import { dailySeed } from '../../worker/lib/daily';
+import { DAILY_FIRSTS_SQL, dailyTopAndTotal } from '../../worker/lib/daily-board';
 import { dayNumber } from '../../worker/lib/days';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { authSecret } from '../../worker/lib/users';
-import { solvingTaps } from '../unit/core/solver';
+import { solvingTaps, withPause } from '../unit/core/solver';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
 let db: Db;
@@ -101,20 +102,46 @@ describe('starting the Daily Tree', () => {
   });
 
   it("a signed-in player's second start of the day says repeat:true; a past start of the same day does not count as their live attempt", async () => {
-    at('2026-12-10T12:00:00Z');
+    // A past start of Dec 9 opens once the day has closed (Dec 11, 00:00 UTC), after any live start could come. The clock
+    // is set back to Dec 10 only to check that a past start already on record isn't taken for the live attempt.
+    at('2026-12-12T12:00:00Z');
     const ana = await signIn(env, 'ana@example.com');
     const bea = await signIn(env, 'bea@example.com');
-    const past = await json<StartResponse>(await startDaily({ today: '2026-12-10', day: '2026-12-09' }, ana));
-    expect(past.daily?.repeat).toBe(false);
+    const past = await json<StartResponse>(await startDaily({ today: '2026-12-12', day: '2026-12-09' }, ana));
+    expect(past.daily).toEqual({ day: '2026-12-09', past: true, repeat: false });
+    vi.setSystemTime(Date.parse('2026-12-10T12:00:00Z'));
     const live = await json<StartResponse>(await startDaily({ today: '2026-12-09' }, ana));
     expect(live.daily).toEqual({ day: '2026-12-09', past: false, repeat: false });
     const again = await json<StartResponse>(await startDaily({ today: '2026-12-09' }, ana));
     expect(again.daily?.repeat).toBe(true);
-    expect((await json<StartResponse>(await startDaily({ today: '2026-12-10', day: '2026-12-09' }, ana))).daily).toEqual({ day: '2026-12-09', past: true, repeat: true });
+    vi.setSystemTime(Date.parse('2026-12-12T12:00:00Z'));
+    expect((await json<StartResponse>(await startDaily({ today: '2026-12-12', day: '2026-12-09' }, ana))).daily).toEqual({ day: '2026-12-09', past: true, repeat: true });
+    vi.setSystemTime(Date.parse('2026-12-10T12:00:00Z'));
     expect((await json<StartResponse>(await startDaily({ today: '2026-12-09' }, bea))).daily?.repeat).toBe(false);
     // Guests are never repeats.
     await startDaily({ today: '2026-12-09' });
     expect((await json<StartResponse>(await startDaily({ today: '2026-12-09' }))).daily?.repeat).toBe(false);
+  });
+
+  it("a past start of a day that hasn't closed yet (today=S+1, day=S) is a 400", async () => {
+    // Dec 9 closes at Dec 11, 00:00 UTC: until then it is still someone's live day, so it can't be practised as a past run.
+    at('2026-12-10T12:00:00Z');
+    for (const daily of [
+      { today: '2026-12-10', day: '2026-12-09' },
+      { today: '2026-12-11', day: '2026-12-09' }, // a player far ahead of UTC
+      { today: '2026-12-11', day: '2026-12-10' },
+    ]) {
+      const res = await startDaily(daily);
+      expect(res.status, JSON.stringify(daily)).toBe(400);
+      expect(await json(res)).toEqual({ error: 'invalid', message: "That day's tree isn't open." });
+    }
+    expect((await startDaily({ today: '2026-12-10', day: '2026-12-08' })).status).toBe(200);
+    vi.setSystemTime(Date.parse('2026-12-11T00:00:00Z') - 1);
+    expect((await startDaily({ today: '2026-12-11', day: '2026-12-09' })).status).toBe(400);
+    vi.setSystemTime(Date.parse('2026-12-11T00:00:00Z'));
+    const opened = await startDaily({ today: '2026-12-11', day: '2026-12-09' });
+    expect(opened.status).toBe(200);
+    expect((await json<StartResponse>(opened)).daily).toEqual({ day: '2026-12-09', past: true, repeat: false });
   });
 
   it('the row stores daily_day and daily_past', async () => {
@@ -130,7 +157,7 @@ describe('starting the Daily Tree', () => {
   it('an unfinished daily game survives the one-day housekeeping and is deleted after three days; an unfinished random game still goes after one', async () => {
     at('2026-12-10T12:00:00Z');
     const daily = await json<StartResponse>(await startDaily({ today: '2026-12-10' }));
-    const dailyOld = await json<StartResponse>(await startDaily({ today: '2026-12-10', day: '2026-12-09' }));
+    const dailyOld = await json<StartResponse>(await startDaily({ today: '2026-12-10', day: '2026-12-08' }));
     const random = await json<StartResponse>(await startDaily(undefined));
     const age = (id: string, days: number) => db.prepare('UPDATE games SET started_at = ? WHERE id = ?').bind(Date.now() - days * DAY, id).run();
     await age(daily.id, 2);
@@ -171,19 +198,21 @@ function solvingLog(game: StartResponse, gap: number): LogEntry[] {
   return solvingTaps(b, 3000, gap);
 }
 /**
- * Finishes like an honest client: the (faked, frozen) clock moves on by the log's span plus 300 ms of network, so the
- * server sees exactly that, and a later start is later than this one.
+ * Finishes `log` like an honest client: the (faked, frozen) clock moves on to the game's start plus the log's span plus
+ * 300 ms of network, so the server sees exactly that, and a later start is later than this one.
  */
-async function solve(game: StartResponse, { cookie, gap = 50 }: { cookie?: string; gap?: number } = {}): Promise<FinishResult> {
-  const log = solvingLog(game, gap);
+async function finishLog(game: StartResponse, log: LogEntry[], cookie?: string): Promise<FinishResult> {
   const b = seededBoard(game.seed, GEN_VERSION, true);
   const span = b && replay(b, log)?.solvedAt;
   if (!span) throw new Error('does not replay');
-  vi.setSystemTime(Date.now() + span + 300);
+  const at = Number((await row(game.id))?.started_at) + span + 300;
+  if (at < Date.now()) throw new Error('the log is too short to finish now');
+  vi.setSystemTime(at);
   const res = await call(env, 'POST', `/api/games/${game.id}/finish`, { cookie, body: { log } });
   if (!res.ok) throw new Error(`finish failed: ${res.status}`);
   return json<FinishResult>(res);
 }
+const solve = (game: StartResponse, { cookie, gap = 50 }: { cookie?: string; gap?: number } = {}): Promise<FinishResult> => finishLog(game, solvingLog(game, gap), cookie);
 const later = (ms = 60_000) => vi.setSystemTime(Date.now() + ms);
 const play = async (daily: DailyRequest | undefined, opts: { cookie?: string; gap?: number; ip?: string } = {}) => {
   const game = await json<StartResponse>(await startDaily(daily, opts.cookie, opts.ip));
@@ -269,16 +298,17 @@ describe('finishing a Daily run', () => {
   it("a past day's run: reason 'past', on no board", async () => {
     at('2026-12-10T12:00:00Z');
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
-    const { result } = await play({ today: '2026-12-10', day: '2026-12-09' }, { cookie: ana });
-    expect(result).toMatchObject({ ranked: false, reason: 'past', rank: null, daily: { day: '2026-12-09', past: true, first: false, rank: null, total: 0 } });
-    expect(await dailyBoard('2026-12-09')).toEqual(EMPTY);
+    const { result } = await play({ today: '2026-12-10', day: '2026-12-08' }, { cookie: ana });
+    expect(result).toMatchObject({ ranked: false, reason: 'past', rank: null, daily: { day: '2026-12-08', past: true, first: false, rank: null, total: 0 } });
+    // Dec 8's board is past the window the route serves: read it directly.
+    expect(await dailyTopAndTotal(db, dayNumber('2026-12-08') as number)).toEqual({ top: [], total: 0 });
     expect(await mainBoards('2026-12-10')).toEqual([EMPTY, EMPTY, EMPTY]);
     // Too fast still says so on a past day.
     later();
-    expect((await play({ today: '2026-12-10', day: '2026-12-09' }, { cookie: ana, gap: 20 })).result.reason).toBe('too_fast');
+    expect((await play({ today: '2026-12-10', day: '2026-12-08' }, { cookie: ana, gap: 20 })).result.reason).toBe('too_fast');
     // A guest's past run is no first attempt either.
     later();
-    expect((await play({ today: '2026-12-10', day: '2026-12-09' })).result).toMatchObject({ reason: 'past', daily: { past: true, first: false, rank: null } });
+    expect((await play({ today: '2026-12-10', day: '2026-12-08' })).result).toMatchObject({ reason: 'past', daily: { past: true, first: false, rank: null } });
   });
 
   it("a guest's Daily run, claimed after sign-in and naming, joins the Daily board and never the All time board; its reason stays 'daily'", async () => {
@@ -312,6 +342,25 @@ describe('finishing a Daily run', () => {
     expect([today.total, week.total, all.total]).toEqual([0, 0, 0]);
   });
 
+  it("a claimed guest run that started before the account's own run of the day becomes the first attempt: it joins the board, the account's run leaves", async () => {
+    at('2026-12-10T12:00:00Z');
+    const guest = await json<StartResponse>(await startDaily({ today: '2026-12-10' })); // another device, signed out
+    later(1000);
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const own = await play({ today: '2026-12-10' }, { cookie: ana, gap: 50 });
+    expect(own.result.daily).toEqual({ day: '2026-12-10', past: false, first: true, rank: 1, total: 1 });
+    // The guest's tab sat paused through all that, then finished.
+    const guestResult = await finishLog(guest, withPause(solvingLog(guest, 90), 5, Date.now() - Number((await row(guest.id))?.started_at)));
+    expect(guestResult).toMatchObject({ reason: 'daily', daily: { first: true, rank: 2, total: 2 } });
+    const { results } = await json<ClaimResponse>(await call(env, 'POST', '/api/games/claim', { cookie: ana, body: { claims: [{ id: guest.id, claim: guest.claim }] } }));
+    expect(results).toMatchObject([{ id: guest.id, reason: 'daily', ranked: false, daily: { day: '2026-12-10', past: false, first: true, rank: 1, total: 1 } }]);
+    const b = await dailyBoard('2026-12-10', ana);
+    expect(b).toEqual({ rows: [{ rank: 1, name: 'Meridian', ms: guestResult.ms, finishedAt: Date.now(), mine: true }], total: 1, you: null });
+    expect(guestResult.ms).not.toBe(own.result.ms);
+    const retry = await call(env, 'POST', `/api/games/${own.game.id}/finish`, { cookie: ana, body: { log: [] } });
+    expect((await json<FinishResult>(retry)).daily).toEqual({ day: '2026-12-10', past: false, first: false, rank: null, total: 1 });
+  });
+
   it('a claim before naming: the would-be place counts the run in the total', async () => {
     at('2026-12-10T12:00:00Z');
     const guest = await play({ today: '2026-12-10' });
@@ -343,7 +392,10 @@ describe('finishing a Daily run', () => {
     const res = await call({ ...env, DB: counting }, 'POST', '/api/games/claim', { cookie: ana, body: { claims: runs.map((r) => ({ id: r.game.id, claim: r.game.claim })) } });
     const { results } = await json<ClaimResponse>(res);
     expect(results.map((r) => r.daily)).toEqual(runs.map((r) => ({ ...r.result.daily, rank: 1, total: 1 })));
-    expect(statements).toBeLessThanOrEqual(45);
+    // The worst case is 3 + 5 × MAX_CLAIMS_PER_REQUEST statements (43), against D1's 50 per request on Workers Free:
+    // the session, the main total and the owner's best, then per claim its read and update, and per Daily day its
+    // total, the owner's first attempt and the run's place.
+    expect(statements).toBeLessThanOrEqual(3 + 5 * MAX_CLAIMS_PER_REQUEST);
   });
 });
 
@@ -357,12 +409,63 @@ describe('Your games and the Daily', () => {
     later();
     const random = await play(undefined, { cookie: ana });
     const g = await json<MyGamesResponse>(await call(env, 'GET', '/api/me/games', { cookie: ana }));
-    expect(g.games.map((x) => [x.id, x.daily, x.reason, x.ranked, x.isBest])).toEqual([
-      [random.game.id, null, null, true, true],
-      [past.game.id, '2026-12-03', 'past', false, false],
-      [daily.game.id, '2026-12-10', 'daily', false, false],
+    expect(g.games.map((x) => [x.id, x.daily, x.dailyFirst, x.reason, x.ranked, x.isBest])).toEqual([
+      [random.game.id, null, false, null, true, true],
+      [past.game.id, '2026-12-03', false, 'past', false, false],
+      [daily.game.id, '2026-12-10', true, 'daily', false, false],
     ]);
     // Daily runs are not your best, nor on the main board.
     expect(g).toMatchObject({ best: { ms: random.result.ms, rank: 1 }, inTop: 1, total: 1 });
+  });
+
+  it("Your games tells each day's first attempt from a repeat, reading each Daily day's first attempts once", async () => {
+    at('2026-12-09T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const nine = await play({ today: '2026-12-09' }, { cookie: ana });
+    later();
+    const nineAgain = await play({ today: '2026-12-09' }, { cookie: ana });
+    vi.setSystemTime(Date.parse('2026-12-10T12:00:00Z'));
+    await startDaily({ today: '2026-12-10' }, ana); // abandoned: the day's first attempt, not in the list
+    later();
+    const tenRepeat = await play({ today: '2026-12-10' }, { cookie: ana });
+    later();
+    const tooFast = await play({ today: '2026-12-11' }, { cookie: ana, gap: 20 }); // a first attempt, judged too fast
+    later();
+    const random = await play(undefined, { cookie: ana });
+    let statements = 0;
+    const counting: Db = {
+      prepare: (q) => {
+        statements++;
+        return db.prepare(q);
+      },
+      batch: (s) => db.batch(s),
+    };
+    const g = await json<MyGamesResponse>(await call(env, 'GET', '/api/me/games', { cookie: ana }));
+    expect(g.games.map((x) => [x.id, x.daily, x.dailyFirst])).toEqual([
+      [random.game.id, null, false],
+      [tooFast.game.id, '2026-12-11', true],
+      [tenRepeat.game.id, '2026-12-10', false],
+      [nineAgain.game.id, '2026-12-09', false],
+      [nine.game.id, '2026-12-09', true],
+    ]);
+    // One read for every Daily day in the list; none at all without a Daily run.
+    await call({ ...env, DB: counting }, 'GET', '/api/me/games', { cookie: ana });
+    const withDaily = statements;
+    await db.prepare('DELETE FROM games WHERE daily_day IS NOT NULL').run();
+    statements = 0;
+    await call({ ...env, DB: counting }, 'GET', '/api/me/games', { cookie: ana });
+    expect(withDaily - statements).toBe(1);
+  });
+
+  it("Your games' first-attempt read seeks games_daily for each of the list's days", async () => {
+    const plan = (await db.prepare(`EXPLAIN QUERY PLAN ${DAILY_FIRSTS_SQL}`).bind(1, '[1,2]').all<{ detail: string }>()).results.map((r) => r.detail);
+    expect(plan).toEqual(
+      expect.arrayContaining([
+        'SEARCH g USING INDEX games_daily (daily_day=? AND user_id=?)',
+        'SEARCH e USING INDEX games_daily (daily_day=? AND user_id=? AND started_at<?)',
+      ]),
+    );
+    expect(plan.filter((d) => /^SCAN/.test(d))).toEqual(['SCAN d VIRTUAL TABLE INDEX 1:']); // only the list of days itself
+    expect(plan.join()).not.toContain('games_user');
   });
 });
