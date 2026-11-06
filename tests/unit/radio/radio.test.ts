@@ -253,21 +253,39 @@ it('Rain and Storm play without the catalog, are remembered, stop each other and
   let open!: () => void;
   gate = new Promise<void>((res) => (open = res));
   const rain = { start: vi.spyOn(Rain.prototype, 'start').mockReturnValue(undefined), stop: vi.spyOn(Rain.prototype, 'stop').mockReturnValue(undefined) };
-  const storm = vi.spyOn(Storm.prototype, 'start').mockReturnValue(undefined);
+  const storm = { start: vi.spyOn(Storm.prototype, 'start').mockReturnValue(undefined), stop: vi.spyOn(Storm.prototype, 'stop').mockReturnValue(undefined) };
   saveRadioSettings({ ...DEFAULT_RADIO, source: 'rain' });
   const r = new Radio();
   r.firstGesture(); // the catalog is still on its way: a synthesized source needn't wait for it
   expect(r.view().kind).toBe('rain');
   expect(rain.start).toHaveBeenCalledTimes(1);
+  expect(storm.start).not.toHaveBeenCalled();
   r.select('rain'); // already the source: not restarted
   expect(rain.start).toHaveBeenCalledTimes(1);
+
+  // Rain -> Storm: only the switch itself may have stopped Rain (the first start's own stopAll is behind us).
+  rain.stop.mockClear();
+  storm.stop.mockClear();
   r.select('storm');
   expect(r.view().kind).toBe('storm');
-  expect(storm).toHaveBeenCalledTimes(1);
-  expect(rain.stop).toHaveBeenCalled();
+  expect(storm.start).toHaveBeenCalledTimes(1);
+  expect(rain.stop).toHaveBeenCalledTimes(1);
   expect(loadRadioSettings()).toMatchObject({ on: true, source: 'storm' });
   expect(r.lightShowActive).toBe(true);
+
+  // Storm -> Rain stops the Storm.
+  storm.stop.mockClear();
+  r.select('rain');
+  expect(r.view().kind).toBe('rain');
+  expect(rain.start).toHaveBeenCalledTimes(2);
+  expect(storm.stop).toHaveBeenCalledTimes(1);
+
+  // Pausing from Storm stops it too.
+  r.select('storm');
+  expect(storm.start).toHaveBeenCalledTimes(2);
+  storm.stop.mockClear();
   r.playPause();
+  expect(storm.stop).toHaveBeenCalledTimes(1);
   expect(r.view().kind).toBeNull();
   expect(loadRadioSettings().on).toBe(false);
   open();
@@ -469,6 +487,25 @@ describe('secret mode (spec §4.4)', () => {
     r.setSecret(false, true);
     expect(r.view().kind).toBeNull();
     expect(r.view().playing).toBe(false);
+  });
+
+  it('an ambience that played is what secret mode puts back: Rain and Storm snapshot as themselves', async () => {
+    fakeAudio();
+    boxes();
+    const rain = vi.spyOn(Rain.prototype, 'start').mockReturnValue(undefined);
+    const storm = vi.spyOn(Storm.prototype, 'start').mockReturnValue(undefined);
+    const r = await secretReady();
+    for (const [id, synth] of [['rain', rain], ['storm', storm]] as const) {
+      r.select(id);
+      expect(r.view().kind).toBe(id);
+      synth.mockClear();
+      r.setSecret(true, true); // the snapshot is taken here, then the celesta takes over
+      expect(r.view().kind).toBe('celesta');
+      r.setSecret(false, true);
+      expect(r.view().kind).toBe(id); // restored to the same ambience, not silence or another source
+      expect(synth).toHaveBeenCalledTimes(1);
+      expect(loadRadioSettings()).toMatchObject({ on: true, source: id });
+    }
   });
 
   it('a muted radio, or a quiet switch, plays nothing', async () => {
