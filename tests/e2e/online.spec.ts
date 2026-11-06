@@ -293,6 +293,42 @@ test.describe('the Daily Tree', () => {
     expect(result.ms).toBeLessThan(solvedIn + 2000);
   });
 
+  test('a Daily begun in a hidden tab logs the time unseen as a pause: the ranked time is only the time played', async ({ page }) => {
+    const HIDDEN_MS = 6000;
+    // A tab loaded in the background: hidden from the start, and no frames until it is shown (as a browser does).
+    await page.addInitScript(() => {
+      let hidden = true;
+      const held: FrameRequestCallback[] = [];
+      const raf = window.requestAnimationFrame.bind(window);
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+      window.requestAnimationFrame = (cb) => (hidden ? (held.push(cb), 0) : raf(cb));
+      (window as unknown as { __show: () => void }).__show = () => {
+        hidden = false;
+        document.dispatchEvent(new Event('visibilitychange'));
+        for (const cb of held.splice(0)) raf(cb);
+      };
+    });
+    await page.goto('/?test');
+    await expect.poll(async () => (await game(page)).id, { timeout: 10_000 }).not.toBeNull();
+    const id = (await game(page)).id;
+    // Marked away the instant it began, and saved (a Daily is saved from its start).
+    const savedLog = () => page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.game') ?? '{}') as { log?: { a: unknown }[] }).log ?? []);
+    await expect.poll(async () => (await savedLog()).map((e) => e.a)).toEqual(['p']);
+    await page.waitForTimeout(HIDDEN_MS);
+    await page.evaluate(() => (window as unknown as { __show: () => void }).__show());
+    await waitInteractive(page);
+    expect((await game(page)).id).toBe(id);
+    const finish = page.waitForResponse((r) => r.request().method() === 'POST' && /\/api\/games\/[^/]+\/finish$/.test(new URL(r.url()).pathname));
+    const solveFrom = Date.now();
+    await solveByTapping(page);
+    const solvedIn = Date.now() - solveFrom;
+    const result = (await (await finish).json()) as { ms: number; reason: string | null };
+    expect(result.reason).toBe('daily');
+    // The time on the clock is the play after the tab was shown, never the 6 s unseen.
+    expect(result.ms).toBeLessThan(solvedIn + 2000);
+  });
+
   test('with /api/games failing, the tree is local with no pill, and the next load asks for the Daily again', async ({ page }) => {
     const bodies = starts(page);
     await page.route('**/api/games', (route) => route.abort());

@@ -9,6 +9,7 @@ import { replay } from '../../../src/core/replay';
 import { mulberry32, type Rng } from '../../../src/core/rng';
 import { Run } from '../../../src/core/run';
 import { GEN_VERSION, seededBoard } from '../../../src/core/seeded';
+import { beginsAway } from '../../../src/app';
 import { loadGame, saveGame } from '../../../src/store/progress';
 
 beforeEach(() => localStorage.clear());
@@ -194,6 +195,28 @@ describe('Run: the browser logs taps exactly as the server replays them', () => 
     const v = page.verdict();
     expect(v?.reason).toBeNull();
     expect(Math.abs((v?.ms ?? 0) - page.run.elapsedMs(page.perf))).toBeLessThan(50);
+  });
+
+  it('a tree begun in a hidden tab (App.freshTree: beginsAway) logs the time unseen as a pause: 5 minutes hidden, then the solve, ranks the solve', () => {
+    const rng = mulberry32(13);
+    const page = new Page(13, rng);
+    // Loaded in a background tab, or hidden while the start was in flight: no visibilitychange will come for it.
+    expect(beginsAway(page.run, true, page.perf)).toBe(true);
+    page.stall(300_000); // hidden: no frames
+    page.waitInteractive(); // shown: frames again
+    const from = page.run.elapsedMs(page.perf);
+    for (const i of ids) page.solveTile(i, () => 60);
+    page.finish();
+    const v = page.verdict();
+    expect(v?.reason).toBeNull();
+    // The ranked time is the clock (the solve), never the 5 minutes unseen; those are the pause.
+    expect(Math.abs((v?.ms ?? 0) - page.run.elapsedMs(page.perf))).toBeLessThan(50);
+    expect((v?.ms ?? 0) - from).toBeLessThan(60_000);
+    expect(v?.pausedMs).toBeGreaterThanOrEqual(300_000 - 1000);
+    // A tree begun in view is untouched.
+    const seen = new Page(13, mulberry32(13));
+    expect(beginsAway(seen.run, false, seen.perf)).toBe(false);
+    expect(seen.run.log.entries).toEqual([]);
   });
 
   it('turn boundaries: taps landing within a fraction of a ms of a turn finishing, full queues and late frames still verify', () => {

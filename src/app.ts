@@ -137,6 +137,17 @@ const WIN_SETTLE_MS = 2000;
  */
 export const savesNow = (moved: boolean, online: OnlineRun | null): boolean => moved || savesAtStart(online);
 
+/**
+ * A tree that begins in a hidden tab (a page loaded in the background, or a tab hidden while the start was in flight) is
+ * treated as hidden the instant it began: the log pauses now and resumes with the clock, so the time unseen is never
+ * play. No visibilitychange comes for a tab already hidden, and the handler skips a tree still starting. Returns
+ * whether it began hidden.
+ */
+export function beginsAway(run: Run, hidden: boolean, now: number): boolean {
+  if (hidden) run.markAway(now);
+  return hidden;
+}
+
 /** The toast for a resumed tree; none for one reloaded before anything was logged (a Daily saved at its start). */
 export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[] }): string | null =>
   saved.log.length === 0 ? null : `Welcome back · ${formatTime(wholeSeconds(saved.elapsedMs))}`;
@@ -579,7 +590,8 @@ export class App {
     this.starting = false;
     const now = performance.now();
     this.beginGame(now, board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
-    if (savesAtStart(online)) this.save(now);
+    beginsAway(this.run, document.hidden, now);
+    if (this.shouldSave()) this.save(now);
   }
 
   /** N, New tree and the results tag's button give a random tree; the menu's Daily Tree row gives the Daily. */
