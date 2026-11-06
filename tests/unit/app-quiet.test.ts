@@ -2,13 +2,26 @@
 import { expect, it } from 'vitest';
 import { quietForWork, type RunFlags } from '../../src/app';
 
-const at = (f: Partial<RunFlags>): boolean => quietForWork({ live: true, starting: false, moved: true, won: false, paused: false, ...f });
+/** The App's states. `moved` (the first move made) is not read by the gate: it is kept to show it changes nothing. */
+const STATES: Record<string, RunFlags & { moved: boolean }> = {
+  noBoard: { live: false, starting: false, moved: false, won: false, paused: false },
+  seedPending: { live: true, starting: true, moved: false, won: false, paused: false },
+  reveal: { live: true, starting: false, moved: false, won: false, paused: false },
+  clockRunningNoMove: { live: true, starting: false, moved: false, won: false, paused: false },
+  midRun: { live: true, starting: false, moved: true, won: false, paused: false },
+  paused: { live: true, starting: false, moved: true, won: false, paused: true },
+  won: { live: true, starting: false, moved: true, won: true, paused: false },
+};
 
-it("the radio's prewarm is held off mid-run, and allowed before the first move, behind the pause and after the win", () => {
-  expect(at({})).toBe(false); // mid-run
-  expect(at({ moved: false })).toBe(true); // the tree's first tap hasn't happened
-  expect(at({ paused: true })).toBe(true); // the frosted pause
-  expect(at({ won: true })).toBe(true); // results up
-  expect(at({ live: false, moved: false })).toBe(true); // no tree yet
-  expect(at({ starting: true })).toBe(true); // waiting for the next tree's seed
+it("the radio's prewarm runs only with no board, a seed pending, behind the pause or after the win", () => {
+  const quiet = Object.fromEntries(Object.entries(STATES).map(([k, f]) => [k, quietForWork(f)]));
+  expect(quiet).toEqual({
+    noBoard: true,
+    seedPending: true,
+    reveal: false, // the reveal is animation the player watches
+    clockRunningNoMove: false, // the clock runs from the reveal's end: a stall would stamp the first tap late
+    midRun: false,
+    paused: true,
+    won: true,
+  });
 });

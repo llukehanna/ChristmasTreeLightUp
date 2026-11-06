@@ -103,23 +103,23 @@ const noClips = (): Record<HomeAloneClip, number> => ({
   scream: 0, kevin: 0, 'filthy-animal': 0, 'hector-credit-card': 0, 'hector-mistaken': 0, 'hector-love': 0,
 });
 
-/** The App state that says whether a run is under way. */
+/** The App state that says whether heavy idle work may run. */
 export interface RunFlags {
   /** A board exists. */
   live: boolean;
   /** A new tree is waiting for the server's seed. */
   starting: boolean;
-  /** The tree's first move has been made. */
-  moved: boolean;
   /** The tree is won (the results are up, or were). */
   won: boolean;
   paused: boolean;
 }
 
-/** A run under way: a tree on screen, its first move made, not yet won (paused or not). */
-export const runUnderway = (f: RunFlags): boolean => f.live && !f.starting && f.moved && !f.won;
-/** Heavy work that could stall a tap (the radio's prewarm) may run: before the first move, behind the pause, or after the win. */
-export const quietForWork = (f: RunFlags): boolean => !runUnderway(f) || f.paused;
+/**
+ * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
+ * behind the pause or after the win. Never while a tree is in play: not during its reveal (animation the player
+ * watches) and not once the clock runs, which it does from the reveal's end (Run.frame), first move or not.
+ */
+export const quietForWork = (f: RunFlags): boolean => !f.live || f.starting || f.paused || f.won;
 
 export class App {
   readonly sfx = new Sfx();
@@ -1252,11 +1252,11 @@ export class App {
 
   /** A run in progress in the house: the moment for "Kevin!". */
   private runInHouse(): boolean {
-    return this.homeAlone && runUnderway(this.runFlags());
+    return this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null;
   }
 
   private runFlags(): RunFlags {
-    return { live: this.live, starting: this.starting, moved: this.moved, won: this.winAt !== null, paused: this.paused };
+    return { live: this.live, starting: this.starting, won: this.winAt !== null, paused: this.paused };
   }
 
   private bindLifecycle(): void {
