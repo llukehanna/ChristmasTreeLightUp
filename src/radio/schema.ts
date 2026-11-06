@@ -1,4 +1,4 @@
-import { CELESTA_ID, FIREPLACE_ID, MUSIC_BOX_ID, SECRET_ID } from './ids.js';
+import { CELESTA_ID, FIREPLACE_ID, MUSIC_BOX_ID, RAIN_ID, SECRET_ID, STORM_ID } from './ids.js';
 
 export interface Track {
   id: string;
@@ -29,7 +29,7 @@ export interface StationsFile {
 /** Station ids: lower-case letters, digits and hyphens, starting with a letter or digit, up to 64 characters. */
 export const STATION_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** Source ids the radio itself uses: a station with one of these would be unreachable or shadow a built-in source. */
-const RESERVED_IDS: ReadonlySet<string> = new Set([MUSIC_BOX_ID, FIREPLACE_ID, CELESTA_ID, 'embed']);
+const RESERVED_IDS: ReadonlySet<string> = new Set([MUSIC_BOX_ID, FIREPLACE_ID, RAIN_ID, STORM_ID, CELESTA_ID, 'embed']);
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 /** https URLs or site-relative paths only. */
 export const isUrl = (v: unknown): v is string => {

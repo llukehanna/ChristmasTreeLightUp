@@ -75,6 +75,8 @@ body[data-scene='frost'] .radio .art { background: radial-gradient(70% 70% at 50
 .radio[data-source='christmas-classics'] .art { --bulb: #ff5a52; --bulb-hi: #ffe1d6; --bulb-lo: #9a1420; --halo: rgba(255, 80, 70, 0.5); }
 .radio[data-kind='musicbox'] .art { --bulb: #f4cf72; --bulb-hi: #fffbe6; --bulb-lo: #a8742a; --halo: rgba(255, 214, 120, 0.5); }
 .radio[data-kind='fireplace'] .art { --bulb: #ff8a3a; --bulb-hi: #fff0c8; --bulb-lo: #b5340e; --halo: rgba(255, 120, 40, 0.6); }
+.radio[data-kind='rain'] .art { --bulb: #8cbcff; --bulb-hi: #eef6ff; --bulb-lo: #2d5c9e; --halo: rgba(120, 170, 255, 0.5); }
+.radio[data-kind='storm'] .art { --bulb: #a394ff; --bulb-hi: #f1edff; --bulb-lo: #3c2f8c; --halo: rgba(150, 130, 255, 0.5); }
 .radio[data-kind='embed'] .art { --bulb: #6fd28c; --bulb-hi: #eaffe6; --bulb-lo: #1f7a3c; --halo: rgba(110, 220, 140, 0.45); }
 /* A C9 bulb with a gold screw cap, hanging from the top edge. */
 .radio .art .bulb {

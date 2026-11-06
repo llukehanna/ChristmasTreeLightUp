@@ -109,6 +109,7 @@ describe('firstProblem', () => {
   it('points at station fields', () => {
     expect(firstProblem([station({ name: ' ' })])).toEqual({ message: 'Station "christmas-jazz": the name is empty.', stationId: 'christmas-jazz', field: 'name' });
     expect(firstProblem([station({ id: 'fireplace', name: 'Fireplace' })])?.message).toBe('Fireplace: the id "fireplace" is reserved. Delete this station and create it again with another name.');
+    expect(firstProblem([station({ id: 'storm', name: 'Storm' })])?.message).toBe('Storm: the id "storm" is reserved. Delete this station and create it again with another name.');
   });
   it('catches duplicates', () => {
     expect(firstProblem([station(), station()])?.message).toBe('Two stations have the id "christmas-jazz".');

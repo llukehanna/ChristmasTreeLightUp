@@ -7,7 +7,9 @@ import { Fireplace } from '../../../src/radio/fireplace';
 import { MusicBox } from '../../../src/radio/musicbox';
 import { RadioPlayer } from '../../../src/radio/player';
 import { Radio } from '../../../src/radio/radio';
+import { Rain } from '../../../src/radio/rain';
 import { secretStep } from '../../../src/radio/secret';
+import { Storm } from '../../../src/radio/storm';
 import { DEFAULT_RADIO, loadRadioSettings, saveRadioSettings } from '../../../src/store/radio-settings';
 
 const track = (id: string) => ({ id, url: `/a/${id}.m4a`, title: id, artist: '', credit: 'CC0', duration: 10 });
@@ -245,6 +247,31 @@ function stubMusicBox() {
     current: vi.spyOn(MusicBox.prototype, 'current').mockReturnValue(CAROL),
   };
 }
+
+it('Rain and Storm play without the catalog, are remembered, stop each other and drive the light show', async () => {
+  fakeAudio();
+  let open!: () => void;
+  gate = new Promise<void>((res) => (open = res));
+  const rain = { start: vi.spyOn(Rain.prototype, 'start').mockReturnValue(undefined), stop: vi.spyOn(Rain.prototype, 'stop').mockReturnValue(undefined) };
+  const storm = vi.spyOn(Storm.prototype, 'start').mockReturnValue(undefined);
+  saveRadioSettings({ ...DEFAULT_RADIO, source: 'rain' });
+  const r = new Radio();
+  r.firstGesture(); // the catalog is still on its way: a synthesized source needn't wait for it
+  expect(r.view().kind).toBe('rain');
+  expect(rain.start).toHaveBeenCalledTimes(1);
+  r.select('rain'); // already the source: not restarted
+  expect(rain.start).toHaveBeenCalledTimes(1);
+  r.select('storm');
+  expect(r.view().kind).toBe('storm');
+  expect(storm).toHaveBeenCalledTimes(1);
+  expect(rain.stop).toHaveBeenCalled();
+  expect(loadRadioSettings()).toMatchObject({ on: true, source: 'storm' });
+  expect(r.lightShowActive).toBe(true);
+  r.playPause();
+  expect(r.view().kind).toBeNull();
+  expect(loadRadioSettings().on).toBe(false);
+  open();
+});
 
 it('scenes suggest Jazz by the fire, Classics in the frost and Music Box at midnight and by the window', () => {
   expect(builtin.SCENE_STATION).toEqual({ fireside: 'christmas-jazz', frost: 'christmas-classics', midnight: 'music-box', sash: 'music-box' });

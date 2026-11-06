@@ -1,7 +1,8 @@
 import { audio } from '../audio/context';
 import type { SceneId } from '../render/scenes';
 import { loadRadioSettings, saveRadioSettings, type RadioSettings } from '../store/radio-settings';
-import { CELESTA_ID, FIREPLACE_ID, isSynthSource, MUSIC_BOX_ID, SCENE_STATION } from './builtin';
+import { AMBIENT_ID, type AmbientKind, ambientKind, CELESTA_ID, isAmbient, isSynthSource, MUSIC_BOX_ID, SCENE_STATION } from './builtin';
+import type { AmbientSynth } from './ambient-kit';
 import { CAROLS } from './carols';
 import { loadCatalog } from './catalog';
 import { parseEmbed, type Embed } from './embed';
@@ -10,10 +11,12 @@ import { isSecretSource, SECRET_ID } from './ids';
 import { LightShow } from './lightshow';
 import { CELESTA, MusicBox } from './musicbox';
 import { RadioPlayer, type RemoteAction } from './player';
+import { Rain } from './rain';
 import type { Station, Track } from './schema';
 import type { RadioSnapshot, SecretEvent, SecretState, secretStep } from './secret';
+import { Storm } from './storm';
 
-export type SourceKind = 'station' | 'musicbox' | 'celesta' | 'fireplace' | 'embed';
+export type SourceKind = 'station' | 'musicbox' | 'celesta' | AmbientKind | 'embed';
 
 export interface RadioView {
   kind: SourceKind | null;
@@ -43,6 +46,8 @@ export class Radio {
   private remoteOk = true;
   private readonly player = new RadioPlayer(() => audio.music);
   private readonly fireplace = new Fireplace();
+  private readonly rain = new Rain();
+  private readonly storm = new Storm();
   private readonly musicbox = new MusicBox();
   /** Secret mode's fallback when the Secret station can't play. */
   private readonly celesta = new MusicBox(CAROLS, Math.random, CELESTA);
@@ -205,7 +210,7 @@ export class Radio {
     if (this.kind === 'station') {
       if (this.player.snapshot().playing) this.player.pause();
       else this.player.resume();
-    } else if (this.kind === 'fireplace' || this.kind === 'musicbox' || this.kind === 'celesta' || this.kind === 'embed') {
+    } else if (isAmbient(this.kind) || this.kind === 'musicbox' || this.kind === 'celesta' || this.kind === 'embed') {
       this.stopAll();
     } else {
       this.startPreferred();
@@ -269,7 +274,7 @@ export class Radio {
     m.gain.linearRampToValueAtTime(v, until + 0.25);
   }
 
-  /** The light show needs analysable audio: our stations, Music Box or the Fireplace, not embeds (spec §5.4). Reduced motion is the caller's check. */
+  /** The light show needs analysable audio: our stations, Music Box or an ambience (Fireplace, Rain, Storm), not embeds (spec §5.4). Reduced motion is the caller's check. */
   get lightShowActive(): boolean {
     return this.settings.lightShow && this.kind !== null && this.kind !== 'embed' && this.isPlaying();
   }
@@ -322,14 +327,14 @@ export class Radio {
   }
 
   private isPlaying(): boolean {
-    return this.kind === 'fireplace' || this.kind === 'musicbox' || this.kind === 'celesta' || this.kind === 'embed' || (this.kind === 'station' && this.player.snapshot().playing);
+    return isAmbient(this.kind) || this.kind === 'musicbox' || this.kind === 'celesta' || this.kind === 'embed' || (this.kind === 'station' && this.player.snapshot().playing);
   }
 
   private playable(s: Station): boolean {
     return s.tracks.length > 0 && !this.player.isUnavailable(s.id);
   }
 
-  /** Music Box, Fireplace and a set-up embed work without the station catalog, and so does a scene that suggests Music Box. */
+  /** Music Box, the ambiences and a set-up embed work without the station catalog, and so does a scene that suggests Music Box. */
   private needsCatalog(): boolean {
     const s = this.remembered();
     if (isSynthSource(s) || (s === 'embed' && this.embed)) return false;
@@ -421,8 +426,9 @@ export class Radio {
     const ctx = audio.ctx;
     if (isSynthSource(source) && (!ctx || !audio.music)) return false;
     this.pendingStart = false; // an explicit or resolved choice supersedes any waiting start
+    const amb = ambientKind(source);
     const already =
-      (source === FIREPLACE_ID && this.kind === 'fireplace') ||
+      (amb !== null && this.kind === amb) ||
       (source === MUSIC_BOX_ID && this.kind === 'musicbox') ||
       (source === CELESTA_ID && this.kind === 'celesta') ||
       (source === 'embed' && this.kind === 'embed') ||
@@ -434,9 +440,9 @@ export class Radio {
       return true;
     }
     this.stopAll();
-    if (source === FIREPLACE_ID && ctx && audio.music) {
-      this.fireplace.start(ctx, audio.music);
-      this.kind = 'fireplace';
+    if (amb && ctx && audio.music) {
+      this.ambience(amb).start(ctx, audio.music);
+      this.kind = amb;
     } else if ((source === MUSIC_BOX_ID || source === CELESTA_ID) && ctx && audio.music) {
       const box = source === CELESTA_ID ? this.celesta : this.musicbox;
       box.start(ctx, audio.music);
@@ -453,10 +459,16 @@ export class Radio {
     return true;
   }
 
+  private ambience(kind: AmbientKind): AmbientSynth {
+    return kind === 'rain' ? this.rain : kind === 'storm' ? this.storm : this.fireplace;
+  }
+
   private stopAll(): void {
     this.player.stop();
     this.player.releaseMediaSession();
     this.fireplace.stop(audio.ctx);
+    this.rain.stop(audio.ctx);
+    this.storm.stop(audio.ctx);
     this.musicbox.stop(audio.ctx);
     this.celesta.stop(audio.ctx);
     this.kind = null;
@@ -468,7 +480,7 @@ export class Radio {
     if (this.isPlaying()) {
       if (this.kind === 'station') source = this.player.snapshot().station?.id ?? null;
       else if (this.kind === 'musicbox') source = MUSIC_BOX_ID;
-      else if (this.kind === 'fireplace') source = FIREPLACE_ID;
+      else if (isAmbient(this.kind)) source = AMBIENT_ID[this.kind];
       else if (this.kind === 'embed') source = 'embed';
     }
     const pending = source === null && this.pendingStart && this.settings.on;

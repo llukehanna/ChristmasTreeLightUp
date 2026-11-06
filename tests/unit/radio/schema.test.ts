@@ -24,7 +24,7 @@ describe('parseStationsFile', () => {
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], tracks: [track, track] }] })).toBeNull();
   });
   it('rejects the ids the radio reserves for its own sources', () => {
-    for (const id of ['music-box', 'fireplace', 'embed']) expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id }] })).toBeNull();
+    for (const id of ['music-box', 'fireplace', 'rain', 'storm', 'embed']) expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id }] })).toBeNull();
     expect(parseStationsFile({ ...file, stations: [{ ...file.stations[0], id: 'music-box-2' }] })).not.toBeNull();
   });
   it('rejects problematic URLs', () => {

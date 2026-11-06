@@ -8,7 +8,7 @@ export { isSecretSource } from './ids';
 
 /** What the radio was doing when secret mode took it over. */
 export interface RadioSnapshot {
-  /** The audible source (a station id, 'music-box', 'fireplace' or 'embed'), or null when nothing was playing. */
+  /** The audible source (a station id, 'music-box', 'fireplace', 'rain', 'storm' or 'embed'), or null when nothing was playing. */
   source: string | null;
   /** Nothing played yet, but the listener's first move was waiting for the catalog to start the music. */
   pending: boolean;

@@ -2,6 +2,8 @@ import { expect, it } from 'vitest';
 import { mulberry32 } from '../../../src/core/rng';
 import { Biquad, brownLoop, pinkLoop, smoothRandomLoop, Stream } from '../../../src/radio/ambient-kit';
 import { settleGap, strike } from '../../../src/radio/fireplace';
+import { patterLoop } from '../../../src/radio/rain';
+import { thunderGap } from '../../../src/radio/storm';
 
 const maxStep = (d: Float32Array): number => {
   let m = 0;
@@ -62,5 +64,23 @@ it('a log settles every 60 to 150 s', () => {
     const g = settleGap(r);
     expect(g).toBeGreaterThanOrEqual(60);
     expect(g).toBeLessThanOrEqual(150);
+  }
+});
+
+it('patterLoop is finite and seamless at RMS 0.25', () => {
+  const [l, r] = patterLoop(48000, 1, 300, mulberry32(8), [1500, 5000], [0.4, 1.4]);
+  for (const d of [l, r]) {
+    expect(d.every(Number.isFinite)).toBe(true);
+    expect(Math.abs(d[0] - d[d.length - 1])).toBeLessThanOrEqual(maxStep(d));
+  }
+  expect(Math.sqrt((rms(l) ** 2 + rms(r) ** 2) / 2)).toBeCloseTo(0.25, 2);
+});
+
+it('thunder rolls every 20 to 60 s', () => {
+  const r = mulberry32(12);
+  for (let i = 0; i < 200; i++) {
+    const g = thunderGap(r);
+    expect(g).toBeGreaterThanOrEqual(20);
+    expect(g).toBeLessThanOrEqual(60);
   }
 });

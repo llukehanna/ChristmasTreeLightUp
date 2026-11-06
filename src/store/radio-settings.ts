@@ -3,7 +3,7 @@ import { readJSON, writeJSON } from './storage';
 export interface RadioSettings {
   v: 1;
   on: boolean;
-  /** Station id, 'fireplace', 'embed', or null = follow the scene's suggestion. */
+  /** Station id, 'fireplace', 'rain', 'storm', 'embed', or null = follow the scene's suggestion. */
   source: string | null;
   embedUrl: string | null;
   volume: number;

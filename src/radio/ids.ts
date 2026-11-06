@@ -1,6 +1,9 @@
 // Ids of the built-in sources, with no imports: the station schema needs them, and the schema is shared with the
 // Worker (worker/**), which must not pull in browser-only modules.
 export const FIREPLACE_ID = 'fireplace';
+/** Synthesized rain on the window (`rain.ts`) and a storm with wind and thunder (`storm.ts`): no catalog needed. */
+export const RAIN_ID = 'rain';
+export const STORM_ID = 'storm';
 /** Synthesized public-domain carols (`musicbox.ts`): always available, needs no catalog. */
 export const MUSIC_BOX_ID = 'music-box';
 /** Secret mode's fallback (spec 2026-10-08 secret mode §4.5): the Music Box's carols on a dreamy celesta. */

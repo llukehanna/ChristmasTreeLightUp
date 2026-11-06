@@ -1,5 +1,5 @@
 import { formatTime } from '../core/score';
-import { FIREPLACE_ID, MUSIC_BOX_ID, MUSIC_BOX_META } from '../radio/builtin';
+import { ambientKind, FIREPLACE_ID, MUSIC_BOX_ID, MUSIC_BOX_META, RAIN_ID, STORM_ID } from '../radio/builtin';
 import { EMBED_PRESETS } from '../radio/embed';
 import { SECRET_ID } from '../radio/ids';
 import type { Radio, RadioView } from '../radio/radio';
@@ -17,6 +17,8 @@ const ICON = {
   star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 3.2 2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.2l-5.2 2.9L8 13.3l-4.4-4 5.9-.7z"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.4a1.3 1.3 0 0 1 1.3 1.3v.5a5.6 5.6 0 0 1 4.3 5.5v3.4l1.6 2.3a.8.8 0 0 1-.66 1.25H5.46a.8.8 0 0 1-.66-1.25l1.6-2.3v-3.4a5.6 5.6 0 0 1 4.3-5.5v-.5A1.3 1.3 0 0 1 12 3.4zM9.8 18.9h4.4a2.2 2.2 0 0 1-4.4 0z"/></svg>',
   flame: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.3 2.8c.5 3-1.4 4.6-2.9 6.3C7.9 10.8 6.6 12.6 6.6 15a5.4 5.4 0 0 0 10.8 0c0-2.2-.9-3.7-2-5.1-.2 1.4-.9 2.4-1.9 2.9.5-3.6-.3-7.4-1.2-10zM12 20.2a2.6 2.6 0 0 1-2.6-2.6c0-1.6 1.3-2.6 2.2-3.8.3 1.2 1.1 1.7 1.8 2.1.8.5 1.2 1 1.2 1.7a2.6 2.6 0 0 1-2.6 2.6z"/></svg>',
+  rain: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.4 14.1h9.4a3.6 3.6 0 0 0 .55-7.16A5.1 5.1 0 0 0 7.6 5.8a4.15 4.15 0 0 0-.2 8.3z"/><path d="M8.7 16.9l-1.1 2.7M12.7 16.9l-1.1 2.7M16.7 16.9l-1.1 2.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  storm: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.4 13.1h9.4a3.6 3.6 0 0 0 .55-7.16A5.1 5.1 0 0 0 7.6 4.8a4.15 4.15 0 0 0-.2 8.3z"/><path d="M13.3 12.4 9.8 17.6h2.8l-1.3 4.3 4.8-6.1h-2.9l1.7-3.4z"/></svg>',
   playlist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6.5h11M4 11.5h11M4 16.5h6.5"/><path d="M17.5 9.5v8.1" /><circle cx="15.6" cy="17.6" r="1.95" fill="currentColor" stroke="none"/><path d="M17.5 9.5c1.1.3 2.1 1 2.5 2"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 6 6 6-6 6"/></svg>',
 };
@@ -290,12 +292,16 @@ export class RadioPanel {
     setText(
       this.q('.title'),
       v.kind === 'fireplace' ? 'Crackling logs'
+      : v.kind === 'rain' ? 'Rain on the window'
+      : v.kind === 'storm' ? 'Wind, rain & thunder'
       : v.kind === 'embed' ? 'Press play in the player below'
       : v.track?.title ?? (v.settings.on ? 'Ready when you are' : 'Music off'),
     );
     setText(
       this.q('.artist'),
       v.kind === 'fireplace' ? 'No music, just the fire'
+      : v.kind === 'rain' ? 'No music, just the rain'
+      : v.kind === 'storm' ? 'No music, just the storm'
       : v.kind === 'embed' ? (v.embed?.provider === 'apple' ? 'Apple Music' : 'Spotify')
       : carol || v.kind === 'station' ? (v.track?.artist ?? '')
       : v.settings.on ? 'Starts with your first move' : 'Pick a station, or press play',
@@ -421,6 +427,8 @@ export class RadioPanel {
         })),
         { id: MUSIC_BOX_ID, name: MUSIC_BOX_META.name, desc: 'Public-domain carols, always on', icon: ICON.bell },
         { id: FIREPLACE_ID, name: 'Fireplace', desc: 'Crackling logs, no music', icon: ICON.flame },
+        { id: RAIN_ID, name: 'Rain', desc: 'Rain on the window, no music', icon: ICON.rain },
+        { id: STORM_ID, name: 'Storm', desc: 'Wind, rain and distant thunder', icon: ICON.storm },
       ];
       const box = this.q('.stations');
       box.replaceChildren();
@@ -454,11 +462,11 @@ export class RadioPanel {
       if (!b) continue;
       const current =
         r.id === SECRET_ID ? v.kind === 'celesta' || (v.kind === 'station' && v.station?.id === SECRET_ID)
-        : r.id === FIREPLACE_ID ? v.kind === 'fireplace'
+        : ambientKind(r.id) ? v.kind === ambientKind(r.id)
         : r.id === MUSIC_BOX_ID ? v.kind === 'musicbox'
         : v.kind === 'station' && v.station?.id === r.id;
       // The Secret row is never unavailable: it plays the celesta when the station can't.
-      const unavailable = r.id !== FIREPLACE_ID && r.id !== MUSIC_BOX_ID && r.id !== SECRET_ID && v.unavailable(r.id);
+      const unavailable = !ambientKind(r.id) && r.id !== MUSIC_BOX_ID && r.id !== SECRET_ID && v.unavailable(r.id);
       b.setAttribute('aria-current', String(current));
       b.classList.toggle('live', current && v.playing);
       b.disabled = unavailable && !current;
@@ -498,6 +506,10 @@ function sourceName(v: RadioView): string | null {
       return 'Secret';
     case 'fireplace':
       return 'Fireplace';
+    case 'rain':
+      return 'Rain';
+    case 'storm':
+      return 'Storm';
     case 'embed':
       return v.embed?.label ?? 'Playlist';
     default:
@@ -507,6 +519,8 @@ function sourceName(v: RadioView): string | null {
 
 function creditLine(v: RadioView): string {
   if (v.kind === 'fireplace') return 'Crackling logs, synthesized live in your browser.';
+  if (v.kind === 'rain') return 'Rain, synthesized live in your browser.';
+  if (v.kind === 'storm') return 'Wind, rain and thunder, synthesized live in your browser.';
   if (v.kind === 'embed') return 'Full tracks for listeners signed in to the service; otherwise 30-second previews.';
   return v.track?.credit ?? '';
 }

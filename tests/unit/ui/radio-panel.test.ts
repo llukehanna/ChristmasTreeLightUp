@@ -62,7 +62,7 @@ const panel = (radio: ReturnType<typeof fakeRadio>['radio']) => {
 it('lists no Secret row outside secret mode', () => {
   const f = fakeRadio({ secretStation: station('secret') });
   panel(f.radio);
-  expect(rows().map((b) => b.dataset.id)).toEqual(['christmas-jazz', 'music-box', 'fireplace']);
+  expect(rows().map((b) => b.dataset.id)).toEqual(['christmas-jazz', 'music-box', 'fireplace', 'rain', 'storm']);
 });
 
 it('in secret mode, the Secret row sits on top with the station name and description', () => {
@@ -95,4 +95,17 @@ it('a Secret station that starts failing says celesta, in place: the row keeps i
   expect(document.activeElement).toBe(before);
   expect(desc('secret')).toBe('Dreamy celesta carols');
   expect(row('secret')?.disabled).toBe(false); // never "Unavailable right now"
+});
+
+it('Rain and Storm are listed beside the Fireplace, never unavailable, and name themselves when playing', () => {
+  const f = fakeRadio({ kind: 'storm', playing: true });
+  f.down.add('rain'); // a station id clash can't make a built-in ambience "unavailable"
+  panel(f.radio);
+  expect(desc('rain')).toBe('Rain on the window, no music');
+  expect(desc('storm')).toBe('Wind, rain and distant thunder');
+  expect(row('rain')?.disabled).toBe(false);
+  expect(row('storm')?.getAttribute('aria-current')).toBe('true');
+  expect(row('fireplace')?.getAttribute('aria-current')).toBe('false');
+  expect(document.querySelector('#radio-panel .title')?.textContent).toBe('Wind, rain & thunder');
+  expect(document.querySelector('.radio-pill .rp-name')?.textContent).toBe('Storm');
 });
