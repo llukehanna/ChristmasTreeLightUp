@@ -2016,8 +2016,9 @@ export class App {
         e.preventDefault();
         if (this.paused) this.resume();
         else this.pause(true);
-      } else if ((e.key === 'g' || e.key === 'G') && !e.repeat && !this.paused && this.ghost) {
-        // G is the ghost pill: the ghost on or off (not under the pause overlay, where the pill is out of reach).
+      } else if ((e.key === 'g' || e.key === 'G') && !e.repeat && !this.paused && this.ghost && !this.phone.matches) {
+        // G is the ghost pill: the ghost on or off (not under the pause overlay, where the pill is out of reach, nor at
+        // phone width, where there is no pill: ruling R6).
         e.preventDefault();
         this.toggleGhost();
       } else if ((e.key === 'n' || e.key === 'N') && !e.repeat && !this.paused && !this.starting) {

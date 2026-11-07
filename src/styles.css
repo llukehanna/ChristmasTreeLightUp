@@ -92,7 +92,7 @@ body[data-scene='aurora'] .pill.pause-btn svg { filter: drop-shadow(0 0 3px rgba
 .pill.daily { cursor: default; gap: 0; white-space: nowrap; }
 .pill.daily[data-fit='short'] .daily-rest { display: none; }
 /* The ghost pill (src/app.ts, C4): the ghost's progress, and its own toggle. Off, it dims; where the HUD is tight it is its
-   icon alone, by the Daily pill's rule (fitHud). */
+   icon alone, by the Daily pill's rule (fitHud). A phone has none (below). */
 .pill.ghost { gap: 6px; padding: 0 12px 0 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pill.ghost svg { display: block; flex: none; fill: currentColor; filter: drop-shadow(0 0 3px rgba(255, 244, 220, 0.35)); }
 .pill.ghost[aria-pressed='false'] > * { opacity: 0.55; }
@@ -306,8 +306,8 @@ button:focus-visible, .menu button:focus-visible, .results button:focus-visible,
   .hud { top: calc(14px + env(safe-area-inset-top)); right: 14px; }
   .menu { right: 12px; left: 12px; width: auto; }
   .pill.daily .daily-rest { display: none; }
-  .pill.ghost { width: 38px; padding: 0; justify-content: center; }
-  .pill.ghost .ghost-text { display: none; }
+  /* No ghost pill on a phone (ruling R6): its HUD is already full. The ghost stays on, so the tag still says how you did. */
+  .pill.ghost { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

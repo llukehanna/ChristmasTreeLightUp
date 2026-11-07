@@ -270,6 +270,23 @@ test.describe('racing your ghost', () => {
     expect(await ghost(page)).toMatchObject({ shown: true, on: true });
     await expect.poll(async () => (await ghost(page)).text, { timeout: 30_000 }).not.toBe(start);
 
+    // A phone's HUD has no ghost pill (ruling R6): the HUD is as it was before the ghost, and G does nothing there.
+    const size = page.viewportSize();
+    await page.setViewportSize({ width: 375, height: 740 });
+    await expect(pill(page)).toBeHidden();
+    expect(await pill(page).evaluate((p) => getComputedStyle(p).display)).toBe('none');
+    // It takes no room: the HUD is as wide as with no ghost at all.
+    const hudLeft = () => page.evaluate(() => document.querySelector('.hud')!.getBoundingClientRect().left);
+    const withPill = await hudLeft();
+    await pill(page).evaluate((p) => ((p as HTMLElement).hidden = true));
+    expect(await hudLeft()).toBe(withPill);
+    await pill(page).evaluate((p) => ((p as HTMLElement).hidden = false));
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('g');
+    expect((await ghost(page)).on).toBe(true);
+    if (size) await page.setViewportSize(size);
+    await expect(pill(page)).toBeVisible();
+
     // G turns it off and on again.
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press('g');
