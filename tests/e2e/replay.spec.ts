@@ -223,3 +223,74 @@ test('a Watch still loading is cancelled by a resume or a new tree: the replay n
   await expect(page.locator('#pause')).toBeHidden();
   expect((await game(page)).id).toBe(fresh);
 });
+
+test.describe('racing your ghost', () => {
+  test.use({ daily: true });
+
+  const ghost = (page: Page) => page.evaluate(() => (window as unknown as W).__aglow.ghost());
+  const pill = (page: Page) => page.locator('#ghost-pill');
+
+  /** The Daily from the server. A cold local Worker can miss even the Daily's 5 s start; a failed start marks nothing, so a reload asks again. */
+  async function dailyTree(page: Page): Promise<string> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await waitInteractive(page);
+      const { id } = await game(page);
+      if (id) return id;
+      await page.reload();
+    }
+    throw new Error('the local Worker never started the Daily');
+  }
+
+  test("a Daily you've lit: the pill paces you with your ghost, G turns it off and on, the tag says how you did; a random tree has none", async ({ page }) => {
+    await ready(page);
+    const first = await dailyTree(page);
+    // A first go has nothing to race.
+    await expect(pill(page)).toBeHidden();
+    await solveByTapping(page);
+    await expect.poll(() => game(page), { timeout: 20_000 }).toMatchObject({ id: first, outcome: 'done' });
+    // Solved as a guest: the device store holds it.
+    const day = await page.evaluate(() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
+    await expect.poll(() => page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('aglow.ghosts') ?? '{}')))).toEqual([day]);
+    await expect(page.locator('#r-ghost')).toBeHidden();
+
+    // The Daily again, from the menu: the ghost paces it.
+    await page.click('#menu-btn');
+    await page.click('#daily-row');
+    await expect.poll(async () => (await game(page)).id, { timeout: 20_000 }).not.toBe(first);
+    await waitInteractive(page);
+    expect((await game(page)).id).not.toBeNull();
+    await expect(pill(page)).toBeVisible();
+    await expect(pill(page)).toHaveAttribute('aria-label', 'Race your ghost');
+    await expect(pill(page)).toHaveAttribute('aria-pressed', 'true');
+    await expect(pill(page)).toHaveText(/^Ghost \d+%$/);
+    const start = (await ghost(page)).text;
+    expect(await ghost(page)).toMatchObject({ shown: true, on: true });
+    await expect.poll(async () => (await ghost(page)).text, { timeout: 30_000 }).not.toBe(start);
+
+    // G turns it off and on again.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('g');
+    await expect(pill(page)).toHaveText('Ghost');
+    await expect(pill(page)).toHaveAttribute('aria-pressed', 'false');
+    expect(await ghost(page)).toMatchObject({ shown: true, on: false, text: 'Ghost' });
+    await page.keyboard.press('g');
+    await expect(pill(page)).toHaveAttribute('aria-pressed', 'true');
+    await expect(pill(page)).toHaveText(/^Ghost (\d+%|\d+:\d\d\.\d)$/);
+
+    // Solving says how you did against it.
+    await solveByTapping(page);
+    await expect(page.locator('#r-ghost')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('#r-ghost')).toHaveText(/^(\d+\.\d s (faster than|behind) your ghost|Level with your ghost)$/);
+
+    // A random tree has no ghost.
+    const second = (await game(page)).id;
+    await page.evaluate(() => (window as unknown as W).__aglow.newTree());
+    await expect.poll(async () => (await game(page)).id, { timeout: 20_000 }).not.toBe(second);
+    await waitInteractive(page);
+    await expect(pill(page)).toBeHidden();
+    expect((await ghost(page)).shown).toBe(false);
+  });
+});

@@ -44,6 +44,7 @@ const ROWS: { keys: () => string; label: string }[] = [
   { keys: () => mouse('right'), label: 'Turn it back' },
   { keys: () => cap('N'), label: 'A new tree' },
   { keys: () => `${cap('Esc', true)}<i>or</i>${cap('P')}`, label: 'Pause' },
+  { keys: () => cap('G'), label: 'Ghost on or off' },
   { keys: () => cap('Tab', true), label: 'This card' },
 ];
 
@@ -52,7 +53,7 @@ export const CARD_WIDE = 244;
 export const CARD_SLIM = 200;
 export const CARD_CLEAR = 12;
 /** Its height (px), the same at both widths: the band of the screen it covers, centred. */
-export const CARD_HEIGHT = 314;
+export const CARD_HEIGHT = 348;
 /** Docked high, the card's top stands this far under the garland's lowest bulb. */
 export const CARD_HIGH_GAP = 20;
 /** The media query for a device with no hover and a coarse pointer: a touch tablet, which gets no card. */

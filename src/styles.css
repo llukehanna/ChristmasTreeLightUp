@@ -91,6 +91,14 @@ body[data-scene='aurora'] .pill.pause-btn svg { filter: drop-shadow(0 0 3px rgba
 /* The Daily Tree's label (src/app.ts showDailyPill): 'Daily' alone on a phone, or where the HUD is tight (fitHud). */
 .pill.daily { cursor: default; gap: 0; white-space: nowrap; }
 .pill.daily[data-fit='short'] .daily-rest { display: none; }
+/* The ghost pill (src/app.ts, C4): the ghost's progress, and its own toggle. Off, it dims; where the HUD is tight it is its
+   icon alone, by the Daily pill's rule (fitHud). */
+.pill.ghost { gap: 6px; padding: 0 12px 0 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pill.ghost svg { display: block; flex: none; fill: currentColor; filter: drop-shadow(0 0 3px rgba(255, 244, 220, 0.35)); }
+.pill.ghost[aria-pressed='false'] > * { opacity: 0.55; }
+.pill.ghost[aria-pressed='false'] svg { filter: none; }
+.pill.ghost[data-fit='short'] { width: 38px; padding: 0; justify-content: center; }
+.pill.ghost[data-fit='short'] .ghost-text { display: none; }
 /* Two-bar pause glyph, same ink as the other pills. */
 .pill.pause-btn { width: 38px; padding: 0; justify-content: center; }
 .pill.pause-btn svg { display: block; fill: currentColor; filter: drop-shadow(0 0 3px rgba(255, 200, 120, 0.25)); }
@@ -126,6 +134,8 @@ body.m-open.m-o-hud .hud > :nth-child(2) { transition-delay: 0.08s !important; }
 body.m-open.m-o-hud .hud > :nth-child(3) { transition-delay: 0.16s !important; }
 body.m-open.m-o-hud .hud > :nth-child(4) { transition-delay: 0.24s !important; }
 body.m-open.m-o-hud .hud > :nth-child(5) { transition-delay: 0.32s !important; }
+/* The ghost pill (hidden on a first visit's tree) is a child too: the account chip after it keeps its place in the stagger. */
+body.m-open.m-o-hud .hud > :nth-child(6) { transition-delay: 0.4s !important; }
 body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fast .hud > * { transition-duration: 0.5s !important; transition-delay: 0s !important; }
 
 .toast {
@@ -233,6 +243,7 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 .results h2 { margin: 0; font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400; font-size: 40px; line-height: 1.05; color: #7d1420; }
 .results .daily { margin-bottom: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #7c521c; }
 .results .merry { margin-top: 2px; font: italic 400 17px 'Instrument Serif', serif; color: #7c521c; }
+.results .ghost { margin-top: 3px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: #7c521c; }
 .results .badge {
   display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;
   background: linear-gradient(180deg, #c8323b, #9a1a26); color: #fff3de; box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35);
@@ -295,6 +306,8 @@ button:focus-visible, .menu button:focus-visible, .results button:focus-visible,
   .hud { top: calc(14px + env(safe-area-inset-top)); right: 14px; }
   .menu { right: 12px; left: 12px; width: auto; }
   .pill.daily .daily-rest { display: none; }
+  .pill.ghost { width: 38px; padding: 0; justify-content: center; }
+  .pill.ghost .ghost-text { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

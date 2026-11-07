@@ -2,10 +2,11 @@ import { ApiError, api, finishWithRetry, setUnauthorizedHandler } from './api/cl
 import { addClaim, claimBatches, coalesced, readClaims, removeClaims } from './api/claims';
 import type { RunOutcome } from './api/outcome';
 import { Session } from './api/session';
-import type { AccountStats, ClaimResponse, FinishResult, ProgressResponse, ReplayResponse } from './api/types';
+import type { AccountStats, ClaimResponse, FinishResult, GhostRun, ProgressResponse, ReplayResponse, UnrankedReason } from './api/types';
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
 import type { Turn } from './core/dirs';
+import type { GhostTrack } from './core/ghost';
 import { itemOf, type ItemDef, type ItemId } from './core/catalogue';
 import { GOALS, pileOf } from './core/goals';
 import { CLOCK_TOLERANCE_MS } from './core/judge';
@@ -33,6 +34,7 @@ import { sceneFor, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
 import { dailyStart, landsOnDaily } from './store/daily';
+import { ghostOn, loadGhost, offerGhost, pickGhost, setGhostOn } from './store/ghosts';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, savesAtStart, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { effectiveLook, loadLook, saveLook, worldLook, type Look } from './store/look';
@@ -47,14 +49,14 @@ import { AdventSheet } from './ui/advent';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
 import { Decorate, lockText } from './ui/decorate';
-import { dailyLabelParts } from './ui/format';
+import { dailyLabelParts, formatMs } from './ui/format';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { whenIdle } from './ui/idle';
 import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { markOpened, Opening, OPENING_MS, shouldOpen } from './ui/opening';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
-import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
+import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { awaitsClaim, renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, type ShareImage } from './ui/share';
 import { SparkCursor } from './ui/spark-cursor';
@@ -67,6 +69,8 @@ import type { Replayer, ReplayRun } from './replay';
 
 /** The results tag follows this long after the last bulb. */
 const RESULTS_DELAY_MS = 500;
+/** A finished run kept as a ghost (C4 decision 6): never the judge's own paused, too_fast or clock. */
+const GHOST_REASONS: ReadonlySet<UnrankedReason | null> = new Set([null, 'daily', 'past', 'anonymous']);
 const INTRO_KEY = 'aglow.seenIntro';
 
 /** Secret mode as the test probe sees it (src/debug.ts). */
@@ -358,6 +362,20 @@ export class App {
   private replayer: Replayer | null = null;
   /** The replay chunk (src/replay), loaded on the first Watch; null until asked for, or after a failed load. */
   private replayChunk: Promise<typeof import('./replay')> | null = null;
+  /**
+   * The ghost on the Daily tree in play (C4 decisions 6 and 7): your fastest run on it and its timeline, while there is
+   * one to race. Its pill shows only then.
+   */
+  private ghost: { run: GhostRun; track: GhostTrack } | null = null;
+  /** The ghost toggle (the pill and G), remembered on this device. */
+  private ghostToggle = ghostOn();
+  /** The tree whose ghost the server was asked for: asked once per tree. */
+  private ghostAsked: OnlineRun | null = null;
+  /** The ghost's timeline module, loaded on the first ghost: it brings Playback, which stays out of the main chunk. */
+  private ghostKit: Promise<typeof import('./core/ghost')> | null = null;
+  /** The ghost pill's words and their length (its width class) as last written: updateHud writes only a change. */
+  private ghostText = '';
+  private ghostWidth = -1;
   /** The player's camera, set aside while a replay plays (it is drawn at rest) and put back by Done. */
   private watchCamera: Camera = IDENTITY;
   /**
@@ -671,6 +689,8 @@ export class App {
     // The source "switches on" as the reveal finishes and the initial connected region flows out.
     this.vis.onLightingChanged(board, board.lighting.order, [], this.interactiveAt - 200, false);
     this.busy(this.vis.lastLitAt(board));
+    this.results.setGhost(null);
+    this.beginGhost();
   }
 
   /**
@@ -776,6 +796,115 @@ export class App {
     this.fitHud();
   }
 
+  /* ---------- the ghost (C4) ---------- */
+
+  /**
+   * A tree begins: on a Daily tree the ghost is your fastest run on it from this device's store and (signed in) from the
+   * server, whichever is faster. A random tree, or a Daily you haven't finished before, has none.
+   */
+  private beginGhost(): void {
+    this.setGhost(null);
+    this.ghostAsked = null;
+    const online = this.online;
+    const day = online?.daily?.day;
+    if (!online || !day) return;
+    this.offerTreeGhost(online, loadGhost(day));
+    this.askServerGhost();
+  }
+
+  /** The server's ghost for the Daily tree in play, asked once per tree and only signed in (signed out it is a 401). */
+  private askServerGhost(): void {
+    const online = this.online;
+    const day = online?.daily?.day;
+    if (!online || !day || !this.session.current || this.ghostAsked === online || this.winAt !== null) return;
+    this.ghostAsked = online;
+    api.ghost(day).then(
+      (run) => this.offerTreeGhost(online, run),
+      () => undefined, // offline, or signed out meanwhile: the device's ghost (if any) stays
+    );
+  }
+
+  /**
+   * `run` as the ghost of the tree `online`: taken only while that tree is still in play and not yet won, and only when
+   * it is from that tree and faster than the ghost already set. Its timeline is one headless replay (the module loads on
+   * the first ghost); a log that doesn't replay to a win is no ghost.
+   */
+  private offerTreeGhost(online: OnlineRun, run: GhostRun | null): void {
+    const better = (): GhostRun | null => {
+      const pick = pickGhost(online, this.ghost?.run ?? null, run);
+      return this.online === online && this.winAt === null && pick !== null && pick !== this.ghost?.run ? pick : null;
+    };
+    if (!better()) return;
+    this.ghostKit ??= import('./core/ghost');
+    this.ghostKit.then(
+      ({ ghostTrack }) => {
+        // Checked again: the tree may have changed, or a faster ghost landed, while the module loaded.
+        const pick = better();
+        const track = pick && ghostTrack(pick);
+        if (pick && track) this.setGhost({ run: pick, track });
+      },
+      () => {
+        this.ghostKit = null; // a failed load: the next tree asks again
+      },
+    );
+  }
+
+  /** The ghost to race, or none: its pill shows while there is one. */
+  private setGhost(g: { run: GhostRun; track: GhostTrack } | null): void {
+    const had = this.ghost !== null;
+    this.ghost = g;
+    this.ghostText = '';
+    this.ghostWidth = -1;
+    const pill = el('ghost-pill');
+    pill.hidden = g === null;
+    pill.setAttribute('aria-pressed', String(this.ghostToggle));
+    if (g) this.paintGhost(performance.now());
+    else if (had) this.fitHud();
+  }
+
+  /** The ghost pill and G: the ghost on or off, remembered on this device. */
+  private toggleGhost(): void {
+    if (!this.ghost) return;
+    this.ghostToggle = !this.ghostToggle;
+    setGhostOn(this.ghostToggle);
+    el('ghost-pill').setAttribute('aria-pressed', String(this.ghostToggle));
+    this.paintGhost(performance.now());
+  }
+
+  /**
+   * The ghost pill's words at your clock (C4 decision 10): the ghost's lit share, rounded down, while it is still lighting;
+   * its time once it has finished; 'Ghost' alone when it is off. Written only when they change, and the HUD refitted only
+   * when their length (the pill's width) does.
+   */
+  private paintGhost(now: number): void {
+    const g = this.ghost;
+    if (!g) return;
+    const clock = this.clock.elapsedMs(now);
+    const text = !this.ghostToggle
+      ? 'Ghost'
+      : clock >= g.track.ms
+        ? `Ghost ${formatMs(g.track.ms)}`
+        : `Ghost ${Math.floor((g.track.litAt(clock) * 100) / GRID.ids.length)}%`;
+    if (text === this.ghostText) return;
+    this.ghostText = text;
+    el('ghost-pill-text').textContent = text;
+    if (text.length !== this.ghostWidth) {
+      this.ghostWidth = text.length;
+      this.fitHud();
+    }
+  }
+
+  /**
+   * The server finished a Daily run of yours and it can be a ghost (not the judge's paused, too_fast or clock): it is
+   * offered as that day's ghost on this device, which keeps the faster. Reached from the finish, a claim and a restore.
+   */
+  private keepGhost(result: FinishResult): void {
+    const online = this.online;
+    const day = online?.daily?.day;
+    if (!online || !day || result.id !== online.gameId || !GHOST_REASONS.has(result.reason)) return;
+    offerGhost(day, { seed: online.seed, genVersion: online.genVersion, log: [...this.run.log.entries], ms: result.ms });
+  }
+
   /** See savesNow. */
   private shouldSave(): boolean {
     return savesNow(this.moved, this.online);
@@ -835,7 +964,10 @@ export class App {
     // A buffered turn can win under the pause overlay: lift it, and let the results card take over focus.
     if (this.paused) this.setPaused(false);
     this.clock.pause(now);
-    const seconds = wholeSeconds(this.clock.elapsedMs(now));
+    const clockMs = this.clock.elapsedMs(now);
+    const seconds = wholeSeconds(clockMs);
+    // Raced with the ghost on: the tag says how it went.
+    this.results.setGhost(this.ghost && this.ghostToggle ? ghostLine(clockMs - this.ghost.track.ms) : null);
     const score = scoreFor(seconds);
     const { stats, newBest } = recordWin(this.stats, seconds, score, localDay(new Date()));
     this.stats = stats;
@@ -1078,6 +1210,8 @@ export class App {
     void this.claimAll();
     this.setOutcome(this.outcome);
     void this.syncStats();
+    // Signed in after the Daily began (the first tree starts while /api/me is in flight): the server's ghost too.
+    this.askServerGhost();
   }
 
   /** The numbers on the tag: the account's as shown once they have arrived, else this device's. */
@@ -1130,6 +1264,7 @@ export class App {
   /** The run's outcome on the results tag (pick 3B): drawn now, so it is there when the tag appears. */
   private setOutcome(o: RunOutcome | null): void {
     this.outcome = o;
+    if (o?.kind === 'done') this.keepGhost(o.result);
     this.hectorStep(); // a Home Alone win waiting on the server's answer
     const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult, repeat: this.online?.daily?.repeat === true };
     const m = o && ribbonModel(o, this.session.current, ctx);
@@ -1429,6 +1564,8 @@ export class App {
       this.lastCanPause = canPause;
       this.fitHud(); // the pause pill came or went: the HUD changed width
     }
+    // Watching, the ghost pill is set aside with the run's HUD (replay.css).
+    if (!w) this.paintGhost(now);
     const lit = ((w ? w.winAt : this.winAt) !== null ? 1 : (w ? w.board : this.board).lighting.count / GRID.ids.length).toFixed(2);
     if (lit !== this.lastLit) {
       document.body.style.setProperty('--lit', lit);
@@ -1700,6 +1837,7 @@ export class App {
     const pill = document.getElementById('radio-pill');
     const chip = document.getElementById('account-chip');
     const daily = document.getElementById('daily-pill');
+    const ghost = document.getElementById('ghost-pill');
     const hud = document.querySelector('.hud');
     const mark = document.querySelector('.wordmark');
     if (pill && hud && mark) {
@@ -1708,6 +1846,8 @@ export class App {
       // A hidden pill takes no room: no need to try it short.
       fit: for (const dailyFit of daily && !daily.hidden ? ['full', 'short'] : ['full']) {
         if (daily) daily.dataset.fit = dailyFit;
+        // The ghost pill is its icon alone wherever the Daily pill is 'Daily' alone.
+        if (ghost) ghost.dataset.fit = dailyFit;
         for (const chipFit of ['full', 'icon']) {
           if (chip) chip.dataset.fit = chipFit;
           for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
@@ -1820,6 +1960,7 @@ export class App {
       this.resume();
     });
     el('pause-btn').addEventListener('click', () => this.pause(true));
+    el('ghost-pill').addEventListener('click', () => this.toggleGhost());
     // The hint under the HUD pills pins the card; clicking it again, or Escape or Tab, closes it.
     el('keys-hint').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1875,6 +2016,10 @@ export class App {
         e.preventDefault();
         if (this.paused) this.resume();
         else this.pause(true);
+      } else if ((e.key === 'g' || e.key === 'G') && !e.repeat && !this.paused && this.ghost) {
+        // G is the ghost pill: the ghost on or off (not under the pause overlay, where the pill is out of reach).
+        e.preventDefault();
+        this.toggleGhost();
       } else if ((e.key === 'n' || e.key === 'N') && !e.repeat && !this.paused && !this.starting) {
         // N is the New tree button: mid-run the first press only asks (the menu's 3 s confirm), the second starts.
         e.preventDefault();
@@ -2039,6 +2184,10 @@ export class App {
   }
   get logLength(): number {
     return this.run?.log.entries.length ?? 0;
+  }
+  /** The ghost pill (C4): whether it shows, whether the ghost is on, and its words. */
+  get ghostState(): { shown: boolean; on: boolean; text: string } {
+    return { shown: !el('ghost-pill').hidden, on: this.ghostToggle, text: el('ghost-pill').textContent ?? '' };
   }
   /** A replay on the stage (C4): whether one is, whether it has played out, and its playhead (log ms). */
   get replayState(): { watching: boolean; ended: boolean; cursor: number } {

@@ -19,16 +19,16 @@ const card = () => host.querySelector<HTMLElement>('.key-card')!;
 const rows = () => [...host.querySelectorAll('li')].map((li) => li.querySelector('.kc-label')!.textContent);
 const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 
-it('renders the title and the five rows in order, with the secret in the footer', () => {
+it('renders the title and the six rows in order, with the secret in the footer', () => {
   const k = make();
   k.show();
   expect(card().querySelector('.kc-kicker')!.textContent).toBe('From the workshop');
   expect(card().querySelector('h2')!.textContent).toBe('Little helpers');
-  expect(rows()).toEqual(['Turn a wire', 'Turn it back', 'A new tree', 'Pause', 'This card']);
+  expect(rows()).toEqual(['Turn a wire', 'Turn it back', 'A new tree', 'Pause', 'Ghost on or off', 'This card']);
   expect(card().querySelector('.kc-secret span')!.textContent).toBe('Some trees keep secrets.');
-  // Two mouse pictures, N, Esc and P, Tab.
+  // Two mouse pictures, N, Esc and P, G, Tab.
   expect(card().querySelectorAll('svg.kc-mouse')).toHaveLength(2);
-  expect([...card().querySelectorAll('kbd')].map((c) => c.textContent)).toEqual(['N', 'Esc', 'P', 'Tab', '?']);
+  expect([...card().querySelectorAll('kbd')].map((c) => c.textContent)).toEqual(['N', 'Esc', 'P', 'G', 'Tab', '?']);
 });
 
 it('show() opens it and hide() closes it', () => {

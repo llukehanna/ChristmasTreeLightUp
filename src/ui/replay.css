@@ -2,6 +2,7 @@
    The run's own HUD controls, results tag, frost pause and tagline step aside, and the replay bar comes up. Nothing is
    unmounted: removing body.watching brings the tag and the frost back exactly as they were. */
 body.watching #daily-pill,
+body.watching #ghost-pill,
 body.watching #pause-btn,
 body.watching #corner-new,
 body.watching #zoom-reset,

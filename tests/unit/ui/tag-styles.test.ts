@@ -75,6 +75,7 @@ it("the tag's inks in the stylesheets are the ones checked", () => {
   const account = readFileSync(new URL('../../../src/ui/account.css', import.meta.url), 'utf8');
   expect(blockOf(base, '.results .merry')).toContain('#7c521c');
   expect(blockOf(base, '.results .daily')).toContain('#7c521c');
+  expect(blockOf(base, '.results .ghost')).toContain('#7c521c');
   expect(blockOf(base, '.results .stats span')).toContain('opacity: 0.7');
   expect(blockOf(base, '.results .keep')).toContain('opacity: 0.7');
   expect(blockOf(account, '.results .rib-line')).toContain('#7a4a22');
