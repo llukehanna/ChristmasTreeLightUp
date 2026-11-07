@@ -107,7 +107,7 @@ it("an answer in flight when the session changes is dropped, never shown as the 
   expect(totals()[0]).toBe('3');
 });
 
-const row = (name: string, ms: number) => ({ rank: 1, name, ms, finishedAt: 1, mine: false });
+const row = (name: string, ms: number) => ({ id: `run-${name}`, rank: 1, name, ms, finishedAt: 1, mine: false, replay: true });
 const pressedWindow = (): string | null | undefined => document.querySelector('.acct-wins [aria-pressed="true"]')?.textContent;
 const names = (): string[] => [...document.querySelectorAll('.acct-body .acct-nm')].map((n) => n.textContent ?? '');
 const clickAct = (act: string): void => document.querySelector<HTMLElement>(`[data-act="${act}"]`)?.click();

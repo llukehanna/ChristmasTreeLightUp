@@ -53,19 +53,30 @@ describe('the leaderboard', () => {
     const ana = await user('ana@example.com', 'Meridian');
     const bo = await user('bo@example.com', 'Comet');
     const nameless = await user('cy@example.com', null);
-    await run(ana, 60_000, 5000);
-    await run(bo, 50_000, 4000);
-    await run(ana, 50_000, 3000);
+    const third = await run(ana, 60_000, 5000);
+    const second = await run(bo, 50_000, 4000);
+    const first = await run(ana, 50_000, 3000);
     await run(nameless, 10_000, 1000);
     await run(bo, 1_000, 2000, 'paused');
     await run(null, 1_000, 1000, 'anonymous');
     const b = await board();
     expect(b.total).toBe(3);
     expect(b.rows).toEqual([
-      { rank: 1, name: 'Meridian', ms: 50_000, finishedAt: 3000, mine: false },
-      { rank: 2, name: 'Comet', ms: 50_000, finishedAt: 4000, mine: false },
-      { rank: 3, name: 'Meridian', ms: 60_000, finishedAt: 5000, mine: false },
+      { id: first, rank: 1, name: 'Meridian', ms: 50_000, finishedAt: 3000, mine: false, replay: true },
+      { id: second, rank: 2, name: 'Comet', ms: 50_000, finishedAt: 4000, mine: false, replay: true },
+      { id: third, rank: 3, name: 'Meridian', ms: 60_000, finishedAt: 5000, mine: false, replay: true },
     ]);
+  });
+
+  it('carries each row its game id, and every row in the main windows can be watched', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    const bo = await user('bo@example.com', 'Comet');
+    const fast = await run(bo, 40_000, 2000);
+    const slow = await run(ana, 60_000, 1000);
+    const anon = await board();
+    expect(anon.rows.map((r) => [r.id, r.replay])).toEqual([[fast, true], [slow, true]]);
+    const mine = await board(await signIn(env, 'ana@example.com'));
+    expect(mine.rows.map((r) => [r.id, r.replay])).toEqual([[fast, true], [slow, true]]);
   });
 
   it('runs with the same time and finish share a rank', async () => {
@@ -88,17 +99,17 @@ describe('the leaderboard', () => {
     );
     const ana = await user('ana@example.com', 'Meridian');
     await run(ana, 99_000, 5000);
-    await run(ana, 98_000, 6000);
+    const pinned = await run(ana, 98_000, 6000);
     const cookie = await signIn(env, 'ana@example.com');
     const b = await board(cookie);
     expect(b.rows).toHaveLength(BOARD_TOP);
     expect(b.rows.some((r) => r.mine)).toBe(false);
     expect(b.total).toBe(52);
-    expect(b.you).toEqual({ rank: 51, name: 'Meridian', ms: 98_000, finishedAt: 6000, mine: true });
-    await run(ana, 5_000, 7000);
+    expect(b.you).toEqual({ id: pinned, rank: 51, name: 'Meridian', ms: 98_000, finishedAt: 6000, mine: true, replay: true });
+    const fastest = await run(ana, 5_000, 7000);
     resetBoardCache(); // a run straight into D1 shows once the isolate's copy of the top 50 expires
     const again = await board(cookie);
-    expect(again.rows[0]).toEqual({ rank: 1, name: 'Meridian', ms: 5_000, finishedAt: 7000, mine: true });
+    expect(again.rows[0]).toEqual({ id: fastest, rank: 1, name: 'Meridian', ms: 5_000, finishedAt: 7000, mine: true, replay: true });
     expect(again.you).toBeNull();
   });
 
@@ -228,7 +239,7 @@ describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
     const today = await windowed(`window=today&${q}`, anaCookie);
     expect(today.total).toBe(52);
     expect(today.rows[0]).toMatchObject({ rank: 1, ms: 10_000, name: 'Comet' });
-    expect(today.you).toEqual({ rank: 51, name: 'Meridian', ms: 98_000, finishedAt: midnight + 6000, mine: true });
+    expect(today.you).toEqual({ id: expect.any(String), rank: 51, name: 'Meridian', ms: 98_000, finishedAt: midnight + 6000, mine: true, replay: true });
     const week = await windowed(`window=week&${q}`, anaCookie);
     expect(week.total).toBe(53);
     expect(week.rows[0]).toMatchObject({ rank: 1, ms: 9_000, name: 'Comet' });
@@ -356,11 +367,11 @@ describe('the Daily board (GET /api/board?window=daily)', () => {
     const cy = await user('cy@example.com', 'Nova');
     const di = await user('di@example.com', 'Vega');
     const nameless = await user('ed@example.com', null);
-    await attempt(ana, '2026-12-10', noon, 50_000);
+    const anaFirst = await attempt(ana, '2026-12-10', noon, 50_000);
     await attempt(ana, '2026-12-10', noon + 100_000, 10_000); // a second attempt: off the board
-    await attempt(bo, '2026-12-10', noon + 1000, 40_000);
-    await attempt(cy, '2026-12-10', noon + 2000, 50_000); // as fast as Ana's first, finished later
-    await attempt(di, '2026-12-10', noon + 2000, 50_000); // tied with Cy on (ms, finish): they share a rank
+    const boFirst = await attempt(bo, '2026-12-10', noon + 1000, 40_000);
+    const cyFirst = await attempt(cy, '2026-12-10', noon + 2000, 50_000); // as fast as Ana's first, finished later
+    const diFirst = await attempt(di, '2026-12-10', noon + 2000, 50_000); // tied with Cy on (ms, finish): they share a rank
     await attempt(nameless, '2026-12-10', noon, 1_000); // no name: off the board
     await attempt(null, '2026-12-10', noon, 1_000); // a guest's: off the board until claimed
     await attempt(bo, '2026-12-09', noon - 86_400_000, 5_000); // yesterday's board
@@ -369,10 +380,10 @@ describe('the Daily board (GET /api/board?window=daily)', () => {
     const b = await daily('2026-12-10');
     expect(b.total).toBe(4);
     expect(b.rows).toEqual([
-      { rank: 1, name: 'Comet', ms: 40_000, finishedAt: noon + 41_000, mine: false },
-      { rank: 2, name: 'Meridian', ms: 50_000, finishedAt: noon + 50_000, mine: false },
-      { rank: 3, name: 'Nova', ms: 50_000, finishedAt: noon + 52_000, mine: false },
-      { rank: 3, name: 'Vega', ms: 50_000, finishedAt: noon + 52_000, mine: false },
+      { id: boFirst, rank: 1, name: 'Comet', ms: 40_000, finishedAt: noon + 41_000, mine: false, replay: false },
+      { id: anaFirst, rank: 2, name: 'Meridian', ms: 50_000, finishedAt: noon + 50_000, mine: false, replay: false },
+      { id: cyFirst, rank: 3, name: 'Nova', ms: 50_000, finishedAt: noon + 52_000, mine: false, replay: false },
+      { id: diFirst, rank: 3, name: 'Vega', ms: 50_000, finishedAt: noon + 52_000, mine: false, replay: false },
     ]);
     expect((await daily('2026-12-09')).rows.map((r) => r.ms)).toEqual([5_000]);
     // The headers are the other windows'.
@@ -388,7 +399,7 @@ describe('the Daily board (GET /api/board?window=daily)', () => {
     expect(pinned.rows).toHaveLength(BOARD_TOP);
     expect(pinned.total).toBe(54);
     expect(pinned.rows.some((r) => r.mine)).toBe(false);
-    expect(pinned.you).toEqual({ rank: 52, name: 'Meridian', ms: 50_000, finishedAt: noon + 50_000, mine: true });
+    expect(pinned.you).toEqual({ id: anaFirst, rank: 52, name: 'Meridian', ms: 50_000, finishedAt: noon + 50_000, mine: true, replay: true });
     expect((await daily('2026-12-10', await signIn(env, 'bo@example.com'))).you).toMatchObject({ rank: 51, ms: 40_000 });
     // A run in the top: marked, nothing pinned.
     const top = await daily('2026-12-10', await signIn(env, 'p3@example.com'));
@@ -403,6 +414,22 @@ describe('the Daily board (GET /api/board?window=daily)', () => {
       expect(b2.you).toBeNull();
       expect(b2.total).toBe(54);
     }
+  });
+
+  it("carries each row its game id; another player's row can't be watched while the day is open, yours can (also pinned)", async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    const bo = await user('bo@example.com', 'Comet');
+    const boRun = await attempt(bo, '2026-12-10', noon, 40_000);
+    const anaRun = await attempt(ana, '2026-12-10', noon, 50_000);
+    const anon = await daily('2026-12-10');
+    expect(anon.rows.map((r) => [r.id, r.replay])).toEqual([[boRun, false], [anaRun, false]]);
+    const anaCookie = await signIn(env, 'ana@example.com');
+    expect((await daily('2026-12-10', anaCookie)).rows.map((r) => [r.id, r.mine, r.replay])).toEqual([[boRun, false, false], [anaRun, true, true]]);
+    // Pushed out of the top, your first attempt is pinned, and watchable.
+    const fast = await Promise.all(Array.from({ length: 50 }, (_, k) => user(`p${k}@example.com`, `Player${k}`)));
+    for (const [k, id] of fast.entries()) await attempt(id, '2026-12-10', noon + k, 30_000 + k);
+    resetBoardCache();
+    expect((await daily('2026-12-10', anaCookie)).you).toMatchObject({ id: anaRun, mine: true, replay: true });
   });
 
   it('first attempts that start at the same instant go to the lower id', async () => {
@@ -596,11 +623,21 @@ describe('your games', () => {
       inTop: 2,
       total: 3,
       games: [
-        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false, daily: null, dailyFirst: false },
-        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false },
-        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false, daily: null, dailyFirst: false },
+        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false, daily: null, dailyFirst: false, replay: false },
+        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false, replay: false },
+        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false, daily: null, dailyFirst: false, replay: false },
       ],
     });
+  });
+
+  it('a played game can be watched; an imported one (no log) cannot', async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    const played = await run(ana, 45_000, 2000);
+    await db.prepare("UPDATE games SET log = '[]' WHERE id = ?").bind(played).run();
+    const imported = await run(ana, 50_000, 1000);
+    await db.prepare("UPDATE games SET source = 'import' WHERE id = ?").bind(imported).run();
+    const g = await myGames(await signIn(env, 'ana@example.com'));
+    expect(g.games.map((x) => [x.id, x.imported, x.replay])).toEqual([[played, false, true], [imported, true, false]]);
   });
 
   it('keeps the last 30 games; an account without a name has no rank and nothing in the top 50', async () => {

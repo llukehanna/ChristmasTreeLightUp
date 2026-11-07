@@ -8,8 +8,8 @@ const day = new Date(2026, 11, 1, 20, 0).getTime();
 const me = { name: 'Meridian', isAdmin: false, starHead: false };
 const board: BoardResponse = {
   rows: [
-    { rank: 1, name: 'Comet', ms: 48_200, finishedAt: day, mine: false },
-    { rank: 2, name: 'Meridian', ms: 51_700, finishedAt: day, mine: true },
+    { id: 'run-comet', rank: 1, name: 'Comet', ms: 48_200, finishedAt: day, mine: false, replay: true },
+    { id: 'run-meridian', rank: 2, name: 'Meridian', ms: 51_700, finishedAt: day, mine: true, replay: true },
   ],
   total: 340,
   you: null,
@@ -50,7 +50,7 @@ it('server numbers only ever paint as numbers', () => {
 });
 
 it('pins your best below the list when it is outside the top 50', () => {
-  const you = { rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true };
+  const you = { id: 'run-you', rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true, replay: true };
   const el = render('board', { status: 'ready', data: { ...board, rows: [board.rows[0]], you } }, { status: 'loading' }, me, now);
   expect(el.querySelector('.acct-pin .acct-me .acct-rank')?.textContent).toBe('87');
   expect(el.querySelector('.acct-pin-note')?.textContent).toBe('Your best · #87 of 340 runs');
@@ -80,9 +80,9 @@ it('your games: best, rank, top-50 count, then recent games with their status', 
     inTop: 2,
     total: 340,
     games: [
-      { id: 'a', ms: 94_200, finishedAt: now - 3_600_000, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false },
-      { id: 'b', ms: 125_100, finishedAt: day, ranked: false, reason: 'paused', isBest: false, imported: false, daily: null, dailyFirst: false },
-      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: false, daily: null, dailyFirst: false },
+      { id: 'a', ms: 94_200, finishedAt: now - 3_600_000, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false, replay: true },
+      { id: 'b', ms: 125_100, finishedAt: day, ranked: false, reason: 'paused', isBest: false, imported: false, daily: null, dailyFirst: false, replay: true },
+      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: false, daily: null, dailyFirst: false, replay: true },
     ],
   };
   const el = render('games', { status: 'loading' }, { status: 'ready', data: games }, me, now);
@@ -97,7 +97,7 @@ it('your games: best, rank, top-50 count, then recent games with their status', 
 });
 
 describe('your games: Daily Tree runs', () => {
-  const g = (over: Partial<RecentGame>): RecentGame => ({ id: 'd', ms: 42_000, finishedAt: day, ranked: false, reason: 'daily', isBest: false, imported: false, daily: '2026-11-06', dailyFirst: true, ...over });
+  const g = (over: Partial<RecentGame>): RecentGame => ({ id: 'd', ms: 42_000, finishedAt: day, ranked: false, reason: 'daily', isBest: false, imported: false, daily: '2026-11-06', dailyFirst: true, replay: true, ...over });
   const rows = (...games: RecentGame[]) => render('games', { status: 'loading' }, { status: 'ready', data: { best: null, inTop: 0, total: 0, games } }, me, now);
   const row = (game: RecentGame) => rows(game).querySelector('.acct-game');
 
@@ -115,7 +115,7 @@ describe('your games: Daily Tree runs', () => {
   });
 
   it('a repeat shows the tag and Unranked · not your first go', () => {
-    const r = row(g({ dailyFirst: false }));
+    const r = row(g({ dailyFirst: false, replay: true }));
     expect(r?.querySelector('.acct-daily')?.textContent).toBe('Daily Tree · Nov 6');
     expect(r?.querySelector('.acct-status')?.textContent).toBe('Unranked · not your first go');
     expect(r?.classList.contains('un')).toBe(true);
@@ -154,8 +154,8 @@ it('your games: the account totals, and imported runs say so', () => {
     inTop: 0,
     total: 340,
     games: [
-      { id: 'a', ms: 94_200, finishedAt: day, ranked: true, reason: null, isBest: false, imported: true, daily: null, dailyFirst: false },
-      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: true, daily: null, dailyFirst: false },
+      { id: 'a', ms: 94_200, finishedAt: day, ranked: true, reason: null, isBest: false, imported: true, daily: null, dailyFirst: false, replay: true },
+      { id: 'c', ms: 81_000, finishedAt: day, ranked: true, reason: null, isBest: true, imported: true, daily: null, dailyFirst: false, replay: true },
     ],
   };
   const stats: AccountStats = { userId: 1, solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 81_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-12-03', imported: 300 };
@@ -323,7 +323,7 @@ describe('board windows: Today, This week, All time (spec 2026-10-14 §4)', () =
     const listed = daily({ ...board, total: 9 });
     expect(listed.querySelector('.acct-sub')?.textContent).toBe('Daily Tree · Dec 3 · 9 runs');
     expect(listed.querySelector('.acct-pin-note')?.textContent).toBe('Your run · #2 of 9');
-    const you = { rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true };
+    const you = { id: 'run-you', rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true, replay: true };
     expect(daily({ rows: [board.rows[0]], total: 90, you }).querySelector('.acct-pin-note')?.textContent).toBe('Your run · #87 of 90');
     expect(daily({ rows: [{ ...board.rows[0] }], total: 1, you: null }).querySelector('.acct-pin-note')?.textContent).toBe('1 run');
     // The other windows keep their words.

@@ -8,6 +8,7 @@ import * as auth from './routes/auth.js';
 import * as board from './routes/board.js';
 import * as games from './routes/games.js';
 import * as me from './routes/me.js';
+import * as replays from './routes/replays.js';
 import * as stations from './routes/stations.js';
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -35,6 +36,7 @@ export const ROUTES: readonly Route[] = [
   ['GET', /^\/api\/board$/, board.getBoard],
   ['POST', /^\/api\/games\/claim$/, games.claimGames],
   ['POST', /^\/api\/games\/([A-Za-z0-9_-]{16,64})\/finish$/, games.finishGame],
+  ['GET', /^\/api\/games\/([A-Za-z0-9_-]{16,64})\/replay$/, replays.getReplay],
   ['GET', /^\/api\/admin\/session$/, session.GET],
   ['GET', /^\/api\/admin\/stations$/, adminStations.GET],
   ['PUT', /^\/api\/admin\/stations$/, adminStations.PUT],
