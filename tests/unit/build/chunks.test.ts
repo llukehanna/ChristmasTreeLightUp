@@ -14,9 +14,11 @@ const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 /**
  * Raw bytes, as `vite build` prints kB (1 kB = 1000 B). The plan's target was 225 kB, from a 263 kB entry; earlier
  * season-two tasks grew it to 279 kB first, and with every listed egg module moved it measured 232,168 B. So this is a
- * regression guard instead: that measurement plus 2 kB.
+ * regression guard instead: the measurement plus 2 kB. Re-measured 2026-11-07 at the end of C4 (replays and the ghost)
+ * as MEASURED_ENTRY, after season two's other parts grew it: 482,716 B at that commit, with the replay out of it.
  */
-const ENTRY_MAX = 232_168 + 2_000;
+const MEASURED_ENTRY = 482_716;
+const ENTRY_MAX = MEASURED_ENTRY + 2_000;
 
 const files = (dir: string, match: RegExp): string[] =>
   readdirSync(join(ROOT, dir))
@@ -37,6 +39,9 @@ const MOVED = [
   ...files('src/render', /^face.*\.ts$/),
   'src/render/pizza.ts',
 ];
+/** The replay's code loads on the first Watch (src/replay): none of it is in the entry chunk or its static imports. */
+const REPLAY = ['src/core/playback.ts', 'src/core/ghost.ts', 'src/ui/replay-bar.ts'];
+const REPLAY_DIR = 'src/replay/';
 /** The detectors stay: they must see the trigger. */
 const DETECTORS = ['src/ui/home-alone.ts', 'src/ui/star-egg.ts', 'src/store/home-alone.ts'];
 
@@ -110,6 +115,17 @@ describe.runIf(process.env.BUILD_TEST === '1')('the build (BUILD_TEST=1)', () =>
     expect(entry.dynamicImports ?? []).toContain('src/eggs/eggs.ts');
     const eggs = modules.get(manifest['src/eggs/eggs.ts'].file) ?? [];
     for (const m of MOVED) expect(eggs).toContain(m);
+  });
+
+  it("the replay's modules are not in the entry chunk or its static imports (they load on the first Watch)", () => {
+    const inEntry = staticClosure().flatMap((key) => modules.get(manifest[key].file) ?? []);
+    expect(inEntry.length).toBeGreaterThan(0);
+    expect(inEntry.filter((m) => m.startsWith(REPLAY_DIR) || REPLAY.includes(m))).toEqual([]);
+    // They are somewhere, in a chunk the first Watch imports.
+    const all = [...modules.values()].flat();
+    for (const m of REPLAY) expect(all).toContain(m);
+    expect(all.filter((m) => m.startsWith(REPLAY_DIR)).length).toBeGreaterThan(0);
+    expect(manifest['index.html'].dynamicImports ?? []).toContain('src/replay/index.ts');
   });
 
   it("the production build has no wardrobe preview (?wardrobe=all is a dev build's alone)", () => {

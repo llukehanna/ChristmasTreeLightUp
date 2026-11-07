@@ -127,6 +127,8 @@ export interface RunFlags {
   /** When the tree was won (performance.now()), or null. */
   winAt: number | null;
   paused: boolean;
+  /** A replay is on the stage (the player's tree is set aside under it). */
+  watching: boolean;
   /** performance.now(), as the gate is asked. */
   now: number;
 }
@@ -180,10 +182,11 @@ export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[]
  * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
  * behind the pause or once the win has settled (not during its confetti, the topper's flare and the tag's arrival).
  * Never while a tree is in play: not during its reveal (animation the player watches) and not once the clock runs,
- * which it does from the reveal's end (Run.frame), first move or not.
+ * which it does from the reveal's end (Run.frame), first move or not. Nor while a replay plays: it is the same
+ * animation, over a tree that is paused or won.
  */
 export const quietForWork = (f: RunFlags): boolean =>
-  !f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS);
+  !f.watching && (!f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS));
 
 /**
  * A run is in progress from the first move to the win (or a new tree): no unlock shows then (the unseen dot waits for
@@ -383,6 +386,8 @@ export class App {
    * (its answer, or the chunk) when the player has moved on never plays.
    */
   private watchSeq = 0;
+  /** The `watchSeq` of the Watch whose "Loading replay…" toast is up (0: none), so a cancel takes down only that toast. */
+  private watchToastSeq = 0;
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -898,11 +903,10 @@ export class App {
    * The server finished a Daily run of yours and it can be a ghost (not the judge's paused, too_fast or clock): it is
    * offered as that day's ghost on this device, which keeps the faster. Reached from the finish, a claim and a restore.
    */
-  private keepGhost(result: FinishResult): void {
-    const online = this.online;
+  private keepGhost(result: FinishResult, online = this.online, entries: readonly LogEntry[] = this.run.log.entries): void {
     const day = online?.daily?.day;
     if (!online || !day || result.id !== online.gameId || !GHOST_REASONS.has(result.reason)) return;
-    offerGhost(day, { seed: online.seed, genVersion: online.genVersion, log: [...this.run.log.entries], ms: result.ms });
+    offerGhost(day, { seed: online.seed, genVersion: online.genVersion, log: [...entries], ms: result.ms });
   }
 
   /** See savesNow. */
@@ -1116,6 +1120,9 @@ export class App {
       // if a new tree has started meanwhile.
       if (run.claim) addClaim({ id: run.gameId, claim: run.claim }, Date.now());
       void this.claimAll();
+      // A guest has no other source for the day's ghost: kept even if a new tree has begun since (offered again, as the
+      // outcome is set, it changes nothing: the faster is kept).
+      this.keepGhost(result, run, entries);
       if (this.board !== game) return;
       won.result = result;
       this.saveWon();
@@ -1374,14 +1381,19 @@ export class App {
    */
   watchRun(id: string): void {
     const seq = ++this.watchSeq;
+    this.watchToastSeq = seq;
     this.accounts.host.close();
     this.toast.show('Loading replay…');
     api.replay(id).then(
       (data) => {
-        if (seq === this.watchSeq) void this.watch(data);
+        if (seq !== this.watchSeq) return;
+        this.watchToastSeq = 0;
+        void this.watch(data);
       },
       () => {
-        if (seq === this.watchSeq) this.toast.show("Couldn't load that replay.");
+        if (seq !== this.watchSeq) return;
+        this.watchToastSeq = 0;
+        this.toast.show("Couldn't load that replay.");
       },
     );
   }
@@ -1495,9 +1507,12 @@ export class App {
     if (!frameDue(now - this.lastFrame, calm)) return;
     const dt = Math.min(50, now - (this.lastFrame || now));
     this.lastFrame = now;
-    // Watching, the player's run is set aside: no run.frame, no handle, no save, no news, and a sheet doesn't pause it.
-    if (w) this.replayer?.frame(now, dt);
-    else {
+    // Watching, the player's run is set aside: no run.frame, no handle, no save, no news. A sheet over the replay pauses
+    // it through the replayer's own state (the bar shows Play), so it never plays out unseen, ticks and chimes and all.
+    if (w) {
+      if (this.accounts.sheetOpen && w.playing) this.replayer?.toggle();
+      this.replayer?.frame(now, dt);
+    } else {
       // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
       if (this.accounts.sheetOpen && !this.paused && this.canPause(now)) this.pause(false);
       // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
@@ -1915,7 +1930,7 @@ export class App {
   }
 
   private runFlags(): RunFlags {
-    return { live: this.live, starting: this.starting, winAt: this.winAt, paused: this.paused, now: performance.now() };
+    return { live: this.live, starting: this.starting, winAt: this.winAt, paused: this.paused, watching: this.watching !== null, now: performance.now() };
   }
 
   private bindLifecycle(): void {
@@ -2062,7 +2077,9 @@ export class App {
 
   private resume(): void {
     if (!this.paused) return;
-    // Back to the tree: a Watch still loading no longer has a paused tree to play over.
+    // Back to the tree: a Watch still loading no longer has a paused tree to play over, nor a toast to keep up.
+    if (this.watchToastSeq === this.watchSeq) this.toast.hide();
+    this.watchToastSeq = 0;
     this.watchSeq++;
     const hadFocus = document.activeElement === el('pause');
     this.setPaused(false);

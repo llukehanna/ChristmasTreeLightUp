@@ -179,6 +179,30 @@ test('keys while watching: Space and P play and pause, N does nothing, Escape is
   await expect(page.locator('#results')).toBeVisible();
 });
 
+test('a sheet opened over a replay pauses it, so it never plays out unseen; Play on the bar goes on from there', async ({ page }) => {
+  await namedPlayer(page);
+  // A slow solve, so the replay outlasts the clicks that open the sheet.
+  const id = await onlineTree(page);
+  await solveByTapping(page, 250);
+  await expect.poll(() => game(page), { timeout: 20_000 }).toMatchObject({ id, outcome: 'done' });
+  await watchFromGames(page, id);
+  const toggle = bar(page).locator('.rb-toggle');
+  await expect(toggle).toHaveText('Pause');
+  await openGames(page, id);
+  // The bar shows it paused, and the playhead stays where it stopped.
+  await expect(toggle).toHaveText('Play');
+  const at = (await replay(page)).cursor;
+  await page.waitForTimeout(600);
+  expect((await replay(page)).cursor).toBe(at);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Your games' })).toBeHidden();
+  expect(await replay(page)).toMatchObject({ watching: true, ended: false });
+  await expect(toggle).toHaveText('Play');
+  await toggle.click();
+  await expect(toggle).toHaveText('Pause');
+  await expect.poll(async () => (await replay(page)).cursor).toBeGreaterThan(at);
+});
+
 test('a Watch still loading is cancelled by a resume or a new tree: the replay never takes over the tree in play', async ({ page }) => {
   await namedPlayer(page);
   const earlier = await solvedRun(page);
@@ -204,7 +228,11 @@ test('a Watch still loading is cancelled by a resume or a new tree: the replay n
   await openGames(page, earlier);
   await page.getByRole('dialog', { name: 'Your games' }).locator(`.acct-watch[data-id="${earlier}"]`).click();
   await expect(page.locator('#toast')).toHaveText('Loading replay…');
-  await resumeIfPaused(page);
+  // The frost is tapped (not through resumeIfPaused, which waits out the fade: the toast's 2.2 s could end meanwhile).
+  await page.locator('#pause').click();
+  // The player is back in their run: "Loading replay…" goes with the Watch it belonged to.
+  await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/, { timeout: 500 });
+  await expect(page.locator('#pause')).toBeHidden();
   release();
   await notWatching();
   await expect(page.locator('#pause')).toBeHidden();
@@ -240,6 +268,24 @@ test.describe('racing your ghost', () => {
     }
     throw new Error('the local Worker never started the Daily');
   }
+
+  test("a guest's finished Daily is kept as their ghost even when a new tree starts before the finish answers", async ({ page }) => {
+    await ready(page);
+    const first = await dailyTree(page);
+    // The finish answers only when released.
+    let release = (): void => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    await page.route('**/api/games/*/finish', async (r) => {
+      await held;
+      await r.fallback();
+    });
+    await solveByTapping(page);
+    await page.evaluate(() => (window as unknown as W).__aglow.newTree());
+    await expect.poll(async () => (await game(page)).id, { timeout: 20_000 }).not.toBe(first);
+    release();
+    // The answer lands for a tree the player has left; the day's ghost is kept all the same.
+    await expect.poll(() => page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('aglow.ghosts') ?? '{}')).length), { timeout: 20_000 }).toBe(1);
+  });
 
   test("a Daily you've lit: the pill paces you with your ghost, G turns it off and on, the tag says how you did; a random tree has none", async ({ page }) => {
     await ready(page);

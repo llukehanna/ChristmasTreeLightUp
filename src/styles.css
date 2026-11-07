@@ -134,7 +134,7 @@ body.m-open.m-o-hud .hud > :nth-child(2) { transition-delay: 0.08s !important; }
 body.m-open.m-o-hud .hud > :nth-child(3) { transition-delay: 0.16s !important; }
 body.m-open.m-o-hud .hud > :nth-child(4) { transition-delay: 0.24s !important; }
 body.m-open.m-o-hud .hud > :nth-child(5) { transition-delay: 0.32s !important; }
-/* The ghost pill (hidden on a first visit's tree) is a child too: the account chip after it keeps its place in the stagger. */
+/* The ghost pill (hidden on a first visit's tree) sits before the time: the time, the pause and the account chip each shift one stagger slot for it, so the chip is the sixth child. The settings button after it has no delay of its own. */
 body.m-open.m-o-hud .hud > :nth-child(6) { transition-delay: 0.4s !important; }
 body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fast .hud > * { transition-duration: 0.5s !important; transition-delay: 0s !important; }
 
