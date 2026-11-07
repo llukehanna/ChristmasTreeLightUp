@@ -69,6 +69,16 @@ import type { Replayer, ReplayRun } from './replay';
 
 /** The results tag follows this long after the last bulb. */
 const RESULTS_DELAY_MS = 500;
+/**
+ * DEV ONLY (C4 task 6; deleted after Luke's pick): the switches for comparing the ghost's two looks, on a dev build with
+ * `?test` alone. `ghostlook=glow` swaps the pill's progress for a ring on the tiles the ghost has lit and you haven't;
+ * `ghostdemo` gives the tree in play a synthetic ghost, so the look can be raced without the worker. Both are false in a
+ * production build, where this folds away.
+ */
+const DEV_GHOST = import.meta.env.DEV ? new URLSearchParams(location.search) : null;
+const GHOST_GLOW = DEV_GHOST?.has('test') === true && DEV_GHOST.get('ghostlook') === 'glow';
+const GHOST_DEMO = DEV_GHOST?.has('test') === true && DEV_GHOST.has('ghostdemo');
+
 /** A finished run kept as a ghost (C4 decision 6): never the judge's own paused, too_fast or clock. */
 const GHOST_REASONS: ReadonlySet<UnrankedReason | null> = new Set([null, 'daily', 'past', 'anonymous']);
 const INTRO_KEY = 'aglow.seenIntro';
@@ -691,6 +701,19 @@ export class App {
     this.busy(this.vis.lastLitAt(board));
     this.results.setGhost(null);
     this.beginGhost();
+    if (import.meta.env.DEV && GHOST_DEMO) this.demoGhost(board);
+  }
+
+  /** DEV ONLY (task 6): `?test&ghostdemo` gives `board`, the tree in play, a ghost that solves it in about 45 s. */
+  private demoGhost(board: Board): void {
+    // The DEV test is here, not only at the call: a method is kept whether or not it is called, and its import with it.
+    if (import.meta.env.DEV) {
+      void import('./dev/ghost-demo').then(({ demoGhostTrack }) => {
+        if (this.run.board !== board || this.winAt !== null) return;
+        const track = demoGhostTrack(board);
+        if (track) this.setGhost({ run: { seed: 0, genVersion: 0, log: [], ms: track.ms }, track });
+      });
+    }
   }
 
   /**
@@ -880,7 +903,7 @@ export class App {
     const g = this.ghost;
     if (!g) return;
     const clock = this.clock.elapsedMs(now);
-    const text = !this.ghostToggle
+    const text = !this.ghostToggle || GHOST_GLOW // the glow look's pill only toggles (task 6, dev-only)
       ? 'Ghost'
       : clock >= g.track.ms
         ? `Ghost ${formatMs(g.track.ms)}`
@@ -1540,6 +1563,7 @@ export class App {
       board: w ? w.board : this.board, vis: w ? w.vis : this.vis, now, dt, camera: this.camera, hover: w ? -1 : this.hover, calm,
       revealAt: w ? now - w.playback.cursor : this.run.revealAt, winAt: w ? w.winAt : this.winAt, reducedMotion: this.reduced.matches,
       boardNow: w ? w.playback.cursor : undefined,
+      ghostTiles: GHOST_GLOW && !w && this.ghost && this.ghostToggle && this.winAt === null ? this.ghost.track.tilesAt(this.clock.elapsedMs(now)) : undefined,
       extraBulb: show ? (i) => this.radio.show.extraBulb(Math.floor(i / GRID.w), now) : undefined,
       ambient: show ? this.radio.show.low : 0,
       highs: show ? this.radio.show.high : 0,

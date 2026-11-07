@@ -1,3 +1,4 @@
+import type { Board } from './board';
 import type { LogEntry } from './log';
 import { Playback } from './playback';
 import { seededBoard } from './seeded';
@@ -31,13 +32,17 @@ interface Sample {
  */
 export function ghostTrack(run: GhostSource): GhostTrack | null {
   const board = seededBoard(run.seed, run.genVersion);
-  if (!board) return null;
-  const play = new Playback(board, run.log);
+  return board && ghostTrackOn(board, run.log);
+}
+
+/** `ghostTrack` on a fresh `board` (nothing tapped, nothing turning) that `log` plays on: it plays the board out. */
+export function ghostTrackOn(board: Board, log: readonly LogEntry[]): GhostTrack | null {
+  const play = new Playback(board, log);
   if (play.solvedAt === null) return null;
   const samples: Sample[] = [{ clock: -Infinity, tiles: new Set(board.lighting.order) }];
   for (let guard = 0; !play.ended; guard++) {
     const at = play.nextChangeAt();
-    if (guard > 2 * run.log.length + 8 * board.grid.ids.length + 64) return null;
+    if (guard > 2 * log.length + 8 * board.grid.ids.length + 64) return null;
     const events = play.step(Number.isFinite(at) && at > play.cursor ? at - play.cursor : 1, 1);
     if (!events.some((e) => e.type === 'lightingChanged')) continue;
     const clock = play.clockMs();
