@@ -178,3 +178,48 @@ test('keys while watching: Space and P play and pause, N does nothing, Escape is
   await expect(page.locator('body')).not.toHaveClass(/\bwatching\b/);
   await expect(page.locator('#results')).toBeVisible();
 });
+
+test('a Watch still loading is cancelled by a resume or a new tree: the replay never takes over the tree in play', async ({ page }) => {
+  await namedPlayer(page);
+  const earlier = await solvedRun(page);
+  // The replay route answers only when released.
+  let release = (): void => undefined;
+  const route = async () => {
+    const held = new Promise<void>((r) => (release = r));
+    await page.route('**/api/games/*/replay', async (r) => {
+      await held;
+      await r.fallback();
+    });
+  };
+  const notWatching = async () => {
+    // Long enough for a released answer and the chunk to land.
+    await page.waitForTimeout(1500);
+    expect(await replay(page)).toMatchObject({ watching: false });
+    await expect(page.locator('body')).not.toHaveClass(/\bwatching\b/);
+  };
+
+  // A resume: Watch on a tree in progress (the sheet paused it), then the frost is tapped while the replay loads.
+  await route();
+  const id = await treeInProgress(page);
+  await openGames(page, earlier);
+  await page.getByRole('dialog', { name: 'Your games' }).locator(`.acct-watch[data-id="${earlier}"]`).click();
+  await expect(page.locator('#toast')).toHaveText('Loading replay…');
+  await resumeIfPaused(page);
+  release();
+  await notWatching();
+  await expect(page.locator('#pause')).toBeHidden();
+  expect((await game(page)).id).toBe(id);
+  await page.unroute('**/api/games/*/replay');
+
+  // A new tree: Watch, then a new tree starts while the replay loads, and the answer lands after it is up.
+  await route();
+  await openGames(page, earlier);
+  await page.getByRole('dialog', { name: 'Your games' }).locator(`.acct-watch[data-id="${earlier}"]`).click();
+  await page.evaluate(() => (window as unknown as W).__aglow.newTree());
+  const fresh = await onlineTree(page);
+  expect(fresh).not.toBe(id);
+  release();
+  await notWatching();
+  await expect(page.locator('#pause')).toBeHidden();
+  expect((await game(page)).id).toBe(fresh);
+});

@@ -360,7 +360,10 @@ export class App {
   private replayChunk: Promise<typeof import('./replay')> | null = null;
   /** The player's camera, set aside while a replay plays (it is drawn at rest) and put back by Done. */
   private watchCamera: Camera = IDENTITY;
-  /** Bumped by each Watch and by Done, so a replay that finishes loading after Done (or a newer Watch) never plays. */
+  /**
+   * Bumped by each Watch (its press and its start), by Done (and so by a new tree) and by a resume: a replay still loading
+   * (its answer, or the chunk) when the player has moved on never plays.
+   */
   private watchSeq = 0;
 
   constructor() {
@@ -1229,13 +1232,22 @@ export class App {
     return this.replayer?.run ?? null;
   }
 
-  /** A row's Watch button (Your games, the board): the sheet goes, and the run plays once it has arrived. */
+  /**
+   * A row's Watch button (Your games, the board): the sheet goes, and the run plays once it has arrived. The Watch is
+   * pending until then: a resume, a new tree, Done or a newer Watch (each moves `watchSeq` on) drops it, answer and all,
+   * so a replay never lands on a tree the player has gone back to.
+   */
   watchRun(id: string): void {
+    const seq = ++this.watchSeq;
     this.accounts.host.close();
     this.toast.show('Loading replay…');
     api.replay(id).then(
-      (data) => void this.watch(data),
-      () => this.toast.show("Couldn't load that replay."),
+      (data) => {
+        if (seq === this.watchSeq) void this.watch(data);
+      },
+      () => {
+        if (seq === this.watchSeq) this.toast.show("Couldn't load that replay.");
+      },
     );
   }
 
@@ -1904,6 +1916,8 @@ export class App {
 
   private resume(): void {
     if (!this.paused) return;
+    // Back to the tree: a Watch still loading no longer has a paused tree to play over.
+    this.watchSeq++;
     const hadFocus = document.activeElement === el('pause');
     this.setPaused(false);
     // The clock (and the log) resume right away, so a tap before the next frame is never logged inside the pause.
