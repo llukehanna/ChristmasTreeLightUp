@@ -10,6 +10,7 @@ beforeEach(() => {
     <div id="menu" hidden>
       <button id="new-tree">New tree</button>
       <button id="daily-row"><span id="daily-label">Daily Tree</span><span id="daily-note" hidden>Played</span></button>
+      <button id="advent-row">Advent calendar</button>
       <button id="decorate-btn">Decorate</button>
       <button id="keys-row">Keyboard shortcuts</button>
       <input type="range" id="effects-volume" />
@@ -199,4 +200,18 @@ it('the Decorate row and the menu button wear a dot while anything is unseen', (
   expect(btn.classList.contains('has-new')).toBe(false);
   expect(row.classList.contains('has-new')).toBe(false);
   expect(btn.getAttribute('aria-label')).toBe('Settings');
+});
+
+it('the Advent calendar row closes the menu, then opens the calendar, mid-run too (a door asks its own confirm)', () => {
+  const order: string[] = [];
+  const onNewTree = vi.fn();
+  const onDaily = vi.fn();
+  const menu = new Menu({ ...DEFAULT_SETTINGS }, {
+    onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, needsConfirm: () => true, onAdvent: () => order.push(menu.isOpen ? 'menu open' : 'menu closed'),
+  });
+  menu.open();
+  (document.getElementById('advent-row') as HTMLButtonElement).click();
+  expect(order).toEqual(['menu closed']);
+  expect(onNewTree).not.toHaveBeenCalled();
+  expect(onDaily).not.toHaveBeenCalled();
 });

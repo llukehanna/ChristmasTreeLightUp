@@ -4,7 +4,7 @@ import type { Session, SessionState } from '../api/session';
 import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '../api/types';
 import { canSaveName, deleteView, nameView, paintName, signInView, type NameState, type NameStatus, type SignInOptions } from './account-cards';
 import { AccountMenu } from './account-menu';
-import { listView, loadBoardWindow, saveBoardWindow, type ListTab, type Loadable } from './board-sheets';
+import { isListView, listView, loadBoardWindow, saveBoardWindow, type ListTab, type Loadable } from './board-sheets';
 import { loadStats as loadDeviceStats, localDay, shownAccountStats } from '../store/stats';
 import { Sheet } from './sheet';
 
@@ -89,6 +89,11 @@ export class Accounts {
     this.menu.close(false);
   }
 
+  /** The account sheet itself, for another page in its glass (the Advent calendar, src/ui/advent.ts). */
+  get host(): Sheet {
+    return this.sheet;
+  }
+
   openSignIn(o: SignInOptions = {}, from?: HTMLElement | null): void {
     this.sheet.open(signInView(o, o.pendingMs == null), from);
   }
@@ -150,7 +155,7 @@ export class Accounts {
   /** Redraws the leaderboard or Your games when its data arrives, if that list is still on screen. */
   private refreshList(): void {
     const v = this.sheet.current;
-    if (v && !v.card) this.sheet.update(this.listNow());
+    if (v && isListView(v)) this.sheet.update(this.listNow());
   }
 
   /**

@@ -157,6 +157,10 @@ function bindTabKeys(list: HTMLElement): void {
   });
 }
 
+/** The views listView made: the account sheet redraws only these when their data arrives (it may show another page). */
+const LISTS = new WeakSet<SheetView>();
+export const isListView = (v: SheetView): boolean => LISTS.has(v);
+
 /**
  * The leaderboard and Your games: one sheet, two tabs (spec §6, pick 2C). The leaderboard shows one window (spec
  * 2026-10-14), `board` being that window's answer.
@@ -172,7 +176,7 @@ export function listView(
   /** The day (YYYY-MM-DD) of the Daily board shown: this browser's today unless the rosette opened a run's. */
   dailyDay: string = localDay(new Date(now)),
 ): SheetView {
-  return {
+  const view: SheetView = {
     label: tab === 'board' ? 'Leaderboard' : 'Your games',
     card: false,
     render(inner) {
@@ -197,4 +201,6 @@ export function listView(
       if (list) bindTabKeys(list);
     },
   };
+  LISTS.add(view);
+  return view;
 }

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import type { Page } from '@playwright/test';
 import { expect, test, testIp } from './fixtures';
 import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping, waitInteractive, type W } from './helpers';
@@ -545,5 +546,74 @@ test.describe('the Daily Tree from the menu, signed in', () => {
       const { scroll, client } = await fits();
       expect(scroll, `at ${width}px`).toBeLessThanOrEqual(client);
     }
+  });
+});
+
+test.describe('the Advent calendar', () => {
+  test.describe.configure({ timeout: 120_000 });
+
+  /**
+   * Moves a finished game's row to `day` in the local D1 the Worker serves (the same database file serve:e2e made). The
+   * page's calendar can be faked, the Worker's can't: this stands in for the Worker's clock having reached that day.
+   */
+  function moveToDay(id: string, day: string): void {
+    if (!/^[\w-]+$/.test(id)) throw new Error(`unexpected game id ${id}`);
+    const [y, m, d] = day.split('-').map(Number);
+    const sql = `UPDATE games SET daily_day = ${Date.UTC(y, m - 1, d) / 86_400_000} WHERE id = '${id}'`;
+    execFileSync('npx', ['wrangler', 'd1', 'execute', 'aglow', '--local', '--persist-to', '.wrangler/e2e', '--command', sql], { stdio: 'pipe' });
+  }
+
+  test("on Dec 9, door 6 is a catch-up: its past day's tree, won and claimed at sign-in, opens the door on its item", async ({ page }) => {
+    const ip = testIp(test.info());
+    // Noon on Dec 9, 2026 in the page: door 6's day (Dec 6) closed everywhere at Dec 8 00:00 UTC.
+    await page.clock.install({ time: new Date(2026, 11, 9, 12) });
+    // The Worker checks a past day against its own clock, today's real one. Door 6's start asks it for a day that has
+    // really closed (the first Daily), and the page is told the day it asked for; once won, the row moves to Dec 6.
+    const asked: unknown[] = [];
+    await page.route('**/api/games', async (route) => {
+      const req = route.request();
+      const body = req.method() === 'POST' ? (req.postDataJSON() as { daily?: { today: string; day?: string } }) : null;
+      if (body?.daily?.day === undefined) return route.fallback();
+      asked.push(body.daily);
+      const real = { today: new Date().toISOString().slice(0, 10), day: '2026-11-01' };
+      const res = await route.fetch({ postData: JSON.stringify({ daily: real }), headers: { ...req.headers(), 'cf-connecting-ip': ip } });
+      const json = (await res.json()) as { daily: { day: string; past: boolean } | null };
+      expect(json.daily).toMatchObject({ day: real.day, past: true });
+      await route.fulfill({ response: res, json: { ...json, daily: { ...json.daily, day: body.daily.day } } });
+    });
+    const player = await asPlayer(page);
+    await ready(page);
+
+    await page.click('#menu-btn');
+    await page.getByRole('button', { name: 'Advent calendar' }).click();
+    const calendar = page.getByRole('dialog', { name: 'Advent calendar' });
+    await expect(calendar.locator('.acct-sub')).toHaveText('December 2026 · 0/24 open');
+    await expect(calendar).toContainText('Sign in to open doors · your trees still count once you do');
+    await expect(calendar.getByRole('button', { name: 'Dec 9 · Today' })).toBeEnabled();
+    await expect(calendar.getByRole('button', { name: 'Dec 10' })).toBeDisabled();
+    await calendar.getByRole('button', { name: 'Dec 6 · Catch up' }).click();
+    await expect(calendar).toBeHidden();
+
+    // The past day's tree, as C1 plays it: its pill, and unranked as "a past day's tree".
+    await expect.poll(() => asked).toEqual([{ today: '2026-12-09', day: '2026-12-06' }]);
+    await expect(page.locator('#daily-pill')).toHaveText('Daily Tree · Dec 6');
+    const id = await onlineTree(page);
+    await solveByTapping(page);
+    await expect.poll(() => game(page)).toMatchObject({ id, outcome: 'done', reason: 'past', ranked: false });
+    await expect(page.locator('#results .rib-line')).toHaveText("Unranked: a past day's tree", { timeout: 15_000 });
+    moveToDay(id, '2026-12-06');
+
+    // Signed in, the run is claimed: door 6 opens on the Gingerbread tag.
+    await signInFromChip(page);
+    await pickName(page, player.name);
+    await resumeIfPaused(page);
+    await page.click('#menu-btn');
+    await page.getByRole('button', { name: 'Advent calendar' }).click();
+    const door = calendar.locator('#adv-door-6');
+    await expect(door).toHaveAttribute('data-state', 'open', { timeout: 15_000 });
+    await expect(door).toContainText('Gingerbread tag');
+    await expect(door.locator('.adv-art svg')).toBeVisible();
+    await expect(calendar.locator('.acct-sub')).toHaveText('December 2026 · 1/24 open');
+    await expect(calendar).not.toContainText('Sign in to open doors');
   });
 });

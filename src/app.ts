@@ -43,6 +43,7 @@ import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './
 import { readJSON, writeJSON } from './store/storage';
 import { lastPlayer } from './store/unlocks';
 import { Accounts } from './ui/accounts';
+import { AdventSheet } from './ui/advent';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
 import { Decorate, lockText } from './ui/decorate';
@@ -241,6 +242,8 @@ export class App {
   private readonly radioPanel: RadioPanel;
   /** The HUD account chip and menu, and the account sheets (spec 2026-10-07 §6). */
   private readonly accounts: Accounts;
+  /** The Advent calendar's page, in the account sheet's glass (it opens from the menu). */
+  private readonly advent: AdventSheet;
   /** The signed-in player (spec 2026-10-07): loaded at start, changed by sign-in, naming and sign-out. */
   readonly session = new Session();
   /** A board exists: the first tree waits for the server (1.5 s at most, 5 s for the Daily). */
@@ -267,7 +270,16 @@ export class App {
    */
   private readonly preview = import.meta.env.DEV && previewAll(import.meta.env.DEV, location.search);
   /** What the player owns: the look shows only that (the saved look is never changed). A change re-applies the look (news). */
-  private readonly unlocks = new UnlockState({ onChange: () => this.news.changed() }, this.preview);
+  private readonly unlocks = new UnlockState(
+    {
+      onChange: () => {
+        this.news.changed();
+        // A door that opened shows its item at once if the calendar is up (it is set up after this, in the constructor).
+        this.advent?.refresh();
+      },
+    },
+    this.preview,
+  );
   /**
    * When an unlock shows: never during a run (the look, the pile and the dot wait for its end: ruling R9), and what is
    * new goes on the results tag (ribbon "Unlocked: … · Try it").
@@ -352,11 +364,9 @@ export class App {
       onNewTree: () => this.newGame(),
       onDaily: () => this.newGame('daily'),
       dailyPlayed: () => !landsOnDaily(localDay(new Date())),
-      playingDaily: () => {
-        const d = this.online?.daily;
-        return this.live && this.winAt === null && !!d && !d.past && d.day === localDay(new Date());
-      },
-      needsConfirm: () => this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000,
+      playingDaily: () => this.playingDaily(),
+      needsConfirm: () => this.needsConfirm(),
+      onAdvent: () => this.advent.open(el('menu-btn')),
       onOpen: () => {
         this.radioPanel.close();
         this.accounts.closeMenu();
@@ -414,6 +424,15 @@ export class App {
       },
       fitHud: () => this.fitHud(),
       toast: (text, ms) => this.toast.show(text, ms),
+    });
+    this.advent = new AdventSheet({
+      sheet: this.accounts.host,
+      owns: (id) => this.unlocks.owns(id),
+      guest: () => this.player === null,
+      needsConfirm: () => this.needsConfirm(),
+      playingDaily: () => this.playingDaily(),
+      onToday: () => this.newGame('daily'),
+      onDay: (day) => this.newGame('daily', day),
     });
     // Game sounds duck the music (spec §5.1), alongside anything else already listening.
     const onSound = this.sfx.onSound;
@@ -664,10 +683,10 @@ export class App {
    * local tree, unranked "offline"). Marks the start under way. A live Daily the server started is marked on this device
    * (the next fresh boot lands on a random tree); a failed start marks nothing, so the next load asks for the Daily again.
    */
-  private async fetchTree(kind: 'daily' | 'random'): Promise<{ board: Board | null; online: OnlineRun | null }> {
+  private async fetchTree(kind: 'daily' | 'random', day?: string): Promise<{ board: Board | null; online: OnlineRun | null }> {
     this.starting = true;
     try {
-      const s = await api.start(kind === 'daily' ? { today: localDay(new Date()) } : undefined);
+      const s = await api.start(kind === 'daily' ? { today: localDay(new Date()), ...(day ? { day } : {}) } : undefined);
       const board = seededBoard(s.seed, s.genVersion);
       if (board) {
         // No claim: the server knew the player, so its repeat is final (dailyStart).
@@ -680,9 +699,12 @@ export class App {
     return { board: null, online: null };
   }
 
-  /** A new tree, random or the Daily: from the server's seed (asked for now), else a local random one. */
-  private async freshTree(kind: 'daily' | 'random' = 'random'): Promise<void> {
-    const { board, online } = await this.fetchTree(kind);
+  /**
+   * A new tree, random or the Daily (`day`: a past day's, the Advent calendar's catch-up): from the server's seed (asked
+   * for now), else a local random one.
+   */
+  private async freshTree(kind: 'daily' | 'random' = 'random', day?: string): Promise<void> {
+    const { board, online } = await this.fetchTree(kind, day);
     this.starting = false;
     const now = performance.now();
     this.beginGame(now, board ?? Board.random(GRID, Math.random), 0, { online, startEpoch: Date.now(), log: [] });
@@ -696,8 +718,11 @@ export class App {
     if (toast) this.toast.showWhenSeen(toast, START_TOAST_MS);
   }
 
-  /** N, New tree and the results tag's button give a random tree; the menu's Daily Tree row gives the Daily. */
-  newGame(kind: 'daily' | 'random' = 'random'): void {
+  /**
+   * N, New tree and the results tag's button give a random tree; the menu's Daily Tree row (and today's Advent door) gives
+   * the Daily, and a past Advent door that day's tree (`day`).
+   */
+  newGame(kind: 'daily' | 'random' = 'random', day?: string): void {
     if (this.starting) return;
     clearGame();
     // The old tree stays on screen until the new one is ready (1.5 s at most, 5 s for the Daily), without its results card.
@@ -706,7 +731,18 @@ export class App {
     el('corner-new').hidden = true;
     // "Press N again" has done its job: it must not linger over the new tree.
     this.toast.hide();
-    void this.freshTree(kind);
+    void this.freshTree(kind, day);
+  }
+
+  /** True while a game is in progress: New tree, the Daily row and the Advent doors then need a second press. */
+  private needsConfirm(): boolean {
+    return this.live && this.winAt === null && this.board.lighting.count > 0 && this.clock.elapsedMs(performance.now()) > 3000;
+  }
+
+  /** The tree in play is today's live Daily, not yet won: the Daily row and today's door have nothing to start over to. */
+  private playingDaily(): boolean {
+    const d = this.online?.daily;
+    return this.live && this.winAt === null && !!d && !d.past && d.day === localDay(new Date());
   }
 
   /** The Daily pill shows while the tree on screen is a Daily Tree ('Daily' alone on a phone, or where the HUD is tight). */
@@ -976,7 +1012,11 @@ export class App {
           return; // keep them for next time
         }
         removeClaims(batch.map((c) => c.id));
+        // Claimed runs count toward the account's goals (trees lit, an Advent door): the run on screen asks for the
+        // progress again through onClaimed's stats, and runs played earlier on this device here.
+        const onScreen = res.results.some((r) => this.won !== null && this.online?.gameId === r.id);
         for (const r of res.results) this.onClaimed(r);
+        if (res.results.length > 0 && !onScreen) void this.syncProgress();
         if (mine) {
           answered = true;
           if (stillHere() && !res.results.some((r) => r.id === current)) this.setClaimState('gone');

@@ -245,3 +245,18 @@ it("a new local day: the Daily window starts again from Loading, never yesterday
   await tick();
   expect(note()).toBe('No one has lit this Daily Tree yet.');
 });
+
+it("another page in the sheet (the Advent calendar) stays when a list's answer arrives or the session changes", async () => {
+  const late = deferred<BoardResponse>();
+  calls.board.mockReturnValueOnce(late.promise);
+  accounts.openBoard();
+  const advent = { label: 'Advent calendar', card: false, render: (inner: HTMLElement) => (inner.innerHTML = '<p class="adv">Doors</p>') };
+  accounts.host.open(advent);
+  late.resolve({ rows: [], total: 0, you: null });
+  await tick();
+  session.set({ ...me, name: 'Another' });
+  await tick();
+  expect(accounts.host.current).toBe(advent);
+  expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Advent calendar');
+  expect(document.querySelector('.adv')).not.toBeNull();
+});
