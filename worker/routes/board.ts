@@ -67,18 +67,18 @@ export async function getBoard(req: Request, env: AppEnv): Promise<Response> {
     const { top, total } = await cachedDailyTopAndTotal(env.DB, day);
     // Another player's first attempt stays closed until the day does (canWatch); yours is always open.
     const closed = Date.now() < dailyClosesAt(day);
-    body = await boardOf(top, total, user, (r) => !closed || r.user_id === user?.id, async (u) => {
+    body = await boardOf(top, total, user, (r) => r.played === 1 && (!closed || r.user_id === user?.id), async (u) => {
       const mine = await dailyBestRow(env.DB, u.id, day);
-      return mine && { id: mine.id, rank: await dailyRankOf(env.DB, day, mine.ms, mine.finished_at), name: u.name, ms: mine.ms, finishedAt: mine.finished_at, mine: true, replay: true };
+      return mine && { id: mine.id, rank: await dailyRankOf(env.DB, day, mine.ms, mine.finished_at), name: u.name, ms: mine.ms, finishedAt: mine.finished_at, mine: true, replay: mine.played === 1 };
     });
   } else {
     const since = windowStart(w, q);
     const user = await currentUser(req, env);
     const { top, total } = await cachedTopAndTotal(env.DB, Date.now(), since);
-    // Every main-board run is ranked and named, so any of them can be watched.
-    body = await boardOf(top, total, user, () => true, async (u) => {
+    // Every main-board run is ranked and named, so a played one can be watched; an imported one kept no log.
+    body = await boardOf(top, total, user, (r) => r.played === 1, async (u) => {
       const best = await bestOf(env.DB, u.id, since);
-      return best && { id: best.id, rank: await rankOf(env.DB, best.ms, best.finished_at, since), name: u.name, ms: best.ms, finishedAt: best.finished_at, mine: true, replay: true };
+      return best && { id: best.id, rank: await rankOf(env.DB, best.ms, best.finished_at, since), name: u.name, ms: best.ms, finishedAt: best.finished_at, mine: true, replay: best.played === 1 };
     });
   }
   return json(body satisfies BoardResponse, { headers: { 'Cache-Control': 'private, max-age=15', Vary: 'Cookie' } });

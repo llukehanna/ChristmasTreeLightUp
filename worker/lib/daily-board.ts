@@ -33,13 +33,13 @@ const placed = (day: string): string =>
 const ON_DAILY = `FROM games g JOIN users u ON u.id = g.user_id WHERE g.daily_day = ?1 AND ${placed('?1')}`;
 
 /** The day's top BOARD_TOP: fastest, then earliest finished, then id (the main board's order). */
-export const DAILY_TOP_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at ${ON_DAILY} ORDER BY g.ms, g.finished_at, g.id LIMIT ${BOARD_TOP}`;
+export const DAILY_TOP_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at, (g.source = 'play') AS played ${ON_DAILY} ORDER BY g.ms, g.finished_at, g.id LIMIT ${BOARD_TOP}`;
 /** The runs on the day's board. */
 export const DAILY_TOTAL_SQL = `SELECT count(*) AS n ${ON_DAILY}`;
 /** The runs on the day's board that beat (?2 ms, ?3 finished_at): faster, or as fast and finished earlier. */
 export const DAILY_RANK_SQL = `SELECT count(*) AS n ${ON_DAILY} AND (g.ms < ?2 OR (g.ms = ?2 AND g.finished_at < ?3))`;
 /** Player ?2's run on the day's board, if they have one. */
-export const DAILY_BEST_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at ${ON_DAILY} AND g.user_id = ?2`;
+export const DAILY_BEST_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at, (g.source = 'play') AS played ${ON_DAILY} AND g.user_id = ?2`;
 /** Player ?2's first attempt at day ?1, finished or not. */
 export const DAILY_FIRST_SQL = `SELECT id FROM games WHERE daily_day = ?1 AND user_id = ?2 AND daily_past = 0 AND ${claimedInTime('')} ORDER BY started_at, id LIMIT 1`;
 

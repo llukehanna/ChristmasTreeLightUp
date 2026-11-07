@@ -5,7 +5,7 @@ import type { AppEnv } from '../../worker/lib/env';
 import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, boardGrew, cachedTopAndTotal, cachedTotal, resetBoardCache } from '../../worker/lib/board-cache';
 import { DAILY_BEST_SQL, DAILY_FIRST_SQL, DAILY_RANK_SQL, DAILY_TOP_SQL, DAILY_TOTAL_SQL } from '../../worker/lib/daily-board';
 import { dayNumber } from '../../worker/lib/days';
-import { BEST_SQL, TOP_SQL, topSql, totalSql } from '../../worker/lib/ranks';
+import { BEST_SQL, bestOf, TOP_SQL, topSql, totalSql } from '../../worker/lib/ranks';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
 let db: Db;
@@ -68,7 +68,7 @@ describe('the leaderboard', () => {
     ]);
   });
 
-  it('carries each row its game id, and every row in the main windows can be watched', async () => {
+  it('carries each row its game id, and every played row in the main windows can be watched', async () => {
     const ana = await user('ana@example.com', 'Meridian');
     const bo = await user('bo@example.com', 'Comet');
     const fast = await run(bo, 40_000, 2000);
@@ -77,6 +77,31 @@ describe('the leaderboard', () => {
     expect(anon.rows.map((r) => [r.id, r.replay])).toEqual([[fast, true], [slow, true]]);
     const mine = await board(await signIn(env, 'ana@example.com'));
     expect(mine.rows.map((r) => [r.id, r.replay])).toEqual([[fast, true], [slow, true]]);
+  });
+
+  it("an imported run (ranked, but no log) is on the board and can't be watched, in the rows or pinned as your best", async () => {
+    const ana = await user('ana@example.com', 'Meridian');
+    const bo = await user('bo@example.com', 'Comet');
+    const played = await run(bo, 40_000, 2000);
+    const imported = await run(ana, 30_000, 1000);
+    await db.prepare("UPDATE games SET source = 'import' WHERE id = ?").bind(imported).run();
+    const cookie = await signIn(env, 'ana@example.com');
+    expect((await board(cookie)).rows.map((r) => [r.id, r.replay])).toEqual([[imported, false], [played, true]]);
+    // Pushed below the top 50, it is pinned, still not watchable.
+    await db.batch(
+      Array.from({ length: 50 }, (_, k) =>
+        db
+          .prepare('INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, ranked) VALUES (?, ?, 1, 1, 0, ?, ?, 1)')
+          .bind(`fast-${String(k).padStart(16, '0')}`, bo, 1000 + k, 10_000 + k),
+      ),
+    );
+    await db.prepare('UPDATE games SET ms = 99_000 WHERE id = ?').bind(imported).run();
+    resetBoardCache();
+    const pinned = await board(cookie);
+    expect(pinned.you).toMatchObject({ id: imported, mine: true, replay: false });
+    // A window's best reads the same flag.
+    const owner = (await db.prepare('SELECT id FROM users WHERE email = ?').bind('ana@example.com').first<{ id: number }>())?.id as number;
+    expect(await bestOf(db, owner, 1)).toMatchObject({ id: imported, played: 0 });
   });
 
   it('runs with the same time and finish share a rank', async () => {
