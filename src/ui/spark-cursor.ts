@@ -5,11 +5,14 @@
  * It is chrome: its own fixed canvas over the page that takes no pointer events, drawn additively (it brightens, never
  * covers, a tile), with only the dirty rectangle cleared each frame. The app's frame loop drives it (`frame`); it sleeps
  * once the mouse has rested a while and its sparks have burnt out, leaving the ember drawn. It never runs while the tab
- * is hidden or under prefers-reduced-motion, and off it holds no canvas and no listeners. The system cursor hides only
+ * is hidden or under prefers-reduced-motion, and off it holds no canvas and does nothing. The system cursor hides only
  * while the ember is shown (after a real mouse move inside the page), so there is never no cursor at all.
  *
  * Only trusted events move it: the Decorate drawer re-sends pointer events on the scaled stage in stage coordinates
- * (src/ui/decorate.ts, remap), and those are not where the pointer is.
+ * (src/ui/decorate.ts, remap), and those are not where the pointer is. The drawer's remap is a window capture listener
+ * that stops the real event, so the spark's own pointer listeners are registered once, when it is made (the app makes
+ * it before any drawer opens): window capture listeners run in the order they were added, so the spark always reads the
+ * real event first, whenever it starts. Off, they return at once.
  */
 
 interface Spark {
@@ -63,7 +66,10 @@ export class SparkCursor {
   private dirty = { x0: 0, y0: 0, x1: 0, y1: 0 };
   private readonly ps: Spark[] = [];
 
-  constructor(private readonly h: SparkHooks) {}
+  constructor(private readonly h: SparkHooks) {
+    addEventListener('pointermove', this.move, true);
+    addEventListener('pointerdown', this.down, true);
+  }
 
   get running(): boolean {
     return this.on;
@@ -106,8 +112,6 @@ export class SparkCursor {
     this.cv = cv;
     this.c = cv.getContext('2d');
     this.resize();
-    addEventListener('pointermove', this.move, true);
-    addEventListener('pointerdown', this.down, true);
     addEventListener('resize', this.resize);
     document.documentElement.addEventListener('pointerleave', this.leave);
   }
@@ -122,8 +126,6 @@ export class SparkCursor {
     this.over = 0;
     this.dirty = { x0: 0, y0: 0, x1: 0, y1: 0 };
     this.hideCursor(false);
-    removeEventListener('pointermove', this.move, true);
-    removeEventListener('pointerdown', this.down, true);
     removeEventListener('resize', this.resize);
     document.documentElement.removeEventListener('pointerleave', this.leave);
   }
@@ -153,7 +155,7 @@ export class SparkCursor {
   }
 
   private readonly move = (e: PointerEvent): void => {
-    if (e.pointerType !== 'mouse' || !this.trusted(e)) return;
+    if (!this.on || e.pointerType !== 'mouse' || !this.trusted(e)) return;
     this.x = e.clientX;
     this.y = e.clientY;
     this.inside = true;
@@ -167,7 +169,7 @@ export class SparkCursor {
   };
 
   private readonly down = (e: PointerEvent): void => {
-    if (e.pointerType !== 'mouse' || this.overUi || !this.trusted(e)) return;
+    if (!this.on || e.pointerType !== 'mouse' || this.overUi || !this.trusted(e)) return;
     this.spawn(16 + Math.round(this.over * 12), true);
     this.wake();
   };

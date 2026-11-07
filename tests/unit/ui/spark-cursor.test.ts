@@ -71,15 +71,18 @@ const made: SparkCursor[] = [];
 const track = (s: SparkCursor): SparkCursor => (made.push(s), s);
 const make = () => track(new SparkCursor({ overTile: () => false, trusted: (e) => !(e as Event & { remapped?: boolean }).remapped }));
 
-it('off, it costs nothing: no canvas, no listeners, and a frame draws nothing', () => {
+it('off, it costs nothing: no canvas, only its two inert pointer listeners, and a frame draws nothing', () => {
   const add = vi.spyOn(window, 'addEventListener');
   const s = make();
   s.frame(16);
   move(100, 100);
+  move(100, 100, 'pointerdown');
   s.frame(32);
   expect(canvas()).toBeNull();
-  expect(add).not.toHaveBeenCalled();
+  expect(add.mock.calls.map((c) => c[0])).toEqual(['pointermove', 'pointerdown']);
   expect(drawn).toEqual([]);
+  expect((s as unknown as { ps: unknown[] }).ps).toEqual([]);
+  expect(document.body.classList.contains('spark-on')).toBe(false);
   expect(s.running).toBe(false);
 });
 
@@ -214,4 +217,40 @@ it('by default only trusted events count (a synthetic one, as jsdom makes, is ig
   expect(drawn).not.toContain('arc');
   expect(document.body.classList.contains('spark-on')).toBe(false);
   s.stop();
+});
+
+it('started while the drawer is open (its remap listener added first), a real move over the stage still moves the ember', () => {
+  const stage = document.createElement('canvas');
+  stage.id = 'stage';
+  document.body.append(stage);
+  const s = make();
+  // The drawer's remap, as src/ui/decorate.ts adds it on open: window capture; it stops the real event on the stage and
+  // re-sends a copy in stage coordinates.
+  const remap = (e: Event): void => {
+    if ((e as Event & { remapped?: boolean }).remapped || e.target !== stage) return;
+    e.stopImmediatePropagation();
+    const m = e as MouseEvent;
+    move(m.clientX * 2 + 100, m.clientY * 2 + 100, e.type, true, stage);
+  };
+  for (const t of ['pointermove', 'pointerdown']) addEventListener(t, remap, true);
+  try {
+    s.start();
+    const inside = s as unknown as { x: number; y: number; ps: unknown[] };
+    move(300, 200, 'pointermove', false, stage);
+    s.frame(16);
+    expect([inside.x, inside.y]).toEqual([300, 200]);
+    expect(document.body.classList.contains('spark-on')).toBe(true);
+    expect(drawn).toContain('arc');
+    // A press over the stage bursts at the real pointer too.
+    const before = inside.ps.length;
+    move(310, 210, 'pointerdown', false, stage);
+    expect(inside.ps.length).toBeGreaterThan(before);
+    // …and so after a re-attach (the tab hidden and seen again).
+    setHidden(true);
+    setHidden(false);
+    move(320, 220, 'pointermove', false, stage);
+    expect([inside.x, inside.y]).toEqual([320, 220]);
+  } finally {
+    for (const t of ['pointermove', 'pointerdown']) removeEventListener(t, remap, true);
+  }
 });
