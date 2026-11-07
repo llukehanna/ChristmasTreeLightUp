@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FinishResult, ProgressResponse, RunContext, StartResponse } from '../../src/api/types';
-import { runFacts } from '../../src/core/facts';
+import { MAX_FACTS_ENTRIES, runFacts } from '../../src/core/facts';
 import { evaluate, type RunRecord } from '../../src/core/goals';
 import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
@@ -8,7 +8,8 @@ import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
 import type { Db } from '../../worker/lib/db';
 import { historyOf } from '../../worker/lib/progress';
 import type { AppEnv } from '../../worker/lib/env';
-import { solvingTaps } from '../unit/core/solver';
+import { orientationsOf } from '../../src/core/scramble';
+import { solvingTaps, withPause } from '../unit/core/solver';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
 
 let db: Db;
@@ -35,11 +36,20 @@ const start = async (cookie?: string, daily?: { today: string }): Promise<StartR
  * (faked, frozen) clock moves on to the start plus the log's span plus 300 ms of network, and the finish is sent with
  * `ctx` (left out when undefined).
  */
-async function play(cookie?: string, { gap = 50, ctx }: { gap?: number; ctx?: unknown } = {}) {
+async function play(cookie?: string, { gap = 50, ctx, pauses = 0, minEntries = 0 }: { gap?: number; ctx?: unknown; pauses?: number; minEntries?: number } = {}) {
   const game = await start(cookie);
   const board = seededBoard(game.seed, GEN_VERSION);
   if (!board) throw new Error('no board');
-  const log: LogEntry[] = solvingTaps(board, 3000, gap);
+  let log: LogEntry[] = solvingTaps(board, 3000, gap);
+  if (minEntries > log.length) {
+    // Honest padding: a turn one way and back on one tile, each pair 400 ms after the last (the tile's queue drains).
+    const tile = board.grid.ids.find((i) => orientationsOf(board.solution[i]).length === 4);
+    if (tile === undefined) throw new Error('no tile that turns four ways');
+    const pairs = Math.ceil((minEntries - log.length) / 2);
+    const padding = Array.from({ length: pairs * 2 }, (_, k) => ({ t: 3000 + Math.floor(k / 2) * 400 + (k % 2) * gap, a: k % 2 === 0 ? tile : ~tile }));
+    log = [...padding, ...solvingTaps(board, 3000 + pairs * 400, gap)];
+  }
+  for (let k = 0; k < pauses; k++) log = withPause(log, 5 + 3 * k, 100);
   const headless = seededBoard(game.seed, GEN_VERSION, true);
   const span = headless && replay(headless, log)?.solvedAt;
   if (!span) throw new Error('does not replay');
@@ -72,14 +82,38 @@ describe('facts and context at the finish', () => {
     });
     expect(facts?.turns).toBe(log.length); // the solver's every entry is a tap
 
-    // An unranked run (too fast) and a guest's run keep theirs too; a null station and world are a valid report.
+    // An unranked run (too fast) keeps its context, not its facts (see the next test); a guest's run keeps both; a null
+    // station and world are a valid report.
     later();
     const fast = await play(ana, { gap: 20, ctx: { tz: 0, station: null, world: null } });
     expect(fast.result.reason).toBe('too_fast');
-    expect(await db.prepare(pick).bind(fast.game.id).first()).toMatchObject({ turns: fast.log.length, tz: 0, station: null, world: null });
+    expect(await db.prepare(pick).bind(fast.game.id).first()).toMatchObject({ turns: null, tz: 0, station: null, world: null });
     later();
     const guest = await play(undefined, { ctx: { tz: 300, station: 'music-box', world: 'home-alone' } });
     expect(await db.prepare(pick).bind(guest.game.id).first()).toMatchObject({ turns: guest.log.length, tz: 300, station: 'music-box', world: 'home-alone' });
+  });
+
+  it('a run the judge unranked (paused) or a log past MAX_FACTS_ENTRIES stores no facts and still finishes', async () => {
+    at('2026-12-10T12:00:00Z');
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const pick = 'SELECT ranked, unranked_reason, turns, min_turns, feats FROM games WHERE id = ?';
+    const none = { turns: null, min_turns: null, feats: null };
+
+    const paused = await play(ana, { pauses: 21 });
+    expect(paused.result).toMatchObject({ ranked: false, reason: 'paused' });
+    expect(await db.prepare(pick).bind(paused.game.id).first()).toMatchObject({ ranked: 0, unranked_reason: 'paused', ...none });
+    later();
+
+    // An honest log, a tap over the cap: ranked all the same, its facts left out.
+    const long = await play(ana, { minEntries: MAX_FACTS_ENTRIES + 1 });
+    expect(long.log.length).toBeGreaterThan(MAX_FACTS_ENTRIES);
+    expect(long.result).toMatchObject({ ranked: true, reason: null });
+    expect(await db.prepare(pick).bind(long.game.id).first()).toMatchObject({ ranked: 1, unranked_reason: null, ...none });
+    later();
+
+    // A normal run still stores them.
+    const normal = await play(ana);
+    expect(await db.prepare(pick).bind(normal.game.id).first()).toMatchObject({ ranked: 1, turns: normal.log.length, min_turns: expect.any(Number), feats: expect.any(Number) });
   });
 
   it('a malformed ctx is dropped, the run still finishes', async () => {

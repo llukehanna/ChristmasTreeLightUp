@@ -1,5 +1,5 @@
 import { MAX_CLAIMS_PER_REQUEST, type ClaimResponse, type DailyInfo, type DailyResult, type FinishResult, type StartResponse } from '../../src/api/types.js';
-import { runFacts } from '../../src/core/facts.js';
+import { MAX_FACTS_ENTRIES, runFacts } from '../../src/core/facts.js';
 import { judge, type UnrankedReason } from '../../src/core/judge.js';
 import { parseLog } from '../../src/core/log.js';
 import { GRID } from '../../src/core/mask.js';
@@ -223,8 +223,11 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
   const reason: UnrankedReason | null =
     verdict.reason ?? (game.daily_past === 1 ? 'past' : game.daily_day !== null ? 'daily' : game.user_id === null ? 'anonymous' : null);
   const ranked = reason === null ? 1 : 0;
-  // The facts for the goals, only now the judge's capped replay has passed (runFacts lights the whole tree per turn).
-  const facts = runFacts(game.seed, game.gen_version, log);
+  // The facts for the goals, only now the judge's capped replay has passed, and only where a goal can read them:
+  // runFacts lights the whole tree per turn, so a long log could cost more CPU than the free plan allows and lose the
+  // run. A run the judge unranked (paused, too_fast, clock) is never a fresh one (isFresh, goals.ts); one past
+  // MAX_FACTS_ENTRIES can't be clean or perfect. The judge's reason, not the stored one: 'daily' and 'past' runs count.
+  const facts = verdict.reason === null && log.length <= MAX_FACTS_ENTRIES ? runFacts(game.seed, game.gen_version, log) : null;
   const ctx = runContextOf(body.ctx);
   const saved = await env.DB.prepare(
     'UPDATE games SET finished_at = ?, ms = ?, paused_ms = ?, pauses = ?, ranked = ?, unranked_reason = ?, log = ?, turns = ?, min_turns = ?, feats = ?, tz = ?, station = ?, world = ? WHERE id = ? AND finished_at IS NULL',

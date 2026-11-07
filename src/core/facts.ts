@@ -23,6 +23,13 @@ export const STAR_TILE = GRID.sourceX;
 const COMEBACK_HIGH = 0.8;
 const COMEBACK_LOW = 0.3;
 
+/**
+ * The longest log whose facts are worth computing. runFacts lights the whole tree on every turn, so a log near the
+ * 5,000-entry cap costs 5–15 times the judge's replay (past the Workers free plan's 10 ms of CPU). A run this long can't
+ * be clean or perfect (a tree needs about 80 turns at least), so only a possible Comeback is given up.
+ */
+export const MAX_FACTS_ENTRIES = 1500;
+
 export interface RunFacts {
   /** Taps made (a pause is not a turn). */
   turns: number;
