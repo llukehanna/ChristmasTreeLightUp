@@ -1,6 +1,7 @@
 import type { ItemId } from '../core/catalogue';
 import type { GoalId, GoalState } from '../core/goals';
 import type { UnrankedReason } from '../core/judge';
+import type { LogEntry } from '../core/log';
 
 /** JSON shapes shared by the Worker and the browser (specs 2026-10-07 §3, 2026-10-08 §3), plus a few shared constants. */
 export type { UnrankedReason };
@@ -126,12 +127,16 @@ export interface ClaimResponse {
 }
 
 export interface BoardRow {
+  /** The run's game id: what the replay route reads. A finished game's id is safe to show (C4 decision 2). */
+  id: string;
   rank: number;
   name: string;
   ms: number;
   finishedAt: number;
   /** One of the signed-in player's runs. */
   mine: boolean;
+  /** The viewer may watch this run (canWatch); false for another player's Daily run while its day is open. */
+  replay: boolean;
 }
 
 /** GET /api/board: every number is the window's (its runs, ranks among them, your best in it). */
@@ -158,6 +163,8 @@ export interface RecentGame {
   daily: string | null;
   /** This game is the owner's earliest-started live game for its day (finished or not); false for a repeat or a random game. */
   dailyFirst: boolean;
+  /** The run kept a log, so it can be watched; false for an imported run. */
+  replay: boolean;
 }
 
 export interface MyGamesResponse {
@@ -167,6 +174,31 @@ export interface MyGamesResponse {
   total: number;
   /** The last 30 finished games, newest first. */
   games: RecentGame[];
+}
+
+/** A finished run's tree and log: what plays it back (the replay, or a ghost). */
+export interface GhostRun {
+  seed: number;
+  genVersion: number;
+  log: LogEntry[];
+  ms: number;
+}
+
+/** GET /api/me/ghost?day=: your fastest run on that day's tree, or null when you have none to race. */
+export interface GhostResponse {
+  ghost: GhostRun | null;
+}
+
+/** GET /api/games/:id/replay: a finished run the viewer may watch, and who played it. */
+export interface ReplayResponse extends GhostRun {
+  id: string;
+  /** The owner's display name. */
+  name: string | null;
+  /** The viewer is the owner. */
+  mine: boolean;
+  finishedAt: number;
+  /** A Daily Tree run's day (YYYY-MM-DD); null for a random game. */
+  daily: string | null;
 }
 
 /** History import (spec 2026-10-08): the game's first day. No imported run is dated before it. */

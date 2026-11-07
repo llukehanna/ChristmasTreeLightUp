@@ -91,6 +91,11 @@ export interface FrameInput {
   beat?: BeatFrame;
   /** The first-visit opening: while it is on, its darkness and lights are the last thing drawn. */
   opening?: Opening;
+  /**
+   * The board's own clock, when it isn't `now` (a replay runs on the run's log time, src/core/playback.ts): turns are
+   * drawn by it, so a replay at 2× turns its tiles in step with its board.
+   */
+  boardNow?: number;
 }
 
 function ctx2d(c: HTMLCanvasElement, opts?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D {
@@ -472,7 +477,7 @@ export class Renderer {
       const [cx, cy] = tileCenter(L, GRID, i);
       const rot = board.rotating.get(i);
       const shown = rot ? rot.from : board.bits[i];
-      const angle = rot ? rot.dir * (Math.PI / 2) * easeSnap(clamp01((now - rot.t0) / board.rotateMs)) : 0;
+      const angle = rot ? rot.dir * (Math.PI / 2) * easeSnap(clamp01(((f.boardNow ?? now) - rot.t0) / board.rotateMs)) : 0;
       const k = f.reducedMotion ? 1 : vis.settleScale(i, now);
       const isBulb = degree(board.solution[i]) === 1;
       ctx.save();

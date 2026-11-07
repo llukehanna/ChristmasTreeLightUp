@@ -2,6 +2,7 @@ import { BOARD_WINDOWS, type BoardResponse, type BoardRow, type BoardWindow } fr
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json } from '../lib/http.js';
 import { cachedDailyTopAndTotal, cachedTopAndTotal } from '../lib/board-cache.js';
+import { dailyClosesAt } from '../lib/daily.js';
 import { DAY_MS, localMidnight, mondayOf, viewerDay } from '../lib/days.js';
 import { dailyBestRow, dailyRankOf } from '../lib/daily-board.js';
 import { bestOf, rankOf, rankRows, type TopRow } from '../lib/ranks.js';
@@ -34,9 +35,15 @@ function windowStart(w: Exclude<BoardWindow, 'daily'>, q: URLSearchParams): numb
 const isWindow = (w: string): w is BoardWindow => (BOARD_WINDOWS as readonly string[]).includes(w);
 
 /** The board's rows from its top BOARD_TOP, and your row pinned below them when none of those is yours. */
-async function boardOf(top: readonly TopRow[], total: number, user: SessionUser | null, yours: (u: SessionUser & { name: string }) => Promise<BoardRow | null>): Promise<BoardResponse> {
+async function boardOf(
+  top: readonly TopRow[],
+  total: number,
+  user: SessionUser | null,
+  watchable: (r: TopRow) => boolean,
+  yours: (u: SessionUser & { name: string }) => Promise<BoardRow | null>,
+): Promise<BoardResponse> {
   const ranks = rankRows(top);
-  const rows: BoardRow[] = top.map((r, i) => ({ rank: ranks[i], name: r.name, ms: r.ms, finishedAt: r.finished_at, mine: user !== null && r.user_id === user.id }));
+  const rows: BoardRow[] = top.map((r, i) => ({ id: r.id, rank: ranks[i], name: r.name, ms: r.ms, finishedAt: r.finished_at, mine: user !== null && r.user_id === user.id, replay: watchable(r) }));
   const you = user?.name && !rows.some((r) => r.mine) ? await yours({ ...user, name: user.name }) : null;
   return { rows, total, you };
 }
@@ -58,17 +65,20 @@ export async function getBoard(req: Request, env: AppEnv): Promise<Response> {
     const { today: day } = viewerToday(q);
     const user = await currentUser(req, env);
     const { top, total } = await cachedDailyTopAndTotal(env.DB, day);
-    body = await boardOf(top, total, user, async (u) => {
+    // Another player's first attempt stays closed until the day does (canWatch); yours is always open.
+    const closed = Date.now() < dailyClosesAt(day);
+    body = await boardOf(top, total, user, (r) => r.played === 1 && (!closed || r.user_id === user?.id), async (u) => {
       const mine = await dailyBestRow(env.DB, u.id, day);
-      return mine && { rank: await dailyRankOf(env.DB, day, mine.ms, mine.finished_at), name: u.name, ms: mine.ms, finishedAt: mine.finished_at, mine: true };
+      return mine && { id: mine.id, rank: await dailyRankOf(env.DB, day, mine.ms, mine.finished_at), name: u.name, ms: mine.ms, finishedAt: mine.finished_at, mine: true, replay: mine.played === 1 };
     });
   } else {
     const since = windowStart(w, q);
     const user = await currentUser(req, env);
     const { top, total } = await cachedTopAndTotal(env.DB, Date.now(), since);
-    body = await boardOf(top, total, user, async (u) => {
+    // Every main-board run is ranked and named, so a played one can be watched; an imported one kept no log.
+    body = await boardOf(top, total, user, (r) => r.played === 1, async (u) => {
       const best = await bestOf(env.DB, u.id, since);
-      return best && { rank: await rankOf(env.DB, best.ms, best.finished_at, since), name: u.name, ms: best.ms, finishedAt: best.finished_at, mine: true };
+      return best && { id: best.id, rank: await rankOf(env.DB, best.ms, best.finished_at, since), name: u.name, ms: best.ms, finishedAt: best.finished_at, mine: true, replay: best.played === 1 };
     });
   }
   return json(body satisfies BoardResponse, { headers: { 'Cache-Control': 'private, max-age=15', Vary: 'Cookie' } });

@@ -135,11 +135,11 @@ const longestRun = (days: ReadonlySet<number>): number => {
 export function evaluate(h: History): { earned: ItemId[]; goals: Record<GoalId, GoalState> } {
   const runs = h.runs.filter((r) => !r.imported).sort((a, b) => a.started - b.started);
 
-  // Each Daily day's earliest-started row, finished or not, is its one fresh attempt: every later row that day,
-  // live or past, is a repeat.
+  // Each Daily day's earliest-started row, finished or not, is its one fresh attempt, unless it is a past day's tree
+  // (public replays: Decision 11): every later row that day, live or past, is a repeat.
   const firstOfDay = new Map<number, RunRecord>();
   for (const r of runs) if (r.daily !== null && !firstOfDay.has(r.daily)) firstOfDay.set(r.daily, r);
-  const isRepeat = (r: RunRecord): boolean => r.daily !== null && firstOfDay.get(r.daily) !== r;
+  const isRepeat = (r: RunRecord): boolean => r.past || (r.daily !== null && firstOfDay.get(r.daily) !== r);
   const isFresh = (r: RunRecord): boolean =>
     r.finished !== null && r.ms !== null && (r.reason === null || r.reason === 'daily' || r.reason === 'past') && !isRepeat(r);
 

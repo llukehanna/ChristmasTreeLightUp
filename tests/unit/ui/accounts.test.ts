@@ -47,7 +47,7 @@ beforeEach(() => {
   localStorage.clear();
   session = new Session();
   session.set(me);
-  accounts = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  accounts = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -107,7 +107,7 @@ it("an answer in flight when the session changes is dropped, never shown as the 
   expect(totals()[0]).toBe('3');
 });
 
-const row = (name: string, ms: number) => ({ rank: 1, name, ms, finishedAt: 1, mine: false });
+const row = (name: string, ms: number) => ({ id: `run-${name}`, rank: 1, name, ms, finishedAt: 1, mine: false, replay: true });
 const pressedWindow = (): string | null | undefined => document.querySelector('.acct-wins [aria-pressed="true"]')?.textContent;
 const names = (): string[] => [...document.querySelectorAll('.acct-body .acct-nm')].map((n) => n.textContent ?? '');
 const clickAct = (act: string): void => document.querySelector<HTMLElement>(`[data-act="${act}"]`)?.click();
@@ -138,14 +138,14 @@ it('the leaderboard opens on Today; a window button fetches that window, shows i
   // Another page load opens on the window chosen last.
   clickAct('win-all');
   await tick();
-  const again = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  const again = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
   again.openBoard();
   expect(calls.board).toHaveBeenLastCalledWith('all');
 });
 
 it("the results tag's rank opens All time (its numbers are all-time ones) without changing the remembered window", () => {
   localStorage.setItem('aglow.boardWindow', 'week');
-  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
   fresh.openBoard(null, 'all');
   expect(calls.board).toHaveBeenLastCalledWith('all');
   expect(pressedWindow()).toBe('All time');
@@ -201,7 +201,7 @@ it('the Daily window fetches the day\'s Daily board, comes first, and is remembe
   expect(document.querySelector('.acct-sub')?.textContent).toBe(`${dailyLabel(today)} · 1 run`);
   // The results tag's Daily rosette opens the Daily window for the run's day, without changing the remembered window.
   localStorage.setItem('aglow.boardWindow', 'week');
-  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
   const other = today === '2026-11-05' ? '2026-11-04' : '2026-11-05'; // a run's day that isn't today
   fresh.openBoard(null, 'daily', other);
   expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, other);
@@ -222,7 +222,7 @@ it("a new local day: the Daily window starts again from Loading, never yesterday
   vi.setSystemTime(new Date(2026, 10, 6, 23, 50));
   const note = (): string | null | undefined => document.querySelector('.acct-body .acct-note')?.textContent;
   localStorage.setItem('aglow.boardWindow', 'daily');
-  const daily = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn() });
+  const daily = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
   calls.board.mockResolvedValueOnce({ rows: [row('Comet', 9_000)], total: 1, you: null });
   daily.openBoard();
   expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, '2026-11-06');
@@ -259,4 +259,18 @@ it("another page in the sheet (the Advent calendar) stays when a list's answer a
   expect(accounts.host.current).toBe(advent);
   expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Advent calendar');
   expect(document.querySelector('.adv')).not.toBeNull();
+});
+
+it("a Watch button in Your games hands its run's id to onWatch", async () => {
+  const onWatch = vi.fn();
+  const watching = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch });
+  calls.myStats.mockResolvedValue(stats(1));
+  calls.myGames.mockResolvedValue({
+    ...games,
+    games: [{ id: 'run-42', ms: 61_000, finishedAt: Date.now(), ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false, replay: true }],
+  });
+  watching.openGames();
+  await tick();
+  document.querySelector<HTMLButtonElement>('.acct-watch')?.click();
+  expect(onWatch).toHaveBeenCalledWith('run-42');
 });

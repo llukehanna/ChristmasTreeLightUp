@@ -7,6 +7,10 @@ import type { SheetView } from './sheet';
 export type ListTab = 'board' | 'games';
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T };
 
+/** A run's Watch button (C4 decision 9), for a row the viewer may watch. */
+const watchHtml = (id: string): string =>
+  `<button class="acct-watch" type="button" data-act="watch" data-id="${esc(id)}" aria-label="Watch replay" title="Watch replay">${I.play}</button>`;
+
 function rowHtml(r: BoardRow, now: number): string {
   const rank = Number(r.rank);
   const top = rank <= 3 ? ` acct-top acct-top${rank}` : '';
@@ -15,7 +19,7 @@ function rowHtml(r: BoardRow, now: number): string {
     <span class="acct-name"><span class="acct-nm">${esc(r.name)}</span>${r.mine ? '<span class="acct-you">You</span>' : ''}</span>
     <span class="acct-lead" aria-hidden="true"></span>
     <span class="acct-time">${formatMs(r.ms)}</span>
-    <span class="acct-date">${formatDay(r.finishedAt, now)}</span></li>`;
+    <span class="acct-date">${formatDay(r.finishedAt, now)}</span>${r.replay ? watchHtml(r.id) : ''}</li>`;
 }
 
 /**
@@ -100,7 +104,7 @@ function gameHtml(g: RecentGame, now: number): string {
   return `<li class="acct-game${g.ranked || placed ? '' : ' un'}">
     <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}</span>
     <span class="acct-line2"><span class="acct-when">${esc(formatWhen(g.finishedAt, now))}</span>${tag}</span>
-    ${placed ? '' : `<span class="acct-status ${cls}">${label}</span>`}</li>`;
+    ${placed ? '' : `<span class="acct-status ${cls}">${label}</span>`}${g.replay && !g.imported ? watchHtml(g.id) : ''}</li>`;
 }
 
 /** The account's totals (GET /api/me/stats), the same on every device; dashes until they arrive. */

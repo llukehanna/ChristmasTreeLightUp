@@ -252,7 +252,7 @@ describe('finishing a Daily run', () => {
     });
     expect(await row(game.id)).toMatchObject({ ranked: 0, unranked_reason: 'daily' });
     expect(await mainBoards('2026-12-10')).toEqual([EMPTY, EMPTY, EMPTY]);
-    expect((await dailyBoard('2026-12-10', ana)).rows).toEqual([{ rank: 1, name: 'Meridian', ms: result.ms, finishedAt: Date.now(), mine: true }]);
+    expect((await dailyBoard('2026-12-10', ana)).rows).toEqual([{ id: game.id, rank: 1, name: 'Meridian', ms: result.ms, finishedAt: Date.now(), mine: true, replay: true }]);
     // A random run is unchanged, with daily: null.
     const random = await play(undefined, { cookie: ana });
     expect(random.result).toMatchObject({ ranked: true, reason: null, rank: 1, total: 1, daily: null });
@@ -365,7 +365,7 @@ describe('finishing a Daily run', () => {
     const { results } = await json<ClaimResponse>(await call(env, 'POST', '/api/games/claim', { cookie: ana, body: { claims: [{ id: guest.id, claim: guest.claim }] } }));
     expect(results).toMatchObject([{ id: guest.id, reason: 'daily', ranked: false, daily: { day: '2026-12-10', past: false, first: true, rank: 1, total: 1 } }]);
     const b = await dailyBoard('2026-12-10', ana);
-    expect(b).toEqual({ rows: [{ rank: 1, name: 'Meridian', ms: guestResult.ms, finishedAt: Date.now(), mine: true }], total: 1, you: null });
+    expect(b).toEqual({ rows: [{ id: guest.id, rank: 1, name: 'Meridian', ms: guestResult.ms, finishedAt: Date.now(), mine: true, replay: true }], total: 1, you: null });
     expect(guestResult.ms).not.toBe(own.result.ms);
     const retry = await call(env, 'POST', `/api/games/${own.game.id}/finish`, { cookie: ana, body: { log: [] } });
     expect((await json<FinishResult>(retry)).daily).toEqual({ day: '2026-12-10', past: false, first: false, rank: null, total: 1 });

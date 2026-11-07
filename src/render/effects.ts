@@ -404,6 +404,9 @@ export function foil(face: number, tone: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
+/** A win hurries the flow still in flight this much (the app's live win, and a replay's). */
+export const LAST_WAVE_SPEEDUP = 4;
+
 /* ---------- win confetti: gold flecks and soft snow over the solved tree (spec §4.8) ---------- */
 
 export const CONFETTI_MS = 6500;

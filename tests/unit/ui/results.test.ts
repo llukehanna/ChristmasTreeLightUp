@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AccountStats } from '../../../src/api/types';
 import { EMPTY_STATS, type Stats } from '../../../src/store/stats';
-import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results } from '../../../src/ui/results';
+import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results } from '../../../src/ui/results';
 
 const device: Stats = { v: 1, solved: 8, totalSeconds: 800, bestSeconds: 60, bestScore: 44000, streak: 11, longestStreak: 11, lastSolvedDay: '2026-10-08' };
 const account: AccountStats = { userId: 1, solved: 312, totalMs: 312 * 78_456, averageMs: 78_456, bestMs: 41_000, streak: 4, longestStreak: 7, lastSolvedDay: '2026-10-08', imported: 300 };
@@ -71,6 +71,30 @@ it("a Daily Tree: its label is a small line above the time; a random tree's tag 
   // An empty day is no day.
   r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), daily: '' });
   expect(line?.hidden).toBe(true);
+});
+
+it("the ghost's line: how far ahead or behind your clock at the win was, to a tenth; level within 50 ms", () => {
+  expect(ghostLine(-2049)).toBe('2.0 s faster than your ghost');
+  expect(ghostLine(1260)).toBe('1.3 s behind your ghost');
+  expect(ghostLine(30)).toBe('Level with your ghost');
+  expect(ghostLine(-49)).toBe('Level with your ghost');
+  expect(ghostLine(0)).toBe('Level with your ghost');
+  expect(ghostLine(50)).toBe('0.1 s behind your ghost');
+});
+
+it("setGhost puts the ghost's line under the time, and null takes it away", () => {
+  document.getElementById('r-time')?.insertAdjacentHTML('afterend', '<div id="r-ghost" hidden></div>');
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  const line = document.getElementById('r-ghost');
+  r.setGhost('2.0 s faster than your ghost');
+  expect(line?.textContent).toBe('2.0 s faster than your ghost');
+  expect(line?.hidden).toBe(false);
+  r.setGhost(null);
+  expect(line?.hidden).toBe(true);
+  expect(line?.textContent).toBe('');
+  // Older fixtures have no #r-ghost.
+  line?.remove();
+  expect(() => r.setGhost('Level with your ghost')).not.toThrow();
 });
 
 it('the tag wears its style as data-tag; the plain tag too', () => {

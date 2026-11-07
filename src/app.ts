@@ -2,10 +2,11 @@ import { ApiError, api, finishWithRetry, setUnauthorizedHandler } from './api/cl
 import { addClaim, claimBatches, coalesced, readClaims, removeClaims } from './api/claims';
 import type { RunOutcome } from './api/outcome';
 import { Session } from './api/session';
-import type { AccountStats, ClaimResponse, FinishResult, ProgressResponse } from './api/types';
+import type { AccountStats, ClaimResponse, FinishResult, GhostRun, ProgressResponse, ReplayResponse, UnrankedReason } from './api/types';
 import { Board, type BoardEvent } from './core/board';
 import type { GameClock } from './core/clock';
 import type { Turn } from './core/dirs';
+import type { GhostTrack } from './core/ghost';
 import { itemOf, type ItemDef, type ItemId } from './core/catalogue';
 import { GOALS, pileOf } from './core/goals';
 import { CLOCK_TOLERANCE_MS } from './core/judge';
@@ -22,7 +23,7 @@ import type { WinSound } from './radio/win-sound';
 import type { HomeAloneClip, HomeAloneSounds, KevinCall } from './audio/home-alone-sounds';
 import { EGGS_BOOT_WAIT_MS, loadEggs, settledWithin, type EggModules } from './eggs/load';
 import { IDENTITY, clampCamera, isZoomed, panBy, toScreen, toWorld, zoomAt, type Camera } from './render/camera';
-import { CONFETTI_MS, starCenter } from './render/effects';
+import { CONFETTI_MS, LAST_WAVE_SPEEDUP, starCenter } from './render/effects';
 import { tileAt, tileCenter, treeRightEdge } from './render/layout';
 import { CALM_AFTER_MS, frameDue, isCalm } from './render/quality';
 import { Renderer, type BeatFrame } from './render/renderer';
@@ -33,6 +34,7 @@ import { sceneFor, type SceneId } from './render/scenes';
 import { BURST_MS, FLIP_MS, onStar } from './render/topper';
 import { VisualState } from './render/visual-state';
 import { dailyStart, landsOnDaily } from './store/daily';
+import { ghostOn, loadGhost, offerGhost, pickGhost, setGhostOn } from './store/ghosts';
 import { loadHomeAlone, saveHomeAlone } from './store/home-alone';
 import { clearGame, loadGame, markReturn, saveGame, savesAtStart, takeReturn, type LoadedGame, type OnlineRun, type WonRun } from './store/progress';
 import { effectiveLook, loadLook, saveLook, worldLook, type Look } from './store/look';
@@ -47,14 +49,14 @@ import { AdventSheet } from './ui/advent';
 import { el, isEditable } from './ui/dom';
 import { CARD_HEIGHT, CARD_HIGH_GAP, cardFit, KeyCard, TOUCH_ONLY_QUERY } from './ui/key-card';
 import { Decorate, lockText } from './ui/decorate';
-import { dailyLabelParts } from './ui/format';
+import { dailyLabelParts, formatMs } from './ui/format';
 import { HomeAloneSwitch } from './ui/home-alone';
 import { whenIdle } from './ui/idle';
 import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { markOpened, Opening, OPENING_MS, shouldOpen } from './ui/opening';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
-import { accountStatsView, deviceStatsView, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
+import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
 import { awaitsClaim, renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, type ShareImage } from './ui/share';
 import { SparkCursor } from './ui/spark-cursor';
@@ -63,10 +65,12 @@ import { StarEgg } from './ui/star-egg';
 import { Toast } from './ui/toast';
 import { picked, tryPatch, UnlockNews } from './ui/unlock-ribbon';
 import { previewAll, UnlockState } from './unlock-state';
+import type { Replayer, ReplayRun } from './replay';
 
-/** A win hurries the flow still in flight this much, and the results tag follows this long after the last bulb. */
-const LAST_WAVE_SPEEDUP = 4;
+/** The results tag follows this long after the last bulb. */
 const RESULTS_DELAY_MS = 500;
+/** A finished run kept as a ghost (C4 decision 6): never the judge's own paused, too_fast or clock. */
+const GHOST_REASONS: ReadonlySet<UnrankedReason | null> = new Set([null, 'daily', 'past', 'anonymous']);
 const INTRO_KEY = 'aglow.seenIntro';
 
 /** Secret mode as the test probe sees it (src/debug.ts). */
@@ -123,6 +127,8 @@ export interface RunFlags {
   /** When the tree was won (performance.now()), or null. */
   winAt: number | null;
   paused: boolean;
+  /** A replay is on the stage (the player's tree is set aside under it). */
+  watching: boolean;
   /** performance.now(), as the gate is asked. */
   now: number;
 }
@@ -176,10 +182,11 @@ export const welcomeBack = (saved: { elapsedMs: number; log: readonly LogEntry[]
  * Heavy work that could stall a frame or a tap (the radio's prewarm) may run: with no board, while a seed is pending,
  * behind the pause or once the win has settled (not during its confetti, the topper's flare and the tag's arrival).
  * Never while a tree is in play: not during its reveal (animation the player watches) and not once the clock runs,
- * which it does from the reveal's end (Run.frame), first move or not.
+ * which it does from the reveal's end (Run.frame), first move or not. Nor while a replay plays: it is the same
+ * animation, over a tree that is paused or won.
  */
 export const quietForWork = (f: RunFlags): boolean =>
-  !f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS);
+  !f.watching && (!f.live || f.starting || f.paused || (f.winAt !== null && f.now >= f.winAt + WIN_SETTLE_MS));
 
 /**
  * A run is in progress from the first move to the win (or a new tree): no unlock shows then (the unseen dot waits for
@@ -354,6 +361,33 @@ export class App {
     bulbs: () => this.renderer.scene.bulbs,
     camera: () => this.camera,
   });
+  /** Plays runs back on the stage (C4), from the replay chunk: made on the first Watch. */
+  private replayer: Replayer | null = null;
+  /** The replay chunk (src/replay), loaded on the first Watch; null until asked for, or after a failed load. */
+  private replayChunk: Promise<typeof import('./replay')> | null = null;
+  /**
+   * The ghost on the Daily tree in play (C4 decisions 6 and 7): your fastest run on it and its timeline, while there is
+   * one to race. Its pill shows only then.
+   */
+  private ghost: { run: GhostRun; track: GhostTrack } | null = null;
+  /** The ghost toggle (the pill and G), remembered on this device. */
+  private ghostToggle = ghostOn();
+  /** The tree whose ghost the server was asked for: asked once per tree. */
+  private ghostAsked: OnlineRun | null = null;
+  /** The ghost's timeline module, loaded on the first ghost: it brings Playback, which stays out of the main chunk. */
+  private ghostKit: Promise<typeof import('./core/ghost')> | null = null;
+  /** The ghost pill's words and their length (its width class) as last written: updateHud writes only a change. */
+  private ghostText = '';
+  private ghostWidth = -1;
+  /** The player's camera, set aside while a replay plays (it is drawn at rest) and put back by Done. */
+  private watchCamera: Camera = IDENTITY;
+  /**
+   * Bumped by each Watch (its press and its start), by Done (and so by a new tree) and by a resume: a replay still loading
+   * (its answer, or the chunk) when the player has moved on never plays.
+   */
+  private watchSeq = 0;
+  /** The `watchSeq` of the Watch whose "Loading replay…" toast is up (0: none), so a cancel takes down only that toast. */
+  private watchToastSeq = 0;
 
   constructor() {
     this.renderer = new Renderer(el<HTMLCanvasElement>('stage'));
@@ -424,6 +458,7 @@ export class App {
       },
       fitHud: () => this.fitHud(),
       toast: (text, ms) => this.toast.show(text, ms),
+      onWatch: (id) => this.watchRun(id),
     });
     this.advent = new AdventSheet({
       sheet: this.accounts.host,
@@ -659,6 +694,8 @@ export class App {
     // The source "switches on" as the reveal finishes and the initial connected region flows out.
     this.vis.onLightingChanged(board, board.lighting.order, [], this.interactiveAt - 200, false);
     this.busy(this.vis.lastLitAt(board));
+    this.results.setGhost(null);
+    this.beginGhost();
   }
 
   /**
@@ -724,6 +761,8 @@ export class App {
    */
   newGame(kind: 'daily' | 'random' = 'random', day?: string): void {
     if (this.starting) return;
+    // A replay on the stage ends first: the new tree comes in over the player's own.
+    this.endWatch();
     clearGame();
     // The old tree stays on screen until the new one is ready (1.5 s at most, 5 s for the Daily), without its results card.
     this.results.hide();
@@ -760,6 +799,114 @@ export class App {
       el('daily-pill-rest').textContent = rest;
     }
     this.fitHud();
+  }
+
+  /* ---------- the ghost (C4) ---------- */
+
+  /**
+   * A tree begins: on a Daily tree the ghost is your fastest run on it from this device's store and (signed in) from the
+   * server, whichever is faster. A random tree, or a Daily you haven't finished before, has none.
+   */
+  private beginGhost(): void {
+    this.setGhost(null);
+    this.ghostAsked = null;
+    const online = this.online;
+    const day = online?.daily?.day;
+    if (!online || !day) return;
+    this.offerTreeGhost(online, loadGhost(day));
+    this.askServerGhost();
+  }
+
+  /** The server's ghost for the Daily tree in play, asked once per tree and only signed in (signed out it is a 401). */
+  private askServerGhost(): void {
+    const online = this.online;
+    const day = online?.daily?.day;
+    if (!online || !day || !this.session.current || this.ghostAsked === online || this.winAt !== null) return;
+    this.ghostAsked = online;
+    api.ghost(day).then(
+      (run) => this.offerTreeGhost(online, run),
+      () => undefined, // offline, or signed out meanwhile: the device's ghost (if any) stays
+    );
+  }
+
+  /**
+   * `run` as the ghost of the tree `online`: taken only while that tree is still in play and not yet won, and only when
+   * it is from that tree and faster than the ghost already set. Its timeline is one headless replay (the module loads on
+   * the first ghost); a log that doesn't replay to a win is no ghost.
+   */
+  private offerTreeGhost(online: OnlineRun, run: GhostRun | null): void {
+    const better = (): GhostRun | null => {
+      const pick = pickGhost(online, this.ghost?.run ?? null, run);
+      return this.online === online && this.winAt === null && pick !== null && pick !== this.ghost?.run ? pick : null;
+    };
+    if (!better()) return;
+    this.ghostKit ??= import('./core/ghost');
+    this.ghostKit.then(
+      ({ ghostTrack }) => {
+        // Checked again: the tree may have changed, or a faster ghost landed, while the module loaded.
+        const pick = better();
+        const track = pick && ghostTrack(pick);
+        if (pick && track) this.setGhost({ run: pick, track });
+      },
+      () => {
+        this.ghostKit = null; // a failed load: the next tree asks again
+      },
+    );
+  }
+
+  /** The ghost to race, or none: its pill shows while there is one. */
+  private setGhost(g: { run: GhostRun; track: GhostTrack } | null): void {
+    const had = this.ghost !== null;
+    this.ghost = g;
+    this.ghostText = '';
+    this.ghostWidth = -1;
+    const pill = el('ghost-pill');
+    pill.hidden = g === null;
+    pill.setAttribute('aria-pressed', String(this.ghostToggle));
+    if (g) this.paintGhost(performance.now());
+    else if (had) this.fitHud();
+  }
+
+  /** The ghost pill and G: the ghost on or off, remembered on this device. */
+  private toggleGhost(): void {
+    if (!this.ghost) return;
+    this.ghostToggle = !this.ghostToggle;
+    setGhostOn(this.ghostToggle);
+    el('ghost-pill').setAttribute('aria-pressed', String(this.ghostToggle));
+    this.paintGhost(performance.now());
+  }
+
+  /**
+   * The ghost pill's words at your clock (C4 decision 10): the ghost's lit share, rounded down, while it is still lighting;
+   * its time once it has finished; 'Ghost' alone when it is off. Written only when they change, and the HUD refitted only
+   * when their length (the pill's width) does.
+   */
+  private paintGhost(now: number): void {
+    const g = this.ghost;
+    if (!g) return;
+    const clock = this.clock.elapsedMs(now);
+    const text = !this.ghostToggle
+      ? 'Ghost'
+      : clock >= g.track.ms
+        ? `Ghost ${formatMs(g.track.ms)}`
+        : `Ghost ${Math.floor((g.track.litAt(clock) * 100) / GRID.ids.length)}%`;
+    if (text === this.ghostText) return;
+    this.ghostText = text;
+    el('ghost-pill-text').textContent = text;
+    if (text.length !== this.ghostWidth) {
+      this.ghostWidth = text.length;
+      this.fitHud();
+    }
+  }
+
+  /**
+   * The server finished a Daily run of yours and it can be a ghost (not the judge's paused, too_fast or clock): it is
+   * offered as that day's ghost on this device, which keeps the faster. Reached from the finish, a claim and a restore.
+   */
+  private keepGhost(result: FinishResult, online = this.online, entries: readonly LogEntry[] = this.run.log.entries): void {
+    const day = online?.daily?.day;
+    if (!online || !day || result.id !== online.gameId || !GHOST_REASONS.has(result.reason)) return;
+    offerGhost(day, { seed: online.seed, genVersion: online.genVersion, log: [...entries], ms: result.ms });
   }
 
   /** See savesNow. */
@@ -821,7 +968,10 @@ export class App {
     // A buffered turn can win under the pause overlay: lift it, and let the results card take over focus.
     if (this.paused) this.setPaused(false);
     this.clock.pause(now);
-    const seconds = wholeSeconds(this.clock.elapsedMs(now));
+    const clockMs = this.clock.elapsedMs(now);
+    const seconds = wholeSeconds(clockMs);
+    // Raced with the ghost on: the tag says how it went.
+    this.results.setGhost(this.ghost && this.ghostToggle ? ghostLine(clockMs - this.ghost.track.ms) : null);
     const score = scoreFor(seconds);
     const { stats, newBest } = recordWin(this.stats, seconds, score, localDay(new Date()));
     this.stats = stats;
@@ -970,6 +1120,9 @@ export class App {
       // if a new tree has started meanwhile.
       if (run.claim) addClaim({ id: run.gameId, claim: run.claim }, Date.now());
       void this.claimAll();
+      // A guest has no other source for the day's ghost: kept even if a new tree has begun since (offered again, as the
+      // outcome is set, it changes nothing: the faster is kept).
+      this.keepGhost(result, run, entries);
       if (this.board !== game) return;
       won.result = result;
       this.saveWon();
@@ -1064,6 +1217,8 @@ export class App {
     void this.claimAll();
     this.setOutcome(this.outcome);
     void this.syncStats();
+    // Signed in after the Daily began (the first tree starts while /api/me is in flight): the server's ghost too.
+    this.askServerGhost();
   }
 
   /** The numbers on the tag: the account's as shown once they have arrived, else this device's. */
@@ -1116,6 +1271,7 @@ export class App {
   /** The run's outcome on the results tag (pick 3B): drawn now, so it is there when the tag appears. */
   private setOutcome(o: RunOutcome | null): void {
     this.outcome = o;
+    if (o?.kind === 'done') this.keepGhost(o.result);
     this.hectorStep(); // a Home Alone win waiting on the server's answer
     const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult, repeat: this.online?.daily?.repeat === true };
     const m = o && ribbonModel(o, this.session.current, ctx);
@@ -1211,6 +1367,120 @@ export class App {
     );
   }
 
+  /* ---------- replays (C4) ---------- */
+
+  /** The run on the stage while a replay plays: the player's tree is set aside, paused, until Done. */
+  private get watching(): ReplayRun | null {
+    return this.replayer?.run ?? null;
+  }
+
+  /**
+   * A row's Watch button (Your games, the board): the sheet goes, and the run plays once it has arrived. The Watch is
+   * pending until then: a resume, a new tree, Done or a newer Watch (each moves `watchSeq` on) drops it, answer and all,
+   * so a replay never lands on a tree the player has gone back to.
+   */
+  watchRun(id: string): void {
+    const seq = ++this.watchSeq;
+    this.watchToastSeq = seq;
+    this.accounts.host.close();
+    this.toast.show('Loading replay…');
+    api.replay(id).then(
+      (data) => {
+        if (seq !== this.watchSeq) return;
+        this.watchToastSeq = 0;
+        void this.watch(data);
+      },
+      () => {
+        if (seq !== this.watchSeq) return;
+        this.watchToastSeq = 0;
+        this.toast.show("Couldn't load that replay.");
+      },
+    );
+  }
+
+  /**
+   * Plays `data` on the stage (C4 decision 3). The player's tree is set aside as a hidden tab sets it aside (paused, or
+   * its time away noted during the reveal, and saved), its camera stashed; the CSS hides its HUD controls, tag and frost
+   * (body.watching), so nothing of the run is torn down. Watching while watching replaces the replay.
+   */
+  async watch(data: ReplayResponse): Promise<void> {
+    if (this.starting || !this.live) {
+      this.toast.show('Your new tree is on its way.');
+      return;
+    }
+    const seq = ++this.watchSeq;
+    const was = this.watching !== null;
+    if (!was) this.stepAway(performance.now());
+    let kit: typeof import('./replay');
+    try {
+      kit = await this.loadReplay();
+    } catch {
+      if (seq === this.watchSeq) this.toast.show("Couldn't load that replay.");
+      return;
+    }
+    // Done, a new tree or a newer Watch came while the chunk loaded.
+    if (seq !== this.watchSeq || this.starting) return;
+    this.replayer ??= new kit.Replayer(el('replay-bar'), {
+      sfx: this.sfx,
+      busy: (until) => this.busy(until),
+      flashes: () => !this.reduced.matches && this.renderer.style !== 'filament',
+      onDone: () => this.endWatch(),
+    });
+    if (!this.replayer.play(data, performance.now())) {
+      this.toast.show("Couldn't load that replay.");
+      return;
+    }
+    if (!was) this.watchCamera = this.camera;
+    this.camera = IDENTITY;
+    this.hover = -1;
+    el('stage').style.cursor = 'default';
+    this.keyCard.close();
+    this.toast.hide();
+    document.body.classList.add('watching');
+    this.lastTime = '';
+    this.lastLit = '';
+    this.setInert();
+    this.fitKeyCard();
+    this.fitHud();
+  }
+
+  /** The replay chunk, loaded once (src/replay); a failed load is forgotten, so the next Watch asks again (as the eggs do). */
+  private loadReplay(): Promise<typeof import('./replay')> {
+    if (this.replayChunk) return this.replayChunk;
+    const p = import('./replay');
+    this.replayChunk = p;
+    p.catch(() => {
+      if (this.replayChunk === p) this.replayChunk = null;
+    });
+    return p;
+  }
+
+  /**
+   * Done (the bar, Escape, or a new tree): the stage is the player's tree again, exactly as it was set aside (paused under
+   * the frost mid-run, with its results tag once won), its camera back. The HUD and the paused frame redraw.
+   */
+  endWatch(): void {
+    this.watchSeq++;
+    if (!this.watching) return;
+    const hadFocus = el('replay-bar').contains(document.activeElement);
+    this.replayer?.stop();
+    document.body.classList.remove('watching');
+    this.camera = this.watchCamera;
+    this.watchCamera = IDENTITY;
+    this.lastTime = '';
+    this.lastLit = '';
+    this.pausedDrawn = false;
+    this.setInert();
+    this.fitKeyCard();
+    this.fitHud();
+    this.busy(performance.now());
+    // Keyboard focus was on the bar: onto the frost (Enter or Space resumes), or let go.
+    if (hadFocus) {
+      if (this.paused) el('pause').focus({ preventScroll: true });
+      else if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    }
+  }
+
   /* ---------- frame loop ---------- */
 
   /** The frame loop, once (the opening's prelude may have started it before the first tree). */
@@ -1227,30 +1497,40 @@ export class App {
     // Ambient-only frames draw at 30 Hz. Never calm: during a sky sweep or a topper flip (the player caused them), and,
     // unpaused, while the player's motion settles, the post-win light show runs, or secret mode's beat is on (they
     // follow the music). A paused loop is calm: one blurred frame, so no wake at every vsync.
+    // A replay plays over the player's paused tree: the stage is the replay's, never a paused one.
+    const w = this.watching;
     const calm = isCalm({
-      now, busyUntil: this.busyUntil, paused: this.paused, sweeping: this.renderer.sweeping,
+      now, busyUntil: this.busyUntil, paused: this.paused && !w, sweeping: this.renderer.sweeping,
       topperNeedsFrame: this.renderer.topper.needsFrame(now),
       musicDriven: this.lightShowOn || (this.secret && this.radio.lightShowActive),
     });
     if (!frameDue(now - this.lastFrame, calm)) return;
     const dt = Math.min(50, now - (this.lastFrame || now));
     this.lastFrame = now;
-    // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
-    if (this.accounts.sheetOpen && !this.paused && this.canPause(now)) this.pause(false);
-    // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
-    this.handle(this.run.frame(now, Date.now()), now);
+    // Watching, the player's run is set aside: no run.frame, no handle, no save, no news. A sheet over the replay pauses
+    // it through the replayer's own state (the bar shows Play), so it never plays out unseen, ticks and chimes and all.
+    if (w) {
+      if (this.accounts.sheetOpen && w.playing) this.replayer?.toggle();
+      this.replayer?.frame(now, dt);
+    } else {
+      // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
+      if (this.accounts.sheetOpen && !this.paused && this.canPause(now)) this.pause(false);
+      // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
+      this.handle(this.run.frame(now, Date.now()), now);
+    }
     this.updateHud(now);
     // While paused the stage is blurred behind the overlay: draw one frame, then idle until resume. The topper is the
     // exception: a flip that lands under the overlay (the account's choice arriving) or a sticker that finishes
     // loading keeps drawing until it has settled, so the paused frame shows it. So does a sky sweep, which would
     // otherwise freeze half-swept with its seam in the paused frame, and the opening, whose skip fade (a skip, then P
-    // within 900 ms) would otherwise freeze half-dark.
-    if (this.paused) {
+    // within 900 ms) would otherwise freeze half-dark. A replay over the paused tree draws every frame.
+    if (this.paused && !w) {
       if (this.pausedDrawn && !this.renderer.topper.needsFrame(now) && !this.renderer.sweeping && !this.opening.on) return;
       this.pausedDrawn = true;
     } else this.pausedDrawn = false;
-    // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow.
-    const show = this.winAt !== null && this.radio.lightShowActive && !this.reduced.matches;
+    // The post-win light show (spec §5.4): beats pulse the bulbs up the tree, the low band breathes the glow. Never in a
+    // replay (C4 decision 5).
+    const show = !w && this.winAt !== null && this.radio.lightShowActive && !this.reduced.matches;
     this.lightShowOn = show;
     // Secret mode's beat (spec 2026-10-08 secret mode §5.2): the same analyser, before and after the win, and under
     // reduced motion too (its gentle pulse).
@@ -1261,17 +1541,20 @@ export class App {
     const house = this.renderer.homeAlone;
     if (house && (this.homeAlone || this.renderer.homeAloneShowing)) {
       const g = this.haGate;
-      g.running = !this.paused;
-      g.inPlay = this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null && !this.paused;
+      g.running = !this.paused || w !== null;
+      g.inPlay = this.homeAlone && !w && this.live && !this.starting && this.moved && this.winAt === null && !this.paused;
       g.reduced = this.reduced.matches;
       house.step(now, dt, g, this.renderer.layout);
     }
     // Secret mode's beat comes with the eggs (secret mode waits for them).
     const eggs = this.eggs;
     const tracker = this.radio.show.beat;
+    // A replay draws exactly what play draws, from its own board on the run's log time: its reveal and its turns follow
+    // the playhead (so they keep its speed, and hold still while it is paused).
     this.renderer.frame({
-      board: this.board, vis: this.vis, now, dt, camera: this.camera, hover: this.hover, calm,
-      revealAt: this.run.revealAt, winAt: this.winAt, reducedMotion: this.reduced.matches,
+      board: w ? w.board : this.board, vis: w ? w.vis : this.vis, now, dt, camera: this.camera, hover: w ? -1 : this.hover, calm,
+      revealAt: w ? now - w.playback.cursor : this.run.revealAt, winAt: w ? w.winAt : this.winAt, reducedMotion: this.reduced.matches,
+      boardNow: w ? w.playback.cursor : undefined,
       extraBulb: show ? (i) => this.radio.show.extraBulb(Math.floor(i / GRID.w), now) : undefined,
       ambient: show ? this.radio.show.low : 0,
       highs: show ? this.radio.show.high : 0,
@@ -1281,8 +1564,10 @@ export class App {
     });
   }
 
+  /** The HUD's clock and the holly's glow: the tree in play's, or (watching) the replay's, its clock the run's own. */
   private updateHud(now: number): void {
-    const t = formatTime(wholeSeconds(this.clock.elapsedMs(now)));
+    const w = this.watching;
+    const t = formatTime(wholeSeconds(w ? w.playback.clockMs() : this.clock.elapsedMs(now)));
     if (t !== this.lastTime) {
       el('time').textContent = t;
       this.lastTime = t;
@@ -1294,7 +1579,9 @@ export class App {
       this.lastCanPause = canPause;
       this.fitHud(); // the pause pill came or went: the HUD changed width
     }
-    const lit = (this.winAt !== null ? 1 : this.board.lighting.count / GRID.ids.length).toFixed(2);
+    // Watching, the ghost pill is set aside with the run's HUD (replay.css).
+    if (!w) this.paintGhost(now);
+    const lit = ((w ? w.winAt : this.winAt) !== null ? 1 : (w ? w.board : this.board).lighting.count / GRID.ids.length).toFixed(2);
     if (lit !== this.lastLit) {
       document.body.style.setProperty('--lit', lit);
       this.lastLit = lit;
@@ -1310,7 +1597,8 @@ export class App {
       hover: (x, y) => {
         this.renderer.homeAlone?.input();
         const [wx, wy] = toWorld(this.camera, x, y);
-        const hover = tileAt(this.renderer.layout, GRID, wx, wy);
+        // A replay's tiles take no taps: no hover, and the default cursor.
+        const hover = this.watching ? -1 : tileAt(this.renderer.layout, GRID, wx, wy);
         if (hover !== this.hover) this.busy(performance.now());
         this.hover = hover;
         stage.style.cursor = this.hover >= 0 && this.winAt === null ? 'pointer' : 'default';
@@ -1321,11 +1609,11 @@ export class App {
       },
       zoom: (f, fx, fy) => {
         this.renderer.homeAlone?.input();
-        if (this.winAt === null) this.setCamera(zoomAt(this.camera, f, fx, fy));
+        if (this.winAt === null && !this.watching) this.setCamera(zoomAt(this.camera, f, fx, fy));
       },
       pan: (dx, dy) => {
         this.renderer.homeAlone?.input();
-        if (this.winAt === null) this.setCamera(panBy(this.camera, dx, dy));
+        if (this.winAt === null && !this.watching) this.setCamera(panBy(this.camera, dx, dy));
       },
     });
     // Any HUD button can be the first gesture: unlock audio inside it (the music itself waits for the first tap).
@@ -1352,6 +1640,11 @@ export class App {
       this.radioPanel.close();
       return;
     }
+    // A replay on the stage: a tap plays or pauses it (the player's tree, paused underneath, is never reached).
+    if (this.watching) {
+      this.replayer?.toggle();
+      return;
+    }
     if (this.paused) {
       this.resume();
       return;
@@ -1376,7 +1669,7 @@ export class App {
 
   /** A tap on tile `i` (also the e2e probe's way in). Turns due finish first: the same order the server's replay uses. */
   tapTile(i: number, now = performance.now(), dir: Turn = 1): void {
-    if (!this.live || this.starting || this.paused || now < this.interactiveAt) return;
+    if (!this.live || this.starting || this.paused || this.watching || now < this.interactiveAt) return;
     this.hideIntro();
     // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
     this.radio.firstGesture();
@@ -1559,6 +1852,7 @@ export class App {
     const pill = document.getElementById('radio-pill');
     const chip = document.getElementById('account-chip');
     const daily = document.getElementById('daily-pill');
+    const ghost = document.getElementById('ghost-pill');
     const hud = document.querySelector('.hud');
     const mark = document.querySelector('.wordmark');
     if (pill && hud && mark) {
@@ -1567,6 +1861,8 @@ export class App {
       // A hidden pill takes no room: no need to try it short.
       fit: for (const dailyFit of daily && !daily.hidden ? ['full', 'short'] : ['full']) {
         if (daily) daily.dataset.fit = dailyFit;
+        // The ghost pill is its icon alone wherever the Daily pill is 'Daily' alone.
+        if (ghost) ghost.dataset.fit = dailyFit;
         for (const chipFit of ['full', 'icon']) {
           if (chip) chip.dataset.fit = chipFit;
           for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
@@ -1605,6 +1901,7 @@ export class App {
     this.laidOut = true;
     this.fitHud();
     this.camera = IDENTITY;
+    this.watchCamera = IDENTITY;
     this.fitKeyCard();
     el('zoom-reset').hidden = true;
     this.pausedDrawn = false; // resizing clears the stage
@@ -1633,20 +1930,12 @@ export class App {
   }
 
   private runFlags(): RunFlags {
-    return { live: this.live, starting: this.starting, winAt: this.winAt, paused: this.paused, now: performance.now() };
+    return { live: this.live, starting: this.starting, winAt: this.winAt, paused: this.paused, watching: this.watching !== null, now: performance.now() };
   }
 
   private bindLifecycle(): void {
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden || !this.live) return;
-      const now = performance.now();
-      if (this.canPause(now)) this.pause(false);
-      else if (this.winAt === null && !this.starting) {
-        // During the reveal the clock hasn't started: the log notes the time away (it resumes with the clock), and a
-        // restored game is still saved.
-        this.run.markAway(now);
-        if (this.shouldSave()) this.save(now);
-      }
+      if (document.hidden) this.stepAway(performance.now());
     });
     // "Kevin!" (spec 2026-10-14 §5): back after ≥ 3 s away while a run is in progress.
     // The context is resumed first (a phone's may be suspended in the background), and the call dropped if, by the time
@@ -1686,6 +1975,7 @@ export class App {
       this.resume();
     });
     el('pause-btn').addEventListener('click', () => this.pause(true));
+    el('ghost-pill').addEventListener('click', () => this.toggleGhost());
     // The hint under the HUD pills pins the card; clicking it again, or Escape or Tab, closes it.
     el('keys-hint').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1707,6 +1997,12 @@ export class App {
         this.accounts.blocksKeys || isEditable(e.target)
       )
         return;
+      // A replay on the stage takes the keys (Space and P play and pause, Escape is Done): nothing else reaches the
+      // game, N, Tab, G and the eggs' words included.
+      if (this.watching) {
+        if (this.replayer?.key(e)) this.endWatch();
+        return;
+      }
       // The first letter of an egg's word ("hohoho", "kevin") starts loading the eggs, if they aren't in yet.
       if (!this.paused && !this.eggs && (e.key === 'h' || e.key === 'H' || e.key === 'k' || e.key === 'K')) void this.requestEggs();
       // "hohoho" swaps the topper, as five taps on the star do (not under the pause overlay, like the taps).
@@ -1735,12 +2031,30 @@ export class App {
         e.preventDefault();
         if (this.paused) this.resume();
         else this.pause(true);
+      } else if ((e.key === 'g' || e.key === 'G') && !e.repeat && !this.paused && this.ghost && !this.phone.matches) {
+        // G is the ghost pill: the ghost on or off (not under the pause overlay, where the pill is out of reach, nor at
+        // phone width, where there is no pill: ruling R6).
+        e.preventDefault();
+        this.toggleGhost();
       } else if ((e.key === 'n' || e.key === 'N') && !e.repeat && !this.paused && !this.starting) {
         // N is the New tree button: mid-run the first press only asks (the menu's 3 s confirm), the second starts.
         e.preventDefault();
         if (this.menu.requestNewTree() === 'armed') this.toast.show('Press N again for a new tree', NEW_TREE_CONFIRM_MS);
       }
     });
+  }
+
+  /**
+   * The player leaves the tree (a hidden tab, or a replay on the stage: C4 decision 3): it pauses. During the reveal the
+   * clock hasn't started: the log notes the time away (it resumes with the clock), and a restored game is still saved.
+   */
+  private stepAway(now: number): void {
+    if (!this.live) return;
+    if (this.canPause(now)) this.pause(false);
+    else if (this.winAt === null && !this.starting) {
+      this.run.markAway(now);
+      if (this.shouldSave()) this.save(now);
+    }
   }
 
   /** Pausing makes sense only while the clock can run: a tree on screen, after the reveal and before the win. */
@@ -1763,6 +2077,10 @@ export class App {
 
   private resume(): void {
     if (!this.paused) return;
+    // Back to the tree: a Watch still loading no longer has a paused tree to play over, nor a toast to keep up.
+    if (this.watchToastSeq === this.watchSeq) this.toast.hide();
+    this.watchToastSeq = 0;
+    this.watchSeq++;
     const hadFocus = document.activeElement === el('pause');
     this.setPaused(false);
     // The clock (and the log) resume right away, so a tap before the next frame is never logged inside the pause.
@@ -1788,6 +2106,15 @@ export class App {
     document.body.classList.toggle('paused', on);
     if (on) this.frost.show(this.reduced.matches);
     else this.frost.hide();
+    this.setInert();
+  }
+
+  /**
+   * The controls beneath the pause overlay are out of reach (inert) while it is up; not while a replay plays over the
+   * paused tree, when the overlay is set aside and the HUD, the menu and the radio are the player's again.
+   */
+  private setInert(): void {
+    const on = this.paused && !this.watching;
     for (const sel of ['.hud', '#menu', '#radio-panel', '#account-menu']) {
       const node = document.querySelector<HTMLElement>(sel);
       if (node) node.inert = on;
@@ -1875,5 +2202,14 @@ export class App {
   }
   get logLength(): number {
     return this.run?.log.entries.length ?? 0;
+  }
+  /** The ghost pill (C4): whether it shows, whether the ghost is on, and its words. */
+  get ghostState(): { shown: boolean; on: boolean; text: string } {
+    return { shown: !el('ghost-pill').hidden, on: this.ghostToggle, text: el('ghost-pill').textContent ?? '' };
+  }
+  /** A replay on the stage (C4): whether one is, whether it has played out, and its playhead (log ms). */
+  get replayState(): { watching: boolean; ended: boolean; cursor: number } {
+    const w = this.watching;
+    return { watching: w !== null, ended: w?.ended ?? false, cursor: w?.playback.cursor ?? 0 };
   }
 }

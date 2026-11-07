@@ -39,6 +39,19 @@ export const HOME_ALONE_LINE = 'Keep the change, ya filthy animal.';
 /** The tag's usual words under the time (index.html's #r-merry). */
 export const MERRY = 'Merry & bright';
 
+/** Within this of the ghost's time (ms) the race is a tie. */
+const LEVEL_MS = 50;
+
+/**
+ * The tag's line for a race against your ghost (C4 decision 10): `deltaMs` is your clock at the win minus the ghost's
+ * time, so a negative one is a win.
+ */
+export function ghostLine(deltaMs: number): string {
+  if (Math.abs(deltaMs) < LEVEL_MS) return 'Level with your ghost';
+  const s = (Math.abs(deltaMs) / 1000).toFixed(1);
+  return deltaMs < 0 ? `${s} s faster than your ghost` : `${s} s behind your ghost`;
+}
+
 export class Results {
   private readonly root = el('results');
 
@@ -71,6 +84,14 @@ export class Results {
   setLine(line: string | null): void {
     const m = document.getElementById('r-merry');
     if (m) m.textContent = line ?? MERRY;
+  }
+
+  /** How the race against your ghost went, under the time; null takes it away. Looked up lazily: older fixtures have no #r-ghost. */
+  setGhost(line: string | null): void {
+    const g = document.getElementById('r-ghost');
+    if (!g) return;
+    g.textContent = line ?? '';
+    g.hidden = line === null;
   }
 
   /** "Daily Tree · Nov 6" above the time, or nothing. Looked up lazily: older fixtures have no #r-daily. */

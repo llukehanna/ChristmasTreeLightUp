@@ -35,12 +35,14 @@ export interface BestRun {
   id: string;
   ms: number;
   finished_at: number;
+  /** 1 for a run played on Aglow, 0 for an imported one (which has no log to watch). */
+  played: number;
 }
 
 /** The player's best ranked run: fastest, then earliest. Reads games_best in order (no sort). */
-export const BEST_SQL = 'SELECT id, ms, finished_at FROM games WHERE user_id = ? AND ranked = 1 ORDER BY ms, finished_at LIMIT 1';
+export const BEST_SQL = "SELECT id, ms, finished_at, (source = 'play') AS played FROM games WHERE user_id = ? AND ranked = 1 ORDER BY ms, finished_at LIMIT 1";
 /** The same, among the runs finished at or after a window's start: games_best in order, skipping the older runs. */
-const BEST_SINCE_SQL = 'SELECT id, ms, finished_at FROM games WHERE user_id = ?1 AND ranked = 1 AND finished_at >= ?2 ORDER BY ms, finished_at LIMIT 1';
+const BEST_SINCE_SQL = "SELECT id, ms, finished_at, (source = 'play') AS played FROM games WHERE user_id = ?1 AND ranked = 1 AND finished_at >= ?2 ORDER BY ms, finished_at LIMIT 1";
 
 /** The player's best ranked run, in the window from `since` (all time by default). */
 export function bestOf(db: Db, userId: number, since = 0): Promise<BestRun | null> {
@@ -51,7 +53,7 @@ export function bestOf(db: Db, userId: number, since = 0): Promise<BestRun | nul
  * The top BOARD_TOP runs (in the window from `since`): fastest, then earliest. All time reads games_board (a partial index
  * on ranked runs) in order; a window seeks games_recent to its first finish and sorts just the window's runs.
  */
-export const topSql = (since = 0): string => `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at ${ON_BOARD}${inWindow(since, 1)} ORDER BY g.ms, g.finished_at, g.id LIMIT ${TOP}`;
+export const topSql = (since = 0): string => `SELECT g.id, g.user_id, u.name, g.ms, g.finished_at, (g.source = 'play') AS played ${ON_BOARD}${inWindow(since, 1)} ORDER BY g.ms, g.finished_at, g.id LIMIT ${TOP}`;
 export const TOP_SQL = topSql();
 
 export interface TopRow {
@@ -60,6 +62,8 @@ export interface TopRow {
   name: string;
   ms: number;
   finished_at: number;
+  /** 1 for a run played on Aglow, 0 for an imported one. */
+  played: number;
 }
 
 export async function topRuns(db: Db): Promise<TopRow[]> {

@@ -1,10 +1,12 @@
-import type { AccountStats, HomeAloneResponse, MeResponse, MyGamesResponse, ProgressResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
+import type { AccountStats, GhostResponse, HomeAloneResponse, MeResponse, MyGamesResponse, ProgressResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
 import { evaluate } from '../../src/core/goals.js';
+import { parseLog } from '../../src/core/log.js';
+import { GRID } from '../../src/core/mask.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
 import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
 import { dailyFirstIds } from '../lib/daily-board.js';
-import { dayText, streaksOf, viewerDay } from '../lib/days.js';
+import { dayNumber, dayText, streaksOf, viewerDay } from '../lib/days.js';
 import { historyOf } from '../lib/progress.js';
 import { BEST_SQL, bestOf, rankOf, type BestRun } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
@@ -65,6 +67,8 @@ interface RecentRow {
   source: string;
   daily_day: number | null;
   daily_past: number;
+  /** 1 when a log was kept (an imported run has none). */
+  has_log: number;
 }
 
 /** GET /api/me/games: your best and its rank, how many of the top BOARD_TOP are yours, and your last 30 games. */
@@ -72,7 +76,7 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
   const [best, recent, { top, total }] = await Promise.all([
     bestOf(env.DB, user.id),
-    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source, daily_day, daily_past FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
+    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source, daily_day, daily_past, (log IS NOT NULL) AS has_log FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
       .bind(user.id)
       .all<RecentRow>(),
     // The top BOARD_TOP and the total from the isolate's copy (BOARD_TTL_MS); your best and its rank are read live.
@@ -91,6 +95,7 @@ export async function myGames(req: Request, env: AppEnv): Promise<Response> {
     imported: g.source === 'import',
     daily: g.daily_day === null ? null : dayText(g.daily_day),
     dailyFirst: firsts.has(g.id),
+    replay: g.has_log === 1,
   }));
   return json({
     best: best && { ms: best.ms, rank, finishedAt: best.finished_at },
@@ -150,3 +155,37 @@ export async function myProgress(req: Request, env: AppEnv): Promise<Response> {
   const history = await historyOf(env.DB, user.id, Date.now());
   return json({ ...evaluate(history), treesLit: history.treesLit } satisfies ProgressResponse);
 }
+
+interface GhostRow {
+  seed: number;
+  gen_version: number;
+  log: string;
+  ms: number;
+}
+
+/**
+ * GET /api/me/ghost?day=YYYY-MM-DD (C4 decision 6): your fastest run on that day's tree, to race. Any attempt, live or
+ * past, so long as the judge didn't refuse it (paused, too_fast and clock never are a ghost). One indexed read
+ * (games_daily). A stored log that doesn't parse is no ghost. The browser checks the seed and generator version.
+ */
+export async function myGhost(req: Request, env: AppEnv): Promise<Response> {
+  const user = await requireUser(req, env);
+  const day = dayNumber(new URL(req.url).searchParams.get('day'));
+  if (day === null) throw new HttpError(400, 'invalid', 'day must be YYYY-MM-DD.');
+  const row = await env.DB.prepare(
+    "SELECT seed, gen_version, log, ms FROM games WHERE user_id = ?1 AND daily_day = ?2 AND finished_at IS NOT NULL AND log IS NOT NULL AND (unranked_reason IS NULL OR unranked_reason IN ('daily', 'past', 'anonymous')) ORDER BY ms, finished_at LIMIT 1",
+  )
+    .bind(user.id, day)
+    .first<GhostRow>();
+  const log = row ? parseLog(safeJson(row.log), GRID) : null;
+  const body: GhostResponse = { ghost: row && log ? { seed: row.seed, genVersion: row.gen_version, log, ms: row.ms } : null };
+  return json(body);
+}
+
+const safeJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
