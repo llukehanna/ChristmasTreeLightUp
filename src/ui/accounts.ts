@@ -15,6 +15,8 @@ export interface AccountsHooks {
   closeOthers(): void;
   fitHud(): void;
   toast(text: string, ms?: number): void;
+  /** A row's Watch button: play run `id` back on the stage (C4). */
+  onWatch(id: string): void;
 }
 
 /** Why a name isn't available, as the card shows it: anything unexpected from the server reads as taken. */
@@ -365,6 +367,9 @@ export class Accounts {
         break;
       case 'cancel':
         this.sheet.close();
+        break;
+      case 'watch':
+        if (el.dataset.id) this.hooks.onWatch(el.dataset.id);
         break;
     }
   }

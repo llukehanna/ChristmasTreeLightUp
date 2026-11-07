@@ -356,3 +356,45 @@ describe('board windows: Today, This week, All time (spec 2026-10-14 §4)', () =
     expect(() => saveBoardWindow('week')).not.toThrow();
   });
 });
+
+describe('Watch replay buttons (C4 decision 9)', () => {
+  const watch = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('button.acct-watch')];
+  const game = (over: Partial<RecentGame>): RecentGame => ({ id: 'g1', ms: 61_000, finishedAt: day, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false, replay: true, ...over });
+  const games = (...list: RecentGame[]) => render('games', { status: 'loading' }, { status: 'ready', data: { best: null, inTop: 0, total: list.length, games: list } }, me, now);
+
+  it('a board row with replay: true has the Watch button with its id; one with replay: false has none', () => {
+    const rows = [board.rows[0], { ...board.rows[1], replay: false }];
+    const el = render('board', { status: 'ready', data: { ...board, rows } }, { status: 'loading' }, me, now);
+    const [first, second] = [...el.querySelectorAll('.acct-row')];
+    const b = first.querySelector<HTMLButtonElement>('button.acct-watch');
+    expect(b?.dataset.act).toBe('watch');
+    expect(b?.dataset.id).toBe('run-comet');
+    expect(b?.getAttribute('aria-label')).toBe('Watch replay');
+    expect(b?.getAttribute('title')).toBe('Watch replay');
+    expect(b?.getAttribute('type')).toBe('button');
+    expect(b?.querySelector('svg')).not.toBeNull();
+    expect(second.querySelector('.acct-watch')).toBeNull();
+  });
+
+  it('the pinned row of yours outside the top has one too', () => {
+    const you = { id: 'run-you', rank: 87, name: 'Meridian', ms: 152_000, finishedAt: day, mine: true, replay: true };
+    const el = render('board', { status: 'ready', data: { ...board, rows: [], you } }, { status: 'loading' }, me, now);
+    expect(el.querySelector<HTMLElement>('.acct-pin .acct-watch')?.dataset.id).toBe('run-you');
+  });
+
+  it('a game row with replay: true has the Watch button with its id; replay: false and imported runs have none', () => {
+    const el = games(game({ id: 'g1' }), game({ id: 'g2', replay: false }), game({ id: 'g3', imported: true, replay: true }), game({ id: 'g4', imported: true, replay: false }));
+    expect(watch(el).map((b) => b.dataset.id)).toEqual(['g1']);
+    const b = watch(el)[0];
+    expect(b.dataset.act).toBe('watch');
+    expect(b.getAttribute('aria-label')).toBe('Watch replay');
+    expect(b.getAttribute('title')).toBe('Watch replay');
+  });
+
+  it('a Daily first attempt (no status tag) still has its button; an id goes in as text', () => {
+    const el = games(game({ id: 'd"1<b>', daily: '2026-11-06', dailyFirst: true, reason: 'daily', ranked: false }));
+    expect(el.querySelector('.acct-status')).toBeNull();
+    expect(watch(el)[0]?.dataset.id).toBe('d"1<b>');
+    expect(el.querySelector('.acct-game b')).toBeNull();
+  });
+});

@@ -28,6 +28,8 @@ export interface AglowProbe {
   star(): { center: [number, number]; head: boolean; flipping: boolean; taps: number };
   /** The game clock in ms (0 until the reveal ends), and the ms since the reveal ended (0 before): the clock is never ahead of it. */
   clock(): { ms: number; sinceReveal: number };
+  /** A replay on the stage (C4): whether one is playing, whether it has played out, and its playhead (log ms). */
+  replay(): { watching: boolean; ended: boolean; cursor: number };
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
@@ -77,6 +79,7 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
     newTree: () => app.newGame(),
     star: () => ({ center: app.starScreenCenter(), ...app.starHead }),
     clock: () => (app.started ? { ms: app.clockMs, sinceReveal: Math.max(0, performance.now() - app.interactiveAt) } : { ms: 0, sinceReveal: 0 }),
+    replay: () => app.replayState,
   };
   (window as Window & { __aglow?: AglowProbe }).__aglow = probe;
 }

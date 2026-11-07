@@ -13,6 +13,7 @@ export const I = {
   warn: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12 3.5c.5 0 .9.3 1.2.7l8 14.2a1.3 1.3 0 0 1-1.2 2H4a1.3 1.3 0 0 1-1.2-2l8-14.2c.3-.4.7-.7 1.2-.7zm-1 6v5h2v-5zm0 6.5v2h2v-2z"/></svg>',
   star: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="m12 3.2 2.5 5.4 5.9.7-4.4 4 1.2 5.8L12 16.2l-5.2 2.9L8 13.3l-4.4-4 5.9-.7z"/></svg>',
   out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H10M15 8l4 4-4 4M19 12H9.5"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8.2 5.3v13.4a.9.9 0 0 0 1.4.8l10.3-6.7a.9.9 0 0 0 0-1.6L9.6 4.5a.9.9 0 0 0-1.4.8z"/></svg>',
   radio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="8" width="17" height="12" rx="2.5"/><path d="M7 8l9-4"/><circle cx="15.5" cy="14" r="2.6"/><path d="M7 12.5h3M7 15.5h3"/></svg>',
 };
 
