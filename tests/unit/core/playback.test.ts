@@ -77,13 +77,13 @@ describe('Playback', () => {
     const want: string[] = [];
     let paused = false;
     for (const { t, a } of log) {
-      const out: import('../../../src/core/board').BoardEvent[] = [];
+      const out: BoardEvent[] = [];
       if (!ref.won) ref.advanceTo(t, out);
       if (a === 'p' || a === 'r') paused = a === 'p';
       else if (!paused && !ref.won) out.push(...ref.tap(a >= 0 ? a : ~a, t, a >= 0 ? 1 : -1));
       for (const e of out) want.push(e.type);
     }
-    const out: import('../../../src/core/board').BoardEvent[] = [];
+    const out: BoardEvent[] = [];
     ref.advanceTo(Number.MAX_SAFE_INTEGER, out);
     for (const e of out) want.push(e.type);
     expect(seen).toEqual(want);
