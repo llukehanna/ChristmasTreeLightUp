@@ -30,7 +30,6 @@ describe('ghostTrack', () => {
       expect(track?.litAt(0)).toBe(fresh(seed).lighting.count);
       expect(track?.litAt(track.ms)).toBe(GRID.ids.length);
       expect(track?.litAt(track.ms + 10_000)).toBe(GRID.ids.length);
-      expect(track?.tilesAt(track.ms).size).toBe(GRID.ids.length);
     }
   });
 
@@ -46,16 +45,8 @@ describe('ghostTrack', () => {
         while (!pb.ended && pb.clockMs() < c) pb.step(1, 1);
         expect(pb.clockMs()).toBe(c);
         expect(track.litAt(c), `seed ${seed} clock ${c}`).toBe(board.lighting.count);
-        expect([...track.tilesAt(c)].sort((a, b) => a - b)).toEqual([...board.lighting.order].sort((a, b) => a - b));
       }
     }
-  });
-
-  it('hands back the same set until the lit tiles change', () => {
-    const track = ghostTrack(source(1));
-    if (!track) throw new Error('no track');
-    expect(track.tilesAt(track.ms)).toBe(track.tilesAt(track.ms + 500));
-    expect(track.tilesAt(0)).toBe(track.tilesAt(1));
   });
 
   it('is null for a log that never solves', () => {

@@ -120,16 +120,6 @@ describe.runIf(process.env.BUILD_TEST === '1')('the build (BUILD_TEST=1)', () =>
     expect(js).not.toContain('wardrobe');
   });
 
-  it("the production build has no ghost look switches (?ghostlook and ?ghostdemo are a dev build's alone)", () => {
-    const assets = join(out, 'assets');
-    const js = readdirSync(assets).filter((f) => f.endsWith('.js')).map((f) => readFileSync(join(assets, f), 'utf8')).join('\n');
-    // The module that holds the ghost's pill is in the build (its storage key is), and the switches aren't.
-    expect(js).toContain('aglow.ghosts');
-    expect(js).not.toContain('ghostlook');
-    expect(js).not.toContain('ghostdemo');
-    expect(js).not.toContain('ghost-demo');
-  });
-
   it(`the entry chunk is under ${ENTRY_MAX / 1000} kB raw`, () => {
     const size = statSync(join(out, manifest['index.html'].file)).size;
     expect(size).toBeLessThan(ENTRY_MAX);

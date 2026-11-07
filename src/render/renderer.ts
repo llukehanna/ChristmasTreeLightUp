@@ -46,9 +46,6 @@ const BLOOM: readonly (readonly [number, number, number])[] = [
 /** Auto-exposure (spec §4.5 item 8): exposure = 1 − DROP · litFraction^POW, raised to each pass's power. */
 const EXPOSURE_DROP = 0.5;
 const EXPOSURE_POW = 1.3;
-/** The glow look's ring (C4 decision 8): one hairline, 0.42 of a tile in radius, frost-white. No gradient, no shadow. */
-const GHOST_RING = 'rgba(235, 245, 255, 0.28)';
-const GHOST_RING_R = 0.42;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 /** How much of a feature shows during a fade at `alpha`: the leaving scene's (`had`) at 1 − alpha, the arriving one's (`has`) at alpha. */
 export const share = (had: boolean, has: boolean, alpha: number): number => (had ? 1 - alpha : 0) + (has ? alpha : 0);
@@ -99,8 +96,6 @@ export interface FrameInput {
    * drawn by it, so a replay at 2× turns its tiles in step with its board.
    */
   boardNow?: number;
-  /** The glow look of the ghost (C4 decision 8, a dev-only switch until Luke's pick): the tiles the ghost has lit, each ringed while the player's is dark. */
-  ghostTiles?: ReadonlySet<number>;
 }
 
 function ctx2d(c: HTMLCanvasElement, opts?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D {
@@ -499,15 +494,6 @@ export class Renderer {
         else drawBulb(ctx, shown, sc.bulbs[board.colors[i]], 0, s, sc, style);
       }
       ctx.restore();
-      if (f.ghostTiles?.has(i) && !board.lighting.lit[i]) {
-        ctx.globalAlpha = reveal;
-        ctx.strokeStyle = GHOST_RING;
-        ctx.lineWidth = 1 / cam.scale; // one screen pixel: the world is scaled by the camera
-        ctx.beginPath();
-        ctx.arc(cx, cy, GHOST_RING_R * s, 0, 2 * Math.PI);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
 
       const { q, alpha } = vis.fill(board, i, now);
       if (alpha <= 0) continue;
