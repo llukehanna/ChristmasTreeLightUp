@@ -36,3 +36,15 @@ it('each door holds its catalogue item, door 6 the Gingerbread tag', () => {
   expect(doorItem(6)).toMatchObject({ id: 'tag:gingerbread', goal: 'door6' });
   expect(Array.from({ length: 24 }, (_, i) => doorItem(i + 1).goal)).toEqual(Array.from({ length: 24 }, (_, i) => `door${i + 1}`));
 });
+
+it('west of UTC a day that is still live closes this evening: opensOn is today', () => {
+  const was = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  try {
+    // Dec 9 noon in Los Angeles; door 8 closes at Dec 10 00:00 UTC, 4 pm on Dec 9 there.
+    expect(doorState(8, '2026-12-09', local(12, 9), false)).toEqual({ state: 'waiting', opensOn: '2026-12-09' });
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+});

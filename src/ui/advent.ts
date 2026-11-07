@@ -3,7 +3,7 @@
  * the settings menu. An open door shows the item it gave; today's door starts the live Daily, and a closed past day's
  * starts that day's tree (unranked, "a past day's tree"), through the same confirm as the menu's Daily row.
  */
-import { ADVENT_DOORS, doorDay, doorItem, doorState, seasonYear, type DoorState } from '../core/advent';
+import { ADVENT_DOORS, closesAt, doorDay, doorItem, doorState, nextChangeAt, seasonYear, type DoorState } from '../core/advent';
 import type { ItemDef, ItemId } from '../core/catalogue';
 import { GARLAND_SETS } from '../render/garland-sets';
 import { PALETTES } from '../render/palettes';
@@ -70,10 +70,16 @@ export class AdventSheet {
   /** The doors' arm-then-confirm, keyed by door: the menu's rule and window. */
   private readonly confirm: Confirm<number>;
   private readonly view: SheetView;
+  /** Runs out at the next instant the page changes by itself (nextChangeAt); one at a time, only while the page is open. */
+  private timer: number | null = null;
 
   constructor(private readonly h: AdventHooks) {
     this.confirm = new Confirm(() => h.needsConfirm());
     this.view = { label: LABEL, card: false, render: (inner) => this.render(inner) };
+    // No timer runs in a hidden tab: the page repaints when the tab is back.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.refresh();
+    });
   }
 
   get isOpen(): boolean {
@@ -86,12 +92,29 @@ export class AdventSheet {
   }
 
   close(): void {
+    this.disarm();
     if (this.isOpen) this.h.sheet.close();
   }
 
   /** Repaints the page if it is on screen (a door opened, a confirm ran out). */
   refresh(): void {
     if (this.isOpen) this.h.sheet.update(this.view);
+  }
+
+  private disarm(): void {
+    if (this.timer !== null) window.clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  /** One timer for the next moment a door changes: a waiting door's day closing, or local midnight (re-armed by each render). */
+  private arm(now: number, closes: readonly number[]): void {
+    this.disarm();
+    if (document.hidden) return;
+    this.timer = window.setTimeout(() => {
+      this.timer = null;
+      // Closed meanwhile (the sheet closes itself on Escape and the scrim), or hidden: nothing to repaint.
+      if (!document.hidden) this.refresh();
+    }, nextChangeAt(now, closes) - now + 50);
   }
 
   private render(inner: HTMLElement): void {
@@ -103,6 +126,7 @@ export class AdventSheet {
       const item = doorItem(d);
       return { d, item, ...doorState(d, today, now, this.h.owns(item.id)) };
     });
+    this.arm(now, doors.filter((x) => x.state === 'waiting').map((x) => closesAt(doorDay(x.d, today))));
     const opened = doors.filter((x) => x.state === 'open').length;
     const notes = [
       today.slice(5, 7) === '11' ? 'Doors open December 1' : null,
@@ -114,7 +138,7 @@ export class AdventSheet {
         return `<li><div class="adv-door" id="${id}" data-state="open"><span class="adv-n">${d}</span><span class="deco-sw-art adv-art">${artOf(item, d)}</span><span class="adv-l">${esc(item.label)}</span></div></li>`;
       }
       const isArmed = armed === d && (state === 'today' || state === 'catch-up');
-      const text = isArmed ? 'Tap again' : state === 'waiting' ? `Opens ${short(opensOn as string)}` : STATE_TEXT[state];
+      const text = isArmed ? 'Tap again' : state === 'waiting' ? (opensOn === today ? 'Opens tonight' : `Opens ${short(opensOn as string)}`) : STATE_TEXT[state];
       // The date stays on one line when a narrow door wraps "Opens" above it.
       const shown = text.replace(/ (\d+)$/, '\u00a0$1');
       const name = `${short(doorDay(d, today))}${isArmed ? ` · ${CONFIRM_TEXT}` : text ? ` · ${text}` : ''}`;

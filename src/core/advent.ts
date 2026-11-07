@@ -49,3 +49,13 @@ export function doorState(d: number, today: string, nowMs: number, opened: boole
   const closes = closesAt(day);
   return nowMs >= closes ? { state: 'catch-up' } : { state: 'waiting', opensOn: localDay(new Date(closes)) };
 }
+
+/**
+ * The next instant an open Advent page can change by itself: local midnight (today moves on), or when a waiting door's
+ * day closes (`closes`, from closesAt), whichever comes first after `nowMs`.
+ */
+export function nextChangeAt(nowMs: number, closes: readonly number[]): number {
+  const now = new Date(nowMs);
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+  return Math.min(midnight, ...closes.filter((c) => c > nowMs));
+}
