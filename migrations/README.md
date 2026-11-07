@@ -29,3 +29,5 @@ to a guest's unfinished games. Rolling the Worker back past 0008 brings back the
 signed-in player's unfinished random games after a day and their unfinished Daily attempts after three, losing the
 breaks in their runs of trees and their forfeited first attempts (so a later attempt could join a closed day's board).
 Its queries no longer match either partial index, so it also scans the games table on every start. Roll forward.
+The new Worker's sweep reads `INDEXED BY games_stale` (0008's narrowed index), so it must never run against a database
+without 0008: `INDEXED BY` a missing index is an error on every start. `npm run deploy` applies migrations first.
