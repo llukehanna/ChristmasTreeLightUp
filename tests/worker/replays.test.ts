@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReplayResponse, StartResponse } from '../../src/api/types';
+import type { GhostRun, ReplayResponse, StartResponse } from '../../src/api/types';
 import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
@@ -94,13 +94,13 @@ describe('GET /api/games/:id/replay', () => {
   }
 
   /** A finished Daily run of `userId` straight into D1, with a log that parses. */
-  async function dailyRun(userId: number, id: string): Promise<LogEntry[]> {
+  async function dailyRun(userId: number, id: string, ms = 40_000, reason = 'daily', day = DAY): Promise<LogEntry[]> {
     const board = seededBoard(1, GEN_VERSION);
     if (!board) throw new Error('no board');
     const log = solvingTaps(board, 3000, 50);
     await db
-      .prepare('INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, paused_ms, pauses, ranked, unranked_reason, daily_day, daily_past, log) VALUES (?, ?, ?, 1, 0, 40000, 40000, 0, 0, 0, ?, ?, 0, ?)')
-      .bind(id, userId, GEN_VERSION, 'daily', DAY, JSON.stringify(log))
+      .prepare('INSERT INTO games (id, user_id, gen_version, seed, started_at, finished_at, ms, paused_ms, pauses, ranked, unranked_reason, daily_day, daily_past, log) VALUES (?, ?, ?, 1, 0, ?, ?, 0, 0, 0, ?, ?, 0, ?)')
+      .bind(id, userId, GEN_VERSION, ms, ms, reason, day, JSON.stringify(log))
       .run();
     return log;
   }
@@ -167,5 +167,46 @@ describe('GET /api/games/:id/replay', () => {
     await dailyRun(me, 'daily-ana-000000000');
     vi.useFakeTimers({ toFake: ['Date'], now: CLOSES - 1 });
     expect(await json<ReplayResponse>(await replayOf('daily-ana-000000000', cookie))).toMatchObject({ mine: true, daily: '2026-12-10' });
+  });
+
+  describe('GET /api/me/ghost', () => {
+    const ghostOf = (day: string, cookie?: string) => call(env, 'GET', `/api/me/ghost?day=${day}`, { cookie });
+    const meId = async (email: string) => ((await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: number }>())?.id as number);
+
+    it("is your fastest run on the day's tree, whichever attempt, but never a run the judge refused", async () => {
+      const cookie = await signIn(env, 'ana@example.com', 'Meridian');
+      const me = await meId('ana@example.com');
+      await dailyRun(me, 'ghost-daily-00000000', 52_000, 'daily');
+      await dailyRun(me, 'ghost-paused-0000000', 48_000, 'paused');
+      const log = await dailyRun(me, 'ghost-past-000000000', 50_000, 'past');
+      const res = await ghostOf('2026-12-10', cookie);
+      expect(res.status).toBe(200);
+      expect(await json<{ ghost: GhostRun | null }>(res)).toEqual({ ghost: { seed: 1, genVersion: GEN_VERSION, log, ms: 50_000 } });
+    });
+
+    it("never returns another player's faster run", async () => {
+      const cookie = await signIn(env, 'ana@example.com', 'Meridian');
+      const bo = await user('bo@example.com', 'Comet');
+      await dailyRun(bo, 'ghost-bo-000000000000', 30_000, 'daily');
+      await dailyRun(await meId('ana@example.com'), 'ghost-ana-00000000000', 55_000, 'daily');
+      expect((await json<{ ghost: GhostRun }>(await ghostOf('2026-12-10', cookie))).ghost.ms).toBe(55_000);
+    });
+
+    it('is null on a day with none of your runs, or when the stored log does not parse', async () => {
+      const cookie = await signIn(env, 'ana@example.com', 'Meridian');
+      const me = await meId('ana@example.com');
+      await dailyRun(me, 'ghost-other-day-0000', 40_000, 'daily', DAY + 1);
+      expect(await json(await ghostOf('2026-12-10', cookie))).toEqual({ ghost: null });
+      await dailyRun(me, 'ghost-bad-log-000000');
+      await db.prepare('UPDATE games SET log = ? WHERE id = ?').bind('{"not":"a log"}', 'ghost-bad-log-000000').run();
+      expect(await json(await ghostOf('2026-12-10', cookie))).toEqual({ ghost: null });
+    });
+
+    it('is a 401 signed out, and a 400 for a day that is not a real date', async () => {
+      expect((await ghostOf('2026-12-10')).status).toBe(401);
+      const cookie = await signIn(env, 'ana@example.com', 'Meridian');
+      for (const day of ['2026-02-30', 'tomorrow', '']) expect((await ghostOf(day, cookie)).status).toBe(400);
+      expect((await call(env, 'GET', '/api/me/ghost', { cookie })).status).toBe(400);
+    });
   });
 });

@@ -80,6 +80,25 @@ describe('evaluate', () => {
     expect(goals(shuffled).s60.done).toBe(false);
   });
 
+  it("a past day's tree is skipped like a repeat: it neither counts nor breaks the five", () => {
+    const fresh = () => run({ ms: 50_000 });
+    const runs = [fresh(), fresh(), run({ daily: D, past: true, reason: 'past', ms: 30_000 }), fresh(), fresh(), fresh()];
+    const g = goals(runs);
+    expect(g.a60.have).toBe(50_000);
+    expect(g.a45.done).toBe(false);
+    expect([g.s45.done, g.s40.done, g.s35.done]).toEqual([false, false, false]);
+    expect(g.s60).toEqual({ have: 50_000, need: 60_000, done: true });
+  });
+
+  it("a past day's tree still opens its Advent door and counts in treesLit", () => {
+    const runs = [run({ daily: day(2025, 12, 6), past: true, reason: 'past', ms: 30_000 })];
+    const e = evaluate(history(runs));
+    expect(e.goals.s45.done).toBe(false);
+    expect(e.earned).toContain('tag:gingerbread');
+    expect(e.goals.door6.done).toBe(true);
+    expect(e.goals.m10.have).toBe(1);
+  });
+
   it('Ao5 drops best and worst of five consecutive fresh runs', () => {
     const g = goals([40, 50, 55, 58, 200].map((s) => run({ ms: s * 1000 })));
     expect(g.a60).toEqual({ have: 54_333, need: 60_000, done: true });

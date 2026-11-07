@@ -184,6 +184,11 @@ export interface GhostRun {
   ms: number;
 }
 
+/** GET /api/me/ghost?day=: your fastest run on that day's tree, or null when you have none to race. */
+export interface GhostResponse {
+  ghost: GhostRun | null;
+}
+
 /** GET /api/games/:id/replay: a finished run the viewer may watch, and who played it. */
 export interface ReplayResponse extends GhostRun {
   id: string;
