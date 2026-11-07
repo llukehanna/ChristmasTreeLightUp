@@ -585,13 +585,14 @@ test.describe('the Advent calendar', () => {
     await ready(page);
 
     await page.click('#menu-btn');
-    await page.getByRole('button', { name: 'Advent calendar' }).click();
-    const calendar = page.getByRole('dialog', { name: 'Advent calendar' });
+    await page.getByRole('button', { name: 'Advent calendar', exact: true }).click();
+    // Door names are matched exactly: a name is a substring of others ("Dec 10" of door 8's "Dec 8 · Opens Dec 10", east of UTC).
+    const calendar = page.getByRole('dialog', { name: 'Advent calendar', exact: true });
     await expect(calendar.locator('.acct-sub')).toHaveText('December 2026 · 0/24 open');
     await expect(calendar).toContainText('Sign in to open doors · your trees still count once you do');
-    await expect(calendar.getByRole('button', { name: 'Dec 9 · Today' })).toBeEnabled();
-    await expect(calendar.getByRole('button', { name: 'Dec 10' })).toBeDisabled();
-    await calendar.getByRole('button', { name: 'Dec 6 · Catch up' }).click();
+    await expect(calendar.getByRole('button', { name: 'Dec 9 · Today', exact: true })).toBeEnabled();
+    await expect(calendar.getByRole('button', { name: 'Dec 10', exact: true })).toBeDisabled();
+    await calendar.getByRole('button', { name: 'Dec 6 · Catch up', exact: true }).click();
     await expect(calendar).toBeHidden();
 
     // The past day's tree, as C1 plays it: its pill, and unranked as "a past day's tree".
@@ -608,7 +609,7 @@ test.describe('the Advent calendar', () => {
     await pickName(page, player.name);
     await resumeIfPaused(page);
     await page.click('#menu-btn');
-    await page.getByRole('button', { name: 'Advent calendar' }).click();
+    await page.getByRole('button', { name: 'Advent calendar', exact: true }).click();
     const door = calendar.locator('#adv-door-6');
     await expect(door).toHaveAttribute('data-state', 'open', { timeout: 15_000 });
     await expect(door).toContainText('Gingerbread tag');
