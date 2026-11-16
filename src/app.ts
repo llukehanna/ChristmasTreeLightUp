@@ -44,6 +44,7 @@ import { loadStarHead, saveStarHead } from './store/star-head';
 import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
 import { lastPlayer } from './store/unlocks';
+import { CareerOpener } from './career-opener';
 import { Accounts } from './ui/accounts';
 import { AdventSheet } from './ui/advent';
 import { el, isEditable } from './ui/dom';
@@ -228,6 +229,8 @@ export class App {
   private readonly shareSeen = { n: 0, line: null as boolean | null };
   private lastFrame = 0;
   private looping = false;
+  /** Stage frames drawn since load (read by the test probe): none while the career page covers the stage. */
+  private frames = 0;
   /** Full frame rate until then: something the player caused is still moving. */
   private busyUntil = 0;
   private lastTime = '';
@@ -251,6 +254,8 @@ export class App {
   private readonly accounts: Accounts;
   /** The Advent calendar's page, in the account sheet's glass (it opens from the menu). */
   private readonly advent: AdventSheet;
+  /** The career page (its own chunk), over the stage: from the account menu and the leaderboard sheet. */
+  private readonly career: CareerOpener;
   /** The signed-in player (spec 2026-10-07): loaded at start, changed by sign-in, naming and sign-out. */
   readonly session = new Session();
   /** A board exists: the first tree waits for the server (1.5 s at most, 5 s for the Daily). */
@@ -459,6 +464,17 @@ export class App {
       fitHud: () => this.fitHud(),
       toast: (text, ms) => this.toast.show(text, ms),
       onWatch: (id) => this.watchRun(id),
+      openCareer: (from) => this.openCareer(from),
+    });
+    this.career = new CareerOpener({
+      user: () => this.session.current,
+      load: () => api.career(),
+      signIn: (from) => this.accounts.openSignIn({}, from),
+      cover: () => this.coverStage(),
+      uncover: (from) => this.uncoverStage(from),
+      leaderboard: () => this.accounts.openBoard(),
+      watch: (id) => this.watchRun(id),
+      failed: () => this.toast.show("Couldn't open your career."),
     });
     this.advent = new AdventSheet({
       sheet: this.accounts.host,
@@ -1149,7 +1165,7 @@ export class App {
   /**
    * Signed-out runs saved on this browser join the account, 8 per request, once it has a name (spec §5.4). The run on
    * the results tag says how its claim went: a failed request offers Retry; a claim the server didn't take (claimed in
-   * another tab, or gone) can't be retried, and says the run is saved to Your games.
+   * another tab, or gone) can't be retried, and says the run is saved to your career.
    */
   private async claimOnce(): Promise<void> {
     if (!this.session.current?.name) return;
@@ -1181,7 +1197,7 @@ export class App {
     } finally {
       // Ended without an answer for this run's claim (its batch or an earlier one failed, or another tab already took
       // the claim out of storage): never leave "Saving…" up. Retry if the claim is still here to send, else the run
-      // is in Your games.
+      // is in your career.
       const o = this.outcome;
       if (current !== null && !answered && stillHere() && o?.kind === 'done' && !o.result.ranked && awaitsClaim(o.result, this.guestResult) && this.claimState === null) {
         this.setClaimState(readClaims(Date.now()).some((c) => c.id === current) ? 'stuck' : 'gone');
@@ -1390,7 +1406,7 @@ export class App {
   }
 
   /**
-   * A row's Watch button (Your games, the board): the sheet goes, and the run plays once it has arrived. The Watch is
+   * A row's Watch button (the career page, the board): the sheet goes, and the run plays once it has arrived. The Watch is
    * pending until then: a resume, a new tree, Done or a newer Watch (each moves `watchSeq` on) drops it, answer and all,
    * so a replay never lands on a tree the player has gone back to.
    */
@@ -1496,6 +1512,43 @@ export class App {
     }
   }
 
+  /* ---------- the career page ---------- */
+
+  /** The account menu's Career and the leaderboard sheet's: the career page, or the sign-in sheet for a guest. */
+  openCareer(from?: HTMLElement | null): void {
+    this.career.open(from ?? null);
+  }
+
+  /**
+   * The career page is coming up over the stage. As a sheet does, it pauses a run in progress and a replay playing; the
+   * sheets, menus and panels close. Called again as the page lands, for anything opened or resumed while it loaded.
+   */
+  private coverStage(): void {
+    this.accounts.host.close();
+    this.accounts.closeMenu();
+    this.menu.close();
+    this.decorate.close();
+    this.radioPanel.close();
+    this.keyCard.close();
+    if (this.watching?.playing) this.replayer?.toggle();
+    this.pause(false);
+  }
+
+  /**
+   * The career page has gone: the stage draws again. The reveal may have ended under the page, with the loop idle and
+   * the clock not yet started: the run is paused now, as under a sheet. Focus goes back where the page was opened from,
+   * or onto the frost.
+   */
+  private uncoverStage(from: HTMLElement | null): void {
+    const now = performance.now();
+    if (!this.paused && this.canPause(now)) this.pause(false);
+    this.pausedDrawn = false;
+    this.busy(now);
+    this.startLoop();
+    if (from?.isConnected && !from.closest('[inert]') && from.getClientRects().length) from.focus({ preventScroll: true });
+    else if (this.paused) el('pause').focus({ preventScroll: true });
+  }
+
   /* ---------- frame loop ---------- */
 
   /** The frame loop, once (the opening's prelude may have started it before the first tree). */
@@ -1506,6 +1559,11 @@ export class App {
   }
 
   private loop(now: number): void {
+    // The career page covers the stage: no frame, and no next one until it closes (uncoverStage starts the loop again).
+    if (this.career.covering) {
+      this.looping = false;
+      return;
+    }
     requestAnimationFrame((t) => this.loop(t));
     // The spark cursor follows the mouse at the display's rate, calm or not (nothing while off or asleep).
     this.spark.frame(now);
@@ -1564,6 +1622,7 @@ export class App {
     // Secret mode's beat comes with the eggs (secret mode waits for them).
     const eggs = this.eggs;
     const tracker = this.radio.show.beat;
+    this.frames++;
     // A replay draws exactly what play draws, from its own board on the run's log time: its reveal and its turns follow
     // the playhead (so they keep its speed, and hold still while it is paused).
     this.renderer.frame({
@@ -1649,7 +1708,7 @@ export class App {
       this.accounts.closeMenu();
       return;
     }
-    if (this.accounts.sheetOpen) return;
+    if (this.accounts.sheetOpen || this.career.isOpen) return;
     // On desktop the game stays playable behind the radio popover (spec §5.3); the phone sheet closes like the menu.
     if (this.radioPanel.isOpen && this.phone.matches) {
       this.radioPanel.close();
@@ -2008,7 +2067,7 @@ export class App {
       // stays open while you play, so with focus back on the game (or nowhere) P still pauses.
       if (
         e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.decorate.isOpen || this.radioPanel.hasFocus ||
-        this.accounts.blocksKeys || isEditable(e.target)
+        this.accounts.blocksKeys || this.career.isOpen || isEditable(e.target)
       )
         return;
       // A replay on the stage takes the keys (Space and P play and pause, Escape is Done): nothing else reaches the
@@ -2209,6 +2268,14 @@ export class App {
   }
   get runOutcome(): RunOutcome | null {
     return this.outcome;
+  }
+  /** Stage frames drawn since load. */
+  get frameCount(): number {
+    return this.frames;
+  }
+  /** The career page: up, or its chunk still loading. */
+  get careerState(): { open: boolean; loading: boolean } {
+    return this.career.state;
   }
   /** The game clock's reading now (0 until the reveal ends and it starts). */
   get clockMs(): number {

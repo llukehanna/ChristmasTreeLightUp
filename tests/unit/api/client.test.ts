@@ -100,7 +100,7 @@ describe('api client', () => {
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'signed_out', message: 'Sign in first.' }, { status: 401 })));
-    await expect(api.myGames()).rejects.toBeInstanceOf(ApiError);
+    await expect(api.career()).rejects.toBeInstanceOf(ApiError);
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
@@ -111,7 +111,7 @@ describe('api client', () => {
     await api.board();
     expect(fetch.mock.calls[1][1].cache).toBe('default');
     await api.me();
-    await api.myGames();
+    await api.career();
     await api.finish('g', []);
     await api.claim([]);
     await api.checkName('Comet');

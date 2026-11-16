@@ -19,7 +19,7 @@ test('the HUD chip signs in with (fake) Google, asks for a name once, then shows
   await expect(chip).toHaveAccessibleName(`Account: ${player.name}`);
 });
 
-test('the account menu opens the leaderboard and Your games; Escape closes the sheet', async ({ page }) => {
+test('the account menu opens the leaderboard, with Career beside it in its switch; Escape closes the sheet', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
   await signInFromChip(page);
@@ -29,18 +29,10 @@ test('the account menu opens the leaderboard and Your games; Escape closes the s
   await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
   const board = page.getByRole('dialog', { name: 'Leaderboard' });
   await expect(board).toBeVisible();
-  await board.getByRole('tab', { name: 'Your games' }).click();
-  const games = page.getByRole('dialog', { name: 'Your games' });
-  await expect(games).toContainText('No games yet. Light a tree to see it here.');
-  // The tabs answer the arrow keys, and focus stays on the selected tab across the re-render.
-  await expect(games.getByRole('tab', { name: 'Your games' })).toBeFocused();
-  await page.keyboard.press('ArrowLeft');
-  await expect(board.getByRole('tab', { name: 'Leaderboard', selected: true })).toBeFocused();
-  await expect(board.getByRole('tabpanel')).toBeVisible();
-  await page.keyboard.press('ArrowRight');
-  await expect(games.getByRole('tab', { name: 'Your games', selected: true })).toBeFocused();
+  await expect(board.getByRole('button', { name: 'Leaderboard' })).toHaveAttribute('aria-current', 'page');
+  await expect(board.getByRole('button', { name: 'Career' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(games).toBeHidden();
+  await expect(board).toBeHidden();
 });
 
 test('the name card checks as you type: too short, reserved, taken by a look-alike, then available', async ({ page }) => {
@@ -183,7 +175,7 @@ test('the admin sees Radio admin in the account menu; a player does not', async 
   await page.keyboard.press('Escape');
   await resumeIfPaused(page);
   await page.locator('#account-chip').click();
-  await expect(menu.getByRole('button', { name: 'Your games' })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Career' })).toBeVisible();
   await expect(menu.getByRole('link', { name: 'Radio admin' })).toHaveCount(0);
 });
 
@@ -332,7 +324,7 @@ test('a claim that failed on an earlier batch offers Retry (never "Saving…" fo
   await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · New personal best!$/, { timeout: 15_000 });
 });
 
-test('a claim another tab already took out of storage ends as "Saved to Your games", not "Saving…"', async ({ page }) => {
+test('a claim another tab already took out of storage ends as "Saved to your career", not "Saving…"', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
   await onlineTree(page);
@@ -341,7 +333,7 @@ test('a claim another tab already took out of storage ends as "Saved to Your gam
   await expect(results.locator('.rib-line')).toHaveText(/^Would place #/, { timeout: 15_000 });
   await page.evaluate(() => localStorage.removeItem('aglow.claims'));
   await saveFromTag(page, player.name);
-  await expect(results.locator('.rib-line')).toHaveText('Saved to Your games', { timeout: 15_000 });
+  await expect(results.locator('.rib-line')).toHaveText('Saved to your career', { timeout: 15_000 });
 });
 
 test('a finish whose automatic retry lands past the clock tolerance says "reached the server too late"', async ({ page }) => {
@@ -359,7 +351,7 @@ test('a finish whose automatic retry lands past the clock tolerance says "reache
   await expect(page.locator('#results .rib-line')).toHaveText('Saved, unranked: reached the server too late', { timeout: 20_000 });
 });
 
-test('two runs by the same player both appear in Your games', async ({ page }) => {
+test('two runs by the same player both appear in the career', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
   await signInFromChip(page);
@@ -372,12 +364,11 @@ test('two runs by the same player both appear in Your games', async ({ page }) =
     await expect(page.locator('#results .rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
   }
   await page.locator('#account-chip').click();
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
-  // Your games, not the shared top 50: other tests' players can push these two runs off the board.
-  await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
-  await expect(page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game')).toHaveCount(2);
-  const mine = await page.request.get('/api/me/games');
-  expect(((await mine.json()) as { games: unknown[] }).games).toHaveLength(2);
+  // The career, not the shared top 50: other tests' players can push these two runs off the board.
+  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
+  await expect(page.getByRole('dialog', { name: 'Your career' }).locator('#career-log tbody tr')).toHaveCount(2);
+  const mine = await page.request.get('/api/me/career');
+  expect(((await mine.json()) as { runs: unknown[] }).runs).toHaveLength(2);
 });
 
 /**
@@ -414,7 +405,7 @@ test.describe('board windows', () => {
     await page.keyboard.press('Escape');
     // A minute into the next local day: the run (and every other on the board) finished before today began here, so
     // Today is empty. This week has the run unless the new day is a Monday; All time always has it.
-    const [{ finishedAt }] = ((await (await page.request.get('/api/me/games')).json()) as { games: { finishedAt: number }[] }).games;
+    const [[, finishedAt]] = ((await (await page.request.get('/api/me/career')).json()) as { runs: [string, number][] }).runs;
     const view = (samoaDay(Date.now()) + 1) * 86_400_000 + SAMOA_MS + 60_000;
     await page.clock.setFixedTime(view);
     const viewDay = samoaDay(view);
@@ -453,7 +444,7 @@ async function seedDeviceHistory(page: Page): Promise<void> {
   });
 }
 
-test("signed in with a history on this device, the tag and Your games add it to the account's numbers", async ({ page }) => {
+test("signed in with a history on this device, the tag adds it to the account's numbers", async ({ page }) => {
   const player = await asPlayer(page);
   await seedDeviceHistory(page);
   await ready(page);
@@ -472,18 +463,6 @@ test("signed in with a history on this device, the tag and Your games add it to 
   expect(baseline).toEqual([8]);
   // The device still records its own.
   expect(await page.evaluate(() => (JSON.parse(localStorage.getItem('aglow.stats') ?? '{}') as { solved?: number }).solved)).toBe(8);
-
-  await page.locator('#account-chip').click();
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
-  await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
-  const games = page.getByRole('dialog', { name: 'Your games' });
-  await expect(games.locator('.acct-totals span')).toHaveText(['Solved', 'Average', 'Day streak', 'Longest']);
-  // The same additive numbers; the recent-games list below is still the account's own (one game).
-  await expect(games.locator('.acct-totals b')).toHaveText(['9', /^\d+:\d{2}\.\d$/, '11', '11']);
-  await expect(games.locator('.acct-game')).toHaveCount(1);
-  // The four columns fit the sheet at this width (375 px on the phone project).
-  const fits = await games.locator('.acct-body').evaluate((n) => n.scrollWidth <= n.clientWidth);
-  expect(fits).toBe(true);
 });
 
 test("an account that imported its history shows its own numbers, with no device baseline", async ({ page }) => {
@@ -541,7 +520,7 @@ test("a baseline is kept per account and never overwritten, so another account's
   expect(kept).toEqual({ '1': 999, '4242': 8 });
 });
 
-test("signed in but the stats can't be read: the tag keeps this device's numbers, and Your games says so", async ({ page }) => {
+test("signed in but the stats can't be read: the tag keeps this device's numbers", async ({ page }) => {
   const player = await asPlayer(page);
   await seedDeviceHistory(page);
   await page.route(
@@ -561,14 +540,6 @@ test("signed in but the stats can't be read: the tag keeps this device's numbers
   await failed;
   await expect(results.locator('#r-solved')).toHaveText('8');
   await expect(results.locator('#r-streak')).toHaveText('11');
-
-  await page.locator('#account-chip').click();
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
-  await page.getByRole('dialog', { name: 'Leaderboard' }).getByRole('tab', { name: 'Your games' }).click();
-  const games = page.getByRole('dialog', { name: 'Your games' });
-  await expect(games.locator('.acct-totals-err')).toHaveText("Couldn't load your totals.");
-  await expect(games.locator('.acct-totals b')).toHaveText(['–', '–', '–', '–']);
-  await expect(games.locator('.acct-game')).toHaveCount(1);
 });
 
 test('the settings menu links to the privacy page', async ({ page }) => {

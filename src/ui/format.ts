@@ -41,7 +41,7 @@ export const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.ch
 
 export const initial = (name: string): string => esc((name.trim()[0] ?? '?').toUpperCase());
 
-/** "Unranked: …" on the results tag and in Your games (spec §6). */
+/** "Unranked: …" on the results tag and in the career log (spec §6). */
 export const UNRANKED_TEXT: Readonly<Record<UnrankedReason | 'offline' | 'unverified', string>> = {
   anonymous: 'not signed in',
   paused: 'paused too long',

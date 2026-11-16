@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardResponse, ClaimResponse, FinishResult, MyGamesResponse, StartResponse } from '../../src/api/types';
+import { CAREER_REPLAY, type BoardResponse, type CareerResponse, type ClaimResponse, type FinishResult, type StartResponse } from '../../src/api/types';
 import { REVEAL_MS } from '../../src/core/clock';
 import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
@@ -179,11 +179,11 @@ describe('finishing a game', () => {
     expect(await row(game.id)).toMatchObject({ ranked: 1, unranked_reason: null, ms, paused_ms: 0, pauses: 0, log: JSON.stringify(log) });
   });
 
-  it('a run finished signed in can be watched: its row says so on the board and in Your games', async () => {
+  it('a run finished signed in can be watched: its row says so on the board and in the career', async () => {
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const { game } = await play(ana);
-    const mine = await json<MyGamesResponse>(await call(env, 'GET', '/api/me/games', { cookie: ana }));
-    expect(mine.games.map((g) => [g.id, g.replay])).toEqual([[game.id, true]]);
+    const mine = await json<CareerResponse>(await call(env, 'GET', '/api/me/career', { cookie: ana }));
+    expect(mine.runs.map((r) => [r[0], (r[5] & CAREER_REPLAY) !== 0])).toEqual([[game.id, true]]);
     const board = await json<BoardResponse>(await call(env, 'GET', '/api/board', { cookie: ana }));
     expect(board.rows.map((r) => [r.id, r.replay])).toEqual([[game.id, true]]);
   });

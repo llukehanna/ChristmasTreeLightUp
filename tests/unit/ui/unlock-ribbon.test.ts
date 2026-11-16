@@ -74,7 +74,7 @@ it('the tag draws "Unlocked: Tinsel · Try it", and " · +N more", under the ran
   expect(onMore).toHaveBeenCalledOnce();
   // A ribbon redraw (the server answers) keeps the line, under the new rank strip.
   renderRibbon(root, { kind: 'kept' }, { board: noop, save: noop, retry: noop });
-  expect(line()?.previousElementSibling?.textContent).toBe('Saved to Your games');
+  expect(line()?.previousElementSibling?.textContent).toBe('Saved to your career');
   r.setUnlocks(null, { onTry, onMore });
   expect(line()).toBeNull();
 });

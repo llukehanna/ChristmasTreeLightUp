@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerResponse, type MyGamesResponse } from '../../src/api/types';
+import { CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerResponse } from '../../src/api/types';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { dayNumber } from '../../worker/lib/days';
@@ -97,9 +97,6 @@ describe('GET /api/me/career', () => {
     expect(res.best).toEqual({ id: best, ms: 41000, rank: 2 });
     expect(res.inTop).toBe(2);
     expect(res.total).toBe(4);
-    // What myGames says of the same fixture (until it is removed).
-    const old = (await (await call(env, 'GET', '/api/me/games', { cookie })).json()) as MyGamesResponse;
-    expect({ ms: old.best?.ms, rank: old.best?.rank, inTop: old.inTop, total: old.total }).toEqual({ ms: 41000, rank: 2, inTop: 2, total: 4 });
   });
 
   it('has no best for an account without a ranked run, and no place without a name', async () => {

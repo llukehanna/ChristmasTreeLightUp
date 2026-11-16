@@ -8,7 +8,7 @@ export type { UnrankedReason };
 
 /** Most claims one POST /api/games/claim handles; the browser sends them in batches of this many. */
 export const MAX_CLAIMS_PER_REQUEST = 8;
-/** How many runs the leaderboard shows (and Your games counts "in the top"). */
+/** How many runs the leaderboard shows (and the career page counts "in the top"). */
 export const BOARD_TOP = 50;
 /**
  * The leaderboard's windows (spec 2026-10-14): the viewer's day's Daily Tree (its first attempts only), since the
@@ -151,33 +151,6 @@ export interface BoardResponse {
   total: number;
   /** Your best run's row when it is outside the top BOARD_TOP; null with no run in the window. */
   you: BoardRow | null;
-}
-
-export interface RecentGame {
-  id: string;
-  ms: number;
-  finishedAt: number;
-  ranked: boolean;
-  reason: UnrankedReason | null;
-  /** This run is the player's best ranked run. */
-  isBest: boolean;
-  /** Imported from a device's pre-accounts stats (spec 2026-10-08), not played on Aglow. */
-  imported: boolean;
-  /** A Daily Tree run's day (YYYY-MM-DD); null for a random game. A past day's tree is known by its reason, 'past'. */
-  daily: string | null;
-  /** This game is the owner's earliest-started live game for its day (finished or not); false for a repeat or a random game. */
-  dailyFirst: boolean;
-  /** The run kept a log, so it can be watched; false for an imported run. */
-  replay: boolean;
-}
-
-export interface MyGamesResponse {
-  best: { ms: number; rank: number | null; finishedAt: number } | null;
-  /** How many of the top BOARD_TOP runs are yours. */
-  inTop: number;
-  total: number;
-  /** The last 30 finished games, newest first. */
-  games: RecentGame[];
 }
 
 /** The flag bits of a CareerRow. */

@@ -1,6 +1,6 @@
 import type { LogEntry } from '../core/log';
 import { localDay } from '../store/stats';
-import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type CareerResponse, type ClaimResponse, type DailyRequest, type FinishResult, type GhostResponse, type GhostRun, type HomeAloneResponse, type MeResponse, type MyGamesResponse, type NameCheck, type ProgressResponse, type ReplayResponse, type RunContext, type StarHeadResponse, type StartResponse, type User } from './types';
+import { BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardWindow, type CareerResponse, type ClaimResponse, type DailyRequest, type FinishResult, type GhostResponse, type GhostRun, type HomeAloneResponse, type MeResponse, type NameCheck, type ProgressResponse, type ReplayResponse, type RunContext, type StarHeadResponse, type StartResponse, type User } from './types';
 
 /** An API failure: the HTTP status (0 when the server couldn't be reached), the Worker's error code and message. */
 export class ApiError extends Error {
@@ -108,7 +108,6 @@ export const api = {
   ghost: async (day: string): Promise<GhostRun | null> => (await request<GhostResponse>('GET', `/api/me/ghost?day=${encodeURIComponent(day)}`)).ghost,
   /** Every finished run of the account, oldest first, and its ranked best (the career page). */
   career: () => request<CareerResponse>('GET', '/api/me/career'),
-  myGames: () => request<MyGamesResponse>('GET', '/api/me/games'),
   /** The account's copy of the tree's topper preference (the star-head egg). */
   setStarHead: (on: boolean) => request<StarHeadResponse>('PUT', '/api/me/star-head', { on }),
   /** The account's copy of Home Alone mode. */

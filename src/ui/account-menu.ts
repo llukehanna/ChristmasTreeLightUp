@@ -108,7 +108,7 @@ export class AccountMenu {
         <div class="acct-drop-head"><span class="acct-av lg${name === null ? ' anon' : ''}">${name !== null ? initial(name) : I.person}</span><div><b>${esc(name ?? 'No name yet')}</b><small>${sub}</small></div></div>
         ${name === null ? `<button class="acct-item" type="button" data-act="name"><span class="acct-dot">${I.pen}</span><span>Pick a display name</span></button>` : ''}
         <button class="acct-item" type="button" data-act="board"><span class="acct-dot">${I.trophy}</span><span>Leaderboard</span>${rank ? `<span class="acct-r">#${rank}</span>` : ''}</button>
-        <button class="acct-item" type="button" data-act="games"><span class="acct-dot">${I.list}</span><span>Your games</span></button>
+        <button class="acct-item" type="button" data-act="career"><span class="acct-dot">${I.list}</span><span>Career</span></button>
         ${user.isAdmin ? `<a class="acct-item" href="/admin"><span class="acct-dot">${I.radio}</span><span>Radio admin</span></a>` : ''}
         <div class="acct-drop-foot"><button type="button" data-act="signout">${I.out}Sign out</button><button type="button" class="danger" data-act="delete">Delete account</button><a href="/privacy">Privacy</a></div>`;
       if (hadFocus) (this.drop.querySelector<HTMLElement>(key ?? '.acct-item') ?? this.drop.querySelector<HTMLElement>('.acct-item'))?.focus({ preventScroll: true });

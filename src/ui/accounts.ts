@@ -1,11 +1,11 @@
 import { api, ApiError } from '../api/client';
 import { cleanName, isReserved } from '../api/names';
 import type { Session, SessionState } from '../api/session';
-import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '../api/types';
+import type { BoardResponse, BoardWindow } from '../api/types';
 import { canSaveName, deleteView, nameView, paintName, signInView, type NameState, type NameStatus, type SignInOptions } from './account-cards';
 import { AccountMenu } from './account-menu';
-import { isListView, listView, loadBoardWindow, saveBoardWindow, type ListTab, type Loadable } from './board-sheets';
-import { loadStats as loadDeviceStats, localDay, shownAccountStats } from '../store/stats';
+import { isListView, listView, loadBoardWindow, saveBoardWindow, type Loadable } from './board-sheets';
+import { localDay } from '../store/stats';
 import { Sheet } from './sheet';
 
 export interface AccountsHooks {
@@ -17,6 +17,8 @@ export interface AccountsHooks {
   toast(text: string, ms?: number): void;
   /** A row's Watch button: play run `id` back on the stage (C4). */
   onWatch(id: string): void;
+  /** The menu's Career and the leaderboard sheet's: the career page (the sign-in sheet for a guest). */
+  openCareer(from?: HTMLElement | null): void;
 }
 
 /** Why a name isn't available, as the card shows it: anything unexpected from the server reads as taken. */
@@ -30,7 +32,6 @@ const CHECK_DELAY_MS = 400;
 export class Accounts {
   private readonly sheet: Sheet;
   private readonly menu: AccountMenu;
-  private tab: ListTab = 'board';
   /** The leaderboard's window (spec 2026-10-14 §4), as chosen last in this browser; each window keeps its own answer. */
   private chosen: BoardWindow = loadBoardWindow();
   /** The window on screen: the chosen one, or the board the results tag's rosette opened (All time, or the Daily). */
@@ -40,10 +41,6 @@ export class Accounts {
   private boardsDay = '';
   /** The day of the Daily board on screen: today's, or a Daily run's (the results tag's rosette). */
   private dailyDay = '';
-  private games: Loadable<MyGamesResponse> = { status: 'loading' };
-  private stats: Loadable<AccountStats> = { status: 'loading' };
-  /** Bumped by each stats load and each session change: only the newest answer is kept. */
-  private statsSeq = 0;
   private name: NameState = { status: 'empty', value: '' };
   private nameTimer = 0;
   private nameSeq = 0;
@@ -117,7 +114,6 @@ export class Accounts {
    * choice; the Daily window shows `day`'s board (a Daily run's), today's by default.
    */
   openBoard(from?: HTMLElement | null, win: BoardWindow = this.chosen, day?: string): void {
-    this.tab = 'board';
     this.win = win;
     this.newBoardDay();
     this.showDaily(day ?? this.boardsDay);
@@ -144,17 +140,11 @@ export class Accounts {
     this.boards.daily = { status: 'loading' };
   }
 
-  openGames(from?: HTMLElement | null): void {
-    this.tab = 'games';
-    this.sheet.open(this.listNow(), from);
-    this.loadTab();
-  }
-
   private listNow() {
-    return listView(this.tab, this.boards[this.win], this.games, this.session.current, Date.now(), this.stats, this.win, this.dailyDay);
+    return listView(this.boards[this.win], this.session.current, Date.now(), this.win, this.dailyDay);
   }
 
-  /** Redraws the leaderboard or Your games when its data arrives, if that list is still on screen. */
+  /** Redraws the leaderboard when its data arrives, if it is still on screen. */
   private refreshList(): void {
     const v = this.sheet.current;
     if (v && isListView(v)) this.sheet.update(this.listNow());
@@ -180,46 +170,11 @@ export class Accounts {
     this.refreshList();
   }
 
-  private async loadGames(): Promise<void> {
-    if (!this.session.current) return;
-    try {
-      this.games = { status: 'ready', data: await api.myGames() };
-    } catch {
-      if (this.games.status !== 'ready') this.games = { status: 'error' };
-    }
-    this.refreshList();
-  }
-
-  /** Your games' totals: the account's stats (spec 2026-10-08 §6.3). */
-  private async loadStats(): Promise<void> {
-    if (!this.session.current) return;
-    const seq = ++this.statsSeq;
-    try {
-      const data = shownAccountStats(await api.myStats(), loadDeviceStats(), localDay(new Date()));
-      if (seq !== this.statsSeq) return;
-      this.stats = { status: 'ready', data };
-    } catch {
-      if (seq !== this.statsSeq) return;
-      if (this.stats.status !== 'ready') this.stats = { status: 'error' };
-    }
-    this.refreshList();
-  }
-
-  /** The open tab's data: the board, or your games and their totals. */
-  private loadTab(): void {
-    if (this.tab === 'board') void this.loadBoard();
-    else {
-      void this.loadGames();
-      void this.loadStats();
-    }
-  }
-
-  /** The menu head: your rank and best, when the menu opens. */
+  /** The menu head: your rank and best (the career's ranked best and its place), when the menu opens. */
   private async loadSummary(): Promise<void> {
     try {
-      const g = await api.myGames();
-      this.games = { status: 'ready', data: g };
-      if (this.session.current) this.menu.render(this.session.current, { rank: g.best?.rank ?? null, best: g.best?.ms ?? null });
+      const { best } = await api.career();
+      if (this.session.current) this.menu.render(this.session.current, { rank: best?.rank ?? null, best: best?.ms ?? null });
     } catch {
       // the menu works without it
     }
@@ -227,9 +182,6 @@ export class Accounts {
 
   private onSession(user: SessionState): void {
     this.menu.render(user, null);
-    this.games = { status: 'loading' };
-    this.stats = { status: 'loading' };
-    this.statsSeq++;
     this.refreshList();
     if (user && user.name === null && !this.sheet.isOpen && this.firstNameAsk()) this.openName();
   }
@@ -319,16 +271,8 @@ export class Accounts {
       case 'peek':
         this.openBoard(el);
         break;
-      case 'games':
-        this.openGames(el);
-        break;
-      case 'tab-board':
-      case 'tab-games':
-        this.tab = act === 'tab-board' ? 'board' : 'games';
-        if (this.tab === 'board') this.newBoardDay();
-        this.sheet.update(this.listNow());
-        this.sheet.body.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
-        this.loadTab();
+      case 'career':
+        this.hooks.openCareer(el);
         break;
       case 'win-daily':
       case 'win-today':
@@ -344,7 +288,7 @@ export class Accounts {
         void this.loadBoard();
         break;
       case 'reload':
-        this.loadTab();
+        void this.loadBoard();
         break;
       case 'signin':
         this.openSignIn({}, el);

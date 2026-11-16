@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOARD_TOP, type BoardResponse, type MyGamesResponse } from '../../src/api/types';
+import { BOARD_TOP, type BoardResponse } from '../../src/api/types';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, boardGrew, cachedTopAndTotal, cachedTotal, resetBoardCache } from '../../worker/lib/board-cache';
@@ -38,7 +38,6 @@ async function run(userId: number | null, ms: number, finishedAt: number, reason
   return id;
 }
 const board = async (cookie?: string): Promise<BoardResponse> => (await (await call(env, 'GET', '/api/board', { cookie })).json()) as BoardResponse;
-const myGames = async (cookie?: string): Promise<MyGamesResponse> => (await (await call(env, 'GET', '/api/me/games', { cookie })).json()) as MyGamesResponse;
 
 describe('the leaderboard', () => {
   it('is empty at first, with a short private cache', async () => {
@@ -175,11 +174,11 @@ describe('the leaderboard', () => {
     expect(b.total).toBe(52);
   });
 
-  it('exposes no email or sign-in id, on the board or in Your games', async () => {
+  it('exposes no email or sign-in id, on the board or in the career', async () => {
     const ana = await user('ana@example.com', 'Meridian');
     await run(ana, 50_000, 1000);
     const cookie = await signIn(env, 'ana@example.com');
-    for (const path of ['/api/board', '/api/me/games']) {
+    for (const path of ['/api/board', '/api/me/career']) {
       const text = await (await call(env, 'GET', path, { cookie })).text();
       expect(text).not.toMatch(/email|"sub"|google_sub|example\.com|fake:/i);
     }
@@ -334,7 +333,7 @@ describe('board windows: today, this week, all time (spec 2026-10-14)', () => {
     // Clamped back, today is the server's yesterday on (all three); clamped forward, the server's tomorrow (one).
     expect(msOf(await windowed('window=today&today=2020-01-01&tz=0'))).toEqual([10_000, 20_000, 30_000]);
     expect(msOf(await windowed('window=today&today=2031-01-01&tz=0'))).toEqual([30_000]);
-    // All time takes no calendar at all; Your games' stats keep their own rules (any real day, any whole minute).
+    // All time takes no calendar at all; the account's stats keep their own rules (any real day, any whole minute).
     expect((await call(env, 'GET', '/api/board?window=all&today=2020-01-01&tz=7')).status).toBe(200);
     expect((await call(env, 'GET', '/api/me/stats?today=2020-01-01&tz=7', { cookie: await signIn(env, 'ana@example.com') })).status).toBe(200);
   });
@@ -630,47 +629,9 @@ describe('the board cache (isolate memory, BOARD_TTL_MS)', () => {
   });
 });
 
-describe('your games', () => {
-  it('needs a session', async () => {
-    expect((await call(env, 'GET', '/api/me/games')).status).toBe(401);
-  });
-
-  it('your best with its rank, how many of the top 50 are yours, and recent games newest first', async () => {
-    const bo = await user('bo@example.com', 'Comet');
-    const ana = await user('ana@example.com', 'Meridian');
-    await run(bo, 40_000, 1000);
-    const best = await run(ana, 45_000, 2000);
-    const slower = await run(ana, 60_000, 3000);
-    const clock = await run(ana, 30_000, 4000, 'clock');
-    const cookie = await signIn(env, 'ana@example.com');
-    expect(await myGames(cookie)).toEqual({
-      best: { ms: 45_000, rank: 2, finishedAt: 2000 },
-      inTop: 2,
-      total: 3,
-      games: [
-        { id: clock, ms: 30_000, finishedAt: 4000, ranked: false, reason: 'clock', isBest: false, imported: false, daily: null, dailyFirst: false, replay: false },
-        { id: slower, ms: 60_000, finishedAt: 3000, ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false, replay: false },
-        { id: best, ms: 45_000, finishedAt: 2000, ranked: true, reason: null, isBest: true, imported: false, daily: null, dailyFirst: false, replay: false },
-      ],
-    });
-  });
-
-  it('a played game can be watched; an imported one (no log) cannot', async () => {
-    const ana = await user('ana@example.com', 'Meridian');
-    const played = await run(ana, 45_000, 2000);
-    await db.prepare("UPDATE games SET log = '[]' WHERE id = ?").bind(played).run();
-    const imported = await run(ana, 50_000, 1000);
-    await db.prepare("UPDATE games SET source = 'import' WHERE id = ?").bind(imported).run();
-    const g = await myGames(await signIn(env, 'ana@example.com'));
-    expect(g.games.map((x) => [x.id, x.imported, x.replay])).toEqual([[played, false, true], [imported, true, false]]);
-  });
-
-  it('keeps the last 30 games; an account without a name has no rank and nothing in the top 50', async () => {
-    const cy = await user('cy@example.com', null);
-    for (let k = 0; k < 31; k++) await run(cy, 50_000 + k, 1000 + k);
-    const g = await myGames(await signIn(env, 'cy@example.com'));
-    expect(g.games).toHaveLength(30);
-    expect(g.games[0].finishedAt).toBe(1030);
-    expect(g).toMatchObject({ best: { ms: 50_000, rank: null }, inTop: 0, total: 0 });
+describe('your games (removed: the career replaced it)', () => {
+  it('GET /api/me/games is gone', async () => {
+    await user('ana@example.com', 'Meridian');
+    expect((await call(env, 'GET', '/api/me/games', { cookie: await signIn(env, 'ana@example.com') })).status).toBe(404);
   });
 });

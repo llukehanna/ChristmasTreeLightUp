@@ -4,7 +4,8 @@ import { GRID } from './core/mask';
 import type { TrapKind } from './render/home-alone';
 
 export interface AglowProbe {
-  state(): { bits: number[]; solution: number[]; litCount: number; won: boolean; rotating: number; interactive: boolean };
+  /** `frames`: the stage frames drawn since load (none while the career page covers it). */
+  state(): { bits: number[]; solution: number[]; litCount: number; won: boolean; rotating: number; interactive: boolean; frames: number };
   tileCenter(i: number): [number, number];
   solve(): void;
   ids: number[];
@@ -32,6 +33,8 @@ export interface AglowProbe {
   replay(): { watching: boolean; ended: boolean; cursor: number };
   /** The ghost pill (C4): whether it shows (a ghost to race), whether the ghost is on, and the pill's words. */
   ghost(): { shown: boolean; on: boolean; text: string };
+  /** The career page: up over the stage, or its chunk still loading. */
+  career(): { open: boolean; loading: boolean };
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
@@ -57,8 +60,9 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
             won: app.board.won,
             rotating: app.board.rotating.size,
             interactive: !app.isStarting && performance.now() >= app.interactiveAt,
+            frames: app.frameCount,
           }
-        : { bits: [], solution: [], litCount: 0, won: false, rotating: 0, interactive: false },
+        : { bits: [], solution: [], litCount: 0, won: false, rotating: 0, interactive: false, frames: app.frameCount },
     tileCenter: (i) => app.tileScreenCenter(i),
     solve: () => app.debugSolve(),
     ids: [...GRID.ids],
@@ -83,6 +87,7 @@ export function installDebugHook(app: App, loc: Pick<Location, 'search' | 'hostn
     clock: () => (app.started ? { ms: app.clockMs, sinceReveal: Math.max(0, performance.now() - app.interactiveAt) } : { ms: 0, sinceReveal: 0 }),
     replay: () => app.replayState,
     ghost: () => app.ghostState,
+    career: () => app.careerState,
   };
   (window as Window & { __aglow?: AglowProbe }).__aglow = probe;
 }
