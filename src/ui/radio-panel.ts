@@ -24,26 +24,11 @@ const ICON = {
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 6 6 6-6 6"/></svg>',
 };
 
-/** The settings menu's gold bow, with its own gradient ids (an SVG gradient inside a hidden element doesn't paint). */
-const BOW = `<svg class="bow" viewBox="0 0 64 40" aria-hidden="true" focusable="false">
-  <defs>
-    <linearGradient id="rbow-loop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbe3a4"/><stop offset=".45" stop-color="#d9a74e"/><stop offset="1" stop-color="#8f5f1e"/></linearGradient>
-    <linearGradient id="rbow-tail" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9c16c"/><stop offset="1" stop-color="#90601f"/></linearGradient>
-    <radialGradient id="rbow-knot" cx=".38" cy=".32" r=".8"><stop offset="0" stop-color="#fff2c8"/><stop offset=".5" stop-color="#e2b25a"/><stop offset="1" stop-color="#8a5a1c"/></radialGradient>
-  </defs>
-  <path d="M29 22l-10 16 6-2.2 3.4 3.6 3.2-16.4zM35 22l10 16-6-2.2-3.4 3.6-3.2-16.4z" fill="url(#rbow-tail)" />
-  <path d="M32 20C22 4 5 3 7 15c1 8 14 9 25 5z" fill="url(#rbow-loop)" />
-  <path d="M32 20C42 4 59 3 57 15c-1 8-14 9-25 5z" fill="url(#rbow-loop)" />
-  <path d="M30 19C22 9 12 7 11 13c0 3 4 5 10 5M34 19C42 9 52 7 53 13c0 3-4 5-10 5" fill="none" stroke="rgba(90,52,10,.45)" stroke-width="1.2" />
-  <path d="M12 9.5c4-3 10-1 15 5M52 9.5c-4-3-10-1-15 5" fill="none" stroke="rgba(255,248,220,.7)" stroke-width=".9" stroke-linecap="round" />
-  <ellipse cx="32" cy="20" rx="5.2" ry="4.6" fill="url(#rbow-knot)" />
-</svg>`;
 
 const EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
 
 const PANEL_HTML = `
   <div class="grab" aria-hidden="true"></div>
-  ${BOW}
   <div class="body">
     <div class="now">
       <div class="art" aria-hidden="true"><span class="bulb"></span></div>

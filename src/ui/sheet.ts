@@ -1,4 +1,4 @@
-import { bow, I } from './icons';
+import { I } from './icons';
 
 /**
  * A selector that finds `el` again after its container is re-rendered (its data-act, id or link target), or null.
@@ -50,7 +50,7 @@ export class Sheet {
     this.root.setAttribute('aria-modal', 'true');
     this.root.tabIndex = -1;
     this.root.hidden = true;
-    this.root.innerHTML = `<div class="acct-grab" aria-hidden="true"></div>${bow('acct-sbow')}<button class="acct-x" type="button" data-act="close" aria-label="Close">${I.close}</button>`;
+    this.root.innerHTML = `<div class="acct-grab" aria-hidden="true"></div><button class="acct-x" type="button" data-act="close" aria-label="Close">${I.close}</button>`;
     this.inner.className = 'acct-inner';
     this.root.append(this.inner);
     document.body.append(this.scrim, this.root);

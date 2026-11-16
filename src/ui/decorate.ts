@@ -19,7 +19,7 @@ import {
 } from '../store/look';
 import type { SavedLook } from '../store/saved-looks';
 import {
-  BOW_ART, CURSOR_ART, DECOR_ART, garlandArt, PATH_ART, PRESENT_ART, SCENE_ART, STRAND_ART, TAG_ART, TOPPER_ART, TREE_ART,
+  CURSOR_ART, DECOR_ART, garlandArt, PATH_ART, PRESENT_ART, SCENE_ART, STRAND_ART, TAG_ART, TOPPER_ART, TREE_ART,
 } from './decorate-art';
 import { count, formatMs } from './format';
 
@@ -398,7 +398,7 @@ export class Decorate {
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'Decorate the tree');
     root.inert = true;
-    root.innerHTML = `<div class="deco-band" aria-hidden="true"></div>${BOW_ART}
+    root.innerHTML = `
       <header class="deco-head"><small>Decorate</small><h2>Dress the tree</h2>
       <button class="deco-x" type="button" aria-label="Close"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
       <div class="deco-looks" role="group" aria-label="Saved looks">${SLOTS.map((i) => `<button type="button" class="deco-look" data-slot="${i}"></button>`).join('')}<button type="button" class="deco-save" aria-controls="deco-save-form">Save</button></div>

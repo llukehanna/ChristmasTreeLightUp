@@ -64,13 +64,6 @@ body.acct-sheet-open .pause > div { visibility: hidden; }
 }
 .acct-drop .acct-back { padding: 10px 12px; margin-bottom: 4px; font-size: 13.5px; color: rgba(246, 231, 200, 0.7); }
 .acct-drop .acct-back:hover { color: #fff3dc; }
-/* Satin ribbon band and bow, as on the settings menu and the radio panel. */
-.acct-sheet::before {
-  content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 10px; pointer-events: none;
-  background: linear-gradient(180deg, #f6dc98 0%, #e2b560 35%, #b98636 75%, #8f5f22 100%);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
-}
-.acct-sheet .bow { position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); z-index: 2; }
 .acct-drop-head { display: flex; align-items: center; gap: 12px; padding: 4px 8px 12px; }
 .acct-drop-head b { display: block; font: 400 21px/1.1 'Instrument Serif', serif; color: #fff3dc; text-shadow: 0 1px 12px rgba(255, 180, 90, 0.2); }
 .acct-drop-head small { display: block; margin-top: 3px; font-size: 11.5px; color: rgba(246, 231, 200, 0.6); font-variant-numeric: tabular-nums; }
@@ -104,15 +97,8 @@ body[data-scene='frost'] .acct-scrim { background: radial-gradient(120% 90% at 5
 .acct-sheet {
   position: fixed; z-index: 41; top: calc(68px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right));
   width: 390px; max-height: calc(100vh - 92px - env(safe-area-inset-top)); display: flex; flex-direction: column;
-  color: #f6e7c8; padding-top: 32px; border-radius: 20px;
-  background:
-    repeating-linear-gradient(135deg, rgba(255, 220, 160, 0.022) 0 6px, transparent 6px 14px),
-    radial-gradient(110% 45% at 25% 0%, rgba(190, 40, 52, 0.38), transparent 70%),
-    radial-gradient(90% 40% at 100% 100%, rgba(150, 24, 34, 0.22), transparent 70%),
-    linear-gradient(180deg, rgba(72, 10, 18, 0.94), rgba(28, 8, 10, 0.95));
-  border: 1px solid var(--goldline);
-  backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 30px 80px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+  color: #f6e7c8; padding-top: 12px; border-radius: 20px;
+  background: var(--velvet); border: 0; box-shadow: var(--panel-shadow);
   animation: acct-drop-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .acct-sheet.acct-card { width: 360px; }
@@ -120,7 +106,7 @@ body[data-scene='frost'] .acct-scrim { background: radial-gradient(120% 90% at 5
 .acct-inner { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .acct-card .acct-inner { align-items: stretch; text-align: center; padding: 12px 26px 22px; overflow-y: auto; }
 .acct-x {
-  all: unset; position: absolute; z-index: 3; top: 32px; right: 10px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  all: unset; position: absolute; z-index: 3; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
   cursor: pointer; color: #f6e7c8; opacity: 0.7; transition: background 0.15s, opacity 0.15s;
 }
 .acct-x:hover { opacity: 1; background: rgba(255, 220, 160, 0.08); }
@@ -285,16 +271,13 @@ button.adv-door:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px;
   .acct-drop { right: 12px; left: 12px; width: auto; }
   .acct-sheet, .acct-sheet.acct-card {
     top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: min(86vh, calc(100dvh - 64px));
-    padding-top: 30px; padding-bottom: env(safe-area-inset-bottom); border-radius: 22px 22px 0 0; border-bottom: 0;
-    box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 -18px 50px rgba(0, 0, 0, 0.5);
+    padding-top: 18px; padding-bottom: env(safe-area-inset-bottom); border-radius: 22px 22px 0 0;
+    box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), inset 0 0 0 1px var(--goldline), 0 -18px 50px rgba(0, 0, 0, 0.5);
     animation: acct-sheet-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  .acct-sheet::before { top: 16px; height: 9px; }
-  /* The bow sits toward the corner so the grab handle keeps the centre. */
-  .acct-sheet .bow { left: auto; right: 22px; transform: none; top: -6px; width: 54px; height: 34px; }
   .acct-grab { display: block; position: absolute; left: 50%; top: 5px; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: rgba(246, 231, 200, 0.3); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3); }
   .acct-pin { border-radius: 0; }
-  .acct-x { top: 34px; }
+  .acct-x { top: 14px; }
   .acct-sub { letter-spacing: 0.16em; }
 }
 /* Phones narrower than the 390px iPhone (360px Android, 320px SE): the capsule's segments tighten to stay clear of the wordmark. */
