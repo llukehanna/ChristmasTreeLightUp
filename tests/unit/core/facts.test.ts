@@ -28,7 +28,8 @@ const stepsTo = (bits: number, want: number): number => {
   return k;
 };
 
-const expectedFromBits = (b: Board): number => b.grid.ids.reduce((sum, i) => sum + Math.min(stepsTo(b.bits[i], b.solution[i]), 4 - stepsTo(b.bits[i], b.solution[i])), 0);
+/** Par from the bits: every tile's clockwise steps to its solution. */
+const expectedFromBits = (b: Board): number => b.grid.ids.reduce((sum, i) => sum + stepsTo(b.bits[i], b.solution[i]), 0);
 
 const shortestLog = (seed: number): LogEntry[] => shortestTaps(board(seed));
 
@@ -47,7 +48,7 @@ const lastly = (b: Board, tile: number): LogEntry[] => after(shortestTaps(b, 100
 const outward = (b: Board): number[] => computeLighting(GRID, b.solution).order;
 
 describe('minTurnsOf', () => {
-  it('costs one turn for a corner three steps short, one for a straight tile a step away, two for a T half way round and none for a cross', () => {
+  it('costs three turns for a corner three steps short, one for a straight tile a step away, two for a T half way round and none for a cross', () => {
     const b = board(SEED);
     const bits = [...b.solution];
     const corner = GRID.ids.find((i) => degree(b.solution[i]) === 2 && rotCW(b.solution[i]) !== rotCCW(b.solution[i]));
@@ -55,15 +56,25 @@ describe('minTurnsOf', () => {
     const tee = GRID.ids.find((i) => degree(b.solution[i]) === 3);
     const cross = GRID.ids.find((i) => degree(b.solution[i]) === 4);
     if (corner === undefined || straight === undefined || tee === undefined || cross === undefined) throw new Error('no such tile');
-    bits[corner] = rotCW(b.solution[corner]); // three clockwise turns short of the solution: one counter-clockwise
+    bits[corner] = rotCW(b.solution[corner]); // three clockwise turns short of the solution: par counts all three
     bits[straight] = rotCW(b.solution[straight]); // a straight tile has two orientations: one turn either way
     bits[tee] = rotCW(rotCW(b.solution[tee])); // half way round: two turns
     bits[cross] = b.solution[cross]; // a cross is always solved
     const scrambled = new Board(GRID, { solution: [...b.solution], bits, colors: [...b.colors] });
-    expect(minTurnsOf(scrambled)).toBe(1 + 1 + 2);
+    expect(minTurnsOf(scrambled)).toBe(3 + 1 + 2);
   });
 
-  it('is the fewest turns either way: a three-step tile costs one counter-clockwise turn', () => {
+  it('a tile three clockwise steps away costs three, not the one counter-clockwise turn that would do', () => {
+    const b = board(SEED);
+    const corner = GRID.ids.find((i) => degree(b.solution[i]) === 2 && rotCW(b.solution[i]) !== rotCCW(b.solution[i]));
+    if (corner === undefined) throw new Error('no corner');
+    const bits = [...b.solution];
+    bits[corner] = rotCCW(rotCCW(rotCCW(b.solution[corner])));
+    expect(stepsTo(bits[corner], b.solution[corner])).toBe(3);
+    expect(minTurnsOf(new Board(GRID, { solution: [...b.solution], bits, colors: [...b.colors] }))).toBe(3);
+  });
+
+  it('is the clockwise turns: every tile counts its clockwise steps, three-step tiles included', () => {
     for (const seed of [SEED, 2, 3, 156]) {
       const b = board(seed);
       expect(minTurnsOf(b), `seed ${seed}`).toBe(expectedFromBits(b));
@@ -79,20 +90,23 @@ describe('minTurnsOf', () => {
 });
 
 describe('runFacts: turns', () => {
-  it('a solve by the shortest way has turns === minTurns, with counter-clockwise taps in the log', () => {
-    const log = shortestLog(SEED);
-    const f = runFacts(SEED, 1, log);
-    expect(f).not.toBeNull();
-    expect(f?.turns).toBe(f?.minTurns);
-    expect(f?.minTurns).toBe(minTurnsOf(board(SEED)));
-    expect(log.some((e) => typeof e.a === 'number' && e.a < 0)).toBe(true);
-  });
-
-  it('three clockwise turns instead of one counter-clockwise cost more than the minimum', () => {
+  it('a clockwise-only solve has turns === minTurns: par is what a one-button player needs', () => {
     const b = board(SEED);
     const f = runFacts(SEED, 1, solvingTaps(b));
-    expect(f?.turns).toBeGreaterThan(f?.minTurns ?? Infinity);
+    expect(f).not.toBeNull();
+    expect(f?.turns).toBe(f?.minTurns);
     expect(f?.minTurns).toBe(minTurnsOf(b));
+  });
+
+  it('one counter-clockwise turn in place of three clockwise finishes two under par per three-step tile', () => {
+    const b = board(SEED);
+    const log = shortestLog(SEED);
+    const threes = GRID.ids.filter((i) => stepsTo(b.bits[i], b.solution[i]) === 3).length;
+    const f = runFacts(SEED, 1, log);
+    expect(threes).toBeGreaterThan(0);
+    expect(log.some((e) => typeof e.a === 'number' && e.a < 0)).toBe(true);
+    expect(f?.minTurns).toBe(minTurnsOf(b));
+    expect(f?.turns).toBe((f?.minTurns ?? 0) - 2 * threes);
   });
 
   it('turns count taps only, not pauses', () => {
@@ -138,7 +152,7 @@ describe('runFacts: steady hand', () => {
     const b = board(SEED);
     const solved = GRID.ids.find((i) => b.bits[i] === b.solution[i] && degree(b.solution[i]) < 4);
     if (solved === undefined) throw new Error('no solved tile');
-    const wasted = after(spin(solved, 1000), (start) => shortestTaps(b, start)); // 4 turns of a solved tile
+    const wasted = after(spin(solved, 1000), (start) => solvingTaps(b, start)); // 4 turns of a solved tile, then a clockwise solve
     const f = runFacts(SEED, 1, wasted);
     expect(f).not.toBeNull();
     expect((f?.feats ?? 0) & FEAT.steady).toBe(0);
@@ -153,7 +167,7 @@ describe('runFacts: steady hand', () => {
     const log = after(shortestTaps(b, 1000, 50, tilesBut(one)), (start) => [one, ~one, one].map((a, k) => ({ t: start + 50 * k, a })));
     const f = runFacts(SEED, 1, log);
     expect(f).not.toBeNull();
-    expect(f?.turns).toBe(expectedFromBits(b) - 1 + 3);
+    expect(f?.turns).toBe(shortestTaps(b).length - 1 + 3);
     expect((f?.feats ?? 0) & FEAT.steady).toBe(0);
   });
 });

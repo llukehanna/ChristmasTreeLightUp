@@ -109,7 +109,7 @@ export interface FinishResult {
   daily: DailyResult | null;
   /** Taps this run made, from the server's replay of the log; null for a run too long to count. */
   turns: number | null;
-  /** The tree's fewest turns from the start (see minTurnsOf); null when `turns` is. */
+  /** The tree's par, the clockwise turns it needs from the start (see minTurnsOf); null when `turns` is. */
   minTurns: number | null;
 }
 

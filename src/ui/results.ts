@@ -32,11 +32,11 @@ export interface ResultsData {
   line?: string | null;
   /** A Daily Tree's day (YYYY-MM-DD): its label is a small line above the time. Null or absent for a random tree. */
   daily?: string | null;
-  /** The server's count of the run's turns and how many were more than the fewest: a quiet line under the time. Null or absent for none. */
+  /** The server's count of the run's turns and how many were over par: a quiet line under the time. Null or absent for none. */
   turns?: TurnsLine | null;
 }
 
-/** A run's turns and its extra ones (turns beyond the fewest the tree takes), as the tag says them. */
+/** A run's turns and its extra ones (turns over the tree's par, never below zero), as the tag says them. */
 export interface TurnsLine {
   turns: number;
   extra: number;

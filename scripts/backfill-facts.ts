@@ -15,6 +15,17 @@
  *
  * The rows file is a JSON array of rows, or wrangler's --json output (an array of { results }). Every UPDATE keeps
  * `feats IS NULL`, so a run finished (with its facts) since the export is never touched, and a rerun changes nothing.
+ *
+ * A third mode, --par, recomputes `min_turns` alone from each run's seed and generator version, for rows stored before
+ * par became the clockwise turns (minTurnsOf, src/core/facts.ts). It needs no log. Export every row with a par:
+ *
+ *   npx wrangler d1 execute aglow --remote --json --command \
+ *     "SELECT id, seed, gen_version, min_turns FROM games WHERE min_turns IS NOT NULL" > par.json
+ *   node scripts/backfill-facts.ts --par par.json par.sql
+ *   npx wrangler d1 execute aglow --remote --file par.sql
+ *
+ * Every UPDATE keeps `min_turns` at the exported value, so a rerun, or a run finished since with the new par, is never
+ * touched; a row whose par is already right gets no UPDATE.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
@@ -36,7 +47,12 @@ if (direct) {
     },
   });
 }
-const [{ MAX_FACTS_ENTRIES, runFacts, turnsOf }, { parseLog }, { GRID }] = await Promise.all([import('../src/core/facts'), import('../src/core/log'), import('../src/core/mask')]);
+const [{ MAX_FACTS_ENTRIES, minTurnsOf, runFacts, turnsOf }, { parseLog }, { GRID }, { seededBoard }] = await Promise.all([
+  import('../src/core/facts'),
+  import('../src/core/log'),
+  import('../src/core/mask'),
+  import('../src/core/seeded'),
+]);
 
 export interface FactsRow {
   id: string;
@@ -86,21 +102,48 @@ export function factsUpdates(rows: readonly FactsRow[]): string[] {
   return out;
 }
 
-/** Rows from a plain array, or from wrangler's `--json` output ([{ results: rows }]). */
-function rowsOf(value: unknown): FactsRow[] {
-  if (!Array.isArray(value)) throw new Error('expected a JSON array');
-  return value.flatMap((v: unknown) => (typeof v === 'object' && v !== null && 'results' in v ? (v.results as FactsRow[]) : [v as FactsRow]));
+export interface ParRow {
+  id: string;
+  seed: number;
+  gen_version: number;
+  /** The stored par. */
+  min_turns: number;
 }
 
-function main([input, output]: string[]): void {
+/**
+ * One UPDATE per row whose stored par differs from the tree's par now (minTurnsOf on the seed's starting board),
+ * guarded by the stored value. None for a seed or generator version with no tree.
+ */
+export function parUpdates(rows: readonly ParRow[]): string[] {
+  const out: string[] = [];
+  for (const row of rows) {
+    const board = seededBoard(row.seed, row.gen_version, true);
+    if (!board) continue;
+    const par = minTurnsOf(board);
+    if (par === row.min_turns) continue;
+    out.push(`UPDATE games SET min_turns = ${par} WHERE id = ${quoted(row.id)} AND min_turns = ${Number(row.min_turns)};`);
+  }
+  return out;
+}
+
+/** Rows from a plain array, or from wrangler's `--json` output ([{ results: rows }]). */
+function rowsOf<T>(value: unknown): T[] {
+  if (!Array.isArray(value)) throw new Error('expected a JSON array');
+  return value.flatMap((v: unknown) => (typeof v === 'object' && v !== null && 'results' in v ? (v.results as T[]) : [v as T]));
+}
+
+function main(args: string[]): void {
+  const par = args[0] === '--par';
+  const [input, output] = par ? args.slice(1) : args;
   if (!input || !output) {
-    console.error('usage: node scripts/backfill-facts.ts <rows.json> <out.sql>');
+    console.error('usage: node scripts/backfill-facts.ts [--par] <rows.json> <out.sql>');
     process.exit(2);
   }
-  const rows = rowsOf(JSON.parse(readFileSync(input, 'utf8')));
-  const updates = factsUpdates(rows);
+  const value: unknown = JSON.parse(readFileSync(input, 'utf8'));
+  const rows = par ? rowsOf<ParRow>(value) : rowsOf<FactsRow>(value);
+  const updates = par ? parUpdates(rows as ParRow[]) : factsUpdates(rows as FactsRow[]);
   writeFileSync(output, updates.map((u) => `${u}\n`).join(''));
-  console.log(`backfill-facts: ${updates.length} of ${rows.length} rows replayed; wrote ${output}`);
+  console.log(par ? `backfill-facts --par: ${updates.length} of ${rows.length} rows get a new par; wrote ${output}` : `backfill-facts: ${updates.length} of ${rows.length} rows replayed; wrote ${output}`);
 }
 
 if (direct) main(process.argv.slice(2));

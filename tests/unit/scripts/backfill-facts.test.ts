@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_FACTS_ENTRIES, runFacts } from '../../../src/core/facts';
+import { MAX_FACTS_ENTRIES, minTurnsOf, runFacts } from '../../../src/core/facts';
 import { GEN_VERSION, seededBoard } from '../../../src/core/seeded';
-import { factsUpdates } from '../../../scripts/backfill-facts';
+import { factsUpdates, parUpdates } from '../../../scripts/backfill-facts';
 import { solvingTaps } from '../core/solver';
 
 const SEED = 12345;
@@ -64,5 +64,33 @@ describe('factsUpdates', () => {
     const long = new Array(MAX_FACTS_ENTRIES + 1).fill(log[0]);
     expect(factsUpdates([row('too-long-aaaaaaaaa', null, long), row('too-long-paused-aaa', 'paused', long)])).toEqual([]);
     expect(factsUpdates([row('fits-aaaaaaaaaaaaa', null, log)])).toHaveLength(1);
+  });
+});
+
+describe('parUpdates', () => {
+  const par = () => {
+    const board = seededBoard(SEED, GEN_VERSION, true);
+    if (!board) throw new Error('no board');
+    return minTurnsOf(board);
+  };
+
+  it('a stale par gets the clockwise par, guarded by the stored value', () => {
+    expect(parUpdates([{ id: 'stale-par-aaaaaaa', seed: SEED, gen_version: GEN_VERSION, min_turns: 79 }])).toEqual([
+      `UPDATE games SET min_turns = ${par()} WHERE id = 'stale-par-aaaaaaa' AND min_turns = 79;`,
+    ]);
+  });
+
+  it('a par already right, or a tree that no generator makes, gets none', () => {
+    expect(
+      parUpdates([
+        { id: 'fresh-par-aaaaaaa', seed: SEED, gen_version: GEN_VERSION, min_turns: par() },
+        { id: 'unknown-gen-aaaaa', seed: SEED, gen_version: 999, min_turns: 79 },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('quotes the id safely', () => {
+    const [sql] = parUpdates([{ id: "it's'; DROP TABLE games; --", seed: SEED, gen_version: GEN_VERSION, min_turns: 1 }]);
+    expect(sql).toMatch(/ WHERE id = 'it''s''; DROP TABLE games; --' AND min_turns = 1;$/);
   });
 });

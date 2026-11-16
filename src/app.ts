@@ -1307,8 +1307,8 @@ export class App {
   }
 
   /**
-   * The tag's turns line from the server's answer: turns, and the extra over the fewest the tree takes. Null until it
-   * answers, with no count (a long log, or a result saved before turns were counted), or without a positive minimum.
+   * The tag's turns line from the server's answer: turns, and the extra over the tree's par. Null until it
+   * answers, with no count (a long log, or a result saved before turns were counted), or without a positive par.
    */
   private turnsLine(): TurnsLine | null {
     const r = this.outcome?.kind === 'done' ? this.outcome.result : null;

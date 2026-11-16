@@ -23,7 +23,7 @@ const COLUMNS: { key: SortKey | 'n' | null; label: string; left?: boolean; cls?:
   { key: 'at', label: 'When', left: true },
   { key: 'ms', label: 'Time' },
   { key: 'turns', label: 'Turns' },
-  { key: 'min', label: 'Minimum', cls: 'c-min' },
+  { key: 'min', label: 'Par', cls: 'c-min' },
   { key: 'extra', label: 'Extra turns', left: true },
   { key: 'ao5', label: 'Avg of 5', cls: 'c-ao5' },
   { key: null, label: '&nbsp;', left: true },

@@ -106,7 +106,7 @@ export interface GoalState {
   done: boolean;
 }
 
-/** Turns over a tree's minimum that still make a clean run (Decision 5). */
+/** Turns over a tree's par that still make a clean run (Decision 5); par itself, or under, is perfect. */
 const CLEAN_TURNS = 5;
 const AO5 = 5;
 const NO_PAUSE_MS = 60_000;

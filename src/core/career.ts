@@ -12,7 +12,7 @@ export interface CareerRun {
   ms: number;
   turns: number | null;
   minTurns: number | null;
-  /** max(0, turns − minTurns); null without both, or without a positive minimum. */
+  /** max(0, turns − minTurns); null without both, or without a positive par. */
   extra: number | null;
   imported: boolean;
   replay: boolean;

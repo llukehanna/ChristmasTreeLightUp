@@ -26,24 +26,26 @@ const COMEBACK_LOW = 0.3;
 /**
  * The longest log whose facts are worth computing. runFacts lights the whole tree on every turn, so a log near the
  * 5,000-entry cap costs 5–15 times the judge's replay (past the Workers free plan's 10 ms of CPU). A run this long can't
- * be clean or perfect (a tree needs about 80 turns at least), so only a possible Comeback is given up.
+ * be clean or perfect (par is about 120 turns), so only a possible Comeback is given up.
  */
 export const MAX_FACTS_ENTRIES = 1500;
 
 export interface RunFacts {
   /** Taps made (a pause is not a turn). */
   turns: number;
-  /** The tree's fewest turns from the start (see minTurnsOf). */
+  /** The tree's par: the clockwise turns it needs from the start (see minTurnsOf). */
   minTurns: number;
   /** FEAT bits earned. */
   feats: number;
 }
 
 /**
- * The fewest quarter turns that take every tile from its current orientation to the generated solution's, each tile
- * going whichever way round is shorter: min(k, 4 − k) for k clockwise steps. A tile with fewer orientations costs less
- * (a straight tile is at most one turn away, a cross none). Another solution may be cheaper, so this is an upper bound
- * on the true minimum, which is how a run's `turns` is judged against it.
+ * The tree's par: the clockwise quarter turns that take every tile from its current orientation to the generated
+ * solution's, k for a tile k clockwise steps away. Most players only turn one way (a plain click or a tap; touch has no
+ * counter-clockwise turn), so par is what a one-button player needs, not the shortest way round: a tile three steps
+ * short costs three, though one counter-clockwise turn would do. A tile with fewer orientations costs less (a straight
+ * tile is at most one turn away, a cross none). A counter-clockwise player, or another cheaper solution, can finish
+ * under par, which is why extra turns clamp at zero.
  */
 export function minTurnsOf(board: Board): number {
   let total = 0;
@@ -55,7 +57,7 @@ export function minTurnsOf(board: Board): number {
       b = rotBy(b, 1);
       k++;
     }
-    total += Math.min(k, 4 - k);
+    total += k;
   }
   return total;
 }

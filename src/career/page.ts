@@ -100,7 +100,7 @@ function recordsHtml(s: CareerStats): [string, string, string] {
   const head = (t: string) => `<div class="eyebrow">${t}</div>`;
   const pb = s.pbs.slice(-6).reverse().map((p) => `<div class="rec"><span class="t">${fmtTime(p.run.ms)}</span><span class="w">${fmtDay(p.run.at)} · run ${p.run.n}</span>${p.gain !== null ? `<span class="g">−${fmtSecs(p.gain)} s</span>` : ''}</div>`);
   const firsts = s.firsts.map((f) => `<div class="rec mile"><span class="t">sub-${f.underS}</span><span class="w">${fmtDay(f.run.at)} · run ${f.run.n}</span><span>${fmtTime(f.run.ms)}</span></div>`);
-  const turns = s.fewestExtra.map((r) => `<div class="rec"><span class="t">${r.extra}</span><span class="w">${fmtDay(r.at)} · ${r.turns} of ${r.minTurns} needed</span><span>${fmtTime(r.ms)}</span></div>`);
+  const turns = s.fewestExtra.map((r) => `<div class="rec"><span class="t">${r.extra}</span><span class="w">${fmtDay(r.at)} · ${r.turns} turns, par ${r.minTurns}</span><span>${fmtTime(r.ms)}</span></div>`);
   return [
     head('Personal bests') + (pb.join('') || none),
     head('Firsts') + (firsts.join('') || none),
