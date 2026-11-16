@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Board, computeLighting } from '../../../src/core/board';
 import { REVEAL_MS } from '../../../src/core/clock';
 import { D, degree, rotCCW, rotCW } from '../../../src/core/dirs';
-import { FEAT, GRAND_TILES, STAR_TILE, minTurnsOf, runFacts } from '../../../src/core/facts';
+import { FEAT, GRAND_TILES, STAR_TILE, minTurnsOf, runFacts, turnsOf } from '../../../src/core/facts';
 import type { LogEntry } from '../../../src/core/log';
 import { GRID } from '../../../src/core/mask';
 import { seededBoard } from '../../../src/core/seeded';
@@ -102,6 +102,30 @@ describe('runFacts: turns', () => {
     const f = runFacts(SEED, 1, paused);
     expect(f?.turns).toBe(log.length);
     expect(f).toEqual(runFacts(SEED, 1, log));
+  });
+});
+
+describe('turnsOf', () => {
+  it('agrees with runFacts on every fixture log', () => {
+    const b = board(SEED);
+    const logs: [number, LogEntry[]][] = [
+      [SEED, shortestLog(SEED)],
+      [SEED, solvingTaps(b)],
+      [GRAND_SEED, lastly(board(GRAND_SEED), GRID.root)],
+      [STAR_SEED, shortestLog(STAR_SEED)],
+    ];
+    for (const [seed, log] of logs) {
+      const f = runFacts(seed, 1, log);
+      expect(f).not.toBeNull();
+      expect(turnsOf(seed, 1, log)).toEqual({ turns: f?.turns, minTurns: f?.minTurns });
+    }
+  });
+
+  it('counts only taps in a log with pauses, and is null for an unknown generator', () => {
+    const log = shortestLog(SEED);
+    const paused = withPause(withPause(log, 10, 5000), 30, 3000);
+    expect(turnsOf(SEED, 1, paused)).toEqual({ turns: log.length, minTurns: minTurnsOf(board(SEED)) });
+    expect(turnsOf(SEED, 999, log)).toBeNull();
   });
 });
 

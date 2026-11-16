@@ -107,6 +107,10 @@ export interface FinishResult {
   newBest: boolean;
   /** Set for a Daily Tree run (every field above stays the main board's); null for a random game. */
   daily: DailyResult | null;
+  /** Taps this run made, from the server's replay of the log; null for a run too long to count. */
+  turns: number | null;
+  /** The tree's fewest turns from the start (see minTurnsOf); null when `turns` is. */
+  minTurns: number | null;
 }
 
 /** A finished Daily Tree run on its day's own board. */

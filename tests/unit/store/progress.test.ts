@@ -110,7 +110,7 @@ it('v2 keeps the online run, its log and a won run', () => {
     seconds: 81,
     score: 41_900,
     newBest: true,
-    result: { id: 'g'.repeat(22), ranked: false, reason: 'anonymous' as const, ms: 80_400, rank: 3, total: 10, best: null, newBest: false, daily: null },
+    result: { id: 'g'.repeat(22), ranked: false, reason: 'anonymous' as const, ms: 80_400, rank: 3, total: 10, best: null, newBest: false, daily: null, turns: 99, minTurns: 79 },
   };
   saveGame(b, 5000, { startEpoch: 123, online, log, won });
   expect(loadGame(GRID)).toEqual({ state: { solution: [...b.solution], bits: b.bits, colors: [...b.colors] }, elapsedMs: 5000, startEpoch: 123, online, log, won });
@@ -139,7 +139,7 @@ it("a won run's context (zone, station, world) survives a reload, so a resend re
 it("a signed-out Daily run's claimed result stays known as the claim's after a reload", () => {
   const b = Board.random(GRID, mulberry32(4));
   const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: 'c'.repeat(32), daily: { day: '2026-11-06', past: false, repeat: false } };
-  const result = { id: 'g'.repeat(22), ranked: false, reason: 'daily' as const, ms: 42_000, rank: null, total: 10, best: null, newBest: false, daily: { day: '2026-11-06', past: false, first: true, rank: 2, total: 9 } };
+  const result = { id: 'g'.repeat(22), ranked: false, reason: 'daily' as const, ms: 42_000, rank: null, total: 10, best: null, newBest: false, daily: { day: '2026-11-06', past: false, first: true, rank: 2, total: 9 }, turns: 99, minTurns: 79 };
   const won = { seconds: 42, score: 41_900, newBest: false, result, claimed: true };
   saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
   expect(loadGame(GRID)?.won).toEqual(won);
@@ -194,7 +194,7 @@ it('a saved won Daily run (reason daily, with daily info) restores', () => {
   const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: 'c'.repeat(32), daily: { day: '2026-11-06', past: false, repeat: false } };
   const result = {
     id: 'g'.repeat(22), ranked: false, reason: 'daily' as const, ms: 80_400, rank: null, total: 10, best: null, newBest: false,
-    daily: { day: '2026-11-06', past: false, first: true, rank: 2, total: 5 },
+    daily: { day: '2026-11-06', past: false, first: true, rank: 2, total: 5 }, turns: 99, minTurns: 79,
   };
   const won = { seconds: 81, score: 41_900, newBest: false, result };
   saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
@@ -208,7 +208,7 @@ it('a saved won Daily run (reason daily, with daily info) restores', () => {
 it('a saved result from before C1 (no daily) restores with daily null', () => {
   const b = Board.random(GRID, mulberry32(4));
   const online = { gameId: 'g'.repeat(22), seed: 42, genVersion: 1, claim: null, daily: null };
-  const won = { seconds: 81, score: 41_900, newBest: false, result: { id: 'g'.repeat(22), ranked: true, reason: null, ms: 80_400, rank: 3, total: 10, best: 80_400, newBest: true, daily: null } };
+  const won = { seconds: 81, score: 41_900, newBest: false, result: { id: 'g'.repeat(22), ranked: true, reason: null, ms: 80_400, rank: 3, total: 10, best: 80_400, newBest: true, daily: null, turns: 99, minTurns: 79 } };
   saveGame(b, 5000, { startEpoch: 123, online, log: [], won });
   const raw = JSON.parse(localStorage.getItem('aglow.game') ?? '{}') as { won: { result: Record<string, unknown> } };
   delete raw.won.result.daily;

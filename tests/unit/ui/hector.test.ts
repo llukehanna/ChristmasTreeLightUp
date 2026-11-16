@@ -3,7 +3,7 @@ import type { RunOutcome } from '../../../src/api/outcome';
 import type { FinishResult } from '../../../src/api/types';
 import { HectorDesk, glares } from '../../../src/ui/hector';
 
-const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: false, daily: null, ...over });
+const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: false, daily: null, turns: 99, minTurns: 79, ...over });
 const ranked: RunOutcome = { kind: 'done', result: result() };
 const unverified: RunOutcome = { kind: 'unverified' };
 const saving: RunOutcome = { kind: 'saving' };

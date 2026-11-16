@@ -175,7 +175,7 @@ describe('finishing a game', () => {
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const { game, log, result } = await play(ana);
     const ms = spanOf(game.seed, log) - REVEAL_MS;
-    expect(result).toEqual({ id: game.id, ranked: true, reason: null, ms, rank: 1, total: 1, best: ms, newBest: true, daily: null });
+    expect(result).toEqual({ id: game.id, ranked: true, reason: null, ms, rank: 1, total: 1, best: ms, newBest: true, daily: null, turns: log.length, minTurns: expect.any(Number) });
     expect(await row(game.id)).toMatchObject({ ranked: 1, unranked_reason: null, ms, paused_ms: 0, pauses: 0, log: JSON.stringify(log) });
   });
 
@@ -223,6 +223,37 @@ describe('finishing a game', () => {
     expect((await play(ana, { pauses: 20 })).result).toMatchObject({ ranked: true, reason: null });
     expect((await play(ana, { gap: 20 })).result).toMatchObject({ ranked: false, reason: 'too_fast' });
     expect((await play(ana, { extra: 3500 })).result).toMatchObject({ ranked: false, reason: 'clock' });
+  });
+
+  it('a ranked finish returns turns and the tree minimum, as stored', async () => {
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const { game, result } = await play(ana);
+    const stored = await db.prepare('SELECT turns, min_turns FROM games WHERE id = ?').bind(game.id).first<{ turns: number; min_turns: number }>();
+    expect(typeof result.turns).toBe('number');
+    expect(typeof result.minTurns).toBe('number');
+    expect(result.minTurns).toBe(stored?.min_turns);
+    expect(result.turns).toBe(stored?.turns);
+  });
+
+  it('a paused finish stores turns and the minimum but no feats', async () => {
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const { game, result } = await play(ana, { pauses: 21 });
+    expect(result.reason).toBe('paused');
+    const stored = await db.prepare('SELECT turns, min_turns, feats FROM games WHERE id = ?').bind(game.id).first<{ turns: number | null; min_turns: number | null; feats: number | null }>();
+    expect(stored?.turns).toEqual(expect.any(Number));
+    expect(stored?.min_turns).toEqual(expect.any(Number));
+    expect(stored?.feats).toBeNull();
+    expect(result.turns).toBe(stored?.turns);
+    expect(result.minTurns).toBe(stored?.min_turns);
+  });
+
+  it('a retried finish answers the saved turns', async () => {
+    const ana = await signIn(env, 'ana@example.com', 'Meridian');
+    const { game, result } = await play(ana);
+    const again = await json<FinishResult>(await call(env, 'POST', `/api/games/${game.id}/finish`, { body: { log: [] } }));
+    expect(again.turns).toBe(result.turns);
+    expect(again.minTurns).toBe(result.minTurns);
+    expect(typeof again.turns).toBe('number');
   });
 
   it('422 unverified deletes the game: a log that does not replay, or one spanning more than the server saw', async () => {

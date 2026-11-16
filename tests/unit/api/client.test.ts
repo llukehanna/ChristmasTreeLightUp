@@ -195,7 +195,7 @@ describe('api client', () => {
 });
 
 describe('finishWithRetry', () => {
-  const result: FinishResult = { id: 'g', ranked: true, reason: null, ms: 1, rank: 1, total: 1, best: 1, newBest: true, daily: null };
+  const result: FinishResult = { id: 'g', ranked: true, reason: null, ms: 1, rank: 1, total: 1, best: 1, newBest: true, daily: null, turns: 99, minTurns: 79 };
 
   it('retries once, 800 ms later, after a network error or a 5xx', async () => {
     const waits: number[] = [];

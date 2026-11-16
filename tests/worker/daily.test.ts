@@ -249,6 +249,8 @@ describe('finishing a Daily run', () => {
       best: null,
       newBest: false,
       daily: { day: '2026-12-10', past: false, first: true, rank: 1, total: 1 },
+      turns: expect.any(Number),
+      minTurns: expect.any(Number),
     });
     expect(await row(game.id)).toMatchObject({ ranked: 0, unranked_reason: 'daily' });
     expect(await mainBoards('2026-12-10')).toEqual([EMPTY, EMPTY, EMPTY]);

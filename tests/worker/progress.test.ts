@@ -82,26 +82,27 @@ describe('facts and context at the finish', () => {
     });
     expect(facts?.turns).toBe(log.length); // the solver's every entry is a tap
 
-    // An unranked run (too fast) keeps its context, not its facts (see the next test); a guest's run keeps both; a null
+    // An unranked run (too fast) keeps its context and its turns, not its feats (see the next test); a guest's run keeps both; a null
     // station and world are a valid report.
     later();
     const fast = await play(ana, { gap: 20, ctx: { tz: 0, station: null, world: null } });
     expect(fast.result.reason).toBe('too_fast');
-    expect(await db.prepare(pick).bind(fast.game.id).first()).toMatchObject({ turns: null, tz: 0, station: null, world: null });
+    expect(await db.prepare(pick).bind(fast.game.id).first()).toMatchObject({ turns: fast.log.length, feats: null, tz: 0, station: null, world: null });
     later();
     const guest = await play(undefined, { ctx: { tz: 300, station: 'music-box', world: 'home-alone' } });
     expect(await db.prepare(pick).bind(guest.game.id).first()).toMatchObject({ turns: guest.log.length, tz: 300, station: 'music-box', world: 'home-alone' });
   });
 
-  it('a run the judge unranked (paused) or a log past MAX_FACTS_ENTRIES stores no facts and still finishes', async () => {
+  it('a run the judge unranked (paused) or a log past MAX_FACTS_ENTRIES stores no feats (a paused run keeps its turns) and still finishes', async () => {
     at('2026-12-10T12:00:00Z');
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const pick = 'SELECT ranked, unranked_reason, turns, min_turns, feats FROM games WHERE id = ?';
     const none = { turns: null, min_turns: null, feats: null };
+    const turnsOnly = { turns: expect.any(Number), min_turns: expect.any(Number), feats: null };
 
     const paused = await play(ana, { pauses: 21 });
     expect(paused.result).toMatchObject({ ranked: false, reason: 'paused' });
-    expect(await db.prepare(pick).bind(paused.game.id).first()).toMatchObject({ ranked: 0, unranked_reason: 'paused', ...none });
+    expect(await db.prepare(pick).bind(paused.game.id).first()).toMatchObject({ ranked: 0, unranked_reason: 'paused', ...turnsOnly });
     later();
 
     // An honest log, a tap over the cap: ranked all the same, its facts left out.
