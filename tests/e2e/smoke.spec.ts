@@ -153,6 +153,19 @@ test('a finished online run says its turns and extra turns on the tag', async ({
   await expect(page.locator('#r-turns')).toHaveText(/^\d+ turns · \d+ extra$/);
 });
 
+test('on a phone the turns line does not make the tag taller', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 760 });
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#r-turns')).toHaveText(/^\d+ turns · \d+ extra$/, { timeout: 15_000 });
+  const height = () => page.evaluate(() => document.getElementById('results')!.getBoundingClientRect().height);
+  await expect.poll(async () => Math.round(await height())).toBeGreaterThan(0);
+  const withLine = await height();
+  await page.evaluate(() => ((window as unknown as W).__aglow, (document.getElementById('r-turns') as HTMLElement).hidden = true));
+  expect(Math.abs(withLine - (await height()))).toBeLessThan(1);
+});
+
 test('Sash puts the window up', async ({ page }) => {
   await owning(page, ['scene:sash']);
   await ready(page);
