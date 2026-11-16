@@ -1941,6 +1941,7 @@ export class App {
     const hud = document.querySelector('.hud');
     const mark = document.querySelector('.wordmark');
     if (pill && hud && mark) {
+      document.body.classList.remove('hud-tight');
       const markRight = mark.getBoundingClientRect().right;
       const clear = (): boolean => hud.getBoundingClientRect().left - markRight >= 16;
       // A hidden pill takes no room: no need to try it short.
@@ -1953,6 +1954,8 @@ export class App {
           if (clear()) break fit;
         }
       }
+      // Last step (a 320px phone mid-Daily, the pause and Daily pills both up): the wordmark keeps only its holly.
+      if (!clear()) document.body.classList.add('hud-tight');
     }
     this.placeIntro();
   }

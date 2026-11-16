@@ -94,3 +94,28 @@ test('on Frost the menu keeps its light gold: the velvet is dark in every scene'
   expect(await css(page, '#ms-play', 'background-image')).toContain('rgb(248, 230, 174)');
   expect(await css(page, '#board-row svg', 'color')).toBe('rgb(214, 162, 74)');
 });
+
+test('hud clears the wordmark at 320px during a Daily run (pause and Daily pills showing)', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await ready(page);
+  await page.click('#menu-btn');
+  // Both presses in one task: a run in progress asks to confirm.
+  await page.evaluate(() => {
+    const row = document.getElementById('daily-row');
+    row?.click();
+    row?.click();
+  });
+  await expect(page.locator('#daily-pill')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#pause-btn')).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(300);
+  const gap = await page.evaluate(() => document.querySelector('.hud')!.getBoundingClientRect().left - document.querySelector('.wordmark')!.getBoundingClientRect().right);
+  expect(gap).toBeGreaterThanOrEqual(16);
+});
+
+test('on Frost a focused HUD segment shows a light ring, not one the capsule swallows', async ({ page }) => {
+  await owning(page, ['scene:frost']);
+  await page.addInitScript(() => localStorage.setItem('aglow.look', JSON.stringify({ v: 1, scene: 'frost' })));
+  await ready(page);
+  await page.locator('#menu-btn').focus();
+  expect(await css(page, '#menu-btn', 'outline-color')).toBe('rgb(255, 226, 160)');
+});

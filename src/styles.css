@@ -57,6 +57,8 @@ body[data-scene='frost'] .vignette { background: radial-gradient(120% 90% at 50%
   filter: drop-shadow(0 0 6px rgba(255, 190, 100, 0.25));
 }
 body[data-scene='frost'] .wordmark { filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.75)); }
+/* fitHud's last step: no room for the word, so the holly alone. */
+body.hud-tight .wordmark { font-size: 0; letter-spacing: 0; gap: 0; }
 .wordmark .holly { display: block; width: 26px; height: 20px; flex: none; margin: -2px -3px -2px -4px; }
 .wordmark .holly svg { display: block; overflow: visible; }
 /* The berries glow with the lit fraction, as the dot did. */
@@ -324,6 +326,8 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 /* Declared after the `all: unset` component rules so the focus ring wins. */
 button:focus-visible, .menu button:focus-visible, .results button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pill:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+/* Inside the capsule the ring sits on the segment itself, light in every scene (Frost's claret focus would vanish on the cranberry glass). */
+.hud .pill:focus-visible { outline: 2px solid #ffe2a0; outline-offset: -2px; }
 .menu button:focus-visible, .menu input:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
 .results button:focus-visible, .results .actions button:focus-visible { outline: 2px solid #8e1622; outline-offset: 3px; }
 
