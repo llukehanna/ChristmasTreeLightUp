@@ -20,6 +20,10 @@ export interface MenuHandlers {
   onKeys?(): void;
   /** "Advent calendar" was chosen: the menu has closed, and the calendar should open (its doors confirm for themselves). */
   onAdvent?(): void;
+  /** "Career" was chosen: the menu has closed; `from` (the menu button) is where focus goes back to. */
+  onCareer?(from: HTMLElement): void;
+  /** "Leaderboard" was chosen: the menu has closed; `from` (the menu button) is where focus goes back to. */
+  onBoard?(from: HTMLElement): void;
 }
 
 /** How long the first New tree press (or N) stays armed for the confirming second one. The N toast lasts as long. */
@@ -101,6 +105,15 @@ export class Menu {
       this.close();
       this.h.onAdvent?.();
     });
+    // Career is a page and the leaderboard a sheet over the game: the menu closes first.
+    document.getElementById('career-row')?.addEventListener('click', () => {
+      this.close();
+      this.h.onCareer?.(this.button);
+    });
+    document.getElementById('board-row')?.addEventListener('click', () => {
+      this.close();
+      this.h.onBoard?.(this.button);
+    });
     // The card docks where the menu opens, so the menu closes first, then the card is pinned open.
     document.getElementById('keys-row')?.addEventListener('click', () => {
       this.close();
@@ -119,7 +132,8 @@ export class Menu {
     return !this.root.hidden;
   }
 
-  open(): void {
+  /** Opens the menu with focus on `focus` (the account row, coming back from the account page), else its first control. */
+  open(focus?: HTMLElement | null): void {
     this.h.onOpen?.();
     // Asked afresh at each open, so it is right after midnight.
     this.played = this.h.dailyPlayed?.() ?? false;
@@ -127,7 +141,7 @@ export class Menu {
     this.root.hidden = false;
     this.button.setAttribute('aria-expanded', 'true');
     // Focus the first control so keyboard users start inside the dialog.
-    const first = this.root.querySelector<HTMLElement>('button, input');
+    const first = focus && this.root.contains(focus) ? focus : this.root.querySelector<HTMLElement>('button, input');
     first?.focus({ preventScroll: true });
   }
 

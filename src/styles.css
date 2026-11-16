@@ -169,33 +169,47 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-/* ---------- settings: gift-wrap menu ---------- */
+/* ---------- menu: velvet, the gold bow its one flourish; Play, Yours and Settings, then the account ---------- */
 .menu {
-  position: fixed; top: calc(68px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); width: 300px;
-  padding: 36px 14px 14px; border-radius: 18px; color: #f6e7c8; overflow: visible;
-  background:
-    repeating-linear-gradient(135deg, rgba(255, 220, 160, 0.022) 0 6px, transparent 6px 14px),
-    radial-gradient(120% 70% at 30% 0%, rgba(190, 40, 52, 0.35), transparent 70%),
-    linear-gradient(180deg, rgba(70, 10, 18, 0.9), rgba(28, 8, 10, 0.92));
-  border: 1px solid var(--goldline);
-  backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 24px 60px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 14px;
+  position: fixed; top: calc(66px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); width: 300px;
+  padding: 30px 8px 8px; border-radius: 18px; color: #f6e7c8; overflow: visible; display: flex; flex-direction: column; gap: 1px;
+  background: var(--velvet); border: 0; box-shadow: var(--panel-shadow);
+  transform-origin: top right; animation: menu-in 0.18s var(--ease-out);
 }
-/* Satin ribbon band across the top of the wrap. */
-.menu::before {
-  content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 10px; pointer-events: none;
-  background: linear-gradient(180deg, #f6dc98 0%, #e2b560 35%, #b98636 75%, #8f5f22 100%);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
+@keyframes menu-in { from { opacity: 0; transform: scale(0.96); } }
+.menu .bow { position: absolute; left: 50%; top: -14px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); }
+.menu-sec { display: flex; flex-direction: column; gap: 1px; }
+.menu-h {
+  margin: 0; padding: 12px 12px 4px; font: italic 400 17px/1 'Instrument Serif', serif; letter-spacing: 0.01em; width: fit-content;
+  color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(100deg, var(--gold1), var(--gold2) 38%, var(--gold3) 54%, var(--gold4) 80%);
 }
-.menu .bow { position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); }
-.menu .lbl { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; margin: 0 0 7px 2px; }
-/* Decorate: opens the drawer (src/ui/decorate.css), a gold-edged ghost beside the red New tree. */
-.menu .decorate-btn {
-  all: unset; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; border-radius: 10px;
-  font-size: 12.5px; font-weight: 600; color: #f6d58e; background: rgba(255, 220, 160, 0.06); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.35);
-  transition: background 0.15s;
+.menu-sec:first-of-type .menu-h { padding-top: 2px; }
+/* Every row reads the same way: its words on the left, a note or an icon on the right. */
+.menu :is(.newtree, .daily-row, .decorate-btn, .menu-row, .kb-row) {
+  all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-radius: 10px; font: 500 13.5px Inter, system-ui, sans-serif; color: #f6e7c8;
+  transition: background-color 0.12s, transform 0.12s var(--ease-out);
 }
-.menu .decorate-btn:hover { background: rgba(255, 220, 160, 0.12); }
+.menu :is(.daily-row, .decorate-btn, .menu-row, .kb-row):hover { background: rgba(255, 220, 160, 0.08); }
+.menu :is(.newtree, .daily-row, .decorate-btn, .menu-row, .kb-row):active { transform: scale(0.985); }
+.menu .menu-row svg, .menu .decorate-btn svg { width: 15px; height: 15px; flex: none; color: var(--gold2); }
+.menu .decorate-btn { flex-direction: row-reverse; }
+.menu .menu-row .menu-meta { margin-left: auto; font-size: 10.5px; font-weight: 500; color: #eccb86; font-variant-numeric: tabular-nums; }
+.menu .menu-row .menu-meta:empty { display: none; }
+.menu .newtree {
+  margin: 2px 0 3px; padding: 11px 12px; font-weight: 600; color: #fff1dc;
+  background: linear-gradient(180deg, #d23a3f, #8e1622);
+  box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 4px 14px rgba(80, 6, 14, 0.45);
+}
+.menu .newtree:hover { background: linear-gradient(180deg, #de4449, #9a1a27); }
+.menu .newtree::after { content: '\21B5'; font-size: 13px; opacity: 0.6; }
+/* Confirmation state: gold, clearly distinct from the red New tree. */
+.menu .newtree.armed, .menu .daily-row.armed {
+  background: linear-gradient(180deg, #fbe4a6, #d6a24a 60%, #b9822f); color: #2a1206;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.75), 0 0 0 1px rgba(255, 230, 160, 0.55), 0 0 20px rgba(255, 190, 90, 0.4);
+}
+.menu .newtree.armed::after { content: none; }
 /* The unseen dot (src/ui/menu.ts setDot): something earned waits in the wardrobe. Never set during a run. */
 #menu-btn.has-new, .menu .decorate-btn.has-new { position: relative; }
 #menu-btn.has-new::after, .menu .decorate-btn.has-new::after {
@@ -203,32 +217,19 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
   background: radial-gradient(circle at 38% 32%, #fff6d4, #e2b25a 55%, #8a5a1c);
   box-shadow: 0 0 0 1.5px rgba(30, 6, 8, 0.9), 0 0 8px rgba(255, 196, 100, 0.7);
 }
-.menu .decorate-btn.has-new::after { top: 5px; right: 6px; }
-/* Daily Tree: under New tree, a quieter gold-edged row; mid-run it arms the same gold confirm. */
-.menu .daily-row {
-  all: unset; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
-  color: #f6d58e; background: rgba(255, 220, 160, 0.06); box-shadow: inset 0 0 0 1px rgba(236, 196, 116, 0.35); transition: background 0.15s;
-}
-.menu .daily-row:hover { background: rgba(255, 220, 160, 0.12); }
-/* "Played": this device has started today's Daily (the row still starts it, as a repeat). The menu's label voice. */
-.menu .daily-row .daily-note { font-size: 10px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: #eccb86; opacity: 0.8; }
+.menu .decorate-btn.has-new::after { top: 6px; right: auto; left: 76px; }
+/* "Played": this device has started today's Daily (the row still starts it, as a repeat). */
+.menu .daily-row .daily-note { font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: #eccb86; opacity: 0.8; }
+.menu .menu-sec > div:has(.lbl) { padding: 6px 12px 4px; }
+.menu .lbl { margin: 0 0 6px; font-size: 12.5px; font-weight: 500; color: #f6e7c8; }
 .row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; }
+.menu label.row { padding: 7px 12px; font: 500 13.5px Inter, system-ui, sans-serif; }
+.menu .kb-row kbd { font: 500 10.5px Inter, sans-serif; color: #eccb86; border: 1px solid rgba(236, 196, 116, 0.35); border-radius: 5px; padding: 2px 6px; }
 input[type='range'] { width: 100%; accent-color: var(--accent); }
 .menu input[type='range'], .menu input[type='checkbox'] { accent-color: #e2b25a; }
-.menu .privacy-link { align-self: center; font-size: 11.5px; color: #eccb86; opacity: 0.75; text-decoration: underline; text-underline-offset: 3px; }
+.menu .privacy-link { align-self: center; padding: 6px 0 2px; font-size: 11px; color: #eccb86; opacity: 0.75; text-decoration: underline; text-underline-offset: 3px; }
 .menu .privacy-link:hover { opacity: 1; }
 .menu .privacy-link:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; border-radius: 3px; }
-.menu .newtree {
-  all: unset; cursor: pointer; text-align: center; padding: 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
-  background: linear-gradient(180deg, #d23a3f, #8e1622); color: #fff1dc;
-  box-shadow: inset 0 1px 0 rgba(255, 200, 180, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-.menu .newtree:hover { background: linear-gradient(180deg, #de4449, #9a1a27); }
-/* Confirmation state: gold, clearly distinct from the red New tree. */
-.menu .newtree.armed, .menu .daily-row.armed {
-  background: linear-gradient(180deg, #fbe4a6, #d6a24a 60%, #b9822f); color: #2a1206;
-  box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.75), 0 0 0 1px rgba(255, 230, 160, 0.55), 0 0 20px rgba(255, 190, 90, 0.4);
-}
 
 /* ---------- results: gift tag ---------- */
 .results {

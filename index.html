@@ -74,16 +74,28 @@
         <path d="M12 9.5c4-3 10-1 15 5M52 9.5c-4-3-10-1-15 5" fill="none" stroke="rgba(255,248,220,.7)" stroke-width=".9" stroke-linecap="round" />
         <ellipse cx="32" cy="20" rx="5.2" ry="4.6" fill="url(#bow-knot)" />
       </svg>
-      <button class="newtree" id="new-tree">New tree</button>
-      <button class="daily-row" id="daily-row" type="button"><span id="daily-label">Daily Tree</span><span class="daily-note" id="daily-note" hidden>Played</span></button>
-      <button class="daily-row advent-row" id="advent-row" type="button" aria-haspopup="dialog">Advent calendar</button>
-      <button class="decorate-btn" id="decorate-btn" type="button" aria-haspopup="dialog" aria-controls="decorate"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" focusable="false"><path d="M10 2l1.6 5.2L17 9l-5.4 1.8L10 16l-1.6-5.2L3 9l5.4-1.8z" fill="currentColor" /></svg>Decorate</button>
-      <div>
-        <p class="lbl">Effects volume</p>
-        <input type="range" id="effects-volume" min="0" max="1" step="0.05" aria-label="Effects volume" />
-      </div>
-      <label class="row" id="haptics-row"><span>Haptics</span><input type="checkbox" id="haptics" /></label>
-      <button class="row kb-row" id="keys-row" type="button"><span>Keyboard shortcuts</span><kbd>Tab</kbd></button>
+      <section class="menu-sec" aria-labelledby="ms-play">
+        <h3 class="menu-h" id="ms-play">Play</h3>
+        <button class="newtree" id="new-tree">New tree</button>
+        <button class="daily-row" id="daily-row" type="button"><span id="daily-label">Daily Tree</span><span class="daily-note" id="daily-note" hidden>Played</span></button>
+        <button class="daily-row advent-row" id="advent-row" type="button" aria-haspopup="dialog">Advent calendar</button>
+      </section>
+      <section class="menu-sec" aria-labelledby="ms-yours">
+        <h3 class="menu-h" id="ms-yours">Yours</h3>
+        <button class="decorate-btn" id="decorate-btn" type="button" aria-haspopup="dialog" aria-controls="decorate"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" focusable="false"><path d="M10 2l1.6 5.2L17 9l-5.4 1.8L10 16l-1.6-5.2L3 9l5.4-1.8z" fill="currentColor" /></svg>Decorate</button>
+        <button class="menu-row" id="career-row" type="button"><span>Career</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.6" cy="6.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.6" cy="17.5" r="1.3" fill="currentColor" stroke="none"/></svg></button>
+        <button class="menu-row" id="board-row" type="button"><span>Leaderboard</span><span class="menu-meta" id="board-rank"></span><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M7 3.2h10a.8.8 0 0 1 .8.8v1h2.4a.8.8 0 0 1 .8.8v1.6a4.4 4.4 0 0 1-4.1 4.4 6 6 0 0 1-4 3.3v2.5h2.6a1.6 1.6 0 0 1 1.6 1.6v1.4H6.9v-1.4a1.6 1.6 0 0 1 1.6-1.6h2.6v-2.5a6 6 0 0 1-4-3.3A4.4 4.4 0 0 1 3 7.4V5.8a.8.8 0 0 1 .8-.8h2.4V4a.8.8 0 0 1 .8-.8zm10.8 3.4v2.8a2.8 2.8 0 0 0 1.6-2.5v-.3zM4.6 6.6v.3a2.8 2.8 0 0 0 1.6 2.5V6.6z"/></svg></button>
+      </section>
+      <section class="menu-sec" aria-labelledby="ms-settings">
+        <h3 class="menu-h" id="ms-settings">Settings</h3>
+        <div>
+          <p class="lbl">Effects volume</p>
+          <input type="range" id="effects-volume" min="0" max="1" step="0.05" aria-label="Effects volume" />
+        </div>
+        <label class="row" id="haptics-row"><span>Haptics</span><input type="checkbox" id="haptics" /></label>
+        <button class="row kb-row" id="keys-row" type="button"><span>Keyboard shortcuts</span><kbd>Tab</kbd></button>
+      </section>
+      <button class="menu-acct" id="account-row" type="button" hidden></button>
       <a class="privacy-link" href="/privacy">Privacy</a>
     </div>
 

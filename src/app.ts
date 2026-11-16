@@ -406,6 +406,8 @@ export class App {
       playingDaily: () => this.playingDaily(),
       needsConfirm: () => this.needsConfirm(),
       onAdvent: () => this.advent.open(el('menu-btn')),
+      onCareer: (from) => this.openCareer(from),
+      onBoard: (from) => this.accounts.openBoard(from),
       onOpen: () => {
         this.radioPanel.close();
         this.accounts.closeMenu();

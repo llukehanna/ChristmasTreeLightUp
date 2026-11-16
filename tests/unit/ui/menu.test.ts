@@ -12,6 +12,8 @@ beforeEach(() => {
       <button id="daily-row"><span id="daily-label">Daily Tree</span><span id="daily-note" hidden>Played</span></button>
       <button id="advent-row">Advent calendar</button>
       <button id="decorate-btn">Decorate</button>
+      <button id="career-row">Career</button>
+      <button id="board-row">Leaderboard<span id="board-rank"></span></button>
       <button id="keys-row">Keyboard shortcuts</button>
       <input type="range" id="effects-volume" />
       <label id="haptics-row"><input type="checkbox" id="haptics" /></label>
@@ -23,10 +25,12 @@ afterEach(() => vi.useRealTimers());
 function make(needsConfirm: boolean, played: () => boolean = () => false, playing: () => boolean = () => false) {
   const onNewTree = vi.fn();
   const onDaily = vi.fn();
+  const onCareer = vi.fn();
+  const onBoard = vi.fn();
   const menu = new Menu({ ...DEFAULT_SETTINGS }, {
-    onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, dailyPlayed: played, playingDaily: playing, needsConfirm: () => needsConfirm,
+    onChange: () => {}, onDecorate: () => {}, onNewTree, onDaily, onCareer, onBoard, dailyPlayed: played, playingDaily: playing, needsConfirm: () => needsConfirm,
   });
-  return { menu, onNewTree, onDaily };
+  return { menu, onNewTree, onDaily, onCareer, onBoard };
 }
 const label = () => document.getElementById('daily-label')?.textContent;
 const note = () => document.getElementById('daily-note') as HTMLElement;
@@ -214,4 +218,23 @@ it('the Advent calendar row closes the menu, then opens the calendar, mid-run to
   expect(order).toEqual(['menu closed']);
   expect(onNewTree).not.toHaveBeenCalled();
   expect(onDaily).not.toHaveBeenCalled();
+});
+
+for (const [row, hook] of [['career-row', 'onCareer'], ['board-row', 'onBoard']] as const) {
+  it(`the ${row === 'career-row' ? 'Career' : 'Leaderboard'} row closes the menu and hands over the menu button`, () => {
+    const made = make(false);
+    made.menu.open();
+    document.getElementById(row)?.click();
+    expect(document.getElementById('menu')?.hidden).toBe(true);
+    expect(made[hook]).toHaveBeenCalledWith(document.getElementById('menu-btn'));
+    // The hook runs after the menu has closed (a sheet or page then opens over the game).
+    expect(made[hook]).toHaveBeenCalledTimes(1);
+  });
+}
+
+it('open(focus) focuses the given element instead of the first control', () => {
+  const { menu } = make(false);
+  const board = document.getElementById('board-row') as HTMLElement;
+  menu.open(board);
+  expect(document.activeElement).toBe(board);
 });
