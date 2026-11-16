@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerResponse } from '../../src/api/types';
+import { CAREER_DAILY_FIRST, CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerResponse } from '../../src/api/types';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { dayNumber } from '../../worker/lib/days';
@@ -82,6 +82,18 @@ describe('GET /api/me/career', () => {
     expect(rows[played]).toEqual([played, 2000, 52000, 40, 31, CAREER_REPLAY, null, null]);
     expect(rows[past]).toEqual([past, 3000, 70000, 22, 22, CAREER_REPLAY | CAREER_PAST, 'past', '2026-11-10']);
     expect(rows[unranked]).toEqual([unranked, 4000, 900, null, null, 0, 'too_fast', null]);
+  });
+
+  it("marks a live Daily first attempt, not a repeat, a past day's tree or a random run", async () => {
+    const ana = await user('ana@example.com', 'Ana');
+    const cookie = await signIn(env, 'ana@example.com');
+    const first = await run(ana, { finishedAt: 1000, reason: 'daily', day: '2026-11-10' });
+    const repeat = await run(ana, { finishedAt: 2000, reason: 'daily', day: '2026-11-10' });
+    const other = await run(ana, { finishedAt: 3000, reason: 'daily', day: '2026-11-11' });
+    const past = await run(ana, { finishedAt: 4000, reason: 'past', day: '2026-11-09', past: true });
+    const random = await run(ana, { finishedAt: 5000 });
+    const flags = Object.fromEntries((await body(cookie)).runs.map((r) => [r[0], (r[5] & CAREER_DAILY_FIRST) !== 0]));
+    expect(flags).toEqual({ [first]: true, [repeat]: false, [other]: true, [past]: false, [random]: false });
   });
 
   it('gives the ranked best, its place and how many of the top are yours', async () => {

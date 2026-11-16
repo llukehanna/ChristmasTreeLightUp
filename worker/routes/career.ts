@@ -1,5 +1,6 @@
-import { CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerResponse, type CareerRow, type UnrankedReason } from '../../src/api/types.js';
+import { CAREER_DAILY_FIRST, CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerResponse, type CareerRow, type UnrankedReason } from '../../src/api/types.js';
 import { cachedTopAndTotal, cachedTotal } from '../lib/board-cache.js';
+import { dailyFirstIds } from '../lib/daily-board.js';
 import { dayText } from '../lib/days.js';
 import type { AppEnv } from '../lib/env.js';
 import { json } from '../lib/http.js';
@@ -19,7 +20,10 @@ interface CareerGame {
   has_log: number;
 }
 
-/** GET /api/me/career: every finished run of the account, oldest first, and the ranked best with its board place. */
+/**
+ * GET /api/me/career: every finished run of the account, oldest first, and the ranked best with its board place. A live
+ * Daily run that was its day's first attempt is flagged: one read for all the account's Daily days.
+ */
 export async function career(req: Request, env: AppEnv): Promise<Response> {
   const user = await requireUser(req, env);
   const [best, all, { top, total }] = await Promise.all([
@@ -32,7 +36,8 @@ export async function career(req: Request, env: AppEnv): Promise<Response> {
     // The top BOARD_TOP and the total from the isolate's copy (BOARD_TTL_MS); your best and its rank are read live.
     user.name ? cachedTopAndTotal(env.DB) : cachedTotal(env.DB).then((n) => ({ top: [], total: n })),
   ]);
-  const rank = best && user.name ? await rankOf(env.DB, best.ms, best.finished_at) : null;
+  const days = [...new Set(all.results.flatMap((g) => (g.daily_day !== null && g.daily_past === 0 ? [g.daily_day] : [])))];
+  const [rank, firsts] = await Promise.all([best && user.name ? rankOf(env.DB, best.ms, best.finished_at) : null, dailyFirstIds(env.DB, user.id, days)]);
   const runs = all.results.map(
     (g): CareerRow => [
       g.id,
@@ -40,7 +45,10 @@ export async function career(req: Request, env: AppEnv): Promise<Response> {
       g.ms,
       g.turns,
       g.min_turns,
-      (g.source === 'import' ? CAREER_IMPORTED : 0) | (g.has_log === 1 ? CAREER_REPLAY : 0) | (g.daily_past === 1 ? CAREER_PAST : 0),
+      (g.source === 'import' ? CAREER_IMPORTED : 0) |
+        (g.has_log === 1 ? CAREER_REPLAY : 0) |
+        (g.daily_past === 1 ? CAREER_PAST : 0) |
+        (firsts.has(g.id) ? CAREER_DAILY_FIRST : 0),
       g.unranked_reason,
       g.daily_day === null ? null : dayText(g.daily_day),
     ],

@@ -62,13 +62,30 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: strin
  * The board is the one response the browser may keep (`private, max-age=15`, `Vary: Cookie`): opening it again soon
  * costs no request. After this page changes it (a finish, a claim, a name, signing out or deleting the account), the
  * next board of each window is revalidated (the browser may hold a copy of each), so your new run is never hidden by
- * the browser's copy.
+ * the browser's copy. The same writes drop the cached career.
  */
 const staleWindows = new Set<BoardWindow>();
 async function changesBoard<T>(p: Promise<T>): Promise<T> {
   const r = await p;
   for (const w of BOARD_WINDOWS) staleWindows.add(w);
+  careerRead = null;
   return r;
+}
+
+/**
+ * The career (every run of the account: a big read) as this page last read it, shared by the account menu's head and
+ * the career page until a write changes it (changesBoard) or the account changes (forgetCareer). A failed read is
+ * forgotten, so the next asks again.
+ */
+let careerRead: Promise<CareerResponse> | null = null;
+function cachedCareer(): Promise<CareerResponse> {
+  if (careerRead) return careerRead;
+  const p = request<CareerResponse>('GET', '/api/me/career');
+  careerRead = p;
+  p.catch(() => {
+    if (careerRead === p) careerRead = null;
+  });
+  return p;
 }
 /**
  * One window of the board (spec 2026-10-14): today and this week are this browser's day and zone, as myStats sends
@@ -108,6 +125,12 @@ export const api = {
   ghost: async (day: string): Promise<GhostRun | null> => (await request<GhostResponse>('GET', `/api/me/ghost?day=${encodeURIComponent(day)}`)).ghost,
   /** Every finished run of the account, oldest first, and its ranked best (the career page). */
   career: () => request<CareerResponse>('GET', '/api/me/career'),
+  /** The career as last read on this page, read once until a write or another account changes it. */
+  cachedCareer,
+  /** The session changed: the next cached career is read again. */
+  forgetCareer: (): void => {
+    careerRead = null;
+  },
   /** The account's copy of the tree's topper preference (the star-head egg). */
   setStarHead: (on: boolean) => request<StarHeadResponse>('PUT', '/api/me/star-head', { on }),
   /** The account's copy of Home Alone mode. */

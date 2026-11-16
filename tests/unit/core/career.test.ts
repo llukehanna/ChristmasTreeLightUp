@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerRow } from '../../../src/api/types';
+import { CAREER_DAILY_FIRST, CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerRow } from '../../../src/api/types';
 import { careerStats, parseCareer, rollingAverage, trimmedMean, trimOf, type CareerRun } from '../../../src/core/career';
 import type { UnrankedReason } from '../../../src/core/judge';
 
@@ -38,7 +38,9 @@ describe('parseCareer', () => {
   });
   it('unpacks the flags and the counting reason', () => {
     const [r] = parseCareer([row(40, { flags: CAREER_IMPORTED | CAREER_REPLAY | CAREER_PAST })]);
-    expect([r.imported, r.replay, r.past, r.n]).toEqual([true, true, true, 1]);
+    expect([r.imported, r.replay, r.past, r.dailyFirst, r.n]).toEqual([true, true, true, false, 1]);
+    const [first] = parseCareer([row(40, { flags: CAREER_DAILY_FIRST, reason: 'daily' })]);
+    expect([first.dailyFirst, first.past, first.imported]).toEqual([true, false, false]);
     const [fast, paused, clock] = parseCareer([row(3, { reason: 'too_fast' }), row(40, { reason: 'paused' }), row(40, { reason: 'clock' })]);
     expect([fast.counts, paused.counts, clock.counts]).toEqual([false, true, false]);
   });

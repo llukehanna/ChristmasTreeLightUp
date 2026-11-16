@@ -487,10 +487,11 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(name);
     await expect(board.locator('.acct-pin-note')).toHaveText(/^Your run · #\d+ of [\d,]+$/);
     expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBe('daily');
-    // The career (the board's Career): the run carries its Daily tag.
+    // The career (the board's Career): the run carries its Daily tag, and no "Unranked".
     await board.getByRole('button', { name: 'Career' }).click();
     const first = page.getByRole('dialog', { name: 'Your career' }).locator('#career-log tbody tr').first();
     await expect(first.locator('.tag.daily')).toHaveText('Daily');
+    await expect(first).not.toContainText('Unranked');
   });
 
   test('a second Daily from the menu is unranked: not your first go', async ({ page }) => {
@@ -506,13 +507,14 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(results.locator('.rib-line')).toHaveText('Unranked: not your first go', { timeout: 15_000 });
     await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();
     await expect(results.locator('.rib-ribbon')).toHaveCount(0);
-    // The career: both runs, the repeat (newest, first) tagged as one.
+    // The career: the repeat (newest, first) says so, the first attempt doesn't.
     await page.locator('#account-chip').click();
     await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
     const games = page.getByRole('dialog', { name: 'Your career' }).locator('#career-log tbody tr');
     await expect(games).toHaveCount(2);
     await expect(games.nth(0).locator('.tag.un')).toHaveText('Unranked · not your first go');
     await expect(games.nth(1).locator('.tag.daily')).toBeVisible();
+    await expect(games.nth(1).locator('.tag.un')).toHaveCount(0);
   });
 });
 

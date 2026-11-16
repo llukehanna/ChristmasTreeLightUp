@@ -4,12 +4,13 @@ import { Session } from '../../../src/api/session';
 import type { BoardResponse, BoardWindow, CareerResponse } from '../../../src/api/types';
 
 const calls = vi.hoisted(() => ({
-  career: vi.fn<() => Promise<CareerResponse>>(),
+  cachedCareer: vi.fn<() => Promise<CareerResponse>>(),
+  forgetCareer: vi.fn<() => void>(),
   board: vi.fn<(w: BoardWindow, now?: Date, day?: string) => Promise<BoardResponse>>(),
 }));
 vi.mock('../../../src/api/client', async (orig) => ({
   ...(await orig<typeof import('../../../src/api/client')>()),
-  api: { career: calls.career, board: calls.board },
+  api: { cachedCareer: calls.cachedCareer, forgetCareer: calls.forgetCareer, board: calls.board },
 }));
 
 import { localDay } from '../../../src/store/stats';
@@ -39,7 +40,8 @@ let session: Session;
 let accounts: Accounts;
 beforeEach(() => {
   document.body.innerHTML = '<button id="menu-btn"></button>';
-  calls.career.mockReset().mockResolvedValue(career);
+  calls.cachedCareer.mockReset().mockResolvedValue(career);
+  calls.forgetCareer.mockReset();
   calls.board.mockReset().mockResolvedValue({ rows: [], total: 0, you: null });
   localStorage.clear();
   session = new Session();
@@ -231,12 +233,32 @@ it("the leaderboard's Career, and the menu's, ask for the career page with the b
   expect(h.openCareer).toHaveBeenLastCalledWith(chip);
 });
 
-it("the menu head is the career's ranked best and its place", async () => {
-  calls.career.mockResolvedValue({ runs: [], best: { id: 'b', ms: 41_000, rank: 2 }, inTop: 1, total: 9 });
+it("the menu head is the cached career's ranked best and its place: two opens, one request; a finish reads it again", async () => {
+  const real = await vi.importActual<typeof import('../../../src/api/client')>('../../../src/api/client');
+  real.api.forgetCareer();
+  const fetch = vi.fn(async (url: string) => Response.json(url === '/api/me/career' ? { runs: [], best: { id: 'b', ms: 41_000, rank: 2 }, inTop: 1, total: 9 } : {}));
+  vi.stubGlobal('fetch', fetch);
+  calls.cachedCareer.mockImplementation(() => real.api.cachedCareer());
+  const reads = () => fetch.mock.calls.filter((c) => c[0] === '/api/me/career').length;
   session.set({ ...me });
   const chip = document.getElementById('account-chip') as HTMLElement;
+  const menu = document.getElementById('account-menu') as HTMLElement;
   chip.click();
   await tick();
-  expect(calls.career).toHaveBeenCalledTimes(1);
-  expect(document.querySelector('#account-menu small')?.textContent).toBe('#2 all-time · best 0:41.0');
+  expect(menu.querySelector('small')?.textContent).toBe('#2 all-time · best 0:41.0');
+  chip.click(); // closes
+  chip.click(); // opens again
+  await tick();
+  expect(reads()).toBe(1);
+  chip.click();
+  await real.api.finish('g', []);
+  chip.click();
+  await tick();
+  expect(reads()).toBe(2);
+  vi.unstubAllGlobals();
+});
+
+it('a session change forgets the cached career (another account, or none)', () => {
+  session.set({ name: 'Comet', isAdmin: false, starHead: false });
+  expect(calls.forgetCareer).toHaveBeenCalled();
 });

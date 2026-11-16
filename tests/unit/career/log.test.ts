@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { CAREER_IMPORTED, CAREER_REPLAY, type CareerRow } from '../../../src/api/types';
+import { CAREER_DAILY_FIRST, CAREER_IMPORTED, CAREER_REPLAY, type CareerRow } from '../../../src/api/types';
 import { parseCareer, type CareerRun } from '../../../src/core/career';
 import { createLog } from '../../../src/career/log';
 
@@ -71,6 +71,22 @@ it('filters: Ranked, Daily, Unranked and Imported', () => {
   expect(ids()).toEqual(['4']);
   filter(el, 'all');
   expect(count(el)).toBe('5 games');
+});
+
+it("a Daily first attempt reads as Daily alone; a repeat says it isn't your first go, and only it is Unranked", () => {
+  const runs = runsOf([
+    row(0, { daily: '2026-11-01', reason: 'daily', flags: CAREER_REPLAY | CAREER_DAILY_FIRST }),
+    row(1, { daily: '2026-11-01', reason: 'daily' }),
+  ]);
+  const el = mount(runs);
+  const tags = (n: number) => [...trs(el)[1 - n].querySelectorAll('.tag')].map((t) => t.textContent);
+  expect(tags(0)).toEqual(['Daily']);
+  expect(tags(1)).toEqual(['Daily', 'Unranked · not your first go']);
+  const ids = () => [...el.querySelectorAll('tbody tr')].map((tr) => tr.querySelector('td')!.textContent);
+  filter(el, 'daily');
+  expect(ids()).toEqual(['2', '1']);
+  filter(el, 'unranked');
+  expect(ids()).toEqual(['2']);
 });
 
 it('sorts by a header, and again reverses; When is newest first by default', () => {

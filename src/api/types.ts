@@ -157,8 +157,10 @@ export interface BoardResponse {
 export const CAREER_IMPORTED = 1;
 export const CAREER_REPLAY = 2;
 export const CAREER_PAST = 4;
+/** A live Daily run that was the day's first attempt (it is on that day's board, so not "not your first go"). */
+export const CAREER_DAILY_FIRST = 8;
 
-/** One finished run: [id, finishedAt, ms, turns, minTurns, flags, reason, dailyDay]. flags: 1 imported, 2 has a log (Watch), 4 a past day's Daily. */
+/** One finished run: [id, finishedAt, ms, turns, minTurns, flags, reason, dailyDay]. flags: 1 imported, 2 has a log (Watch), 4 a past day's Daily, 8 a Daily first attempt. */
 export type CareerRow = [string, number, number, number | null, number | null, number, UnrankedReason | null, string | null];
 
 export interface CareerResponse {

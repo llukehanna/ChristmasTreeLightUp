@@ -1,4 +1,4 @@
-import { CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerRow } from '../api/types';
+import { CAREER_DAILY_FIRST, CAREER_IMPORTED, CAREER_PAST, CAREER_REPLAY, type CareerRow } from '../api/types';
 import type { UnrankedReason } from './judge';
 import { localDay } from '../store/stats';
 
@@ -17,6 +17,8 @@ export interface CareerRun {
   imported: boolean;
   replay: boolean;
   past: boolean;
+  /** A live Daily run that was the day's first attempt: on that day's board, its reason ('daily') no mark against it. */
+  dailyFirst: boolean;
   reason: UnrankedReason | null;
   daily: string | null;
   /** false for 'too_fast' and 'clock': in the log and the solved count, never a best or part of an average. */
@@ -40,6 +42,7 @@ export function parseCareer(rows: readonly CareerRow[]): CareerRun[] {
     imported: (flags & CAREER_IMPORTED) !== 0,
     replay: (flags & CAREER_REPLAY) !== 0,
     past: (flags & CAREER_PAST) !== 0,
+    dailyFirst: (flags & CAREER_DAILY_FIRST) !== 0,
     reason,
     daily,
     counts: reason !== 'too_fast' && reason !== 'clock',

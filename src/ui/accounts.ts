@@ -170,10 +170,10 @@ export class Accounts {
     this.refreshList();
   }
 
-  /** The menu head: your rank and best (the career's ranked best and its place), when the menu opens. */
+  /** The menu head: your rank and best (the cached career's ranked best and its place), when the menu opens. */
   private async loadSummary(): Promise<void> {
     try {
-      const { best } = await api.career();
+      const { best } = await api.cachedCareer();
       if (this.session.current) this.menu.render(this.session.current, { rank: best?.rank ?? null, best: best?.ms ?? null });
     } catch {
       // the menu works without it
@@ -181,6 +181,7 @@ export class Accounts {
   }
 
   private onSession(user: SessionState): void {
+    api.forgetCareer();
     this.menu.render(user, null);
     this.refreshList();
     if (user && user.name === null && !this.sheet.isOpen && this.firstNameAsk()) this.openName();

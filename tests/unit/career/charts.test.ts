@@ -7,7 +7,7 @@ const NOW = new Date(2026, 10, 15, 12, 0);
 const DAY = 86_400_000;
 const mk = (n: number, daysAgo: number, ms: number, extra: number | null = null, over: Partial<CareerRun> = {}): CareerRun => ({
   n, id: `r${n}`, at: NOW.getTime() - daysAgo * DAY, ms, turns: extra === null ? null : 50 + extra, minTurns: extra === null ? null : 50,
-  extra, imported: false, replay: true, past: false, reason: null, daily: null, counts: true, ...over,
+  extra, imported: false, replay: true, past: false, dailyFirst: false, reason: null, daily: null, counts: true, ...over,
 });
 const many = (count: number, f: (i: number) => Partial<CareerRun> & { ms: number }): CareerRun[] =>
   Array.from({ length: count }, (_, i) => { const { ms, ...o } = f(i); return mk(i + 1, count - i, ms, (i * 7) % 40, o); });

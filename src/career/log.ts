@@ -30,11 +30,14 @@ const COLUMNS: { key: SortKey | 'n' | null; label: string; left?: boolean; cls?:
   { key: null, label: '' },
 ];
 
+/** Unranked, as the log tags it: a Daily first attempt is on its day's board, so its reason ('daily') is no tag. */
+const unranked = (r: CareerRun): boolean => r.reason !== null && !(r.dailyFirst && r.reason === 'daily');
+
 const pass: Record<Filter, (r: CareerRun) => boolean> = {
   all: () => true,
   ranked: (r) => r.reason === null && !r.imported,
   daily: (r) => r.daily !== null,
-  unranked: (r) => r.reason !== null,
+  unranked,
   import: (r) => r.imported,
 };
 
@@ -78,7 +81,7 @@ export function createLog(opts: LogOptions): { el: HTMLElement } {
     const tags =
       (opts.pbs.has(r.id) ? '<span class="tag pb">PB</span>' : '') +
       (r.daily !== null ? '<span class="tag daily">Daily</span>' : '') +
-      (r.reason !== null ? `<span class="tag un">${esc(unrankedLabel(r.reason))}</span>` : '') +
+      (unranked(r) ? `<span class="tag un">${esc(unrankedLabel(r.reason!))}</span>` : '') +
       (r.imported ? '<span class="tag un">Imported</span>' : '');
     const bar = r.extra !== null && maxExtra > 0 ? `<span class="extra-bar" style="width:${Math.round((r.extra / maxExtra) * 70)}px"></span>` : '';
     return `<tr>
