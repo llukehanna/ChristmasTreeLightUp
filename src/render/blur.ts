@@ -41,6 +41,8 @@ export function drawBlurred(dst: CanvasRenderingContext2D, src: HTMLCanvasElemen
   const y = box ? box.y : 0;
   const w = box ? box.w : dst.canvas.width;
   const h = box ? box.h : dst.canvas.height;
+  // A stage with no size yet (a page opened hidden or collapsed) has nothing to blur, and drawImage throws on a 0-size canvas.
+  if (w === 0 || h === 0 || src.width === 0 || src.height === 0) return;
   if (px < 0.5) {
     dst.drawImage(src, x, y, w, h);
     return;
@@ -70,11 +72,12 @@ export function drawBlurred(dst: CanvasRenderingContext2D, src: HTMLCanvasElemen
  * Paints into a fresh full-size layer (CSS-px transform) and composites it onto `dst` blurred by `cssPx`.
  * With `box` (device px of `dst`, clipped to its canvas) the layer, the blur and the composite cover only that box:
  * `paint` still draws in the same CSS-px coordinates, and anything it puts outside the box is dropped, so the box
- * must hold the paint and its blur's tails (about three radii).
+ * must hold the paint and its blur's tails (about three radii). Does nothing while the canvas has no size.
  */
 export function blurredLayer(dst: CanvasRenderingContext2D, dpr: number, cssPx: number, paint: (c: CanvasRenderingContext2D) => void, box?: Box): void {
   const clip = box ? clipBox(box, dst.canvas.width, dst.canvas.height) : null;
   if (box && !clip) return;
+  if (!dst.canvas.width || !dst.canvas.height) return;
   const layer = document.createElement('canvas');
   layer.width = clip ? clip.w : dst.canvas.width;
   layer.height = clip ? clip.h : dst.canvas.height;
