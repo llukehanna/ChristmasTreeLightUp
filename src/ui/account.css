@@ -301,13 +301,13 @@ button.adv-door:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px;
 /* Phones narrower than the 390px iPhone (360px Android, 320px SE): with the chip the HUD has five pills, so they tighten to stay clear of the wordmark. */
 @media (max-width: 389px) {
   .wordmark { left: 14px; letter-spacing: 0.42em; }
-  .hud { right: 10px; gap: 5px; }
+  .hud { right: 10px; }
   .hud .pill.icon, .hud .radio-pill[data-fit='icon'] { width: 32px; padding: 0; justify-content: center; }
   .hud .pill.time { min-width: 0; padding: 0 10px 0 9px; gap: 6px; }
 }
 @media (max-width: 340px) {
   .wordmark { left: 10px; letter-spacing: 0.26em; }
-  .hud { right: 8px; gap: 4px; }
+  .hud { right: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .acct-sheet, .acct-drop, .acct-scrim { animation: none !important; }
