@@ -42,18 +42,23 @@ export function openCareer(opts: CareerOptions): CareerPage {
     } catch (e) {
       pending = Promise.reject(e);
     }
-    pending.then(
-      (res) => {
-        if (closed || mine !== attempt) return;
+    const fail = (): void => {
+      body.innerHTML = '<div class="msg" role="alert"><p>Couldn’t load your career.</p><button type="button" class="retry">Retry</button></div>';
+      body.querySelector('.retry')!.addEventListener('click', load);
+    };
+    pending.then((res) => {
+      if (closed || mine !== attempt) return;
+      try {
         const { runs } = renderBody(body, res, (opts.now ?? (() => new Date()))(), opts.onWatch);
         eyebrow.textContent = eyebrowText(opts.user.name, runs[0]);
-      },
-      () => {
-        if (closed || mine !== attempt) return;
-        body.innerHTML = '<div class="msg" role="alert"><p>Couldn’t load your career.</p><button type="button" class="retry">Retry</button></div>';
-        body.querySelector('.retry')!.addEventListener('click', load);
-      },
-    );
+      } catch {
+        // A response this page can't read is an error like a failed request: the same Retry.
+        fail();
+      }
+    }, () => {
+      if (closed || mine !== attempt) return;
+      fail();
+    });
   }
 
   /** Escape asks to close; Tab stays inside; P never reaches the game's pause key. Capture phase, so nothing else sees them. */

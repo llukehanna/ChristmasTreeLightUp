@@ -41,12 +41,19 @@ function delta(now: number, weekAgo: number | null, text: (diff: number) => stri
   return `<span class="delta ${d < 0 ? 'up' : 'dn'}">${d < 0 ? '▲' : '▼'} ${text(Math.abs(d))}</span> this week<br>`;
 }
 
+/** What kind of run a faster-than-ranked career best is: paused, a Daily (or past day's) tree, or otherwise unranked. */
+function runKind(r: CareerRun): string {
+  if (r.reason === 'paused') return 'paused run';
+  if (r.daily !== null || r.past || r.reason === 'daily' || r.reason === 'past') return 'Daily run';
+  return 'unranked run';
+}
+
 function bestTile(res: CareerResponse, best: CareerRun | null): string {
   if (!best) return stat(DASH, 'Best', '', true);
   const lines = [fmtDay(best.at)];
   const ranked = res.best;
   if (ranked) {
-    if (ranked.ms !== best.ms) lines.push(`paused run · ranked best ${fmtTime(ranked.ms)}`);
+    if (ranked.ms !== best.ms) lines.push(`${runKind(best)} · ranked best ${fmtTime(ranked.ms)}`);
     const place = ranked.rank !== null ? `#${fmtCount(ranked.rank)} of ${plural(res.total, 'run')}` : null;
     const top = `${fmtCount(res.inTop)} in the top ${BOARD_TOP}`;
     lines.push(place ? `${place} · ${top}` : top);

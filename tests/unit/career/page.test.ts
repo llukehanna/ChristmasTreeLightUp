@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { CAREER_REPLAY, type CareerResponse, type CareerRow } from '../../../src/api/types';
+import { CAREER_PAST, CAREER_REPLAY, type CareerResponse, type CareerRow } from '../../../src/api/types';
 import { openCareer, type CareerOptions, type CareerPage } from '../../../src/career';
 
 const NOW = new Date(2026, 10, 15, 12, 0);
@@ -49,11 +49,28 @@ it('renders the loading state, then the tiles', async () => {
   expect(p.el.querySelector('.eyebrow')!.textContent).toContain('Luke');
 });
 
-it('a career best faster than the ranked best says so', async () => {
-  const p = open(async () => ({ ...fixture, best: { id: 'a', ms: 31_400, rank: 2 } }));
-  await flush();
-  expect(tiles()[0]).toContain('paused run · ranked best 0:31.4');
-  expect(p.el.textContent).toContain('0:29.7');
+/** The fixture with its fastest run (b) carrying the given reason, Daily day and flags. */
+const withBest = (reason: CareerRow[6], daily: string | null = null, flags = CAREER_REPLAY): CareerResponse => ({
+  ...fixture,
+  runs: [row('a', 5, 31_400), ['b', at(3), 29_700, 60, 50, flags, reason, daily], row('c', 1, 33_000)],
+});
+
+it('a career best faster than the ranked best says what kind of run it was', async () => {
+  const kinds: [string, CareerResponse][] = [
+    ['paused run', withBest('paused')],
+    ['Daily run', withBest(null, '2026-11-12')],
+    ['Daily run', withBest('daily', '2026-11-12')],
+    ['Daily run', withBest('past', '2026-11-01', CAREER_REPLAY | CAREER_PAST)],
+    ['unranked run', withBest('anonymous')],
+  ];
+  for (const [kind, res] of kinds) {
+    const p = open(async () => ({ ...res, best: { id: 'a', ms: 31_400, rank: 2 } }));
+    await flush();
+    expect(tiles()[0]).toContain(`${kind} · ranked best 0:31.4`);
+    expect(p.el.textContent).toContain('0:29.7');
+    p.close();
+    document.body.innerHTML = '';
+  }
 });
 
 it('with no ranked run the best tile shows only the career best', async () => {
@@ -73,6 +90,21 @@ it('an error shows a retry, and Retry loads again', async () => {
   retry.click();
   expect(load).toHaveBeenCalledTimes(2);
   expect(p.el.textContent).toContain('Loading your career…');
+  await flush();
+  expect(tiles()[0]).toContain('0:29.7');
+});
+
+it('a response that cannot be rendered shows the error and Retry, with no unhandled rejection', async () => {
+  const unhandled = vi.fn();
+  process.on('unhandledRejection', unhandled);
+  const load = vi.fn<CareerOptions['load']>().mockResolvedValueOnce({ runs: null } as unknown as CareerResponse).mockResolvedValueOnce(fixture);
+  const p = open(load);
+  await flush();
+  await new Promise((r) => setTimeout(r, 0));
+  process.off('unhandledRejection', unhandled);
+  expect(unhandled).not.toHaveBeenCalled();
+  expect(p.el.textContent).not.toContain('Loading your career…');
+  p.el.querySelector<HTMLButtonElement>('.retry')!.click();
   await flush();
   expect(tiles()[0]).toContain('0:29.7');
 });
