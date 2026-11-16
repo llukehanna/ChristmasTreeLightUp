@@ -162,14 +162,15 @@ export function trendChart(host: HTMLElement, runs: readonly CareerRun[], opts: 
     let best = Infinity;
     let d = '';
     let lastY: number | null = null;
-    for (const i of idx) {
-      const r = runs[i];
-      if (r.ms >= best) continue;
+    // The all-time running minimum; only the steps inside the range are drawn.
+    runs.forEach((r, i) => {
+      if (!r.counts || r.ms >= best) return;
       best = r.ms;
+      if (!pos.has(i)) return;
       const yy = y(r.ms / 1000);
       d += `${d ? 'L' : 'M'}${x(i)},${lastY ?? yy}${d ? ` L${x(i)},${yy}` : ''}`;
       lastY = yy;
-    }
+    });
     if (d) el(f.svg, 'path', { d: `${d} L${W - m.r},${lastY}`, fill: 'none', stroke: 'rgba(244,230,207,0.5)', 'stroke-width': 1.2, 'stroke-dasharray': '3 3', class: 'pb-line' });
   }
 

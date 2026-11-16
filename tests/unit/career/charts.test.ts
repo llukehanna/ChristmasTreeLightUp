@@ -63,6 +63,18 @@ it("the trend's range and measure", () => {
   expect(h.querySelector('path.pb-line')).toBeNull();
 });
 
+it('the PB line keeps only the all-time PBs inside the range', () => {
+  const old = [mk(1, 30, 40_000), mk(2, 20, 38_000), mk(3, 6, 39_000), mk(4, 2, 39_500)];
+  const h = host();
+  trendChart(h, old, { measure: 'time', range: 7, now: NOW });
+  expect(h.querySelector('path.pb-line')).toBeNull();
+  const one = [...old, mk(5, 1, 37_000)];
+  trendChart(h, one, { measure: 'time', range: 7, now: NOW });
+  const d = h.querySelector('path.pb-line')!.getAttribute('d')!;
+  expect(d.match(/M/g)).toHaveLength(1);
+  expect(d.match(/L/g)).toHaveLength(1);
+});
+
 it('dots above the 98.5th percentile are not drawn', () => {
   const runs = many(200, (i) => ({ ms: i === 100 ? 600_000 : 40_000 + i * 10 }));
   const h = host();

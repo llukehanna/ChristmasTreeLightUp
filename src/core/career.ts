@@ -126,7 +126,7 @@ export interface CareerStats {
   firsts: { underS: number; run: CareerRun }[];
   /** Up to 6 counted runs, fewest extra turns first, ties oldest first. */
   fewestExtra: CareerRun[];
-  /** Seconds against extra turns over the last 100 counted runs with turns: slope in s per extra turn. */
+  /** Seconds against extra turns: the line is fitted over every counted run with turns (slope in s per extra turn); the means are of the last 100. */
   fit: { slope: number; intercept: number; recentExtra: number; recentS: number } | null;
   /** Counted runs under 100 s in 2 s bins, from the fastest bin to the slowest, empty bins between included. */
   histogram: { fromS: number; count: number }[];
@@ -213,8 +213,8 @@ export function careerStats(runs: readonly CareerRun[], now: Date): CareerStats 
 
   const recent = withExtra.slice(-100);
   const line = leastSquares(
-    recent.map((r) => r.extra!),
-    recent.map((r) => r.ms / 1000),
+    withExtra.map((r) => r.extra!),
+    withExtra.map((r) => r.ms / 1000),
   );
   const fit = line === null ? null : { ...line, recentExtra: mean(recent.map((r) => r.extra!)), recentS: mean(recent.map((r) => r.ms / 1000)) };
 

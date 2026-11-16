@@ -109,6 +109,19 @@ describe('careerStats', () => {
     expect(careerStats(runsOf(40, 41), NOW).fit).toBeNull();
   });
 
+  it('fits the line over every run with turns, and the marker over the last 100', () => {
+    const rows = Array.from({ length: 150 }, (_, i) => {
+      const e = i % 20;
+      return row(10 + (i < 50 ? 1 : 0.5) * e, { turns: 100 + e, min: 100 });
+    });
+    const f = careerStats(parseCareer(rows), NOW).fit!;
+    expect(f.slope).toBeGreaterThan(0.5);
+    expect(f.slope).toBeLessThan(1);
+    const last = rows.slice(-100).map((_, i) => (i + 50) % 20);
+    expect(f.recentExtra).toBeCloseTo(last.reduce((a, b) => a + b, 0) / 100, 9);
+    expect(f.recentS).toBeCloseTo(10 + 0.5 * f.recentExtra, 9);
+  });
+
   it('keeps the last 100 runs with turns for the fit, and the fewest extra turns', () => {
     const rows = Array.from({ length: 110 }, (_, i) => row(30, { turns: 100 + (i % 10), min: 100 }));
     const s = careerStats(parseCareer(rows), NOW);
