@@ -7,6 +7,12 @@
  *   node scripts/backfill-facts.ts rows.json backfill.sql
  *   npx wrangler d1 execute aglow --remote --file backfill.sql
  *
+ * A second mode fills only the turns, for runs the judge unranked (they never get feats) and for any run whose feats
+ * are set but whose turns are not. Export with the feats column and `turns IS NULL`; every UPDATE keeps `turns IS NULL`:
+ *
+ *   npx wrangler d1 execute aglow --remote --json --command \
+ *     "SELECT id, seed, gen_version, unranked_reason, log, feats FROM games WHERE finished_at IS NOT NULL AND log IS NOT NULL AND turns IS NULL" > rows.json
+ *
  * The rows file is a JSON array of rows, or wrangler's --json output (an array of { results }). Every UPDATE keeps
  * `feats IS NULL`, so a run finished (with its facts) since the export is never touched, and a rerun changes nothing.
  */
@@ -30,7 +36,7 @@ if (direct) {
     },
   });
 }
-const [{ MAX_FACTS_ENTRIES, runFacts }, { parseLog }, { GRID }] = await Promise.all([import('../src/core/facts'), import('../src/core/log'), import('../src/core/mask')]);
+const [{ MAX_FACTS_ENTRIES, runFacts, turnsOf }, { parseLog }, { GRID }] = await Promise.all([import('../src/core/facts'), import('../src/core/log'), import('../src/core/mask')]);
 
 export interface FactsRow {
   id: string;
@@ -40,6 +46,8 @@ export interface FactsRow {
   unranked_reason: string | null;
   /** The stored log: JSON, as the finish saved it. */
   log: string;
+  /** The stored feats (turns-only mode): set means the run already has its facts and only turns are missing. */
+  feats?: number | null;
 }
 
 /** An SQL string literal. */
@@ -49,15 +57,15 @@ const quoted = (s: string): string => `'${s.replaceAll("'", "''")}'`;
 const JUDGED_UNRANKED = new Set<string | null>(['paused', 'too_fast', 'clock']);
 
 /**
- * One UPDATE per row whose log replays to a win; none for a row that doesn't, nor for what the finish route skips (a
- * run the judge unranked, a log past MAX_FACTS_ENTRIES: runFacts lights the whole tree per turn, so those cost most).
- * The rows' logs all passed the judge at their finish (its capped replay), which is what makes runFacts' uncapped full
- * replay safe to run on them.
+ * One UPDATE per row whose log fits MAX_FACTS_ENTRIES. A run the judge unranked, or one whose feats are already set,
+ * gets only its turns and the minimum (guarded by `turns IS NULL`); any other gets turns and feats from runFacts
+ * (guarded by `feats IS NULL`), and none when its log doesn't replay to a win. The rows' logs all passed the judge at
+ * their finish (its capped replay), which is what makes runFacts' uncapped full replay safe to run on them; a
+ * turns-only row needs no replay at all.
  */
 export function factsUpdates(rows: readonly FactsRow[]): string[] {
   const out: string[] = [];
   for (const row of rows) {
-    if (JUDGED_UNRANKED.has(row.unranked_reason)) continue;
     let value: unknown;
     try {
       value = JSON.parse(row.log);
@@ -66,6 +74,11 @@ export function factsUpdates(rows: readonly FactsRow[]): string[] {
     }
     if (Array.isArray(value) && value.length > MAX_FACTS_ENTRIES) continue;
     const log = parseLog(value, GRID);
+    if (JUDGED_UNRANKED.has(row.unranked_reason) || (row.feats !== undefined && row.feats !== null)) {
+      const counted = log && turnsOf(row.seed, row.gen_version, log);
+      if (counted) out.push(`UPDATE games SET turns = ${counted.turns}, min_turns = ${counted.minTurns} WHERE id = ${quoted(row.id)} AND turns IS NULL;`);
+      continue;
+    }
     const facts = log && runFacts(row.seed, row.gen_version, log);
     if (!facts) continue;
     out.push(`UPDATE games SET turns = ${facts.turns}, min_turns = ${facts.minTurns}, feats = ${facts.feats} WHERE id = ${quoted(row.id)} AND feats IS NULL;`);

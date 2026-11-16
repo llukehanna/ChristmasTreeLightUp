@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 import { rotCCW, rotCW } from '../../src/core/dirs';
 import { GRID } from '../../src/core/mask';
 import type { AglowProbe } from '../../src/debug';
-import { openDecorate, owning, swatch } from './helpers';
+import { onlineTree, openDecorate, owning, solveByTapping, swatch } from './helpers';
 
 type W = Window & { __aglow: AglowProbe };
 
@@ -143,6 +143,27 @@ test('solving shows the results card and sharing copies to the clipboard', async
   expect(clip.png).toBeGreaterThan(10_000);
   await page.click('#r-keep');
   await expect(page.locator('#corner-new')).toBeVisible();
+});
+
+test('a finished online run says its turns and extra turns on the tag', async ({ page }) => {
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#results')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#r-turns')).toHaveText(/^\d+ turns · \d+ extra$/);
+});
+
+test('on a phone the turns line does not make the tag taller', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 760 });
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#r-turns')).toHaveText(/^\d+ turns · \d+ extra$/, { timeout: 15_000 });
+  const height = () => page.evaluate(() => document.getElementById('results')!.getBoundingClientRect().height);
+  await expect.poll(async () => Math.round(await height())).toBeGreaterThan(0);
+  const withLine = await height();
+  await page.evaluate(() => ((window as unknown as W).__aglow, (document.getElementById('r-turns') as HTMLElement).hidden = true));
+  expect(Math.abs(withLine - (await height()))).toBeLessThan(1);
 });
 
 test('Sash puts the window up', async ({ page }) => {

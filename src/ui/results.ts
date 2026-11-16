@@ -32,6 +32,14 @@ export interface ResultsData {
   line?: string | null;
   /** A Daily Tree's day (YYYY-MM-DD): its label is a small line above the time. Null or absent for a random tree. */
   daily?: string | null;
+  /** The server's count of the run's turns and how many were more than the fewest: a quiet line under the time. Null or absent for none. */
+  turns?: TurnsLine | null;
+}
+
+/** A run's turns and its extra ones (turns beyond the fewest the tree takes), as the tag says them. */
+export interface TurnsLine {
+  turns: number;
+  extra: number;
 }
 
 /** Home Alone mode's line under the time (spec 2026-10-14 §6), on the tag and the share image. */
@@ -69,6 +77,7 @@ export class Results {
     this.setStats(d.view);
     this.setLine(d.line ?? null);
     this.setDaily(d.daily ?? null);
+    this.setTurns(d.turns ?? null);
     this.root.hidden = false;
     requestAnimationFrame(() => requestAnimationFrame(() => this.root.classList.add('show')));
   }
@@ -92,6 +101,14 @@ export class Results {
     if (!g) return;
     g.textContent = line ?? '';
     g.hidden = line === null;
+  }
+
+  /** "123 turns · 40 extra" under the time, or nothing. Looked up lazily: older fixtures have no #r-turns. */
+  setTurns(t: TurnsLine | null): void {
+    const line = document.getElementById('r-turns');
+    if (!line) return;
+    line.textContent = t ? `${t.turns} turns \u00b7 ${t.extra} extra` : '';
+    line.hidden = !t;
   }
 
   /** "Daily Tree · Nov 6" above the time, or nothing. Looked up lazily: older fixtures have no #r-daily. */

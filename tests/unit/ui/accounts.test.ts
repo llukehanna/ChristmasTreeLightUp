@@ -1,24 +1,25 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Session } from '../../../src/api/session';
-import type { AccountStats, BoardResponse, BoardWindow, MyGamesResponse } from '../../../src/api/types';
+import type { BoardResponse, BoardWindow, CareerResponse } from '../../../src/api/types';
 
 const calls = vi.hoisted(() => ({
-  myStats: vi.fn<() => Promise<AccountStats>>(),
-  myGames: vi.fn<() => Promise<MyGamesResponse>>(),
+  cachedCareer: vi.fn<() => Promise<CareerResponse>>(),
+  forgetCareer: vi.fn<() => void>(),
   board: vi.fn<(w: BoardWindow, now?: Date, day?: string) => Promise<BoardResponse>>(),
 }));
 vi.mock('../../../src/api/client', async (orig) => ({
   ...(await orig<typeof import('../../../src/api/client')>()),
-  api: { myStats: calls.myStats, myGames: calls.myGames, board: calls.board },
+  api: { cachedCareer: calls.cachedCareer, forgetCareer: calls.forgetCareer, board: calls.board },
 }));
 
 import { localDay } from '../../../src/store/stats';
 import { Accounts } from '../../../src/ui/accounts';
 import { dailyLabel } from '../../../src/ui/format';
 
-const stats = (solved: number): AccountStats => ({ userId: 1, solved, totalMs: solved * 60_000, averageMs: 60_000, bestMs: 50_000, streak: 1, longestStreak: 1, lastSolvedDay: '2026-10-08', imported: 0 });
-const games: MyGamesResponse = { best: null, inTop: 0, total: 0, games: [] };
+const career: CareerResponse = { runs: [], best: null, inTop: 0, total: 0 };
+/** The hooks Accounts is given, as mocks. */
+const hooks = () => ({ pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn(), openCareer: vi.fn() });
 const me = { name: 'Meridian', isAdmin: false, starHead: false };
 
 /** A promise the test settles by hand, to put answers in any order. */
@@ -34,77 +35,22 @@ function deferred<T>(): { promise: Promise<T>; resolve(v: T): void; reject(e: un
 const tick = async (): Promise<void> => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 };
-const totals = (): string[] => [...document.querySelectorAll('.acct-totals b')].map((n) => n.textContent ?? '');
-const busy = (): boolean => document.querySelector('.acct-totals')?.getAttribute('aria-busy') === 'true';
 
 let session: Session;
 let accounts: Accounts;
 beforeEach(() => {
   document.body.innerHTML = '<button id="menu-btn"></button>';
-  calls.myStats.mockReset();
-  calls.myGames.mockReset().mockResolvedValue(games);
+  calls.cachedCareer.mockReset().mockResolvedValue(career);
+  calls.forgetCareer.mockReset();
   calls.board.mockReset().mockResolvedValue({ rows: [], total: 0, you: null });
   localStorage.clear();
   session = new Session();
   session.set(me);
-  accounts = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
+  accounts = new Accounts(session, hooks());
 });
 afterEach(() => {
   vi.useRealTimers();
   document.body.innerHTML = '';
-});
-
-it("Your games' totals keep only the newest stats answer: an older one arriving late is dropped", async () => {
-  const first = deferred<AccountStats>();
-  const second = deferred<AccountStats>();
-  calls.myStats.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-  accounts.openGames(); // load 1
-  accounts.openGames(); // a reload or tab switch: load 2
-  expect(calls.myStats).toHaveBeenCalledTimes(2);
-  second.resolve(stats(5));
-  await tick();
-  expect(totals()[0]).toBe('5');
-  first.resolve(stats(2)); // slower, and older
-  await tick();
-  expect(totals()[0]).toBe('5');
-});
-
-it('an older failure cannot replace newer totals either', async () => {
-  const first = deferred<AccountStats>();
-  const second = deferred<AccountStats>();
-  calls.myStats.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-  accounts.openGames();
-  accounts.openGames();
-  second.resolve(stats(5));
-  await tick();
-  first.reject(new Error('offline'));
-  await tick();
-  expect(totals()[0]).toBe('5');
-  expect(document.querySelector('.acct-totals-err')).toBeNull();
-});
-
-it("an answer in flight when the session changes is dropped, never shown as the next user's totals", async () => {
-  const inFlight = deferred<AccountStats>();
-  calls.myStats.mockReturnValueOnce(inFlight.promise);
-  accounts.openGames();
-  await tick();
-  expect(busy()).toBe(true);
-  session.set({ name: 'Comet', isAdmin: false, starHead: false }); // onSession resets the totals and bumps the guard
-  inFlight.resolve(stats(99));
-  await tick();
-  // Your games is back to loading after the change (nothing refetches it), and the dropped answer is nowhere on screen.
-  expect(document.querySelector('.acct-sheet')?.textContent).not.toContain('99');
-  expect(totals()).toEqual([]);
-  // The next open starts clean: dashes until its own answer arrives.
-  const next = deferred<AccountStats>();
-  calls.myStats.mockReturnValueOnce(next.promise);
-  accounts.openGames();
-  await tick();
-  expect(totals()).toEqual(['–', '–', '–', '–']);
-  expect(busy()).toBe(true);
-  next.resolve(stats(3));
-  await tick();
-  expect(totals()[0]).toBe('3');
 });
 
 const row = (name: string, ms: number) => ({ id: `run-${name}`, rank: 1, name, ms, finishedAt: 1, mine: false, replay: true });
@@ -138,14 +84,14 @@ it('the leaderboard opens on Today; a window button fetches that window, shows i
   // Another page load opens on the window chosen last.
   clickAct('win-all');
   await tick();
-  const again = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
+  const again = new Accounts(session, hooks());
   again.openBoard();
   expect(calls.board).toHaveBeenLastCalledWith('all');
 });
 
 it("the results tag's rank opens All time (its numbers are all-time ones) without changing the remembered window", () => {
   localStorage.setItem('aglow.boardWindow', 'week');
-  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
+  const fresh = new Accounts(session, hooks());
   fresh.openBoard(null, 'all');
   expect(calls.board).toHaveBeenLastCalledWith('all');
   expect(pressedWindow()).toBe('All time');
@@ -201,7 +147,7 @@ it('the Daily window fetches the day\'s Daily board, comes first, and is remembe
   expect(document.querySelector('.acct-sub')?.textContent).toBe(`${dailyLabel(today)} · 1 run`);
   // The results tag's Daily rosette opens the Daily window for the run's day, without changing the remembered window.
   localStorage.setItem('aglow.boardWindow', 'week');
-  const fresh = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
+  const fresh = new Accounts(session, hooks());
   const other = today === '2026-11-05' ? '2026-11-04' : '2026-11-05'; // a run's day that isn't today
   fresh.openBoard(null, 'daily', other);
   expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, other);
@@ -222,7 +168,7 @@ it("a new local day: the Daily window starts again from Loading, never yesterday
   vi.setSystemTime(new Date(2026, 10, 6, 23, 50));
   const note = (): string | null | undefined => document.querySelector('.acct-body .acct-note')?.textContent;
   localStorage.setItem('aglow.boardWindow', 'daily');
-  const daily = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn() });
+  const daily = new Accounts(session, hooks());
   calls.board.mockResolvedValueOnce({ rows: [row('Comet', 9_000)], total: 1, you: null });
   daily.openBoard();
   expect(calls.board).toHaveBeenLastCalledWith('daily', undefined, '2026-11-06');
@@ -261,16 +207,58 @@ it("another page in the sheet (the Advent calendar) stays when a list's answer a
   expect(document.querySelector('.adv')).not.toBeNull();
 });
 
-it("a Watch button in Your games hands its run's id to onWatch", async () => {
-  const onWatch = vi.fn();
-  const watching = new Accounts(session, { pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch });
-  calls.myStats.mockResolvedValue(stats(1));
-  calls.myGames.mockResolvedValue({
-    ...games,
-    games: [{ id: 'run-42', ms: 61_000, finishedAt: Date.now(), ranked: true, reason: null, isBest: false, imported: false, daily: null, dailyFirst: false, replay: true }],
-  });
-  watching.openGames();
+it("a Watch button on the board hands its run's id to onWatch", async () => {
+  const h = hooks();
+  const watching = new Accounts(session, h);
+  calls.board.mockResolvedValue({ rows: [row('Comet', 9_000)], total: 1, you: null });
+  watching.openBoard();
   await tick();
   document.querySelector<HTMLButtonElement>('.acct-watch')?.click();
-  expect(onWatch).toHaveBeenCalledWith('run-42');
+  expect(h.onWatch).toHaveBeenCalledWith('run-Comet');
+});
+
+it("the leaderboard's Career, and the menu's, ask for the career page with the button they came from", async () => {
+  const h = hooks();
+  const acc = new Accounts(session, h);
+  acc.openBoard();
+  const link = document.querySelector<HTMLElement>('.acct-sheet [data-act="career"]');
+  expect(link?.textContent).toBe('Career');
+  link?.click();
+  expect(h.openCareer).toHaveBeenCalledWith(link);
+  // The account menu's item hands over the chip, where focus goes back to (this instance's: the newest chip and menu).
+  session.set({ ...me });
+  const chip = [...document.querySelectorAll<HTMLElement>('#account-chip')].at(-1) as HTMLElement;
+  chip.click();
+  [...document.querySelectorAll<HTMLElement>('#account-menu [data-act="career"]')].at(-1)?.click();
+  expect(h.openCareer).toHaveBeenLastCalledWith(chip);
+});
+
+it("the menu head is the cached career's ranked best and its place: two opens, one request; a finish reads it again", async () => {
+  const real = await vi.importActual<typeof import('../../../src/api/client')>('../../../src/api/client');
+  real.api.forgetCareer();
+  const fetch = vi.fn(async (url: string) => Response.json(url === '/api/me/career' ? { runs: [], best: { id: 'b', ms: 41_000, rank: 2 }, inTop: 1, total: 9 } : {}));
+  vi.stubGlobal('fetch', fetch);
+  calls.cachedCareer.mockImplementation(() => real.api.cachedCareer());
+  const reads = () => fetch.mock.calls.filter((c) => c[0] === '/api/me/career').length;
+  session.set({ ...me });
+  const chip = document.getElementById('account-chip') as HTMLElement;
+  const menu = document.getElementById('account-menu') as HTMLElement;
+  chip.click();
+  await tick();
+  expect(menu.querySelector('small')?.textContent).toBe('#2 all-time · best 0:41.0');
+  chip.click(); // closes
+  chip.click(); // opens again
+  await tick();
+  expect(reads()).toBe(1);
+  chip.click();
+  await real.api.finish('g', []);
+  chip.click();
+  await tick();
+  expect(reads()).toBe(2);
+  vi.unstubAllGlobals();
+});
+
+it('a session change forgets the cached career (another account, or none)', () => {
+  session.set({ name: 'Comet', isAdmin: false, starHead: false });
+  expect(calls.forgetCareer).toHaveBeenCalled();
 });

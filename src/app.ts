@@ -44,6 +44,7 @@ import { loadStarHead, saveStarHead } from './store/star-head';
 import { loadStats, localDay, recordWin, saveStats, shownAccountStats } from './store/stats';
 import { readJSON, writeJSON } from './store/storage';
 import { lastPlayer } from './store/unlocks';
+import { CareerOpener } from './career-opener';
 import { Accounts } from './ui/accounts';
 import { AdventSheet } from './ui/advent';
 import { el, isEditable } from './ui/dom';
@@ -56,7 +57,7 @@ import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { markOpened, Opening, OPENING_MS, shouldOpen } from './ui/opening';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
-import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
+import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results, type StatsView, type TurnsLine } from './ui/results';
 import { awaitsClaim, renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, type ShareImage } from './ui/share';
 import { SparkCursor } from './ui/spark-cursor';
@@ -228,6 +229,8 @@ export class App {
   private readonly shareSeen = { n: 0, line: null as boolean | null };
   private lastFrame = 0;
   private looping = false;
+  /** Stage frames drawn since load (read by the test probe): none while the career page covers the stage. */
+  private frames = 0;
   /** Full frame rate until then: something the player caused is still moving. */
   private busyUntil = 0;
   private lastTime = '';
@@ -251,6 +254,8 @@ export class App {
   private readonly accounts: Accounts;
   /** The Advent calendar's page, in the account sheet's glass (it opens from the menu). */
   private readonly advent: AdventSheet;
+  /** The career page (its own chunk), over the stage: from the account menu and the leaderboard sheet. */
+  private readonly career: CareerOpener;
   /** The signed-in player (spec 2026-10-07): loaded at start, changed by sign-in, naming and sign-out. */
   readonly session = new Session();
   /** A board exists: the first tree waits for the server (1.5 s at most, 5 s for the Daily). */
@@ -459,6 +464,17 @@ export class App {
       fitHud: () => this.fitHud(),
       toast: (text, ms) => this.toast.show(text, ms),
       onWatch: (id) => this.watchRun(id),
+      openCareer: (from) => this.openCareer(from),
+    });
+    this.career = new CareerOpener({
+      user: () => this.session.current,
+      load: () => api.freshCareer(),
+      signIn: (from) => this.accounts.openSignIn({}, from),
+      cover: () => this.coverStage(),
+      uncover: (from) => this.uncoverStage(from),
+      leaderboard: () => this.accounts.openBoard(),
+      watch: (id) => this.watchRun(id),
+      failed: () => this.toast.show("Couldn't open your career."),
     });
     this.advent = new AdventSheet({
       sheet: this.accounts.host,
@@ -699,6 +715,9 @@ export class App {
     this.busy(this.vis.lastLitAt(board));
     this.results.setGhost(null);
     this.beginGhost();
+    // The loop may have stopped under the career page (the tree before was paused): this tree's reveal must be watched,
+    // to pause it at its end.
+    if (this.career.covering) this.startLoop();
   }
 
   /**
@@ -1031,7 +1050,7 @@ export class App {
       this.prepareShare();
       this.results.show({
         seconds: won.seconds, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
-        daily: this.dailyDay,
+        daily: this.dailyDay, turns: this.turnsLine(),
       });
       // The run is over: an unlock held through it shows now, and what is new goes on the tag.
       this.news.tagShown();
@@ -1149,7 +1168,7 @@ export class App {
   /**
    * Signed-out runs saved on this browser join the account, 8 per request, once it has a name (spec §5.4). The run on
    * the results tag says how its claim went: a failed request offers Retry; a claim the server didn't take (claimed in
-   * another tab, or gone) can't be retried, and says the run is saved to Your games.
+   * another tab, or gone) can't be retried, and says the run is saved to your career.
    */
   private async claimOnce(): Promise<void> {
     if (!this.session.current?.name) return;
@@ -1181,7 +1200,7 @@ export class App {
     } finally {
       // Ended without an answer for this run's claim (its batch or an earlier one failed, or another tab already took
       // the claim out of storage): never leave "Saving…" up. Retry if the claim is still here to send, else the run
-      // is in Your games.
+      // is in your career.
       const o = this.outcome;
       if (current !== null && !answered && stillHere() && o?.kind === 'done' && !o.result.ranked && awaitsClaim(o.result, this.guestResult) && this.claimState === null) {
         this.setClaimState(readClaims(Date.now()).some((c) => c.id === current) ? 'stuck' : 'gone');
@@ -1276,6 +1295,7 @@ export class App {
     this.outcome = o;
     if (o?.kind === 'done') this.keepGhost(o.result);
     this.hectorStep(); // a Home Alone win waiting on the server's answer
+    this.results.setTurns(this.turnsLine()); // the way the rank lands on a tag already up
     const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult, repeat: this.online?.daily?.repeat === true };
     const m = o && ribbonModel(o, this.session.current, ctx);
     renderRibbon(el('results'), m, {
@@ -1284,6 +1304,17 @@ export class App {
       save: () => this.saveRun(),
       retry: () => this.retry(),
     });
+  }
+
+  /**
+   * The tag's turns line from the server's answer: turns, and the extra over the fewest the tree takes. Null until it
+   * answers, with no count (a long log, or a result saved before turns were counted), or without a positive minimum.
+   */
+  private turnsLine(): TurnsLine | null {
+    const r = this.outcome?.kind === 'done' ? this.outcome.result : null;
+    const turns = r?.turns ?? null;
+    const min = r?.minTurns ?? null;
+    return turns === null || min === null || min <= 0 ? null : { turns, extra: Math.max(0, turns - min) };
   }
 
   /** The result on the tag is the finish of a run played signed out, its claim not answered yet. */
@@ -1378,7 +1409,7 @@ export class App {
   }
 
   /**
-   * A row's Watch button (Your games, the board): the sheet goes, and the run plays once it has arrived. The Watch is
+   * A row's Watch button (the career page, the board): the sheet goes, and the run plays once it has arrived. The Watch is
    * pending until then: a resume, a new tree, Done or a newer Watch (each moves `watchSeq` on) drops it, answer and all,
    * so a replay never lands on a tree the player has gone back to.
    */
@@ -1484,6 +1515,44 @@ export class App {
     }
   }
 
+  /* ---------- the career page ---------- */
+
+  /** The account menu's Career and the leaderboard sheet's: the career page, or the sign-in sheet for a guest. */
+  openCareer(from?: HTMLElement | null): void {
+    this.career.open(from ?? null);
+  }
+
+  /**
+   * The career page is coming up over the stage. As a sheet does, it pauses a run in progress and a replay playing; the
+   * sheets, menus and panels close. Called again as the page lands, for anything opened or resumed while it loaded.
+   */
+  private coverStage(): void {
+    this.accounts.host.close();
+    this.accounts.closeMenu();
+    this.menu.close();
+    this.decorate.close();
+    this.radioPanel.close();
+    this.keyCard.close();
+    if (this.watching?.playing) this.replayer?.toggle();
+    this.pause(false);
+    // The loop draws no frame under the page, so the ember would freeze and the pointer vanish over it.
+    this.spark.suspend(true);
+  }
+
+  /**
+   * The career page has gone: the stage draws again (the loop ticked under it only until the run was paused, or could
+   * never be). Focus goes back where the page was opened from, or onto the frost.
+   */
+  private uncoverStage(from: HTMLElement | null): void {
+    const now = performance.now();
+    this.spark.suspend(false);
+    this.pausedDrawn = false;
+    this.busy(now);
+    this.startLoop();
+    if (from?.isConnected && !from.closest('[inert]') && from.getClientRects().length) from.focus({ preventScroll: true });
+    else if (this.paused) el('pause').focus({ preventScroll: true });
+  }
+
   /* ---------- frame loop ---------- */
 
   /** The frame loop, once (the opening's prelude may have started it before the first tree). */
@@ -1494,6 +1563,16 @@ export class App {
   }
 
   private loop(now: number): void {
+    // The career page covers the stage: no frame. A tree still starting or in its reveal is paused the moment it can be
+    // (as under a sheet), so the log's pause starts at the reveal's end; until then the loop only ticks. Then it stops;
+    // a new tree (beginGame) or closing the page (uncoverStage) starts it again.
+    if (this.career.covering) {
+      if (!this.paused && !this.watching && this.canPause(now)) this.pause(false);
+      if (!this.paused && !this.watching && this.winAt === null && (this.starting || (this.live && now < this.interactiveAt))) {
+        requestAnimationFrame((t) => this.loop(t));
+      } else this.looping = false;
+      return;
+    }
     requestAnimationFrame((t) => this.loop(t));
     // The spark cursor follows the mouse at the display's rate, calm or not (nothing while off or asleep).
     this.spark.frame(now);
@@ -1516,8 +1595,9 @@ export class App {
       if (this.accounts.sheetOpen && w.playing) this.replayer?.toggle();
       this.replayer?.frame(now, dt);
     } else {
-      // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
-      if (this.accounts.sheetOpen && !this.paused && this.canPause(now)) this.pause(false);
+      // A sheet over the game (opened during the reveal, say), or the career page on its way, never lets the clock run
+      // underneath it.
+      if ((this.accounts.sheetOpen || this.career.isOpen) && !this.paused && this.canPause(now)) this.pause(false);
       // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
       this.handle(this.run.frame(now, Date.now()), now);
     }
@@ -1552,6 +1632,7 @@ export class App {
     // Secret mode's beat comes with the eggs (secret mode waits for them).
     const eggs = this.eggs;
     const tracker = this.radio.show.beat;
+    this.frames++;
     // A replay draws exactly what play draws, from its own board on the run's log time: its reveal and its turns follow
     // the playhead (so they keep its speed, and hold still while it is paused).
     this.renderer.frame({
@@ -1637,7 +1718,7 @@ export class App {
       this.accounts.closeMenu();
       return;
     }
-    if (this.accounts.sheetOpen) return;
+    if (this.accounts.sheetOpen || this.career.isOpen) return;
     // On desktop the game stays playable behind the radio popover (spec §5.3); the phone sheet closes like the menu.
     if (this.radioPanel.isOpen && this.phone.matches) {
       this.radioPanel.close();
@@ -1991,12 +2072,17 @@ export class App {
     addEventListener('blur', () => this.keyCard.hide());
     document.addEventListener('keydown', (e) => {
       this.renderer.homeAlone?.input();
+      // Escape while the career page's chunk is still loading closes it (the page isn't up to take the key).
+      if (e.key === 'Escape' && !e.defaultPrevented && this.career.closeIfLoading()) {
+        e.preventDefault();
+        return;
+      }
       // The settings and radio dialogs and the Decorate drawer handle their own Escape (and mark it handled). Keys never
       // reach the game while the menu or the drawer is open, or while focus is inside the radio panel; the desktop popover
       // stays open while you play, so with focus back on the game (or nowhere) P still pauses.
       if (
         e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || this.menu.isOpen || this.decorate.isOpen || this.radioPanel.hasFocus ||
-        this.accounts.blocksKeys || isEditable(e.target)
+        this.accounts.blocksKeys || this.career.isOpen || isEditable(e.target)
       )
         return;
       // A replay on the stage takes the keys (Space and P play and pause, Escape is Done): nothing else reaches the
@@ -2197,6 +2283,14 @@ export class App {
   }
   get runOutcome(): RunOutcome | null {
     return this.outcome;
+  }
+  /** Stage frames drawn since load. */
+  get frameCount(): number {
+    return this.frames;
+  }
+  /** The career page: up, or its chunk still loading. */
+  get careerState(): { open: boolean; loading: boolean } {
+    return this.career.state;
   }
   /** The game clock's reading now (0 until the reveal ends and it starts). */
   get clockMs(): number {

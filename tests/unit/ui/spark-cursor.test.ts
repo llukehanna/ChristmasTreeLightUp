@@ -254,3 +254,33 @@ it('started while the drawer is open (its remap listener added first), a real mo
     for (const t of ['pointermove', 'pointerdown']) removeEventListener(t, remap, true);
   }
 });
+
+it('suspend() takes the canvas and the hidden cursor away while a page covers the stage, and gives them back', () => {
+  const s = make();
+  s.start();
+  move(120, 140);
+  s.frame(16);
+  expect(document.body.classList.contains('spark-on')).toBe(true);
+  s.suspend(true);
+  expect(s.running).toBe(false);
+  expect(canvas()).toBeNull();
+  expect(document.body.classList.contains('spark-on')).toBe(false);
+  // A mouse move over the page leaves the system cursor alone.
+  move(150, 160);
+  expect(document.body.classList.contains('spark-on')).toBe(false);
+  s.suspend(false);
+  expect(s.running).toBe(true);
+  expect(canvas()).not.toBeNull();
+  move(160, 170);
+  s.frame(32);
+  expect(document.body.classList.contains('spark-on')).toBe(true);
+});
+
+it('suspend() before start() and a start while suspended draw nothing until resumed', () => {
+  const s = make();
+  s.suspend(true);
+  s.start();
+  expect(canvas()).toBeNull();
+  s.suspend(false);
+  expect(canvas()).not.toBeNull();
+});

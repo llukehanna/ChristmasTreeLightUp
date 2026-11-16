@@ -54,7 +54,7 @@ test('a signed-out run is kept to claim even when a new tree starts before the f
   await expect.poll(() => claimIds(page)).toEqual([id]);
 });
 
-test('an unranked signed-out run (too fast) is kept to claim too, so it reaches Your games after sign-in', async ({ page }) => {
+test('an unranked signed-out run (too fast) is kept to claim too, so it reaches the career after sign-in', async ({ page }) => {
   await ready(page);
   const id = await onlineTree(page);
   // Every tap at once: far too fast to rank.
@@ -487,10 +487,10 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(board.locator('.acct-me .acct-nm').first()).toHaveText(name);
     await expect(board.locator('.acct-pin-note')).toHaveText(/^Your run · #\d+ of [\d,]+$/);
     expect(await page.evaluate(() => localStorage.getItem('aglow.boardWindow'))).toBe('daily');
-    // Your games: the run carries its Daily tag, and no "Unranked".
-    await board.getByRole('tab', { name: 'Your games' }).click();
-    const first = page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game').first();
-    await expect(first.locator('.acct-daily')).toHaveText(`Daily Tree · ${label}`);
+    // The career (the board's Career): the run carries its Daily tag, and no "Unranked".
+    await board.getByRole('button', { name: 'Career' }).click();
+    const first = page.getByRole('dialog', { name: 'Your career' }).locator('#career-log tbody tr').first();
+    await expect(first.locator('.tag.daily')).toHaveText('Daily');
     await expect(first).not.toContainText('Unranked');
   });
 
@@ -507,45 +507,14 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(results.locator('.rib-line')).toHaveText('Unranked: not your first go', { timeout: 15_000 });
     await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();
     await expect(results.locator('.rib-ribbon')).toHaveCount(0);
-    // Your games: the repeat says so, the first attempt doesn't.
+    // The career: the repeat (newest, first) says so, the first attempt doesn't.
     await page.locator('#account-chip').click();
-    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Your games' }).click();
-    const games = page.getByRole('dialog', { name: 'Your games' }).locator('.acct-game');
+    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
+    const games = page.getByRole('dialog', { name: 'Your career' }).locator('#career-log tbody tr');
     await expect(games).toHaveCount(2);
-    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go');
-    await expect(games.nth(1).locator('.acct-status')).toHaveCount(0);
-    await expect(games.nth(1).locator('.acct-daily')).toBeVisible();
-  });
-
-  test('Your games rows fit the sheet at 320px and on a desktop, a repeat Daily row and its long reason included', async ({ page }) => {
-    await namedPlayer(page);
-    for (let k = 0; k < 2; k++) {
-      await dailyFromMenu(page);
-      await solveByTapping(page);
-      await expect(page.locator('#results .rib-line')).toHaveText(k ? 'Unranked: not your first go' : /^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
-    }
-    await page.locator('#account-chip').click();
-    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Your games' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Your games' });
-    const games = sheet.locator('.acct-game');
-    await expect(games).toHaveCount(2);
-    await expect(games.nth(0).locator('.acct-status')).toHaveText('Unranked · not your first go');
-    /** The body never scrolls sideways, and every row's date, tag and status lie inside it. */
-    const fits = () =>
-      sheet.locator('.acct-body').evaluate((body) => {
-        const box = body.getBoundingClientRect();
-        const inside = [...body.querySelectorAll('.acct-game, .acct-when, .acct-daily, .acct-status')].every((n) => {
-          const r = n.getBoundingClientRect();
-          return r.left >= box.left - 0.5 && r.right <= box.right + 0.5;
-        });
-        return { scroll: body.scrollWidth, client: body.clientWidth, inside };
-      });
-    for (const width of [320, 1280]) {
-      await page.setViewportSize({ width, height: 800 });
-      await expect.poll(fits).toMatchObject({ inside: true });
-      const { scroll, client } = await fits();
-      expect(scroll, `at ${width}px`).toBeLessThanOrEqual(client);
-    }
+    await expect(games.nth(0).locator('.tag.un')).toHaveText('Unranked · not your first go');
+    await expect(games.nth(1).locator('.tag.daily')).toBeVisible();
+    await expect(games.nth(1).locator('.tag.un')).toHaveCount(0);
   });
 });
 

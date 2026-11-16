@@ -17,7 +17,7 @@ async function namedPlayer(page: Page): Promise<void> {
   await resumeIfPaused(page);
 }
 
-/** Solves an online tree by tapping, and waits for the server's answer: the run is in Your games. Returns its id. */
+/** Solves an online tree by tapping, and waits for the server's answer: the run is in the career. Returns its id. */
 async function solvedRun(page: Page): Promise<string> {
   const id = await onlineTree(page);
   await solveByTapping(page);
@@ -41,30 +41,34 @@ async function treeInProgress(page: Page): Promise<string> {
   return id;
 }
 
-/** Opens Your games from the account chip, and waits for run `id`'s Watch button. */
-async function openGames(page: Page, id: string): Promise<void> {
+const career = (page: Page) => page.getByRole('dialog', { name: 'Your career' });
+/** Run `id`'s Watch button in the career page's log. */
+const watchButton = (page: Page, id: string) => career(page).locator(`button.watch[data-id="${id}"]`);
+
+/** Opens the career page from the account chip, and waits for run `id`'s Watch button. */
+async function openCareer(page: Page, id: string): Promise<void> {
   await page.locator('#account-chip').click();
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Your games' }).click();
-  await expect(page.getByRole('dialog', { name: 'Your games' }).locator(`.acct-watch[data-id="${id}"]`)).toHaveAccessibleName('Watch replay');
+  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
+  await expect(watchButton(page, id)).toBeEnabled();
 }
 
-/** Presses Watch on run `id`'s row in the open Your games sheet: the sheet goes, and the replay is on the stage. */
+/** Presses Watch on run `id`'s row in the open career page: the page goes, and the replay is on the stage. */
 async function pressWatch(page: Page, id: string): Promise<void> {
-  await page.getByRole('dialog', { name: 'Your games' }).locator(`.acct-watch[data-id="${id}"]`).click();
+  await watchButton(page, id).click();
   await expect(page.locator('body')).toHaveClass(/\bwatching\b/);
-  await expect(page.getByRole('dialog', { name: 'Your games' })).toBeHidden();
+  await expect(career(page)).toBeHidden();
 }
 
-async function watchFromGames(page: Page, id: string): Promise<void> {
-  await openGames(page, id);
+async function watchFromCareer(page: Page, id: string): Promise<void> {
+  await openCareer(page, id);
   await pressWatch(page, id);
 }
 
-test('watch your own run from Your games: the replay bar, the replay to its end, and Done back to the won tree', async ({ page }) => {
+test('watch your own run from the career: the replay bar, the replay to its end, and Done back to the won tree', async ({ page }) => {
   await namedPlayer(page);
   const id = await solvedRun(page);
   await expect(page.locator('#results')).toBeVisible();
-  await watchFromGames(page, id);
+  await watchFromCareer(page, id);
   await expect(bar(page)).toBeVisible();
   await expect(bar(page).locator('.rb-cap')).toHaveText(/^Your run · \d+:\d\d\.\d$/);
   // The run's tag and HUD controls are set aside; the stage is the replay's.
@@ -98,8 +102,8 @@ test('watching mid-run costs only a pause: one p and one r in the log, and the t
   await namedPlayer(page);
   const earlier = await solvedRun(page);
   const id = await treeInProgress(page);
-  // The sheet pauses the tree as it opens; the time watching runs from the Watch press to Done.
-  await openGames(page, earlier);
+  // The career page pauses the tree as it opens; the time watching runs from the Watch press to Done.
+  await openCareer(page, earlier);
   const t0 = await page.evaluate(() => performance.now());
   await pressWatch(page, earlier);
   await expect.poll(async () => (await replay(page)).ended, { timeout: 60_000 }).toBe(true);
@@ -140,7 +144,7 @@ test('a reload during a replay comes back to the player’s own tree, as it was 
     const s = (window as unknown as W).__aglow.state();
     return { bits: s.bits, litCount: s.litCount };
   });
-  await watchFromGames(page, earlier);
+  await watchFromCareer(page, earlier);
   await expect.poll(async () => (await replay(page)).cursor).toBeGreaterThan(1500);
   await page.reload();
   await waitInteractive(page);
@@ -157,7 +161,7 @@ test('a reload during a replay comes back to the player’s own tree, as it was 
 test('keys while watching: Space and P play and pause, N does nothing, Escape is Done', async ({ page }) => {
   await namedPlayer(page);
   const id = await solvedRun(page);
-  await watchFromGames(page, id);
+  await watchFromCareer(page, id);
   const toggle = bar(page).locator('.rb-toggle');
   await expect(toggle).toHaveText('Pause');
   // From the game itself (focus on nothing), not a focused bar button.
@@ -179,23 +183,23 @@ test('keys while watching: Space and P play and pause, N does nothing, Escape is
   await expect(page.locator('#results')).toBeVisible();
 });
 
-test('a sheet opened over a replay pauses it, so it never plays out unseen; Play on the bar goes on from there', async ({ page }) => {
+test('the career opened over a replay pauses it, so it never plays out unseen; Play on the bar goes on from there', async ({ page }) => {
   await namedPlayer(page);
-  // A slow solve, so the replay outlasts the clicks that open the sheet.
+  // A slow solve, so the replay outlasts the clicks that open the page.
   const id = await onlineTree(page);
   await solveByTapping(page, 250);
   await expect.poll(() => game(page), { timeout: 20_000 }).toMatchObject({ id, outcome: 'done' });
-  await watchFromGames(page, id);
+  await watchFromCareer(page, id);
   const toggle = bar(page).locator('.rb-toggle');
   await expect(toggle).toHaveText('Pause');
-  await openGames(page, id);
+  await openCareer(page, id);
   // The bar shows it paused, and the playhead stays where it stopped.
   await expect(toggle).toHaveText('Play');
   const at = (await replay(page)).cursor;
   await page.waitForTimeout(600);
   expect((await replay(page)).cursor).toBe(at);
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: 'Your games' })).toBeHidden();
+  await expect(career(page)).toBeHidden();
   expect(await replay(page)).toMatchObject({ watching: true, ended: false });
   await expect(toggle).toHaveText('Play');
   await toggle.click();
@@ -222,11 +226,11 @@ test('a Watch still loading is cancelled by a resume or a new tree: the replay n
     await expect(page.locator('body')).not.toHaveClass(/\bwatching\b/);
   };
 
-  // A resume: Watch on a tree in progress (the sheet paused it), then the frost is tapped while the replay loads.
+  // A resume: Watch on a tree in progress (the career page paused it), then the frost is tapped while the replay loads.
   await route();
   const id = await treeInProgress(page);
-  await openGames(page, earlier);
-  await page.getByRole('dialog', { name: 'Your games' }).locator(`.acct-watch[data-id="${earlier}"]`).click();
+  await openCareer(page, earlier);
+  await watchButton(page, earlier).click();
   await expect(page.locator('#toast')).toHaveText('Loading replay…');
   // The frost is tapped (not through resumeIfPaused, which waits out the fade: the toast's 2.2 s could end meanwhile).
   await page.locator('#pause').click();
@@ -241,8 +245,8 @@ test('a Watch still loading is cancelled by a resume or a new tree: the replay n
 
   // A new tree: Watch, then a new tree starts while the replay loads, and the answer lands after it is up.
   await route();
-  await openGames(page, earlier);
-  await page.getByRole('dialog', { name: 'Your games' }).locator(`.acct-watch[data-id="${earlier}"]`).click();
+  await openCareer(page, earlier);
+  await watchButton(page, earlier).click();
   await page.evaluate(() => (window as unknown as W).__aglow.newTree());
   const fresh = await onlineTree(page);
   expect(fresh).not.toBe(id);

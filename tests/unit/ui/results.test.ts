@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AccountStats } from '../../../src/api/types';
 import { EMPTY_STATS, type Stats } from '../../../src/store/stats';
@@ -11,7 +12,7 @@ const noop = (): void => undefined;
 
 beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', () => 0);
-  document.body.innerHTML = `<section id="results" hidden><h2 id="r-time"></h2><div id="r-merry">Merry &amp; bright</div><div id="r-badge"></div>
+  document.body.innerHTML = `<section id="results" hidden><h2 id="r-time"></h2><div id="r-turns" hidden></div><div id="r-merry">Merry &amp; bright</div><div id="r-badge"></div>
     <b id="r-solved"></b><b id="r-avg"></b><b id="r-streak"></b><button id="r-new"></button><button id="r-share"></button><button id="r-keep"></button></section>`;
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -37,7 +38,7 @@ it('the tag paints the view it is given; setStats repaints the three numbers, sh
   expect(text('r-badge')).toBe('Best 1:00');
 });
 
-it('counts of 1,000 and up carry a comma, as in Your games; the device view is the fallback when the account view is dropped', () => {
+it('counts of 1,000 and up carry a comma; the device view is the fallback when the account view is dropped', () => {
   const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
   r.setStats(accountStatsView({ ...account, solved: 1234, streak: 1000 }));
   expect(['r-solved', 'r-avg', 'r-streak'].map(text)).toEqual(['1,234', '1:18', '1,000']);
@@ -104,4 +105,32 @@ it('the tag wears its style as data-tag; the plain tag too', () => {
   expect(root.dataset.tag).toBe('velvet');
   r.setTag('plain');
   expect(root.dataset.tag).toBe('plain');
+});
+
+const turnsLine = (): HTMLElement => document.getElementById('r-turns') as HTMLElement;
+
+it('shows turns and extra turns under the time', () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), turns: { turns: 123, extra: 40 } });
+  expect(turnsLine().hidden).toBe(false);
+  expect(turnsLine().textContent).toBe('123 turns \u00b7 40 extra');
+  r.setTurns({ turns: 1, extra: 0 }); // a tag already up takes the answer when it lands
+  expect(turnsLine().textContent).toBe('1 turns \u00b7 0 extra');
+});
+
+it('hides the turns line without turns', () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), turns: { turns: 5, extra: 1 } });
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device), turns: null });
+  expect(turnsLine().hidden).toBe(true);
+  r.setTurns({ turns: 5, extra: 1 });
+  r.show({ seconds: 42, newBest: false, stats: device, view: deviceStatsView(device) });
+  expect(turnsLine().hidden).toBe(true);
+  expect(turnsLine().textContent).toBe('');
+});
+
+it('the share image never carries turns', () => {
+  const share = readFileSync('src/ui/share.ts', 'utf8');
+  expect(share).not.toMatch(/turns/i);
+  expect(readFileSync('src/app.ts', 'utf8')).toMatch(/makeShareImage\(this\.renderer\.canvas, this\.renderer\.treeRect\(\), this\.lastSeconds, shareInk\(this\.renderer\.scene\), line\)/);
 });

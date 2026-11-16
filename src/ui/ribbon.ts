@@ -16,7 +16,7 @@ export type RibbonModel =
   | { kind: 'saving' }
   /** The finish didn't reach the server, or the claim after naming didn't. */
   | { kind: 'retry'; what: 'finish' | 'claim' }
-  /** Claimed already (another tab) or gone: a retry can't help, and the run is in Your games if it is anyone's. */
+  /** Claimed already (another tab) or gone: a retry can't help, and the run is in your career if it is anyone's. */
   | { kind: 'kept' };
 
 /** What the App knows beyond the outcome and the session. */
@@ -200,7 +200,7 @@ export function renderRibbon(root: HTMLElement, m: RibbonModel | null, h: Ribbon
       line.textContent = 'Saving your time…';
       break;
     case 'kept':
-      line.textContent = 'Saved to Your games';
+      line.textContent = 'Saved to your career';
       break;
     case 'retry': {
       line.textContent = "Couldn't save this run. ";

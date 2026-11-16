@@ -1,10 +1,9 @@
-import { BOARD_TOP, BOARD_WINDOWS, type AccountStats, type BoardResponse, type BoardRow, type BoardWindow, type MyGamesResponse, type RecentGame, type User } from '../api/types';
-import { count, dailyLabel, esc, formatDay, formatMs, formatWhen, plural, UNRANKED_TEXT } from './format';
+import { BOARD_WINDOWS, type BoardResponse, type BoardRow, type BoardWindow, type User } from '../api/types';
+import { count, dailyLabel, esc, formatDay, formatMs, plural } from './format';
 import { localDay } from '../store/stats';
 import { G_LOGO, I } from './icons';
 import type { SheetView } from './sheet';
 
-export type ListTab = 'board' | 'games';
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T };
 
 /** A run's Watch button (C4 decision 9), for a row the viewer may watch. */
@@ -55,7 +54,7 @@ export function saveBoardWindow(w: BoardWindow): void {
   }
 }
 
-/** Daily · Today · This week · All time: toggle buttons (aria-pressed), not tabs, so the tablist's arrow keys stay its own. */
+/** Daily · Today · This week · All time: toggle buttons (aria-pressed), one pressed. */
 const windowsHtml = (win: BoardWindow): string =>
   `<div class="acct-wins" role="group" aria-label="Time window">${BOARD_WINDOWS.map(
     (w) => `<button type="button" data-act="win-${w}" aria-pressed="${w === win}">${WINDOWS[w].button}</button>`,
@@ -83,126 +82,36 @@ function boardPin(b: Loadable<BoardResponse>, user: User | null | undefined, now
   return `<p class="acct-pin-note">${mine ? note(mine.rank) : plural(total, runWord(win))}</p>`;
 }
 
-/** "Unranked · paused too long"; a reason this browser doesn't know yet reads just "Unranked". */
-function unrankedLabel(reason: RecentGame['reason']): string {
-  const why = Object.hasOwn(UNRANKED_TEXT, reason ?? 'anonymous') ? UNRANKED_TEXT[reason ?? 'anonymous'] : null;
-  return why ? `Unranked · ${why}` : 'Unranked';
-}
-
-function gameHtml(g: RecentGame, now: number): string {
-  // A Daily run's first attempt, clean: on its day's board, so its tag says all (never "Unranked").
-  const placed = g.daily !== null && g.dailyFirst && g.reason === 'daily';
-  const [cls, label] = g.isBest
-    ? ['s-best', g.imported ? 'Personal best · Imported' : 'Personal best']
-    : g.imported
-      ? ['s-imported', 'Imported']
-      : g.ranked
-        ? ['s-counted', 'Ranked']
-        : ['', unrankedLabel(g.reason)];
-  // The Daily tag sits on the second line, beside the date: after the time it pushed long rows out of the sheet.
-  const tag = g.daily === null ? '' : `<span class="acct-daily">${esc(dailyLabel(g.daily))}</span>`;
-  return `<li class="acct-game${g.ranked || placed ? '' : ' un'}">
-    <span class="acct-gt">${formatMs(g.ms)}${g.isBest ? `<span class="acct-star">${I.star}</span>` : ''}</span>
-    <span class="acct-line2"><span class="acct-when">${esc(formatWhen(g.finishedAt, now))}</span>${tag}</span>
-    ${placed ? '' : `<span class="acct-status ${cls}">${label}</span>`}${g.replay && !g.imported ? watchHtml(g.id) : ''}</li>`;
-}
-
-/** The account's totals (GET /api/me/stats), the same on every device; dashes until they arrive. */
-function totalsHtml(s: Loadable<AccountStats>): string {
-  const d = s.status === 'ready' ? s.data : null;
-  // A dash alone is read as "en dash" or nothing: hide it and say so in words, hidden text after the label ("Solved: loading").
-  const gap = s.status === 'loading' ? ': loading' : ': not available';
-  const cell = (value: string | null, label: string): string =>
-    `<div role="listitem">${value === null ? '<b aria-hidden="true">–</b>' : `<b>${value}</b>`}<span>${label}</span>${value === null ? `<i class="acct-vh">${gap}</i>` : ''}</div>`;
-  const row = `<div class="acct-totals" role="list" aria-label="Account totals"${s.status === 'loading' ? ' aria-busy="true"' : ''}>${cell(d ? count(d.solved) : null, 'Solved')}${cell(
-    d && d.averageMs !== null ? formatMs(Number(d.averageMs)) : null,
-    'Average',
-  )}${cell(d ? count(d.streak) : null, 'Day streak')}${cell(d ? count(d.longestStreak) : null, 'Longest')}</div>`;
-  return s.status === 'error' ? `${row}<p class="acct-note acct-totals-err">Couldn't load your totals.</p>` : row;
-}
-
-function gamesBody(g: Loadable<MyGamesResponse>, user: User | null | undefined, now: number, s: Loadable<AccountStats>): string {
-  if (!user)
-    return `<div class="acct-empty"><div class="acct-emb">${I.list}</div><h3>Keep every tree</h3>
-      <p class="acct-lede">Sign in to keep your games and put your best time on the leaderboard.</p>
-      <button class="acct-google" type="button" data-act="signin">${G_LOGO}<span>Continue with Google</span></button>
-      <p class="acct-fine">Wins on this device are added when you sign in.</p></div>`;
-  if (g.status === 'loading') return '<p class="acct-note">Loading…</p>';
-  if (g.status === 'error') return `<p class="acct-note">Couldn't load your games.</p><button class="acct-text" type="button" data-act="reload">Try again</button>`;
-  const d = g.data;
-  const stats = `<div class="acct-stats">
-      <div><b>${d.best ? formatMs(d.best.ms) : '–'}</b><span>Your best</span></div>
-      <div><b>${d.best?.rank ? `#${Number(d.best.rank)}` : '–'}</b><span>of ${plural(d.total, 'run')}</span></div>
-      <div><b>${Number(d.inTop)}</b><span>In the top ${BOARD_TOP}</span></div></div>`;
-  const list = d.games.length ? `<ul class="acct-games">${d.games.map((x) => gameHtml(x, now)).join('')}</ul>` : '<p class="acct-note">No games yet. Light a tree to see it here.</p>';
-  const links = `<div class="acct-links"><p>Signed in with Google${user.name ? ` as <b>${esc(user.name)}</b>` : ''}</p>
-      <div><button type="button" data-act="signout">Sign out</button><button type="button" class="danger" data-act="delete">Delete account</button><a href="/privacy">Privacy</a></div></div>`;
-  return `${stats}${totalsHtml(s)}<h3 class="acct-h3">Recent games</h3>${list}${links}`;
-}
-
-const tabAttrs = (id: ListTab, tab: ListTab): string =>
-  `role="tab" id="acct-tab-${id}" aria-controls="acct-panel" aria-selected="${tab === id}" tabindex="${tab === id ? 0 : -1}"`;
-
-/**
- * The tablist's keys (WAI-ARIA tabs, automatic activation): Left and Right move to the other tab, wrapping, and Home
- * and End to the first and last; the tab moved to is selected through its own click, as a pointer would.
- */
-function bindTabKeys(list: HTMLElement): void {
-  list.addEventListener('keydown', (e) => {
-    const tabs = [...list.querySelectorAll<HTMLElement>('[role="tab"]')];
-    const at = tabs.indexOf(e.target as HTMLElement);
-    if (at < 0) return;
-    const keys: Record<string, number> = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 };
-    if (!Object.hasOwn(keys, e.key)) return;
-    e.preventDefault();
-    const next = tabs[(keys[e.key] + tabs.length) % tabs.length];
-    next.focus({ preventScroll: true });
-    if (next.getAttribute('aria-selected') !== 'true') next.click();
-  });
-}
-
 /** The views listView made: the account sheet redraws only these when their data arrives (it may show another page). */
 const LISTS = new WeakSet<SheetView>();
 export const isListView = (v: SheetView): boolean => LISTS.has(v);
 
 /**
- * The leaderboard and Your games: one sheet, two tabs (spec §6, pick 2C). The leaderboard shows one window (spec
- * 2026-10-14), `board` being that window's answer.
+ * The leaderboard (spec §6), one window at a time (spec 2026-10-14), `board` being that window's answer. Its head has the
+ * career page's Leaderboard | Career switch (spec 2026-11-15): Leaderboard is the view on screen, Career opens the page.
  */
 export function listView(
-  tab: ListTab,
   board: Loadable<BoardResponse>,
-  games: Loadable<MyGamesResponse>,
   user: User | null | undefined,
   now: number,
-  stats: Loadable<AccountStats> = { status: 'loading' },
   win: BoardWindow = 'all',
   /** The day (YYYY-MM-DD) of the Daily board shown: this browser's today unless the rosette opened a run's. */
   dailyDay: string = localDay(new Date(now)),
 ): SheetView {
   const view: SheetView = {
-    label: tab === 'board' ? 'Leaderboard' : 'Your games',
+    label: 'Leaderboard',
     card: false,
     render(inner) {
       const name = win === 'daily' ? dailyLabel(dailyDay) : WINDOWS[win].sub;
-      const sub =
-        tab === 'board'
-          ? `${name} · ${board.status === 'ready' ? plural(board.data.total, runWord(win)) : 'fastest trees'}`
-          : user?.name
-            ? `${esc(user.name)} · your trees`
-            : 'Not signed in';
+      const sub = `${name} · ${board.status === 'ready' ? plural(board.data.total, runWord(win)) : 'fastest trees'}`;
       inner.innerHTML = `<header class="acct-head">
           <div class="acct-emb">${I.trophy}</div>
-          <div class="acct-titles"><h2 class="acct-title">${tab === 'board' ? 'Leaderboard' : 'Your games'}</h2><p class="acct-sub">${sub}</p></div>
-          <div class="acct-tabs" role="tablist" aria-label="Leaderboard views">
-            <button ${tabAttrs('board', tab)} type="button" data-act="tab-board">Leaderboard</button>
-            <button ${tabAttrs('games', tab)} type="button" data-act="tab-games">Your games</button>
-          </div>${tab === 'board' ? windowsHtml(win) : ''}
+          <div class="acct-titles"><h2 class="acct-title">Leaderboard</h2><p class="acct-sub">${sub}</p></div>
+          <div class="acct-tabs"><button type="button" aria-current="page">Leaderboard</button><button type="button" data-act="career">Career</button></div>
+          ${windowsHtml(win)}
         </header>
-        <div class="acct-body" id="acct-panel" role="tabpanel" aria-labelledby="acct-tab-${tab}">${tab === 'board' ? boardBody(board, now, win) : gamesBody(games, user, now, stats)}</div>
-        ${tab === 'board' ? `<footer class="acct-pin">${boardPin(board, user, now, win)}</footer>` : ''}`;
-      const list = inner.querySelector<HTMLElement>('[role="tablist"]');
-      if (list) bindTabKeys(list);
+        <div class="acct-body">${boardBody(board, now, win)}</div>
+        <footer class="acct-pin">${boardPin(board, user, now, win)}</footer>`;
     },
   };
   LISTS.add(view);

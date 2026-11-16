@@ -42,6 +42,9 @@ const MOVED = [
 /** The replay's code loads on the first Watch (src/replay): none of it is in the entry chunk or its static imports. */
 const REPLAY = ['src/core/playback.ts', 'src/core/ghost.ts', 'src/ui/replay-bar.ts'];
 const REPLAY_DIR = 'src/replay/';
+/** The career page loads on first use (src/career-opener.ts): its code and its sums are not in the entry chunk either. */
+const CAREER = ['src/core/career.ts'];
+const CAREER_DIR = 'src/career/';
 /** The detectors stay: they must see the trigger. */
 const DETECTORS = ['src/ui/home-alone.ts', 'src/ui/star-egg.ts', 'src/store/home-alone.ts'];
 
@@ -126,6 +129,18 @@ describe.runIf(process.env.BUILD_TEST === '1')('the build (BUILD_TEST=1)', () =>
     for (const m of REPLAY) expect(all).toContain(m);
     expect(all.filter((m) => m.startsWith(REPLAY_DIR)).length).toBeGreaterThan(0);
     expect(manifest['index.html'].dynamicImports ?? []).toContain('src/replay/index.ts');
+  });
+
+  it("the career page's modules are not in the entry chunk or its static imports (they load on the first open)", () => {
+    const inEntry = staticClosure().flatMap((key) => modules.get(manifest[key].file) ?? []);
+    expect(inEntry.length).toBeGreaterThan(0);
+    expect(inEntry.filter((m) => m.startsWith(CAREER_DIR) || CAREER.includes(m))).toEqual([]);
+    // The opener is in the entry; the page is somewhere, in a chunk the first open imports.
+    expect(inEntry).toContain('src/career-opener.ts');
+    const all = [...modules.values()].flat();
+    for (const m of CAREER) expect(all).toContain(m);
+    expect(all.filter((m) => m.startsWith(CAREER_DIR)).length).toBeGreaterThan(0);
+    expect(manifest['index.html'].dynamicImports ?? []).toContain('src/career/index.ts');
   });
 
   it("the production build has no wardrobe preview (?wardrobe=all is a dev build's alone)", () => {

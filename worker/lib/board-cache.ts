@@ -4,7 +4,7 @@ import { boardTotal, topAndTotal, type TopRow } from './ranks.js';
 
 /**
  * How long one isolate trusts its copy of the board. The total is a count over every ranked run (about 2 rows read per
- * run on the board) and was read on every finish, claim, board and Your games request; D1 Free allows 5 million rows
+ * run on the board) and was read on every finish, claim, board and career request; D1 Free allows 5 million rows
  * read a day. Another isolate's finish shows here within this long; one in this isolate shows at once (boardGrew).
  */
 export const BOARD_TTL_MS = 20_000;

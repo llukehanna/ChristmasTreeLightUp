@@ -27,6 +27,46 @@ describe('api client', () => {
     expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET', cache: 'no-store' });
   });
 
+  it('api.career calls GET /api/me/career, never from the cache', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ runs: [], best: null, inTop: 0, total: 0 }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await api.career()).toEqual({ runs: [], best: null, inTop: 0, total: 0 });
+    expect(fetch.mock.calls[0][0]).toBe('/api/me/career');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET', cache: 'no-store' });
+  });
+
+  it('the cached career is read once and shared; a write (finish, claim, name, sign-out) or forgetCareer reads it again', async () => {
+    api.forgetCareer();
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ runs: [], best: null, inTop: 0, total: 0 }));
+    vi.stubGlobal('fetch', fetch);
+    const reads = () => fetch.mock.calls.filter((c) => c[0] === '/api/me/career').length;
+    const [a, b] = await Promise.all([api.cachedCareer(), api.cachedCareer()]);
+    expect(a).toBe(b);
+    await api.cachedCareer();
+    expect(reads()).toBe(1);
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET', cache: 'no-store' });
+    for (const write of [() => api.finish('g', []), () => api.claim([]), () => api.setName('Comet'), () => api.signOut()]) {
+      const before = reads();
+      await write();
+      await api.cachedCareer();
+      await api.cachedCareer();
+      expect(reads()).toBe(before + 1);
+    }
+    api.forgetCareer();
+    await api.cachedCareer();
+    expect(reads()).toBe(6);
+  });
+
+  it('a cached career read that failed is forgotten: the next asks again', async () => {
+    api.forgetCareer();
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ error: 'server', message: 'x' }, { status: 500 }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(api.cachedCareer()).rejects.toBeInstanceOf(ApiError);
+    fetch.mockImplementation(async () => Response.json({ runs: [], best: null, inTop: 0, total: 0 }));
+    expect(await api.cachedCareer()).toEqual({ runs: [], best: null, inTop: 0, total: 0 });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('a finish sends its context when it has one', async () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
     vi.stubGlobal('fetch', fetch);
@@ -92,7 +132,7 @@ describe('api client', () => {
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'signed_out', message: 'Sign in first.' }, { status: 401 })));
-    await expect(api.myGames()).rejects.toBeInstanceOf(ApiError);
+    await expect(api.career()).rejects.toBeInstanceOf(ApiError);
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
@@ -103,7 +143,7 @@ describe('api client', () => {
     await api.board();
     expect(fetch.mock.calls[1][1].cache).toBe('default');
     await api.me();
-    await api.myGames();
+    await api.career();
     await api.finish('g', []);
     await api.claim([]);
     await api.checkName('Comet');
@@ -195,7 +235,7 @@ describe('api client', () => {
 });
 
 describe('finishWithRetry', () => {
-  const result: FinishResult = { id: 'g', ranked: true, reason: null, ms: 1, rank: 1, total: 1, best: 1, newBest: true, daily: null };
+  const result: FinishResult = { id: 'g', ranked: true, reason: null, ms: 1, rank: 1, total: 1, best: 1, newBest: true, daily: null, turns: 99, minTurns: 79 };
 
   it('retries once, 800 ms later, after a network error or a 5xx', async () => {
     const waits: number[] = [];
@@ -236,4 +276,15 @@ describe('finishWithRetry', () => {
     await expect(finishWithRetry('g', [], async () => undefined)).rejects.toMatchObject({ status: 0 });
     expect(down).toHaveBeenCalledTimes(2);
   });
+});
+
+it('freshCareer asks every time and refills the cache the menu head reads', async () => {
+  api.forgetCareer();
+  let n = 0;
+  const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ runs: [], best: null, inTop: 0, total: ++n }));
+  vi.stubGlobal('fetch', fetch);
+  expect((await api.freshCareer()).total).toBe(1);
+  expect((await api.freshCareer()).total).toBe(2); // two career opens, two requests
+  expect((await api.cachedCareer()).total).toBe(2); // the menu head reads the page's copy: no third request
+  expect(fetch).toHaveBeenCalledTimes(2);
 });

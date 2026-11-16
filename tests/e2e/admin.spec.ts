@@ -1,5 +1,6 @@
 import type { Page, Request, Route } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { CAREER_IMPORTED, type CareerResponse } from '../../src/api/types';
 import type { Station, StationsFile } from '../../src/radio/schema';
 
 // Every admin API call is routed (the local Worker's admin routes need a real admin session), so no real uploads happen in e2e.
@@ -604,10 +605,10 @@ test("the admin imports this device's history once", async ({ page, context }, t
     return (await (await fetch(`/api/me/stats?today=${today}&tz=${d.getTimezoneOffset()}`)).json()) as { imported: number };
   });
   expect(stats.imported).toBeGreaterThanOrEqual(3);
-  const mine = (await (await page.request.get('/api/me/games')).json()) as { games: { imported: boolean; ms: number }[] };
-  const fromDevice = mine.games.filter((g) => g.imported);
+  const mine = (await (await page.request.get('/api/me/career')).json()) as CareerResponse;
+  const fromDevice = mine.runs.filter((r) => (r[5] & CAREER_IMPORTED) !== 0);
   expect(fromDevice.length).toBeGreaterThanOrEqual(3);
-  expect(Math.min(...fromDevice.map((g) => g.ms))).toBe(3_000_000);
+  expect(Math.min(...fromDevice.map((r) => r[2]))).toBe(3_000_000);
 
   // This device stays marked as imported.
   await page.reload();

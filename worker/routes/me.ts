@@ -1,14 +1,13 @@
-import type { AccountStats, GhostResponse, HomeAloneResponse, MeResponse, MyGamesResponse, ProgressResponse, RecentGame, StarHeadResponse, UnrankedReason } from '../../src/api/types.js';
+import type { AccountStats, GhostResponse, HomeAloneResponse, MeResponse, ProgressResponse, StarHeadResponse } from '../../src/api/types.js';
 import { evaluate } from '../../src/core/goals.js';
 import { parseLog } from '../../src/core/log.js';
 import { GRID } from '../../src/core/mask.js';
 import type { AppEnv } from '../lib/env.js';
 import { HttpError, json, readJson } from '../lib/http.js';
-import { cachedTopAndTotal, cachedTotal, resetBoardCache } from '../lib/board-cache.js';
-import { dailyFirstIds } from '../lib/daily-board.js';
+import { resetBoardCache } from '../lib/board-cache.js';
 import { dayNumber, dayText, streaksOf, viewerDay } from '../lib/days.js';
 import { historyOf } from '../lib/progress.js';
-import { BEST_SQL, bestOf, rankOf, type BestRun } from '../lib/ranks.js';
+import { BEST_SQL, type BestRun } from '../lib/ranks.js';
 import { clearSessionCookie, currentUser, publicUser, RENEW_UNDER_DAYS, requireUser, SESSION_DAYS, sessionCookie } from '../lib/users.js';
 
 const DAY_MS = 86_400_000;
@@ -56,53 +55,6 @@ export async function setHomeAlone(req: Request, env: AppEnv): Promise<Response>
   if (typeof on !== 'boolean') throw new HttpError(400, 'invalid', 'on must be true or false.');
   await env.DB.prepare('UPDATE users SET home_alone = ? WHERE id = ?').bind(on ? 1 : 0, user.id).run();
   return json({ homeAlone: on } satisfies HomeAloneResponse);
-}
-
-interface RecentRow {
-  id: string;
-  ms: number;
-  finished_at: number;
-  ranked: number;
-  unranked_reason: UnrankedReason | null;
-  source: string;
-  daily_day: number | null;
-  daily_past: number;
-  /** 1 when a log was kept (an imported run has none). */
-  has_log: number;
-}
-
-/** GET /api/me/games: your best and its rank, how many of the top BOARD_TOP are yours, and your last 30 games. */
-export async function myGames(req: Request, env: AppEnv): Promise<Response> {
-  const user = await requireUser(req, env);
-  const [best, recent, { top, total }] = await Promise.all([
-    bestOf(env.DB, user.id),
-    env.DB.prepare('SELECT id, ms, finished_at, ranked, unranked_reason, source, daily_day, daily_past, (log IS NOT NULL) AS has_log FROM games WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 30')
-      .bind(user.id)
-      .all<RecentRow>(),
-    // The top BOARD_TOP and the total from the isolate's copy (BOARD_TTL_MS); your best and its rank are read live.
-    user.name ? cachedTopAndTotal(env.DB) : cachedTotal(env.DB).then((n) => ({ top: [], total: n })),
-  ]);
-  // One read for the first attempts at every Daily day in the list (live runs only: a past day's tree is never one).
-  const days = [...new Set(recent.results.flatMap((g) => (g.daily_day !== null && g.daily_past === 0 ? [g.daily_day] : [])))];
-  const [rank, firsts] = await Promise.all([best && user.name ? rankOf(env.DB, best.ms, best.finished_at) : null, dailyFirstIds(env.DB, user.id, days)]);
-  const games: RecentGame[] = recent.results.map((g) => ({
-    id: g.id,
-    ms: g.ms,
-    finishedAt: g.finished_at,
-    ranked: g.ranked === 1,
-    reason: g.unranked_reason,
-    isBest: g.id === best?.id,
-    imported: g.source === 'import',
-    daily: g.daily_day === null ? null : dayText(g.daily_day),
-    dailyFirst: firsts.has(g.id),
-    replay: g.has_log === 1,
-  }));
-  return json({
-    best: best && { ms: best.ms, rank, finishedAt: best.finished_at },
-    inTop: top.filter((r) => r.user_id === user.id).length,
-    total,
-    games,
-  } satisfies MyGamesResponse);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { MAX_CLAIMS_PER_REQUEST, type ClaimResponse, type DailyInfo, type DailyResult, type FinishResult, type StartResponse } from '../../src/api/types.js';
-import { MAX_FACTS_ENTRIES, runFacts } from '../../src/core/facts.js';
+import { MAX_FACTS_ENTRIES, runFacts, turnsOf } from '../../src/core/facts.js';
 import { judge, type UnrankedReason } from '../../src/core/judge.js';
 import { parseLog } from '../../src/core/log.js';
 import { GRID } from '../../src/core/mask.js';
@@ -51,10 +51,13 @@ interface GameRow {
   daily_day: number | null;
   /** 1 when that day was already over for the player (a past day's tree). */
   daily_past: number;
+  /** Taps made and the tree's fewest turns, for any judged run whose log was short enough; null before migration 0008. */
+  turns: number | null;
+  min_turns: number | null;
 }
 type FinishedGame = GameRow & { finished_at: number; ms: number };
 const SELECT_GAME =
-  'SELECT g.id, g.user_id, g.claim_hash, g.gen_version, g.seed, g.started_at, g.finished_at, g.ms, g.ranked, g.unranked_reason, (u.name IS NOT NULL) AS named, g.daily_day, g.daily_past FROM games g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?';
+  'SELECT g.id, g.user_id, g.claim_hash, g.gen_version, g.seed, g.started_at, g.finished_at, g.ms, g.ranked, g.unranked_reason, (u.name IS NOT NULL) AS named, g.daily_day, g.daily_past, g.turns, g.min_turns FROM games g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?';
 const finished = (g: GameRow): g is FinishedGame => g.finished_at !== null && g.ms !== null;
 /** Ranked and owned by a named player: on the leaderboard. */
 const onBoard = (g: GameRow): boolean => g.ranked === 1 && g.named === 1;
@@ -194,6 +197,8 @@ async function resultsOf(env: AppEnv, userId: number | null, games: readonly Fin
       best: best?.ms ?? null,
       newBest: g.ranked === 1 && best?.id === g.id,
       daily: daily[k],
+      turns: g.turns,
+      minTurns: g.min_turns,
     };
   });
 }
@@ -223,11 +228,15 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
   const reason: UnrankedReason | null =
     verdict.reason ?? (game.daily_past === 1 ? 'past' : game.daily_day !== null ? 'daily' : game.user_id === null ? 'anonymous' : null);
   const ranked = reason === null ? 1 : 0;
-  // The facts for the goals, only now the judge's capped replay has passed, and only where a goal can read them:
-  // runFacts lights the whole tree per turn, so a long log could cost more CPU than the free plan allows and lose the
-  // run. A run the judge unranked (paused, too_fast, clock) is never a fresh one (isFresh, goals.ts); one past
-  // MAX_FACTS_ENTRIES can't be clean or perfect. The judge's reason, not the stored one: 'daily' and 'past' runs count.
-  const facts = verdict.reason === null && log.length <= MAX_FACTS_ENTRIES ? runFacts(game.seed, game.gen_version, log) : null;
+  // The turns come only now the judge's capped replay has passed, and for every run it judged, whatever the verdict:
+  // the career page counts a paused run, and turnsOf costs about one board generation. The feats are only for where a
+  // goal can read them: runFacts lights the whole tree per turn, so a long log could cost more CPU than the free plan
+  // allows and lose the run. A run the judge unranked (paused, too_fast, clock) is never a fresh one (isFresh,
+  // goals.ts). Both are skipped past MAX_FACTS_ENTRIES: a run that long can't be clean or perfect. The judge's reason,
+  // not the stored one: 'daily' and 'past' runs count.
+  const short = log.length <= MAX_FACTS_ENTRIES;
+  const facts = verdict.reason === null && short ? runFacts(game.seed, game.gen_version, log) : null;
+  const counted = facts ?? (short ? turnsOf(game.seed, game.gen_version, log) : null);
   const ctx = runContextOf(body.ctx);
   const saved = await env.DB.prepare(
     'UPDATE games SET finished_at = ?, ms = ?, paused_ms = ?, pauses = ?, ranked = ?, unranked_reason = ?, log = ?, turns = ?, min_turns = ?, feats = ?, tz = ?, station = ?, world = ? WHERE id = ? AND finished_at IS NULL',
@@ -240,8 +249,8 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
       ranked,
       reason,
       JSON.stringify(log),
-      facts?.turns ?? null,
-      facts?.minTurns ?? null,
+      counted?.turns ?? null,
+      counted?.minTurns ?? null,
       facts?.feats ?? null,
       ctx?.tz ?? null,
       ctx?.station ?? null,
@@ -255,7 +264,7 @@ export async function finishGame(req: Request, env: AppEnv, _ctx: Ctx, [id]: rea
     if (now && finished(now)) return json(await resultOf(env, now));
     throw notFound();
   }
-  const done: FinishedGame = { ...game, finished_at: receivedAt, ms: verdict.ms, ranked, unranked_reason: reason };
+  const done: FinishedGame = { ...game, finished_at: receivedAt, ms: verdict.ms, ranked, unranked_reason: reason, turns: counted?.turns ?? null, min_turns: counted?.minTurns ?? null };
   boardGrew(onBoard(done) ? [done.finished_at] : []);
   dailyGrew(decidesDaily(done) && reason === 'daily' ? [done.daily_day] : []);
   return json(await resultOf(env, done));

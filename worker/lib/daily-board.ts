@@ -44,7 +44,7 @@ export const DAILY_BEST_SQL = `SELECT g.id, g.user_id, u.name, g.ms, g.finished_
 export const DAILY_FIRST_SQL = `SELECT id FROM games WHERE daily_day = ?1 AND user_id = ?2 AND daily_past = 0 AND ${claimedInTime('')} ORDER BY started_at, id LIMIT 1`;
 
 /**
- * Player ?1's first attempt (finished or not) at each day in ?2, a JSON array of day numbers: one read for Your games,
+ * Player ?1's first attempt (finished or not) at each day in ?2, a JSON array of day numbers: one read for a list of runs,
  * by the same rule as DAILY_FIRST_SQL (earliest started_at, then the lower id). CROSS JOIN keeps the days outermost
  * (SQLite never reorders it), so each day seeks games_daily rather than the planner walking all the player's games.
  */

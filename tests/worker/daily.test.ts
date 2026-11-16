@@ -1,11 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAX_CLAIMS_PER_REQUEST, type BoardResponse, type ClaimResponse, type DailyRequest, type FinishResult, type MyGamesResponse, type StartResponse } from '../../src/api/types';
+import { CAREER_PAST, MAX_CLAIMS_PER_REQUEST, type BoardResponse, type CareerResponse, type ClaimResponse, type DailyRequest, type FinishResult, type StartResponse } from '../../src/api/types';
 import type { LogEntry } from '../../src/core/log';
 import { replay } from '../../src/core/replay';
 import { GEN_VERSION, seededBoard } from '../../src/core/seeded';
 import { dailyClosesAt, dailySeed } from '../../worker/lib/daily';
 import { BOARD_CACHE_WINDOWS, BOARD_TTL_MS, cachedDailyTopAndTotal, cachedDailyTotal, dailyGrew, resetBoardCache } from '../../worker/lib/board-cache';
-import { DAILY_FIRSTS_SQL, DAILY_TOP_TENS_SQL, dailyTopAndTotal, dailyTopTenDays } from '../../worker/lib/daily-board';
+import { DAILY_FIRSTS_SQL, DAILY_TOP_TENS_SQL, dailyFirstIds, dailyTopAndTotal, dailyTopTenDays } from '../../worker/lib/daily-board';
 import { dayNumber } from '../../worker/lib/days';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
@@ -249,6 +249,8 @@ describe('finishing a Daily run', () => {
       best: null,
       newBest: false,
       daily: { day: '2026-12-10', past: false, first: true, rank: 1, total: 1 },
+      turns: expect.any(Number),
+      minTurns: expect.any(Number),
     });
     expect(await row(game.id)).toMatchObject({ ranked: 0, unranked_reason: 'daily' });
     expect(await mainBoards('2026-12-10')).toEqual([EMPTY, EMPTY, EMPTY]);
@@ -535,8 +537,8 @@ describe('the Daily board cache (isolate memory, BOARD_TTL_MS)', () => {
   });
 });
 
-describe('Your games and the Daily', () => {
-  it('Your games labels a Daily run with its day, and a random run with null', async () => {
+describe('the career and the Daily', () => {
+  it('the career labels a Daily run with its day and reason, and a random run with null', async () => {
     at('2026-12-10T12:00:00Z');
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const daily = await play({ today: '2026-12-10' }, { cookie: ana });
@@ -544,17 +546,17 @@ describe('Your games and the Daily', () => {
     const past = await play({ today: '2026-12-10', day: '2026-12-03' }, { cookie: ana });
     later();
     const random = await play(undefined, { cookie: ana });
-    const g = await json<MyGamesResponse>(await call(env, 'GET', '/api/me/games', { cookie: ana }));
-    expect(g.games.map((x) => [x.id, x.daily, x.dailyFirst, x.reason, x.ranked, x.isBest])).toEqual([
-      [random.game.id, null, false, null, true, true],
-      [past.game.id, '2026-12-03', false, 'past', false, false],
-      [daily.game.id, '2026-12-10', true, 'daily', false, false],
+    const c = await json<CareerResponse>(await call(env, 'GET', '/api/me/career', { cookie: ana }));
+    expect(c.runs.map((r) => [r[0], r[7], r[6], (r[5] & CAREER_PAST) !== 0])).toEqual([
+      [daily.game.id, '2026-12-10', 'daily', false],
+      [past.game.id, '2026-12-03', 'past', true],
+      [random.game.id, null, null, false],
     ]);
     // Daily runs are not your best, nor on the main board.
-    expect(g).toMatchObject({ best: { ms: random.result.ms, rank: 1 }, inTop: 1, total: 1 });
+    expect(c).toMatchObject({ best: { id: random.game.id, ms: random.result.ms, rank: 1 }, inTop: 1, total: 1 });
   });
 
-  it("Your games tells each day's first attempt from a repeat, reading each Daily day's first attempts once", async () => {
+  it("dailyFirstIds tells each day's first attempt from a repeat, in one read for any number of days", async () => {
     at('2026-12-09T12:00:00Z');
     const ana = await signIn(env, 'ana@example.com', 'Meridian');
     const nine = await play({ today: '2026-12-09' }, { cookie: ana });
@@ -576,24 +578,18 @@ describe('Your games and the Daily', () => {
       },
       batch: (s) => db.batch(s),
     };
-    const g = await json<MyGamesResponse>(await call(env, 'GET', '/api/me/games', { cookie: ana }));
-    expect(g.games.map((x) => [x.id, x.daily, x.dailyFirst])).toEqual([
-      [random.game.id, null, false],
-      [tooFast.game.id, '2026-12-11', true],
-      [tenRepeat.game.id, '2026-12-10', false],
-      [nineAgain.game.id, '2026-12-09', false],
-      [nine.game.id, '2026-12-09', true],
-    ]);
-    // One read for every Daily day in the list; none at all without a Daily run.
-    await call({ ...env, DB: counting }, 'GET', '/api/me/games', { cookie: ana });
-    const withDaily = statements;
-    await db.prepare('DELETE FROM games WHERE daily_day IS NOT NULL').run();
-    statements = 0;
-    await call({ ...env, DB: counting }, 'GET', '/api/me/games', { cookie: ana });
-    expect(withDaily - statements).toBe(1);
+    const anaId = (await db.prepare('SELECT id FROM users WHERE email = ?').bind('ana@example.com').first<{ id: number }>())?.id as number;
+    const days = ['2026-12-09', '2026-12-10', '2026-12-11'].map((d) => dayNumber(d) as number);
+    const firsts = await dailyFirstIds(counting, anaId, days);
+    const finished = [random, tooFast, tenRepeat, nineAgain, nine].map((r) => r.game.id);
+    expect(finished.filter((id) => firsts.has(id))).toEqual([tooFast.game.id, nine.game.id]);
+    // One read for every day; none at all without one.
+    expect(statements).toBe(1);
+    expect(await dailyFirstIds(counting, anaId, [])).toEqual(new Set());
+    expect(statements).toBe(1);
   });
 
-  it("Your games' first-attempt read seeks games_daily for each of the list's days", async () => {
+  it("the first-attempt read seeks games_daily for each of the list's days", async () => {
     const plan = (await db.prepare(`EXPLAIN QUERY PLAN ${DAILY_FIRSTS_SQL}`).bind(1, '[1,2]').all<{ detail: string }>()).results.map((r) => r.detail);
     expect(plan).toEqual(
       expect.arrayContaining([
@@ -645,9 +641,8 @@ describe('a closed day\'s board is frozen (migration 0008)', () => {
     expect(await dailyTopAndTotal(db, ten)).toEqual(frozen);
     // Dec 11's claim was in time: it joins that board.
     expect((await dailyTopAndTotal(db, eleven)).top.map((r) => [r.name, r.id])).toEqual([['Meridian', guest11.game.id]]);
-    // Your games agrees: Dec 10's first attempt is still the too-fast run.
-    const g = await json<MyGamesResponse>(await call(env, 'GET', '/api/me/games', { cookie: ana }));
-    expect(g.games.filter((x) => x.dailyFirst).map((x) => x.id).sort()).toEqual([own.game.id, guest11.game.id].sort());
+    // The first attempts agree: Dec 10's is still the too-fast run.
+    expect([...(await dailyFirstIds(db, anaId, [ten, eleven]))].sort()).toEqual([own.game.id, guest11.game.id].sort());
     // Once Dec 11 closes too, the account has one top 10 (Dec 11's), Comet one (Dec 10's).
     vi.setSystemTime(dailyClosesAt(eleven));
     expect(await dailyTopTenDays(db, anaId, Date.now())).toBe(1);

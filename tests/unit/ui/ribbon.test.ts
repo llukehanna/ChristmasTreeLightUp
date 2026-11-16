@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DailyResult, FinishResult } from '../../../src/api/types';
 import { awaitsClaim, renderRibbon, ribbonModel } from '../../../src/ui/ribbon';
 
-const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: true, daily: null, ...over });
+const result = (over: Partial<FinishResult> = {}): FinishResult => ({ id: 'g', ranked: true, reason: null, ms: 81_000, rank: 12, total: 340, best: 81_000, newBest: true, daily: null, turns: 99, minTurns: 79, ...over });
 const me = { name: 'Comet', isAdmin: false, starHead: false };
 
 describe('ribbonModel', () => {
@@ -28,7 +28,7 @@ describe('ribbonModel', () => {
     expect(ribbonModel({ kind: 'done', result: anon }, null, { returning: true })).toMatchObject({ kind: 'save' });
   });
 
-  it('a claim that failed offers a retry; one the server no longer has is kept in Your games', () => {
+  it('a claim that failed offers a retry; one the server no longer has is kept in your career', () => {
     const anon = result({ ranked: false, reason: 'anonymous', rank: 5, best: null, newBest: false });
     expect(ribbonModel({ kind: 'done', result: anon }, me, { claim: 'stuck' })).toEqual({ kind: 'retry', what: 'claim' });
     expect(ribbonModel({ kind: 'done', result: anon }, me, { claim: 'gone' })).toEqual({ kind: 'kept' });
@@ -195,10 +195,10 @@ describe('renderRibbon', () => {
     expect(root.querySelector('.rib-ros.un')).not.toBeNull();
   });
 
-  it('a run the server already has elsewhere: Saved to Your games, no rosette', () => {
+  it('a run the server already has elsewhere: Saved to your career, no rosette', () => {
     const root = tag();
     renderRibbon(root, { kind: 'kept' }, handlers());
-    expect(root.querySelector('.rib-line')?.textContent).toBe('Saved to Your games');
+    expect(root.querySelector('.rib-line')?.textContent).toBe('Saved to your career');
     expect(root.querySelector('.rib-ros, .rib-ribbon, .rib-retry')).toBeNull();
   });
 

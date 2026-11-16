@@ -39,13 +39,13 @@ it('signed out, the chip reads Sign in and opens the sign-in card, not the menu'
   expect(menu.isOpen).toBe(false);
 });
 
-it('signed in: the name (escaped) and initial, and a menu with the leaderboard, your games, sign out, delete and privacy', () => {
+it('signed in: the name (escaped) and initial, and a menu with the leaderboard, Career, sign out, delete and privacy', () => {
   menu.render({ name: '<Comet>', isAdmin: false, starHead: false });
   expect(menu.chip.getAttribute('aria-label')).toBe('Account: <Comet>');
   expect(menu.chip.querySelector('.acct-chip-l')?.textContent).toBe('<Comet>');
   expect(menu.chip.querySelector('.acct-av')?.textContent).toBe('<');
   expect(drop().querySelector('b')?.innerHTML).toBe('&lt;Comet&gt;');
-  expect(items()).toEqual(['Leaderboard', 'Your games']);
+  expect(items()).toEqual(['Leaderboard', 'Career']);
   expect([...drop().querySelectorAll('.acct-drop-foot > *')].map((n) => n.textContent)).toEqual(['Sign out', 'Delete account', 'Privacy']);
 });
 
@@ -56,7 +56,7 @@ it('no name yet: the person icon and "Account" (no initial), a menu that offers 
   expect(menu.chip.querySelector('.acct-av')).toBeNull();
   expect(menu.chip.textContent).toBe('Account');
   expect(drop().querySelector('.acct-av.anon svg')).not.toBeNull();
-  expect(items()).toEqual(['Pick a display name', 'Leaderboard', 'Your games', 'Radio admin']);
+  expect(items()).toEqual(['Pick a display name', 'Leaderboard', 'Career', 'Radio admin']);
   expect(drop().querySelector<HTMLAnchorElement>('a.acct-item')?.getAttribute('href')).toBe('/admin');
 });
 
@@ -75,8 +75,8 @@ it('opens from the chip (telling the app), routes items, and closes on Escape ba
   expect(menu.isOpen).toBe(true);
   expect(menu.chip.getAttribute('aria-expanded')).toBe('true');
   expect(menu.hasFocus).toBe(true);
-  drop().querySelector<HTMLElement>('[data-act="games"]')?.click();
-  expect(hooks.act).toHaveBeenCalledWith('games', menu.chip);
+  drop().querySelector<HTMLElement>('[data-act="career"]')?.click();
+  expect(hooks.act).toHaveBeenCalledWith('career', menu.chip);
   expect(menu.isOpen).toBe(false);
   menu.chip.click();
   dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
@@ -87,9 +87,9 @@ it('opens from the chip (telling the app), routes items, and closes on Escape ba
 it('keeps keyboard focus on the same item when the summary arrives and the menu re-renders', () => {
   menu.render({ name: 'Comet', isAdmin: false, starHead: false });
   menu.open();
-  drop().querySelector<HTMLElement>('[data-act="games"]')?.focus();
+  drop().querySelector<HTMLElement>('[data-act="career"]')?.focus();
   menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 3, best: 50_000 });
-  expect(document.activeElement).toBe(drop().querySelector('[data-act="games"]'));
+  expect(document.activeElement).toBe(drop().querySelector('[data-act="career"]'));
   drop().querySelector<HTMLElement>('a[href="/privacy"]')?.focus();
   menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 2, best: 49_000 });
   expect(document.activeElement).toBe(drop().querySelector('a[href="/privacy"]'));

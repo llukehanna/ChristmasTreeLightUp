@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { AccountStats, MyGamesResponse } from '../../src/api/types';
+import type { AccountStats } from '../../src/api/types';
 import type { Db } from '../../worker/lib/db';
 import type { AppEnv } from '../../worker/lib/env';
 import { call, signIn, startDb, testEnv, wipe } from './harness';
@@ -142,18 +142,5 @@ describe('GET /api/me/stats cost', () => {
     expect(read[0]).toBeGreaterThanOrEqual(60);
     expect(read[0]).toBeLessThanOrEqual(2 * 60 + 2);
     expect(read[1]).toBeLessThanOrEqual(3);
-  });
-});
-
-describe('GET /api/me/games', () => {
-  it('marks imported runs', async () => {
-    const ana = await user('ana@example.com', 'Meridian');
-    const played = await game(ana, 60_000, noonPdt(1));
-    const fromDevice = await game(ana, 50_000, noonPdt(2), { source: 'import' });
-    const g = (await (await call(env, 'GET', '/api/me/games', { cookie: await signIn(env, 'ana@example.com') })).json()) as MyGamesResponse;
-    expect(g.games.map((x) => [x.id, x.imported])).toEqual([
-      [played, false],
-      [fromDevice, true],
-    ]);
   });
 });

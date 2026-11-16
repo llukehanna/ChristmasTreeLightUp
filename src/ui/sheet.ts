@@ -12,7 +12,7 @@ export function focusKey(el: Element | null): string | null {
   return href ? `a[href="${CSS.escape(href)}"]` : null;
 }
 
-/** One view in the account sheet: a list (leaderboard, Your games) or a small card (sign-in, name, delete). */
+/** One view in the account sheet: a list (the leaderboard) or a small card (sign-in, name, delete). */
 export interface SheetView {
   /** The dialog's accessible name. */
   label: string;
@@ -137,7 +137,7 @@ export class Sheet {
       this.close();
     } else if (e.key === 'Tab') {
       const stops = [...this.root.querySelectorAll<HTMLElement>('button, input, a[href], [tabindex]:not([tabindex="-1"])')].filter(
-        // tabIndex -1: out of the Tab order (the tablist's unselected tab).
+        // tabIndex -1: out of the Tab order.
         (n) => !(n instanceof HTMLButtonElement && n.disabled) && n.tabIndex >= 0 && n.getClientRects().length > 0,
       );
       if (!stops.length) return;

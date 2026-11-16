@@ -70,6 +70,20 @@ function restingBits(board: Board, i: number): number {
 }
 
 /**
+ * A solved run's turns and the tree's minimum, counted from the log without lighting the tree: about the cost of one
+ * board generation, so it is worth storing for every judged run, whatever its verdict. Counts the taps in the log as
+ * runFacts does (a pause is not a turn) and agrees with it on every log that replays; it doesn't replay the log itself,
+ * so the log must have passed the judge. Null for a seed or generator version with no tree.
+ */
+export function turnsOf(seed: number, genVersion: number, log: readonly LogEntry[]): { turns: number; minTurns: number } | null {
+  const board = seededBoard(seed, genVersion, true);
+  if (!board) return null;
+  let turns = 0;
+  for (const { a } of log) if (a !== 'p' && a !== 'r') turns++;
+  return { turns, minTurns: minTurnsOf(board) };
+}
+
+/**
  * What a finished run did, from replaying its tap log on a full (non-headless) board: turns, the tree's minimum, and
  * the feats earned (see FEAT). Plays the log exactly as replay() does, so it is null in the same cases: a tap while
  * paused, before the reveal ended, after the solve, one the board drops, or a tree that never gets solved. The log must

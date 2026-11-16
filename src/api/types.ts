@@ -8,7 +8,7 @@ export type { UnrankedReason };
 
 /** Most claims one POST /api/games/claim handles; the browser sends them in batches of this many. */
 export const MAX_CLAIMS_PER_REQUEST = 8;
-/** How many runs the leaderboard shows (and Your games counts "in the top"). */
+/** How many runs the leaderboard shows (and the career page counts "in the top"). */
 export const BOARD_TOP = 50;
 /**
  * The leaderboard's windows (spec 2026-10-14): the viewer's day's Daily Tree (its first attempts only), since the
@@ -107,6 +107,10 @@ export interface FinishResult {
   newBest: boolean;
   /** Set for a Daily Tree run (every field above stays the main board's); null for a random game. */
   daily: DailyResult | null;
+  /** Taps this run made, from the server's replay of the log; null for a run too long to count. */
+  turns: number | null;
+  /** The tree's fewest turns from the start (see minTurnsOf); null when `turns` is. */
+  minTurns: number | null;
 }
 
 /** A finished Daily Tree run on its day's own board. */
@@ -149,31 +153,24 @@ export interface BoardResponse {
   you: BoardRow | null;
 }
 
-export interface RecentGame {
-  id: string;
-  ms: number;
-  finishedAt: number;
-  ranked: boolean;
-  reason: UnrankedReason | null;
-  /** This run is the player's best ranked run. */
-  isBest: boolean;
-  /** Imported from a device's pre-accounts stats (spec 2026-10-08), not played on Aglow. */
-  imported: boolean;
-  /** A Daily Tree run's day (YYYY-MM-DD); null for a random game. A past day's tree is known by its reason, 'past'. */
-  daily: string | null;
-  /** This game is the owner's earliest-started live game for its day (finished or not); false for a repeat or a random game. */
-  dailyFirst: boolean;
-  /** The run kept a log, so it can be watched; false for an imported run. */
-  replay: boolean;
-}
+/** The flag bits of a CareerRow. */
+export const CAREER_IMPORTED = 1;
+export const CAREER_REPLAY = 2;
+export const CAREER_PAST = 4;
+/** A live Daily run that was the day's first attempt (it is on that day's board, so not "not your first go"). */
+export const CAREER_DAILY_FIRST = 8;
 
-export interface MyGamesResponse {
-  best: { ms: number; rank: number | null; finishedAt: number } | null;
-  /** How many of the top BOARD_TOP runs are yours. */
+/** One finished run: [id, finishedAt, ms, turns, minTurns, flags, reason, dailyDay]. flags: 1 imported, 2 has a log (Watch), 4 a past day's Daily, 8 a Daily first attempt. */
+export type CareerRow = [string, number, number, number | null, number | null, number, UnrankedReason | null, string | null];
+
+export interface CareerResponse {
+  /** Every finished run of the account, oldest first. */
+  runs: CareerRow[];
+  /** The ranked best (bestOf), its board place (null without a name) and the board's size; null with no ranked run. */
+  best: { id: string; ms: number; rank: number | null } | null;
+  /** How many of the top BOARD_TOP are the account's. */
   inTop: number;
   total: number;
-  /** The last 30 finished games, newest first. */
-  games: RecentGame[];
 }
 
 /** A finished run's tree and log: what plays it back (the replay, or a ghost). */
