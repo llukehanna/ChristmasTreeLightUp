@@ -27,6 +27,14 @@ describe('api client', () => {
     expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET', cache: 'no-store' });
   });
 
+  it('api.career calls GET /api/me/career, never from the cache', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ runs: [], best: null, inTop: 0, total: 0 }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await api.career()).toEqual({ runs: [], best: null, inTop: 0, total: 0 });
+    expect(fetch.mock.calls[0][0]).toBe('/api/me/career');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET', cache: 'no-store' });
+  });
+
   it('a finish sends its context when it has one', async () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
     vi.stubGlobal('fetch', fetch);

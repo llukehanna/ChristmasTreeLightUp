@@ -180,6 +180,24 @@ export interface MyGamesResponse {
   games: RecentGame[];
 }
 
+/** The flag bits of a CareerRow. */
+export const CAREER_IMPORTED = 1;
+export const CAREER_REPLAY = 2;
+export const CAREER_PAST = 4;
+
+/** One finished run: [id, finishedAt, ms, turns, minTurns, flags, reason, dailyDay]. flags: 1 imported, 2 has a log (Watch), 4 a past day's Daily. */
+export type CareerRow = [string, number, number, number | null, number | null, number, UnrankedReason | null, string | null];
+
+export interface CareerResponse {
+  /** Every finished run of the account, oldest first. */
+  runs: CareerRow[];
+  /** The ranked best (bestOf), its board place (null without a name) and the board's size; null with no ranked run. */
+  best: { id: string; ms: number; rank: number | null } | null;
+  /** How many of the top BOARD_TOP are the account's. */
+  inTop: number;
+  total: number;
+}
+
 /** A finished run's tree and log: what plays it back (the replay, or a ghost). */
 export interface GhostRun {
   seed: number;

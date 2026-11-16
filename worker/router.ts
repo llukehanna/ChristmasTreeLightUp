@@ -6,6 +6,7 @@ import * as upload from './routes/admin/upload.js';
 import * as historyImport from './routes/admin/history.js';
 import * as auth from './routes/auth.js';
 import * as board from './routes/board.js';
+import * as career from './routes/career.js';
 import * as games from './routes/games.js';
 import * as me from './routes/me.js';
 import * as replays from './routes/replays.js';
@@ -28,6 +29,7 @@ export const ROUTES: readonly Route[] = [
   ['GET', /^\/api\/me$/, me.getMe],
   ['DELETE', /^\/api\/me$/, me.deleteMe],
   ['GET', /^\/api\/me\/games$/, me.myGames],
+  ['GET', /^\/api\/me\/career$/, career.career],
   ['GET', /^\/api\/me\/stats$/, me.myStats],
   ['GET', /^\/api\/me\/progress$/, me.myProgress],
   ['GET', /^\/api\/me\/ghost$/, me.myGhost],
