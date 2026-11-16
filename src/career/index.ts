@@ -32,9 +32,13 @@ export function openCareer(opts: CareerOptions): CareerPage {
   const { el, title, eyebrow, body } = shell(opts.user);
   let closed = false;
   let attempt = 0;
+  /** Stops the charts' resize redraw. */
+  let disposeCharts: (() => void) | null = null;
 
   function load(): void {
     const mine = ++attempt;
+    disposeCharts?.();
+    disposeCharts = null;
     body.innerHTML = '<div class="msg" role="status">Loading your career…</div>';
     let pending: Promise<CareerResponse>;
     try {
@@ -49,7 +53,8 @@ export function openCareer(opts: CareerOptions): CareerPage {
     pending.then((res) => {
       if (closed || mine !== attempt) return;
       try {
-        const { runs } = renderBody(body, res, (opts.now ?? (() => new Date()))(), opts.onWatch);
+        const { runs, dispose } = renderBody(body, res, (opts.now ?? (() => new Date()))(), opts.onWatch);
+        disposeCharts = dispose;
         eyebrow.textContent = eyebrowText(opts.user.name, runs[0]);
       } catch {
         // A response this page can't read is an error like a failed request: the same Retry.
@@ -95,6 +100,8 @@ export function openCareer(opts: CareerOptions): CareerPage {
     close() {
       if (closed) return;
       closed = true;
+      disposeCharts?.();
+      disposeCharts = null;
       document.removeEventListener('keydown', onKey, true);
       el.remove();
     },

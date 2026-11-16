@@ -154,11 +154,11 @@ it('closing removes the page, and data that arrives later paints nothing', async
   expect(onClose).not.toHaveBeenCalled();
 });
 
-it('leaves a chart host in each chart card, and records, form and the log', async () => {
+it('draws a chart in each chart card, and records, form and the log', async () => {
   const p = open(async () => fixture);
   await flush();
   expect([...p.el.querySelectorAll('.chart')].map((c) => (c as HTMLElement).dataset.chart)).toEqual(['trend', 'scatter', 'hist', 'hours']);
-  expect([...p.el.querySelectorAll('.chart')].every((c) => c.childElementCount === 0)).toBe(true);
+  expect([...p.el.querySelectorAll('.chart')].every((c) => c.querySelector('svg'))).toBe(true);
   expect(p.el.querySelector('#career-form .stat')).not.toBeNull();
   expect(p.el.querySelectorAll('.records .rec').length).toBeGreaterThan(0);
   expect(p.el.querySelectorAll('tbody tr')).toHaveLength(3);

@@ -1,5 +1,6 @@
 import { BOARD_TOP, type CareerResponse } from '../api/types';
 import { careerStats, parseCareer, type CareerRun, type CareerStats } from '../core/career';
+import { mountCharts } from './charts';
 import { createLog } from './log';
 import { fmtCount, fmtDay, fmtLongDay, fmtSecs, fmtTime, plural } from './format';
 
@@ -108,9 +109,9 @@ function recordsHtml(s: CareerStats): [string, string, string] {
 
 /**
  * The page's content once the data is in: the tiles, current form, the chart cards (empty hosts the charts draw into),
- * records and the log. Every figure comes from careerStats.
+ * records and the log. Every figure comes from careerStats. `dispose` stops the charts' redraw on resize.
  */
-export function renderBody(host: HTMLElement, res: CareerResponse, now: Date, onWatch: (id: string) => void): { runs: CareerRun[]; stats: CareerStats } {
+export function renderBody(host: HTMLElement, res: CareerResponse, now: Date, onWatch: (id: string) => void): { runs: CareerRun[]; stats: CareerStats; dispose: () => void } {
   const runs = parseCareer(res.runs);
   const stats = careerStats(runs, now);
   host.innerHTML = `
@@ -148,5 +149,5 @@ export function renderBody(host: HTMLElement, res: CareerResponse, now: Date, on
     </section>`;
   const pbs = new Set(stats.pbs.map((p) => p.run.id));
   host.append(createLog({ runs, pbs, onWatch }).el);
-  return { runs, stats };
+  return { runs, stats, dispose: mountCharts(host, runs, stats, now) };
 }
