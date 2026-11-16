@@ -1,6 +1,6 @@
 import { devices, type Page } from '@playwright/test';
 import { expect, returning, test, testIp } from './fixtures';
-import { asPlayer, game, pickName, ready, resumeIfPaused, signInFromChip, stopClock, tapStarStill, waitInteractive, type W } from './helpers';
+import { asPlayer, game, pickName, ready, resumeIfPaused, signInFromMenu, stopClock, tapStarStill, type W, waitInteractive } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -133,7 +133,7 @@ test('signed in, the head follows the account to a fresh browser', async ({ page
   test.slow();
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
   const saved = page.waitForResponse((r) => r.url().endsWith('/api/me/star-head') && r.request().method() === 'PUT');
@@ -156,8 +156,8 @@ test('signed in, the head follows the account to a fresh browser', async ({ page
     const other = await fresh.newPage();
     await ready(other);
     expect((await star(other)).head).toBe(false);
-    await signInFromChip(other);
-    await expect(other.locator('#account-chip')).toHaveAccessibleName(`Account: ${player.name}`);
+    await signInFromMenu(other);
+    await expect(other.locator('#account-row')).toHaveAttribute('aria-label', `Account: ${player.name}`);
     // /api/me, then the sticker's load: on a loaded machine that can take longer than the default 5 s.
     await expect.poll(async () => (await star(other)).head, { timeout: 30_000 }).toBe(true);
     expect(await stored(other)).toBe('true');

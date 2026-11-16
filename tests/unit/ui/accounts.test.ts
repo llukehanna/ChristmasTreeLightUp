@@ -19,7 +19,7 @@ import { dailyLabel } from '../../../src/ui/format';
 
 const career: CareerResponse = { runs: [], best: null, inTop: 0, total: 0 };
 /** The hooks Accounts is given, as mocks. */
-const hooks = () => ({ pause: vi.fn(), closeOthers: vi.fn(), fitHud: vi.fn(), toast: vi.fn(), onWatch: vi.fn(), openCareer: vi.fn() });
+const hooks = () => ({ pause: vi.fn(), closeOthers: vi.fn(), backToMenu: vi.fn(), toast: vi.fn(), onWatch: vi.fn(), openCareer: vi.fn() });
 const me = { name: 'Meridian', isAdmin: false, starHead: false };
 
 /** A promise the test settles by hand, to put answers in any order. */
@@ -39,7 +39,7 @@ const tick = async (): Promise<void> => {
 let session: Session;
 let accounts: Accounts;
 beforeEach(() => {
-  document.body.innerHTML = '<button id="menu-btn"></button>';
+  document.body.innerHTML = '<button id="menu-btn"></button><div id="menu"><span id="board-rank"></span><button id="account-row" hidden></button></div>';
   calls.cachedCareer.mockReset().mockResolvedValue(career);
   calls.forgetCareer.mockReset();
   calls.board.mockReset().mockResolvedValue({ rows: [], total: 0, you: null });
@@ -217,7 +217,7 @@ it("a Watch button on the board hands its run's id to onWatch", async () => {
   expect(h.onWatch).toHaveBeenCalledWith('run-Comet');
 });
 
-it("the leaderboard's Career, and the menu's, ask for the career page with the button they came from", async () => {
+it("the leaderboard's Career asks for the career page with the button it came from", async () => {
   const h = hooks();
   const acc = new Accounts(session, h);
   acc.openBoard();
@@ -225,12 +225,17 @@ it("the leaderboard's Career, and the menu's, ask for the career page with the b
   expect(link?.textContent).toBe('Career');
   link?.click();
   expect(h.openCareer).toHaveBeenCalledWith(link);
-  // The account menu's item hands over the chip, where focus goes back to (this instance's: the newest chip and menu).
+});
+
+it('the account page goes back to the menu on ‹ Menu', () => {
+  const h = hooks();
+  document.body.innerHTML = '<button id="menu-btn"></button><div id="menu"><span id="board-rank"></span><button id="account-row" hidden></button></div>';
+  new Accounts(session, h);
   session.set({ ...me });
-  const chip = [...document.querySelectorAll<HTMLElement>('#account-chip')].at(-1) as HTMLElement;
-  chip.click();
-  [...document.querySelectorAll<HTMLElement>('#account-menu [data-act="career"]')].at(-1)?.click();
-  expect(h.openCareer).toHaveBeenLastCalledWith(chip);
+  (document.getElementById('account-row') as HTMLElement).click();
+  expect(h.closeOthers).toHaveBeenCalled();
+  document.querySelector<HTMLElement>('#account-menu [data-act="back"]')?.click();
+  expect(h.backToMenu).toHaveBeenCalledTimes(1);
 });
 
 it("the menu head is the cached career's ranked best and its place: two opens, one request; a finish reads it again", async () => {
@@ -241,20 +246,24 @@ it("the menu head is the cached career's ranked best and its place: two opens, o
   calls.cachedCareer.mockImplementation(() => real.api.cachedCareer());
   const reads = () => fetch.mock.calls.filter((c) => c[0] === '/api/me/career').length;
   session.set({ ...me });
-  const chip = document.getElementById('account-chip') as HTMLElement;
+  const row = document.getElementById('account-row') as HTMLElement;
   const menu = document.getElementById('account-menu') as HTMLElement;
-  chip.click();
+  const back = () => menu.querySelector<HTMLElement>('[data-act="back"]')?.click();
+  row.click();
   await tick();
   expect(menu.querySelector('small')?.textContent).toBe('#2 all-time · best 0:41.0');
-  chip.click(); // closes
-  chip.click(); // opens again
+  expect(row.textContent).toContain('#2 all-time · best 0:41.0');
+  back(); // closes
+  row.click(); // opens again
   await tick();
   expect(reads()).toBe(1);
-  chip.click();
+  back();
   await real.api.finish('g', []);
-  chip.click();
+  // Opening the settings menu reads it afresh too (the row's line and Leaderboard's rank).
+  accounts.refreshSummary();
   await tick();
   expect(reads()).toBe(2);
+  expect(document.getElementById('board-rank')?.textContent).toBe('#2');
   vi.unstubAllGlobals();
 });
 

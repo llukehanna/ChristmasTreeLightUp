@@ -11,9 +11,10 @@ import { Sheet } from './sheet';
 export interface AccountsHooks {
   /** A sheet is about to cover the game: pause a game in progress. */
   pause(): void;
-  /** The account menu is opening: close the settings menu and the radio panel. */
+  /** The account page is opening: close the settings menu and the radio panel. */
   closeOthers(): void;
-  fitHud(): void;
+  /** "‹ Menu" or Escape on the account page: open the settings menu again, focus on its account row. */
+  backToMenu(): void;
   toast(text: string, ms?: number): void;
   /** A row's Watch button: play run `id` back on the stage (C4). */
   onWatch(id: string): void;
@@ -52,7 +53,7 @@ export class Accounts {
   ) {
     this.sheet = new Sheet({
       onOpen: () => {
-        this.menu.close(false);
+        this.menu.close();
         hooks.closeOthers();
         hooks.pause();
       },
@@ -63,9 +64,9 @@ export class Accounts {
         hooks.closeOthers();
         void this.loadSummary();
       },
-      act: (act, chip) => this.act(act, chip),
-      signIn: (chip) => this.openSignIn({}, chip),
-      fit: () => hooks.fitHud(),
+      act: (act, from) => this.act(act, from),
+      signIn: (from) => this.openSignIn({}, from),
+      back: () => hooks.backToMenu(),
     });
     session.subscribe((s) => this.onSession(s));
     this.noteFailedSignIn();
@@ -85,7 +86,12 @@ export class Accounts {
   }
 
   closeMenu(): void {
-    this.menu.close(false);
+    this.menu.close();
+  }
+
+  /** The account row's line and Leaderboard's rank, read afresh when the settings menu opens (signed in only). */
+  refreshSummary(): void {
+    if (this.session.current) void this.loadSummary();
   }
 
   /** The account sheet itself, for another page in its glass (the Advent calendar, src/ui/advent.ts). */

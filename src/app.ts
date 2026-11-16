@@ -411,6 +411,7 @@ export class App {
       onOpen: () => {
         this.radioPanel.close();
         this.accounts.closeMenu();
+        this.accounts.refreshSummary();
         // A pinned key card would sit over the open menu (it docks at the same edge).
         this.keyCard.close();
       },
@@ -463,7 +464,7 @@ export class App {
         this.menu.close();
         this.radioPanel.close();
       },
-      fitHud: () => this.fitHud(),
+      backToMenu: () => this.menu.open(el('account-row')),
       toast: (text, ms) => this.toast.show(text, ms),
       onWatch: (id) => this.watchRun(id),
       openCareer: (from) => this.openCareer(from),
@@ -1703,7 +1704,7 @@ export class App {
       },
     });
     // Any HUD button can be the first gesture: unlock audio inside it (the music itself waits for the first tap).
-    for (const id of ['radio-pill', 'pause-btn', 'menu-btn', 'account-chip']) el(id).addEventListener('click', () => this.sfx.unlock());
+    for (const id of ['radio-pill', 'pause-btn', 'menu-btn', 'account-row']) el(id).addEventListener('click', () => this.sfx.unlock());
     el('zoom-reset').addEventListener('click', () => this.setCamera(IDENTITY));
     el('corner-new').addEventListener('click', () => this.newGame());
   }
@@ -1935,7 +1936,6 @@ export class App {
   private fitHud(): void {
     if (!this.laidOut) return;
     const pill = document.getElementById('radio-pill');
-    const chip = document.getElementById('account-chip');
     const daily = document.getElementById('daily-pill');
     const ghost = document.getElementById('ghost-pill');
     const hud = document.querySelector('.hud');
@@ -1948,12 +1948,9 @@ export class App {
         if (daily) daily.dataset.fit = dailyFit;
         // The ghost pill is its icon alone wherever the Daily pill is 'Daily' alone.
         if (ghost) ghost.dataset.fit = dailyFit;
-        for (const chipFit of ['full', 'icon']) {
-          if (chip) chip.dataset.fit = chipFit;
-          for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
-            pill.dataset.fit = fit;
-            if (clear()) break fit;
-          }
+        for (const fit of ['full', 'title', 'name', 'short', 'icon']) {
+          pill.dataset.fit = fit;
+          if (clear()) break fit;
         }
       }
     }

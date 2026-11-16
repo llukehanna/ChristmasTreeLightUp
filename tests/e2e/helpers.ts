@@ -71,9 +71,21 @@ export async function asPlayer(page: Page): Promise<{ email: string; name: strin
   return { email, name: `p${tag}` };
 }
 
-/** Signs in from the HUD chip; (fake) Google sends the browser back to the same page. */
-export async function signInFromChip(page: Page): Promise<void> {
-  await page.locator('#account-chip').click();
+/** The account row at the foot of the settings menu (the sign-in card for a guest, else the account page). */
+export async function openAccount(page: Page): Promise<void> {
+  if (await page.locator('#menu').isHidden()) await page.locator('#menu-btn').click();
+  await page.locator('#account-row').click();
+}
+
+/** A row of the settings menu's Yours section: Career or Leaderboard. */
+export async function fromMenu(page: Page, row: 'career-row' | 'board-row'): Promise<void> {
+  if (await page.locator('#menu').isHidden()) await page.locator('#menu-btn').click();
+  await page.locator(`#${row}`).click();
+}
+
+/** Signs in from the menu's account row; (fake) Google sends the browser back to the same page. */
+export async function signInFromMenu(page: Page): Promise<void> {
+  await openAccount(page);
   await page.getByRole('dialog', { name: 'Sign in' }).getByRole('link', { name: 'Continue with Google' }).click();
   await page.waitForURL(/\/\?test$/);
 }

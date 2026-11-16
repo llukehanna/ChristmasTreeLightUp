@@ -1,5 +1,5 @@
 /* =====================================================================
-   Accounts (spec 2026-10-07 §6): the HUD chip and its menu (pick 1A), and
+   Accounts (spec 2026-10-07 §6; facelift 2026-11-16): the account row at the foot of the settings menu and its page, and
    sheets and cards in the radio panel's dark glass (pick 2C).
    ===================================================================== */
 
@@ -39,36 +39,38 @@ body.acct-sheet-open .pause > div { visibility: hidden; }
 @keyframes acct-drop-in { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }
 @keyframes acct-sheet-in { from { transform: translateY(40px); opacity: 0.4; } }
 
-/* ---------- the HUD chip (1A) ---------- */
-.acct-chip { padding: 0 14px 0 11px; gap: 7px; }
-.acct-chip > svg { width: 14px; height: 14px; flex: none; opacity: 0.9; filter: drop-shadow(0 0 3px rgba(255, 200, 120, 0.25)); }
-.acct-chip.me { padding: 0 14px 0 3px; }
-.acct-chip-l { white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-/* fitHud() falls back to the initial (or the person icon) when the HUD would reach the wordmark. */
-.acct-chip[data-fit='icon'] { width: 38px; padding: 0 !important; justify-content: center; }
-.acct-chip.me[data-fit='icon'] { width: 32px; }
-.acct-chip[data-fit='icon'] .acct-chip-l { display: none; }
-
-/* ---------- the account menu ---------- */
-.acct-drop {
-  position: fixed; z-index: 30; top: calc(68px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); width: 280px;
-  padding: 36px 10px 10px; border-radius: 18px; color: #f6e7c8;
-  background:
-    repeating-linear-gradient(135deg, rgba(255, 220, 160, 0.022) 0 6px, transparent 6px 14px),
-    radial-gradient(120% 70% at 30% 0%, rgba(190, 40, 52, 0.35), transparent 70%),
-    linear-gradient(180deg, rgba(70, 10, 18, 0.92), rgba(28, 8, 10, 0.94));
-  border: 1px solid var(--goldline);
-  backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 24px 60px rgba(0, 0, 0, 0.45);
-  animation: acct-drop-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+/* ---------- the account row, at the foot of the settings menu ---------- */
+.menu .menu-acct {
+  all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: 11px; margin-top: 8px; padding: 12px;
+  border-top: 1px solid rgba(236, 196, 116, 0.16); border-radius: 0 0 10px 10px; font: 500 13.5px Inter, system-ui, sans-serif; color: #f6e7c8;
+  transition: background-color 0.12s, transform 0.12s var(--ease-out);
 }
+.menu .menu-acct[hidden] { display: none; }
+.menu .menu-acct:hover { background: rgba(255, 220, 160, 0.08); }
+.menu .menu-acct:active { transform: scale(0.985); }
+.menu .menu-acct:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
+.menu .menu-acct .acct-av { width: 28px; height: 28px; font-size: 18px; }
+.menu .menu-acct .acct-av.anon svg { width: 15px; height: 15px; }
+.menu-acct-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.menu-acct-t > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-acct-t small { font-size: 11.5px; font-weight: 400; color: rgba(246, 231, 200, 0.62); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.menu-chev { margin-left: auto; font-size: 16px; opacity: 0.5; }
+
+/* ---------- the account page: it opens in the settings menu's place, in its velvet ---------- */
+.acct-drop {
+  position: fixed; z-index: 30; top: calc(66px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); width: 300px;
+  padding: 8px; border-radius: 18px; color: #f6e7c8; background: var(--velvet); border: 0; box-shadow: var(--panel-shadow);
+  transform-origin: top right; animation: menu-in 0.18s var(--ease-out);
+}
+.acct-drop .acct-back { padding: 10px 12px; margin-bottom: 4px; font-size: 13.5px; color: rgba(246, 231, 200, 0.7); }
+.acct-drop .acct-back:hover { color: #fff3dc; }
 /* Satin ribbon band and bow, as on the settings menu and the radio panel. */
-.acct-drop .acct-band, .acct-sheet::before {
+.acct-sheet::before {
   content: ''; position: absolute; left: 0; right: 0; top: 12px; height: 10px; pointer-events: none;
   background: linear-gradient(180deg, #f6dc98 0%, #e2b560 35%, #b98636 75%, #8f5f22 100%);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
 }
-.acct-drop .bow, .acct-sheet .bow { position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); z-index: 2; }
+.acct-sheet .bow { position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); z-index: 2; }
 .acct-drop-head { display: flex; align-items: center; gap: 12px; padding: 4px 8px 12px; }
 .acct-drop-head b { display: block; font: 400 21px/1.1 'Instrument Serif', serif; color: #fff3dc; text-shadow: 0 1px 12px rgba(255, 180, 90, 0.2); }
 .acct-drop-head small { display: block; margin-top: 3px; font-size: 11.5px; color: rgba(246, 231, 200, 0.6); font-variant-numeric: tabular-nums; }
@@ -278,11 +280,8 @@ button.adv-door:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px;
   .adv-l { font-size: 8.5px; letter-spacing: -0.02em; }
 }
 
-/* ---------- phones: the chip shows the initial, the menu spans the width, sheets are bottom sheets ---------- */
+/* ---------- phones: the account page spans the width, as the menu does; sheets are bottom sheets ---------- */
 @media (max-width: 600px) {
-  .acct-chip { width: 38px; padding: 0 !important; justify-content: center; }
-  .acct-chip.me { width: 32px; }
-  .acct-chip .acct-chip-l { display: none; }
   .acct-drop { right: 12px; left: 12px; width: auto; }
   .acct-sheet, .acct-sheet.acct-card {
     top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: min(86vh, calc(100dvh - 64px));
@@ -298,7 +297,7 @@ button.adv-door:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px;
   .acct-x { top: 34px; }
   .acct-sub { letter-spacing: 0.16em; }
 }
-/* Phones narrower than the 390px iPhone (360px Android, 320px SE): with the chip the HUD has five pills, so they tighten to stay clear of the wordmark. */
+/* Phones narrower than the 390px iPhone (360px Android, 320px SE): the capsule's segments tighten to stay clear of the wordmark. */
 @media (max-width: 389px) {
   .wordmark { left: 14px; letter-spacing: 0.42em; }
   .hud { right: 10px; }

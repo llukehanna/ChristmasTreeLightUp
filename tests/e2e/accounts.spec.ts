@@ -1,32 +1,31 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping } from './helpers';
+import { asPlayer, fromMenu, game, onlineTree, openAccount, pickName, ready, resumeIfPaused, signInFromMenu, solveByTapping } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
-test('the HUD chip signs in with (fake) Google, asks for a name once, then shows it', async ({ page }) => {
+test("the menu's account row signs in with (fake) Google, asks for a name once, then shows it", async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
-  const chip = page.locator('#account-chip');
-  await expect(chip).toHaveAccessibleName('Sign in');
-  await chip.click();
+  const chip = page.locator('#account-row');
+  await expect(chip).toHaveAttribute('aria-label', 'Sign in');
+  await openAccount(page);
   const card = page.getByRole('dialog', { name: 'Sign in' });
   await expect(card).toContainText('Your name on the leaderboard is the one you pick. We never show your email.');
   await expect(card.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
   await card.getByRole('link', { name: 'Continue with Google' }).click();
   await page.waitForURL(/\/\?test$/);
   await pickName(page, player.name);
-  await expect(chip).toHaveAccessibleName(`Account: ${player.name}`);
+  await expect(chip).toHaveAttribute('aria-label', `Account: ${player.name}`);
 });
 
-test('the account menu opens the leaderboard, with Career beside it in its switch; Escape closes the sheet', async ({ page }) => {
+test('the menu opens the leaderboard, with Career beside it in its switch; Escape closes the sheet', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
-  await page.locator('#account-chip').click();
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+  await fromMenu(page, 'board-row');
   const board = page.getByRole('dialog', { name: 'Leaderboard' });
   await expect(board).toBeVisible();
   await expect(board.getByRole('button', { name: 'Leaderboard' })).toHaveAttribute('aria-current', 'page');
@@ -38,17 +37,17 @@ test('the account menu opens the leaderboard, with Career beside it in its switc
 test('the name card checks as you type: too short, reserved, taken by a look-alike, then available', async ({ page }) => {
   const first = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, first.name);
   await resumeIfPaused(page);
   // Sign out from the menu, then come back as another Google account.
-  await page.locator('#account-chip').click();
+  await openAccount(page);
   await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.locator('#account-chip')).toHaveAccessibleName('Sign in');
+  await expect(page.locator('#account-row')).toHaveAttribute('aria-label', 'Sign in');
   await expect(page.locator('#toast')).toHaveText('Signed out');
   const second = await asPlayer(page);
   await page.evaluate(() => sessionStorage.clear());
-  await signInFromChip(page);
+  await signInFromMenu(page);
   const card = page.getByRole('dialog', { name: 'Pick a display name' });
   const field = card.getByLabel('Display name');
   const line = card.locator('.acct-check');
@@ -67,13 +66,32 @@ test('the name card checks as you type: too short, reserved, taken by a look-ali
   await field.press('Enter');
   await expect(card).toBeHidden();
   await expect(page.locator('#toast')).toHaveText(`Welcome, ${second.name}`);
-  await expect(page.locator('#account-chip')).toHaveAccessibleName(`Account: ${second.name}`);
+  await expect(page.locator('#account-row')).toHaveAttribute('aria-label', `Account: ${second.name}`);
+});
+
+test('the account page goes back to the menu on Escape, and a second Escape closes the menu without pausing', async ({ page }) => {
+  const player = await asPlayer(page);
+  await ready(page);
+  await signInFromMenu(page);
+  await pickName(page, player.name);
+  await resumeIfPaused(page);
+  await openAccount(page);
+  const account = page.getByRole('dialog', { name: 'Account' });
+  await expect(account).toBeVisible();
+  await expect(page.locator('#menu')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(account).toBeHidden();
+  await expect(page.locator('#menu')).toBeVisible();
+  await expect(page.locator('#account-row')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#menu')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(/\bpaused\b/);
 });
 
 test('a sheet pauses the game in progress, keeps Tab inside, and Escape hands focus to the pause overlay', async ({ page }) => {
   await ready(page);
   await expect(page.locator('#pause-btn')).toBeVisible();
-  await page.locator('#account-chip').click();
+  await openAccount(page);
   const card = page.getByRole('dialog', { name: 'Sign in' });
   await expect(card).toBeVisible();
   await expect(page.locator('body')).toHaveClass(/paused/);
@@ -98,13 +116,13 @@ test('?auth=failed: a toast says sign-in did not finish, and the address drops t
   expect(new URL(page.url()).search).toBe('?test');
 });
 
-test('delete account: typing the name enables Delete; the account goes, the chip signs out, and a toast says so', async ({ page }) => {
+test('delete account: typing the name enables Delete; the account goes, the row reads Sign in, and a toast says so', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
-  await page.locator('#account-chip').click();
+  await openAccount(page);
   await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Delete account' }).click();
   const card = page.getByRole('dialog', { name: 'Delete account' });
   const field = card.getByLabel(`Type your name, ${player.name}, to confirm`);
@@ -116,7 +134,7 @@ test('delete account: typing the name enables Delete; the account goes, the chip
   await go.click();
   await expect(card).toBeHidden();
   await expect(page.locator('#toast')).toHaveText('Account deleted');
-  await expect(page.locator('#account-chip')).toHaveAccessibleName('Sign in');
+  await expect(page.locator('#account-row')).toHaveAttribute('aria-label', 'Sign in');
   // The session went with the account.
   expect(await page.evaluate(() => fetch('/api/me').then((r) => r.json()))).toEqual({ user: null });
 });
@@ -124,13 +142,13 @@ test('delete account: typing the name enables Delete; the account goes, the chip
 test('delete account before a name: a wrong email is refused inline, the right one deletes', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await page.getByRole('dialog', { name: 'Pick a display name' }).waitFor();
   await page.keyboard.press('Escape');
   await resumeIfPaused(page);
-  const chip = page.locator('#account-chip');
-  await expect(chip).toHaveAccessibleName('Account');
-  await chip.click();
+  const chip = page.locator('#account-row');
+  await expect(chip).toHaveAttribute('aria-label', 'Account');
+  await openAccount(page);
   await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Delete account' }).click();
   const card = page.getByRole('dialog', { name: 'Delete account' });
   const field = card.getByLabel('Type the email of your Google account to confirm');
@@ -142,16 +160,16 @@ test('delete account before a name: a wrong email is refused inline, the right o
   await card.getByRole('button', { name: 'Delete account' }).click();
   await expect(card).toBeHidden();
   await expect(page.locator('#toast')).toHaveText('Account deleted');
-  await expect(chip).toHaveAccessibleName('Sign in');
+  await expect(chip).toHaveAttribute('aria-label', 'Sign in');
 });
 
 test('the admin sees Radio admin in the account menu; a player does not', async ({ page }) => {
   await page.context().addCookies([{ name: 'aglow_fake_as', value: 'admin@example.com', url: 'http://localhost:4173' }]);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   // The admin may have picked a name in another test; without one ("Account" alone), the name card opens with the chip.
-  const chip = page.locator('#account-chip');
-  await expect(chip).toHaveAccessibleName(/^Account/);
+  const chip = page.locator('#account-row');
+  await expect(chip).toHaveAttribute('aria-label', /^Account/);
   const nameCard = page.getByRole('dialog', { name: 'Pick a display name' });
   if ((await chip.getAttribute('aria-label')) === 'Account') {
     await nameCard.waitFor();
@@ -159,7 +177,7 @@ test('the admin sees Radio admin in the account menu; a player does not', async 
   }
   await expect(nameCard).toBeHidden();
   await resumeIfPaused(page);
-  await page.locator('#account-chip').click();
+  await openAccount(page);
   const menu = page.getByRole('dialog', { name: 'Account' });
   await expect(menu.getByRole('link', { name: 'Radio admin' })).toHaveAttribute('href', '/admin');
   await page.keyboard.press('Escape');
@@ -168,14 +186,14 @@ test('the admin sees Radio admin in the account menu; a player does not', async 
   await page.context().clearCookies();
   await asPlayer(page);
   await page.reload();
-  await expect(page.locator('#account-chip')).toHaveAccessibleName('Sign in');
+  await expect(page.locator('#account-row')).toHaveAttribute('aria-label', 'Sign in');
   await page.evaluate(() => sessionStorage.clear());
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await page.getByRole('dialog', { name: 'Pick a display name' }).waitFor();
   await page.keyboard.press('Escape');
   await resumeIfPaused(page);
-  await page.locator('#account-chip').click();
-  await expect(menu.getByRole('button', { name: 'Career' })).toBeVisible();
+  await openAccount(page);
+  await expect(menu.getByRole('button', { name: 'Sign out' })).toBeVisible();
   await expect(menu.getByRole('link', { name: 'Radio admin' })).toHaveCount(0);
 });
 
@@ -354,7 +372,7 @@ test('a finish whose automatic retry lands past the clock tolerance says "reache
 test('two runs by the same player both appear in the career', async ({ page }) => {
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
   for (let run = 0; run < 2; run++) {
@@ -363,9 +381,8 @@ test('two runs by the same player both appear in the career', async ({ page }) =
     await solveByTapping(page);
     await expect(page.locator('#results .rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
   }
-  await page.locator('#account-chip').click();
   // The career, not the shared top 50: other tests' players can push these two runs off the board.
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
+  await fromMenu(page, 'career-row');
   await expect(page.getByRole('dialog', { name: 'Your career' }).locator('#career-log tbody tr')).toHaveCount(2);
   const mine = await page.request.get('/api/me/career');
   expect(((await mine.json()) as { runs: unknown[] }).runs).toHaveLength(2);
@@ -384,7 +401,7 @@ test.describe('board windows', () => {
   test('the leaderboard opens on Today; This week and All time show their own runs, and the choice is remembered', async ({ page }) => {
     const player = await asPlayer(page);
     await ready(page);
-    await signInFromChip(page);
+    await signInFromMenu(page);
     await pickName(page, player.name);
     await resumeIfPaused(page);
     await onlineTree(page);
@@ -392,8 +409,7 @@ test.describe('board windows', () => {
     await expect(page.locator('#results .rib-line')).toHaveText(/^#\d+ of [\d,]+ runs? · /, { timeout: 15_000 });
     const openBoard = async () => {
       await resumeIfPaused(page);
-      await page.locator('#account-chip').click();
-      await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+      await fromMenu(page, 'board-row');
       return page.getByRole('dialog', { name: 'Leaderboard' });
     };
     let board = await openBoard();
@@ -448,7 +464,7 @@ test("signed in with a history on this device, the tag adds it to the account's 
   const player = await asPlayer(page);
   await seedDeviceHistory(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
   await onlineTree(page);
@@ -478,7 +494,7 @@ test("an account that imported its history shows its own numbers, with no device
       }),
   );
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
   await onlineTree(page);
@@ -507,7 +523,7 @@ test("a baseline is kept per account and never overwritten, so another account's
       }),
   );
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
   await onlineTree(page);
@@ -528,7 +544,7 @@ test("signed in but the stats can't be read: the tag keeps this device's numbers
     (route) => route.abort(),
   );
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
   await onlineTree(page);

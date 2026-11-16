@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping, type W } from './helpers';
+import { asPlayer, fromMenu, game, onlineTree, openAccount, pickName, ready, resumeIfPaused, signInFromMenu, solveByTapping, type W } from './helpers';
 
 // Each test signs a player in and most solve a tree: slow on a loaded machine.
 test.describe.configure({ timeout: 150_000 });
@@ -15,7 +15,7 @@ const careerPage = (page: Page) => page.getByRole('dialog', { name: 'Your career
 async function namedPlayer(page: Page): Promise<void> {
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
 }
@@ -28,10 +28,9 @@ async function solvedRun(page: Page): Promise<string> {
   return id;
 }
 
-/** The account menu's Career: the page is up. */
+/** The menu's Career: the page is up. */
 async function openCareer(page: Page): Promise<void> {
-  await page.locator('#account-chip').click();
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
+  await fromMenu(page, 'career-row');
   await expect(careerPage(page)).toBeVisible();
   await expect.poll(() => careerState(page)).toEqual({ open: true, loading: false });
 }
@@ -103,8 +102,8 @@ test('a reveal that ends under Career pauses the run at its end: the covered tim
   // A new tree, and Career over it in the same task: the seed, the reveal and its end all come under the page.
   await page.evaluate(() => {
     (window as unknown as W).__aglow.newTree();
-    document.getElementById('account-chip')?.click();
-    document.querySelector<HTMLElement>('#account-menu [data-act="career"]')?.click();
+    document.getElementById('menu-btn')?.click();
+    document.getElementById('career-row')?.click();
   });
   await expect(careerPage(page)).toBeVisible();
   await expect.poll(async () => (await game(page)).id, { timeout: 10_000 }).not.toBe(before);
@@ -162,8 +161,8 @@ test('Watch on a row plays the run', async ({ page }) => {
 
 test('a guest who asks for Career gets the sign-in sheet', async ({ page }) => {
   await ready(page);
-  // Signed out, the chip is Sign in (no menu, so no Career item): the sign-in card's leaderboard peek, then its Career.
-  await page.locator('#account-chip').click();
+  // Signed out, the account row is Sign in (it opens the sign-in card, not the account page): the sign-in card's leaderboard peek, then its Career.
+  await openAccount(page);
   await page.getByRole('dialog', { name: 'Sign in' }).getByRole('button', { name: 'Just looking? See the leaderboard' }).click();
   const board = page.getByRole('dialog', { name: 'Leaderboard' });
   await board.getByRole('button', { name: 'Career' }).click();
@@ -174,10 +173,11 @@ test('a guest who asks for Career gets the sign-in sheet', async ({ page }) => {
 
 test('Your games is gone', async ({ page }) => {
   await namedPlayer(page);
-  await page.locator('#account-chip').click();
+  await openAccount(page);
   const menu = page.getByRole('dialog', { name: 'Account' });
   await expect(menu.getByRole('button', { name: 'Your games' })).toHaveCount(0);
-  await menu.getByRole('button', { name: 'Leaderboard' }).click();
+  await page.keyboard.press('Escape'); // back to the menu
+  await page.locator('#board-row').click();
   const board = page.getByRole('dialog', { name: 'Leaderboard' });
   await expect(board).toBeVisible();
   await expect(board.getByText('Your games')).toHaveCount(0);

@@ -6,96 +6,116 @@ const makeHooks = () => ({
   open: vi.fn<AccountMenuHooks['open']>(),
   act: vi.fn<AccountMenuHooks['act']>(),
   signIn: vi.fn<AccountMenuHooks['signIn']>(),
-  fit: vi.fn<AccountMenuHooks['fit']>(),
+  back: vi.fn<AccountMenuHooks['back']>(),
 });
 let hooks: ReturnType<typeof makeHooks>;
 let menu: AccountMenu;
 beforeEach(() => {
-  document.body.innerHTML = '<div class="hud"><button id="menu-btn">···</button></div>';
+  document.body.innerHTML = '<button id="menu-btn">···</button><div id="menu"><span id="board-rank"></span><button id="account-row" hidden></button></div>';
   hooks = makeHooks();
   menu = new AccountMenu(hooks);
 });
 afterEach(() => {
-  menu.close(false);
+  menu.close();
   document.body.innerHTML = '';
 });
 const drop = () => document.getElementById('account-menu') as HTMLElement;
 const items = () => [...drop().querySelectorAll('.acct-item')].map((n) => n.textContent?.trim());
+const menuBtn = () => document.getElementById('menu-btn');
 
-it('sits left of the ··· button, hidden until /api/me answers', () => {
-  expect(menu.chip.nextElementSibling?.id).toBe('menu-btn');
-  expect(menu.chip.hidden).toBe(true);
+it('the account row sits in the menu, hidden until /api/me answers, and hidden again offline', () => {
+  expect(menu.row.id).toBe('account-row');
+  expect(menu.row.hidden).toBe(true);
   menu.render(null);
-  expect(menu.chip.hidden).toBe(false);
-  expect(hooks.fit).toHaveBeenCalled();
+  expect(menu.row.hidden).toBe(false);
+  menu.render(undefined);
+  expect(menu.row.hidden).toBe(true);
 });
 
-it('signed out, the chip reads Sign in and opens the sign-in card, not the menu', () => {
+it('signed out it reads Sign in and opens the sign-in card from the menu button', () => {
   menu.render(null);
-  expect(menu.chip.getAttribute('aria-label')).toBe('Sign in');
-  expect(menu.chip.textContent).toBe('Sign in');
-  menu.chip.click();
-  expect(hooks.signIn).toHaveBeenCalledWith(menu.chip);
+  expect(menu.row.getAttribute('aria-label')).toBe('Sign in');
+  expect(menu.row.textContent).toContain('Sign in');
+  expect(menu.row.textContent).toContain('Save your times and rank');
+  menu.row.click();
+  expect(hooks.signIn).toHaveBeenCalledWith(menuBtn());
   expect(menu.isOpen).toBe(false);
 });
 
-it('signed in: the name (escaped) and initial, and a menu with the leaderboard, Career, sign out, delete and privacy', () => {
-  menu.render({ name: '<Comet>', isAdmin: false, starHead: false });
-  expect(menu.chip.getAttribute('aria-label')).toBe('Account: <Comet>');
-  expect(menu.chip.querySelector('.acct-chip-l')?.textContent).toBe('<Comet>');
-  expect(menu.chip.querySelector('.acct-av')?.textContent).toBe('<');
-  expect(drop().querySelector('b')?.innerHTML).toBe('&lt;Comet&gt;');
-  expect(items()).toEqual(['Leaderboard', 'Career']);
+it('signed in it shows the name (escaped) and summary, and the rank beside Leaderboard', () => {
+  menu.render({ name: '<Comet>', isAdmin: false, starHead: false }, { rank: 12, best: 81_049 });
+  expect(menu.row.getAttribute('aria-label')).toBe('Account: <Comet>');
+  expect(menu.row.querySelector('.acct-av')?.textContent).toBe('<');
+  expect(menu.row.textContent).toContain('<Comet>');
+  expect(menu.row.textContent).toContain('#12 all-time · best 1:21.0');
+  expect(document.getElementById('board-rank')?.textContent).toBe('#12');
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: null, best: null });
+  expect(document.getElementById('board-rank')?.textContent).toBe('');
+});
+
+it('no name yet: the person icon and "Account"; the page offers a name, and an admin also gets Radio admin', () => {
+  menu.render({ name: null, isAdmin: true, starHead: false });
+  expect(menu.row.getAttribute('aria-label')).toBe('Account');
+  expect(menu.row.querySelector('.acct-av svg')).not.toBeNull();
+  expect(items()).toEqual(['‹ Menu', 'Pick a display name', 'Radio admin']);
+});
+
+it('the account page leads with a way back and holds no Leaderboard or Career', () => {
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
+  menu.row.click();
+  expect(hooks.open).toHaveBeenCalledTimes(1);
+  expect(menu.isOpen).toBe(true);
+  expect(drop().querySelector('.acct-item')?.getAttribute('data-act')).toBe('back');
+  expect(drop().querySelector('[data-act="board"], [data-act="career"]')).toBeNull();
+  expect(drop().querySelector('.bow, .acct-band')).toBeNull();
   expect([...drop().querySelectorAll('.acct-drop-foot > *')].map((n) => n.textContent)).toEqual(['Sign out', 'Delete account', 'Privacy']);
 });
 
-it('no name yet: the person icon and "Account" (no initial), a menu that offers a name; an admin also gets Radio admin', () => {
-  menu.render({ name: null, isAdmin: true, starHead: false });
-  expect(menu.chip.getAttribute('aria-label')).toBe('Account');
-  expect(menu.chip.querySelector('svg')).not.toBeNull();
-  expect(menu.chip.querySelector('.acct-av')).toBeNull();
-  expect(menu.chip.textContent).toBe('Account');
-  expect(drop().querySelector('.acct-av.anon svg')).not.toBeNull();
-  expect(items()).toEqual(['Pick a display name', 'Leaderboard', 'Career', 'Radio admin']);
-  expect(drop().querySelector<HTMLAnchorElement>('a.acct-item')?.getAttribute('href')).toBe('/admin');
-});
-
-it('the head line: rank and best once loaded, or no ranked runs yet', () => {
-  menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 12, best: 81_049 });
-  expect(drop().querySelector('small')?.textContent).toBe('#12 all-time · best 1:21.0');
-  expect(drop().querySelector('.acct-r')?.textContent).toBe('#12');
-  menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: null, best: null });
-  expect(drop().querySelector('small')?.textContent).toBe('No ranked runs yet');
-});
-
-it('opens from the chip (telling the app), routes items, and closes on Escape back to the chip', () => {
-  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
-  menu.chip.click();
-  expect(hooks.open).toHaveBeenCalledTimes(1);
-  expect(menu.isOpen).toBe(true);
-  expect(menu.chip.getAttribute('aria-expanded')).toBe('true');
-  expect(menu.hasFocus).toBe(true);
-  drop().querySelector<HTMLElement>('[data-act="career"]')?.click();
-  expect(hooks.act).toHaveBeenCalledWith('career', menu.chip);
-  expect(menu.isOpen).toBe(false);
-  menu.chip.click();
-  dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-  expect(menu.isOpen).toBe(false);
-  expect(document.activeElement).toBe(menu.chip);
-});
-
-it('keeps keyboard focus on the same item when the summary arrives and the menu re-renders', () => {
+it('‹ Menu closes the page and goes back', () => {
   menu.render({ name: 'Comet', isAdmin: false, starHead: false });
   menu.open();
-  drop().querySelector<HTMLElement>('[data-act="career"]')?.focus();
+  drop().querySelector<HTMLElement>('[data-act="back"]')?.click();
+  expect(menu.isOpen).toBe(false);
+  expect(hooks.back).toHaveBeenCalledTimes(1);
+  expect(hooks.act).not.toHaveBeenCalled();
+});
+
+it('Escape closes the page and goes back, and goes no further (no pause, no second close)', () => {
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
+  menu.open();
+  const below = vi.fn();
+  document.addEventListener('keydown', below);
+  const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  document.activeElement?.dispatchEvent(e);
+  document.removeEventListener('keydown', below);
+  expect(menu.isOpen).toBe(false);
+  expect(hooks.back).toHaveBeenCalledTimes(1);
+  expect(e.defaultPrevented).toBe(true);
+  expect(below).not.toHaveBeenCalled();
+});
+
+it('other items close the page and hand over the menu button', () => {
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
+  menu.open();
+  drop().querySelector<HTMLElement>('[data-act="signout"]')?.click();
+  expect(menu.isOpen).toBe(false);
+  expect(hooks.act).toHaveBeenCalledWith('signout', menuBtn());
+  expect(hooks.back).not.toHaveBeenCalled();
+});
+
+it('a summary arriving while the page is open keeps focus where it was', () => {
+  menu.render({ name: 'Comet', isAdmin: false, starHead: false });
+  menu.open();
+  const back = drop().querySelector<HTMLElement>('[data-act="back"]');
+  expect(document.activeElement).toBe(back);
   menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 3, best: 50_000 });
-  expect(document.activeElement).toBe(drop().querySelector('[data-act="career"]'));
+  expect(document.activeElement).toBe(drop().querySelector('[data-act="back"]'));
   drop().querySelector<HTMLElement>('a[href="/privacy"]')?.focus();
   menu.render({ name: 'Comet', isAdmin: false, starHead: false }, { rank: 2, best: 49_000 });
   expect(document.activeElement).toBe(drop().querySelector('a[href="/privacy"]'));
 });
 
-it('signing out closes an open menu', () => {
+it('signing out closes an open page', () => {
   menu.render({ name: 'Comet', isAdmin: false, starHead: false });
   menu.open();
   menu.render(null);

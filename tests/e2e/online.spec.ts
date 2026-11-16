@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import type { Page } from '@playwright/test';
 import { expect, test, testIp } from './fixtures';
-import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping, waitInteractive, type W } from './helpers';
+import { asPlayer, fromMenu, game, onlineTree, pickName, ready, resumeIfPaused, signInFromMenu, solveByTapping, type W, waitInteractive } from './helpers';
 
 test('a tree solved by tapping is replayed by the server and saved as an anonymous run', async ({ page }) => {
   await ready(page);
@@ -443,7 +443,7 @@ test.describe('the Daily Tree from the menu, signed in', () => {
   async function namedPlayer(page: Page): Promise<string> {
     const player = await asPlayer(page);
     await ready(page);
-    await signInFromChip(page);
+    await signInFromMenu(page);
     await pickName(page, player.name);
     await resumeIfPaused(page);
     return player.name;
@@ -472,8 +472,7 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await solveByTapping(page);
     const results = page.locator('#results');
     await expect(results.locator('.rib-line')).toHaveText(/^#\d+ of [\d,]+ on the Daily board$/, { timeout: 15_000 });
-    await page.locator('#account-chip').click();
-    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Leaderboard' }).click();
+    await fromMenu(page, 'board-row');
     const board = page.getByRole('dialog', { name: 'Leaderboard' });
     const windows = board.getByRole('group', { name: 'Time window' });
     await expect(windows.getByRole('button').first()).toHaveText('Daily');
@@ -508,8 +507,7 @@ test.describe('the Daily Tree from the menu, signed in', () => {
     await expect(results.getByRole('img', { name: 'Unranked' })).toBeVisible();
     await expect(results.locator('.rib-ribbon')).toHaveCount(0);
     // The career: the repeat (newest, first) says so, the first attempt doesn't.
-    await page.locator('#account-chip').click();
-    await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
+    await fromMenu(page, 'career-row');
     const games = page.getByRole('dialog', { name: 'Your career' }).locator('#career-log tbody tr');
     await expect(games).toHaveCount(2);
     await expect(games.nth(0).locator('.tag.un')).toHaveText('Unranked · not your first go');
@@ -574,7 +572,7 @@ test.describe('the Advent calendar', () => {
     moveToDay(id, '2026-12-06');
 
     // Signed in, the run is claimed: door 6 opens on the Gingerbread tag.
-    await signInFromChip(page);
+    await signInFromMenu(page);
     await pickName(page, player.name);
     await resumeIfPaused(page);
     await page.click('#menu-btn');

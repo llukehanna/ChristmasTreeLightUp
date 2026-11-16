@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { asPlayer, game, onlineTree, pickName, ready, resumeIfPaused, signInFromChip, solveByTapping, waitInteractive, type W } from './helpers';
+import { asPlayer, fromMenu, game, onlineTree, pickName, ready, resumeIfPaused, signInFromMenu, solveByTapping, type W, waitInteractive } from './helpers';
 
 // Each test signs a player in, solves a tree and watches it back: slow on a loaded machine.
 test.describe.configure({ timeout: 150_000 });
@@ -12,7 +12,7 @@ const bar = (page: Page) => page.locator('#replay-bar');
 async function namedPlayer(page: Page): Promise<void> {
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
 }
@@ -45,10 +45,9 @@ const career = (page: Page) => page.getByRole('dialog', { name: 'Your career' })
 /** Run `id`'s Watch button in the career page's log. */
 const watchButton = (page: Page, id: string) => career(page).locator(`button.watch[data-id="${id}"]`);
 
-/** Opens the career page from the account chip, and waits for run `id`'s Watch button. */
+/** Opens the career page from the menu, and waits for run `id`'s Watch button. */
 async function openCareer(page: Page, id: string): Promise<void> {
-  await page.locator('#account-chip').click();
-  await page.getByRole('dialog', { name: 'Account' }).getByRole('button', { name: 'Career' }).click();
+  await fromMenu(page, 'career-row');
   await expect(watchButton(page, id)).toBeEnabled();
 }
 

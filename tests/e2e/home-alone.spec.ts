@@ -1,10 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { TrapKind } from '../../src/render/home-alone';
 import { expect, test } from './fixtures';
-import {
-  asPlayer, game, holdEggs, onlineTree, pageErrors, pickName, ready, resumeIfPaused, signInFromChip, silentWav, solveByTapping, stopClock, typeStill,
-  waitInteractive, type W,
-} from './helpers';
+import { asPlayer, game, holdEggs, onlineTree, pageErrors, pickName, ready, resumeIfPaused, signInFromMenu, silentWav, solveByTapping, stopClock, type W, typeStill, waitInteractive } from './helpers';
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -292,7 +289,7 @@ const account = (page: Page) =>
 async function signedIn(page: Page): Promise<void> {
   const player = await asPlayer(page);
   await ready(page);
-  await signInFromChip(page);
+  await signInFromMenu(page);
   await pickName(page, player.name);
   await resumeIfPaused(page);
 }
