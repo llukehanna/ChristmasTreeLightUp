@@ -80,6 +80,41 @@ test('Career mid-run pauses the clock, and Back closes it', async ({ page }) => 
   await expect.poll(() => frames(page)).toBeGreaterThan(drawn);
 });
 
+test('a reveal that ends under Career pauses the run at its end: the covered time is not on the server either', async ({ page }) => {
+  await namedPlayer(page);
+  // Once, so its chunk is in: the page then lands at once, well inside the next tree's reveal.
+  await openCareer(page);
+  await page.keyboard.press('Escape');
+  await expect(careerPage(page)).toBeHidden();
+  const before = (await game(page)).id;
+  // A new tree, and Career over it in the same task: the seed, the reveal and its end all come under the page.
+  await page.evaluate(() => {
+    (window as unknown as W).__aglow.newTree();
+    document.getElementById('account-chip')?.click();
+    document.querySelector<HTMLElement>('#account-menu [data-act="career"]')?.click();
+  });
+  await expect(careerPage(page)).toBeVisible();
+  await expect.poll(async () => (await game(page)).id, { timeout: 10_000 }).not.toBe(before);
+  await page.waitForFunction(() => (window as unknown as W).__aglow.state().interactive);
+  const drawn = await frames(page);
+  await page.waitForTimeout(1500);
+  expect(await clockMs(page)).toBe(0);
+  expect(await frames(page)).toBe(drawn);
+  await page.keyboard.press('Escape');
+  await expect(careerPage(page)).toBeHidden();
+  await resumeIfPaused(page);
+  const id = (await game(page)).id as string;
+  await solveByTapping(page);
+  await expect.poll(() => game(page), { timeout: 20_000 }).toMatchObject({ id, outcome: 'done' });
+  const clock = await clockMs(page);
+  const run = await page.evaluate(async (gameId) => {
+    const r = await fetch(`/api/games/${encodeURIComponent(gameId)}/replay`);
+    return (await r.json()) as { ms: number };
+  }, id);
+  // The server's time is the clock's: the 1.5 s under the page sits inside the pause, not before it.
+  expect(Math.abs(run.ms - clock)).toBeLessThan(600);
+});
+
 test('Esc closes Career; Leaderboard opens the leaderboard sheet', async ({ page }) => {
   await namedPlayer(page);
   const url = page.url();

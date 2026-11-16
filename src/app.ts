@@ -715,6 +715,9 @@ export class App {
     this.busy(this.vis.lastLitAt(board));
     this.results.setGhost(null);
     this.beginGhost();
+    // The loop may have stopped under the career page (the tree before was paused): this tree's reveal must be watched,
+    // to pause it at its end.
+    if (this.career.covering) this.startLoop();
   }
 
   /**
@@ -1535,13 +1538,11 @@ export class App {
   }
 
   /**
-   * The career page has gone: the stage draws again. The reveal may have ended under the page, with the loop idle and
-   * the clock not yet started: the run is paused now, as under a sheet. Focus goes back where the page was opened from,
-   * or onto the frost.
+   * The career page has gone: the stage draws again (the loop ticked under it only until the run was paused, or could
+   * never be). Focus goes back where the page was opened from, or onto the frost.
    */
   private uncoverStage(from: HTMLElement | null): void {
     const now = performance.now();
-    if (!this.paused && this.canPause(now)) this.pause(false);
     this.pausedDrawn = false;
     this.busy(now);
     this.startLoop();
@@ -1559,9 +1560,14 @@ export class App {
   }
 
   private loop(now: number): void {
-    // The career page covers the stage: no frame, and no next one until it closes (uncoverStage starts the loop again).
+    // The career page covers the stage: no frame. A tree still starting or in its reveal is paused the moment it can be
+    // (as under a sheet), so the log's pause starts at the reveal's end; until then the loop only ticks. Then it stops;
+    // a new tree (beginGame) or closing the page (uncoverStage) starts it again.
     if (this.career.covering) {
-      this.looping = false;
+      if (!this.paused && !this.watching && this.canPause(now)) this.pause(false);
+      if (!this.paused && !this.watching && this.winAt === null && (this.starting || (this.live && now < this.interactiveAt))) {
+        requestAnimationFrame((t) => this.loop(t));
+      } else this.looping = false;
       return;
     }
     requestAnimationFrame((t) => this.loop(t));
@@ -1586,8 +1592,9 @@ export class App {
       if (this.accounts.sheetOpen && w.playing) this.replayer?.toggle();
       this.replayer?.frame(now, dt);
     } else {
-      // A sheet over the game (opened during the reveal, say) never lets the clock run underneath it.
-      if (this.accounts.sheetOpen && !this.paused && this.canPause(now)) this.pause(false);
+      // A sheet over the game (opened during the reveal, say), or the career page on its way, never lets the clock run
+      // underneath it.
+      if ((this.accounts.sheetOpen || this.career.isOpen) && !this.paused && this.canPause(now)) this.pause(false);
       // The clock starts (or resumes, after a pause or a reload, logging the 'r') once the reveal is over; turns due finish.
       this.handle(this.run.frame(now, Date.now()), now);
     }
