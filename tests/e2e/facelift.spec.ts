@@ -85,3 +85,12 @@ test('panels share the velvet and only the menu wears a bow', async ({ page }) =
 
   expect(await css(page, '.toast', 'backdrop-filter')).toBe('none');
 });
+
+test('on Frost the menu keeps its light gold: the velvet is dark in every scene', async ({ page }) => {
+  await owning(page, ['scene:frost']);
+  await page.addInitScript(() => localStorage.setItem('aglow.look', JSON.stringify({ v: 1, scene: 'frost' })));
+  await ready(page);
+  await page.click('#menu-btn');
+  expect(await css(page, '#ms-play', 'background-image')).toContain('rgb(248, 230, 174)');
+  expect(await css(page, '#board-row svg', 'color')).toBe('rgb(214, 162, 74)');
+});

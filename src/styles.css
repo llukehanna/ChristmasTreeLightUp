@@ -182,7 +182,8 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
 .menu-h {
   margin: 0; padding: 12px 12px 4px; font: italic 400 17px/1 'Instrument Serif', serif; letter-spacing: 0.01em; width: fit-content;
   color: transparent; -webkit-background-clip: text; background-clip: text;
-  background-image: linear-gradient(100deg, var(--gold1), var(--gold2) 38%, var(--gold3) 54%, var(--gold4) 80%);
+  /* The velvet is dark in every scene, so the light foil, not the scene's (Frost's is burnished for its pale sky). */
+  background-image: linear-gradient(100deg, #f8e6ae, #d6a24a 38%, #fff3cf 54%, #b9822f 80%);
 }
 .menu-sec:first-of-type .menu-h { padding-top: 2px; }
 /* Every row reads the same way: its words on the left, a note or an icon on the right. */
@@ -193,7 +194,7 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
 }
 .menu :is(.daily-row, .decorate-btn, .menu-row, .kb-row):hover { background: rgba(255, 220, 160, 0.08); }
 .menu :is(.newtree, .daily-row, .decorate-btn, .menu-row, .kb-row):active { transform: scale(0.985); }
-.menu .menu-row svg, .menu .decorate-btn svg { width: 15px; height: 15px; flex: none; color: var(--gold2); }
+.menu .menu-row svg, .menu .decorate-btn svg { width: 15px; height: 15px; flex: none; color: #d6a24a; }
 .menu .decorate-btn { flex-direction: row-reverse; }
 .menu .menu-row .menu-meta { margin-left: auto; font-size: 10.5px; font-weight: 500; color: #eccb86; font-variant-numeric: tabular-nums; }
 .menu .menu-row .menu-meta:empty { display: none; }
