@@ -243,6 +243,8 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 .results h2 { margin: 0; font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400; font-size: 40px; line-height: 1.05; color: #7d1420; }
 .results .daily { margin-bottom: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #7c521c; }
 .results .merry { margin-top: 2px; font: italic 400 17px 'Instrument Serif', serif; color: #7c521c; }
+.results .turns { margin-top: 2px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: #7c521c; }
+@media (max-width: 600px) { .results .turns { margin-top: 0; line-height: 16px; } .results .stats { margin: 12px 0 10px; } }
 .results .ghost { margin-top: 3px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: #7c521c; }
 .results .badge {
   display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;

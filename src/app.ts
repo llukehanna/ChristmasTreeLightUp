@@ -56,7 +56,7 @@ import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { markOpened, Opening, OPENING_MS, shouldOpen } from './ui/opening';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
-import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results, type StatsView } from './ui/results';
+import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results, type StatsView, type TurnsLine } from './ui/results';
 import { awaitsClaim, renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, type ShareImage } from './ui/share';
 import { SparkCursor } from './ui/spark-cursor';
@@ -1031,7 +1031,7 @@ export class App {
       this.prepareShare();
       this.results.show({
         seconds: won.seconds, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
-        daily: this.dailyDay,
+        daily: this.dailyDay, turns: this.turnsLine(),
       });
       // The run is over: an unlock held through it shows now, and what is new goes on the tag.
       this.news.tagShown();
@@ -1276,6 +1276,7 @@ export class App {
     this.outcome = o;
     if (o?.kind === 'done') this.keepGhost(o.result);
     this.hectorStep(); // a Home Alone win waiting on the server's answer
+    this.results.setTurns(this.turnsLine()); // the way the rank lands on a tag already up
     const ctx = { claim: this.claimState, late: this.won?.late === true, returning: this.returning, guest: this.guestResult, repeat: this.online?.daily?.repeat === true };
     const m = o && ribbonModel(o, this.session.current, ctx);
     renderRibbon(el('results'), m, {
@@ -1284,6 +1285,17 @@ export class App {
       save: () => this.saveRun(),
       retry: () => this.retry(),
     });
+  }
+
+  /**
+   * The tag's turns line from the server's answer: turns, and the extra over the fewest the tree takes. Null until it
+   * answers, with no count (a long log, or a result saved before turns were counted), or without a positive minimum.
+   */
+  private turnsLine(): TurnsLine | null {
+    const r = this.outcome?.kind === 'done' ? this.outcome.result : null;
+    const turns = r?.turns ?? null;
+    const min = r?.minTurns ?? null;
+    return turns === null || min === null || min <= 0 ? null : { turns, extra: Math.max(0, turns - min) };
   }
 
   /** The result on the tag is the finish of a run played signed out, its claim not answered yet. */

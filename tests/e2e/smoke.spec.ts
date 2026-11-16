@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 import { rotCCW, rotCW } from '../../src/core/dirs';
 import { GRID } from '../../src/core/mask';
 import type { AglowProbe } from '../../src/debug';
-import { openDecorate, owning, swatch } from './helpers';
+import { onlineTree, openDecorate, owning, solveByTapping, swatch } from './helpers';
 
 type W = Window & { __aglow: AglowProbe };
 
@@ -143,6 +143,14 @@ test('solving shows the results card and sharing copies to the clipboard', async
   expect(clip.png).toBeGreaterThan(10_000);
   await page.click('#r-keep');
   await expect(page.locator('#corner-new')).toBeVisible();
+});
+
+test('a finished online run says its turns and extra turns on the tag', async ({ page }) => {
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  await expect(page.locator('#results')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#r-turns')).toHaveText(/^\d+ turns · \d+ extra$/);
 });
 
 test('Sash puts the window up', async ({ page }) => {
