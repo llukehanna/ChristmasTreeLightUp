@@ -560,6 +560,9 @@ export class App {
     const eggsReady = this.eggsAtBoot ? settledWithin(this.requestEggs(), EGGS_BOOT_WAIT_MS) : Promise.resolve(true);
     void eggsReady.then(() => this.session.load());
     void this.boot(eggsReady);
+    // The ambiences' noise is rendered from now, at idle and while nothing is in play: it needs no audio context, so
+    // the first tap's autostart finds it made.
+    this.radio.prewarm(() => quietForWork(this.runFlags()));
   }
 
   /**
@@ -1673,7 +1676,6 @@ export class App {
     this.hideIntro();
     // The first tile tap fades the music in (spec §5.2); it must run synchronously inside the gesture.
     this.radio.firstGesture();
-    this.radio.prewarm(() => quietForWork(this.runFlags())); // once: the context exists now
     // A page loaded in secret mode had no audio context (or catalog) to preload the ad-lib with: once both exist. Once per URL.
     if (this.secret) this.winSound?.preload(this.radio.secretWinSound(), audio.ctx);
     if (this.homeAlone) this.sounds?.preload(); // a page loaded in the mode had no audio context to preload with
@@ -1926,7 +1928,7 @@ export class App {
 
   /** A run in progress in the house: the moment for "Kevin!". */
   private runInHouse(): boolean {
-    return this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null;
+    return this.homeAlone && this.live && !this.starting && this.moved && this.winAt === null && this.watching === null;
   }
 
   private runFlags(): RunFlags {

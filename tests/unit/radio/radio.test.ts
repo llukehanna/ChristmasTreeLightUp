@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { audio } from '../../../src/audio/context';
 import * as builtin from '../../../src/radio/builtin';
 import { STATIONS_URL } from '../../../src/radio/catalog';
+import { clearRendered } from '../../../src/radio/ambient-kit';
 import { Fireplace } from '../../../src/radio/fireplace';
 import { MusicBox } from '../../../src/radio/musicbox';
 import { RadioPlayer } from '../../../src/radio/player';
@@ -788,7 +789,7 @@ it('the remembered ambience warms first, and nothing runs in a hidden tab', asyn
   const order: string[] = [];
   let idle!: (fn: () => void) => void;
   for (const [name, synth] of [['fireplace', Fireplace], ['rain', Rain], ['storm', Storm]] as const) {
-    vi.spyOn(synth.prototype, 'prewarm').mockImplementation(async (_ctx, i) => {
+    vi.spyOn(synth.prototype, 'prewarm').mockImplementation(async (i) => {
       order.push(name);
       idle = i;
     });
@@ -799,14 +800,9 @@ it('the remembered ambience warms first, and nothing runs in a hidden tab', asyn
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
   try {
     saveRadioSettings({ ...DEFAULT_RADIO, on: false, source: 'storm' });
-    new Radio().prewarm(); // no audio context yet: nothing to warm
-    await Promise.resolve();
-    expect(order).toEqual([]);
-
-    fakeAudio();
     const r = new Radio();
-    r.firstGesture();
-    r.prewarm();
+    r.prewarm(); // no audio context needed: the noise is rendered from boot
+    expect(audio.ctx).toBeNull();
     r.prewarm(); // once only
     await vi.waitFor(() => expect(order).toEqual(['storm', 'fireplace', 'rain']));
 
@@ -831,7 +827,7 @@ it('the remembered ambience warms first, and nothing runs in a hidden tab', asyn
 it('prewarm runs no slice while its gate says no, and the next idle moment after it says yes', async () => {
   let idle!: (fn: () => void) => void;
   for (const synth of [Fireplace, Rain, Storm]) {
-    vi.spyOn(synth.prototype, 'prewarm').mockImplementation(async (_ctx, i) => {
+    vi.spyOn(synth.prototype, 'prewarm').mockImplementation(async (i) => {
       idle = i;
     });
   }
@@ -839,7 +835,6 @@ it('prewarm runs no slice while its gate says no, and the next idle moment after
   vi.stubGlobal('requestIdleCallback', (fn: () => void) => slices.push(fn));
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
   try {
-    fakeAudio();
     let open = false;
     new Radio().prewarm(() => open);
     await vi.waitFor(() => expect(idle).toBeDefined());
@@ -855,6 +850,45 @@ it('prewarm runs no slice while its gate says no, and the next idle moment after
     expect(ran).toBe(1);
     expect(slices).toHaveLength(0);
   } finally {
+    Reflect.deleteProperty(document, 'visibilityState');
+    vi.unstubAllGlobals();
+  }
+});
+
+it('with a worker, prewarm asks it for the remembered ambience first, with no gate, and only in a visible tab', async () => {
+  const asked: string[] = [];
+  vi.stubGlobal(
+    'Worker',
+    class {
+      postMessage(m: { key: string }) {
+        asked.push(m.key);
+      }
+      terminate() {}
+    },
+  );
+  const slices: (() => void)[] = [];
+  vi.stubGlobal('requestIdleCallback', (fn: () => void) => slices.push(fn));
+  let state: DocumentVisibilityState = 'hidden';
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  try {
+    clearRendered();
+    saveRadioSettings({ ...DEFAULT_RADIO, on: false, source: 'storm' });
+    const r = new Radio();
+    r.prewarm(() => false); // the gate is for the main thread's slices: a worker needs none
+    r.prewarm();
+    slices.shift()!();
+    expect(asked).toEqual([]); // hidden: nothing is asked
+    state = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    slices.shift()!();
+    // Storm's own sets first, then the fireplace's, then what only the rain adds.
+    expect(asked.slice(0, 3)).toEqual(['rain:beds', 'rain:patter-heavy', 'rain:tap']);
+    expect(asked.indexOf('fire:beds')).toBeGreaterThan(asked.indexOf('rain:drip'));
+    expect(new Set(asked).size).toBe(asked.length);
+    expect(asked).toContain('rain:patter');
+    expect(audio.ctx).toBeNull(); // and no audio context was needed
+  } finally {
+    clearRendered();
     Reflect.deleteProperty(document, 'visibilityState');
     vi.unstubAllGlobals();
   }

@@ -2,25 +2,20 @@ import type { Rng } from '../core/rng';
 import {
   AmbientSynth,
   between,
-  Biquad,
-  brownLoop,
-  cached,
   type Ctx,
   filter,
-  finish,
   gainNode,
   logBetween,
   loop,
   panBuses,
   pick,
-  pinkLoop,
   poisson,
+  type Recipe,
+  recipe,
   shot,
-  smoothRandomLoop,
-  stereoNoise,
   Stream,
-  toBuffer,
 } from './ambient-kit';
+export { strike } from './ambient-recipes';
 
 /**
  * A wood fire in a quiet room (spec §5.2), all synthesized, no audio files:
@@ -49,14 +44,13 @@ export class Fireplace extends AmbientSynth {
     super(rng);
   }
 
-  protected buffers(ctx: Ctx): ReadonlyArray<() => void> {
-    const p = this.poolMakers(ctx);
-    return [() => this.bedLoops(ctx), p.tick, p.snap, p.pop, p.hiss, p.thud];
+  protected recipes(): ReadonlyArray<Recipe> {
+    return [this.bedLoops(), ...Object.values(this.poolMakers())];
   }
 
   protected build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[] {
     const r = this.rng;
-    const [roarBuf, flameBuf, flickerBuf] = this.bedLoops(ctx);
+    const [roarBuf, flameBuf, flickerBuf] = this.bedLoops().on(ctx);
 
     const roar = loop(ctx, roarBuf);
     const roarLp = filter(ctx, 'lowpass', 380, 0.5);
@@ -75,8 +69,8 @@ export class Fireplace extends AmbientSynth {
     const crackleBus = gainNode(ctx, 1);
     crackleBus.connect(filter(ctx, 'lowpass', 6500, 0.6)).connect(out);
     this.pans = panBuses(ctx, crackleBus, [-0.6, -0.3, 0, 0.3, 0.6]);
-    const p = this.poolMakers(ctx);
-    this.pools = { tick: p.tick(), snap: p.snap(), pop: p.pop(), hiss: p.hiss(), thud: p.thud() };
+    const p = this.poolMakers();
+    this.pools = { tick: p.tick.on(ctx), snap: p.snap.on(ctx), pop: p.pop.on(ctx), hiss: p.hiss.on(ctx), thud: p.thud.on(ctx) };
     this.roarGain = roarGain;
     this.roarLp = roarLp;
     this.flameGain = flameGain;
@@ -108,43 +102,15 @@ export class Fireplace extends AmbientSynth {
     this.roarLp = null;
   }
 
-  /** The roar, the flames and the flicker that moves them: the long loops, made once per context. */
-  private bedLoops(ctx: Ctx): AudioBuffer[] {
-    const r = this.rng;
-    const fs = ctx.sampleRate;
-    return cached(ctx, 'fire:beds', () => [
-      toBuffer(ctx, stereoNoise(Math.floor(fs * 13), r, brownLoop, 0.8)),
-      toBuffer(ctx, stereoNoise(Math.floor(fs * 11), r, pinkLoop, 0.6)),
-      toBuffer(ctx, [smoothRandomLoop(Math.floor(fs * 9.3), fs, 0.06, r)]),
-    ]);
+  /** The roar, the flames and the flicker that moves them: the long loops (RECIPES). */
+  private bedLoops(): Recipe {
+    return recipe('fire:beds', this.rng);
   }
 
-  /** Each crackle pool, made (once per context) when its function is called. */
-  private poolMakers(ctx: Ctx): Record<keyof NonNullable<Fireplace['pools']>, () => AudioBuffer[]> {
-    const fs = ctx.sampleRate;
+  /** Each crackle pool (RECIPES), in the order `build` first reads them. */
+  private poolMakers(): Record<keyof NonNullable<Fireplace['pools']>, Recipe> {
     const r = this.rng;
-    const one = (key: string, n: number, make: () => Float32Array) => () => cached(ctx, key, () => Array.from({ length: n }, () => toBuffer(ctx, [make()])));
-    return {
-      tick: one('fire:tick', 16, () => strike(fs, r, { burstMs: between(r, 0.2, 0.8), modes: [[logBetween(r, 1800, 4200), between(r, 1.2, 3), 1]], click: 0.6, lp: 6500, maxMs: 15 })),
-      snap: one('fire:snap', 32, () => {
-        const f = logBetween(r, 700, 3000);
-        const q = logBetween(r, 4, 18);
-        return strike(fs, r, { burstMs: between(r, 1, 5), modes: [[f, q, 1], [f * between(r, 1.5, 2.7), q * 0.7, between(r, 0.2, 0.5)]], click: 0.45, lp: 6000, maxMs: 90 });
-      }),
-      pop: one('fire:pop', 8, () => {
-        const f = logBetween(r, 220, 650);
-        return strike(fs, r, {
-          burstMs: between(r, 2, 6),
-          modes: [[f, between(r, 4, 10), 1], [f * between(r, 2.2, 3.4), 6, 0.35]],
-          click: 0.25,
-          thump: [between(r, 80, 140), between(r, 25, 50), 0.6],
-          lp: 4500,
-          maxMs: 160,
-        });
-      }),
-      hiss: one('fire:hiss', 4, () => sapHiss(fs, r)),
-      thud: one('fire:thud', 3, () => logThud(fs, r)),
-    };
+    return { tick: recipe('fire:tick', r), snap: recipe('fire:snap', r), pop: recipe('fire:pop', r), hiss: recipe('fire:hiss', r), thud: recipe('fire:thud', r) };
   }
 
   /** The crackling's liveliness drifts toward a target that is re-picked every few seconds (τ ≈ 3 s). */
@@ -245,84 +211,3 @@ const ROAR = { lo: 0.11, hi: 0.27, flicker: 0.035 };
 const FLAME = { lo: 0.025, hi: 0.055, flicker: 0.02 };
 /** Peak level of each kind of one-shot (every pooled buffer peaks at 1). */
 const LEVEL = { tick: 0.25, snap: 0.6, pop: 0.6, hiss: 0.07, thud: 0.6 };
-
-interface StrikeSpec {
-  /** Length of the noise burst that excites the resonances. */
-  burstMs: number;
-  /** [frequency Hz, Q, relative level] of each resonance the burst rings. */
-  modes: [number, number, number][];
-  /** Level of the raw burst itself (the dry "crack"). */
-  click: number;
-  /** A low decaying sine under it: [Hz, decay ms, level]. */
-  thump?: [number, number, number];
-  /** A final low-pass, so nothing fizzes. */
-  lp: number;
-  maxMs: number;
-}
-
-/** One crackle: a short noise burst rung through damped resonances (each mode a band-pass with its own f and Q). */
-export function strike(fs: number, rng: Rng, o: StrikeSpec): Float32Array {
-  const burst = Math.max(4, Math.round((o.burstMs * fs) / 1000));
-  const tau = Math.max(...o.modes.map(([f, q]) => q / (Math.PI * f)));
-  const len = Math.min(Math.round((o.maxMs * fs) / 1000), burst + Math.round(7 * tau * fs) + 64);
-  const att = Math.max(2, Math.round(0.00015 * fs)); // a 0.15 ms rise: no step, so no ear-piercing click
-  const exc = new Float32Array(len);
-  for (let i = 0; i < burst; i++) exc[i] = (rng() * 2 - 1) * (i < att ? i / att : Math.exp(-(i - att) / (burst / 3)));
-  const out = new Float32Array(len);
-  const add = (d: Float32Array, level: number) => {
-    let m = 0;
-    for (const v of d) m = Math.max(m, Math.abs(v));
-    if (m > 0) for (let i = 0; i < len; i++) out[i] += (d[i] / m) * level;
-  };
-  for (const [f, q, a] of o.modes) add(Biquad.bandpass(f, q, fs).run(exc.slice()), a);
-  add(Biquad.lowpass(o.lp, 0.7, fs).run(exc.slice()), o.click);
-  if (o.thump) {
-    const [f, ms, a] = o.thump;
-    const d = new Float32Array(len);
-    const k = (ms / 1000) * fs;
-    for (let i = 0; i < len; i++) d[i] = Math.sin((2 * Math.PI * f * i) / fs) * Math.exp(-i / k) * Math.min(1, i / (0.002 * fs));
-    add(d, a);
-  }
-  return finish(Biquad.lowpass(o.lp, 0.7, fs).run(out), 1, Math.min(96, len >> 2));
-}
-
-/** Sap boiling out of a log: a soft, sputtering hiss in the 2–4 kHz region, under a second long. */
-function sapHiss(fs: number, rng: Rng): Float32Array {
-  const dur = between(rng, 0.7, 2.2);
-  const len = Math.floor(dur * fs);
-  const att = between(rng, 0.08, 0.25) * fs;
-  const rel = 0.35 * len;
-  const sputter = smoothRandomLoop(len, fs, 0.022, rng);
-  const d = new Float32Array(len);
-  for (let i = 0; i < len; i++) {
-    const env = Math.min(1, i / att) * Math.min(1, (len - i) / rel) ** 1.5;
-    d[i] = (rng() * 2 - 1) * env * (0.55 + 0.45 * sputter[i]);
-  }
-  Biquad.bandpass(logBetween(rng, 2200, 3800), 1.4, fs).run(d);
-  return finish(Biquad.lowpass(5500, 0.7, fs).run(d));
-}
-
-/** A log settling onto the grate: low noise thump, a falling ~70 Hz body and a dull woody knock. */
-function logThud(fs: number, rng: Rng): Float32Array {
-  const len = Math.floor(0.6 * fs);
-  const noise = new Float32Array(len);
-  for (let i = 0; i < len; i++) noise[i] = (rng() * 2 - 1) * Math.min(1, i / (0.006 * fs)) * Math.exp(-i / (0.09 * fs));
-  Biquad.lowpass(160, 0.9, fs).run(noise);
-  const f0 = between(rng, 55, 80);
-  const knock = new Float32Array(len);
-  for (let i = 0; i < Math.floor(0.004 * fs); i++) knock[i] = rng() * 2 - 1;
-  Biquad.bandpass(between(rng, 350, 500), 4, fs).run(knock);
-  const peak = (d: Float32Array) => d.reduce((m, v) => Math.max(m, Math.abs(v)), 0) || 1;
-  const pn = peak(noise);
-  const pk = peak(knock);
-  const d = new Float32Array(len);
-  let ph = 0;
-  for (let i = 0; i < len; i++) {
-    const t = i / fs;
-    ph += (2 * Math.PI * f0 * (1 - 0.15 * Math.min(1, t / 0.3))) / fs;
-    const body = Math.sin(ph) * Math.exp(-t / 0.12) * Math.min(1, t / 0.004);
-    d[i] = (noise[i] / pn) * 0.8 + body * 0.7 + (knock[i] / pk) * 0.3;
-  }
-  return finish(Biquad.lowpass(900, 0.7, fs).run(d), 1, 2000);
-}
-
