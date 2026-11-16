@@ -65,14 +65,22 @@ it("the trend's range and measure", () => {
 
 it('the PB line keeps only the all-time PBs inside the range', () => {
   const old = [mk(1, 30, 40_000), mk(2, 20, 38_000), mk(3, 6, 39_000), mk(4, 2, 39_500)];
-  const h = host();
+  const card = document.createElement('section');
+  card.dataset.card = 'trend';
+  card.innerHTML = '<div data-slot="legend"></div><div data-chart="trend"></div>';
+  document.body.append(card);
+  const h = card.querySelector<HTMLElement>('[data-chart="trend"]')!;
+  const legend = card.querySelector('[data-slot="legend"]')!;
   trendChart(h, old, { measure: 'time', range: 7, now: NOW });
   expect(h.querySelector('path.pb-line')).toBeNull();
+  expect(legend.textContent).toContain('Average of 50');
+  expect(legend.textContent).not.toContain('Personal best');
   const one = [...old, mk(5, 1, 37_000)];
   trendChart(h, one, { measure: 'time', range: 7, now: NOW });
   const d = h.querySelector('path.pb-line')!.getAttribute('d')!;
   expect(d.match(/M/g)).toHaveLength(1);
   expect(d.match(/L/g)).toHaveLength(1);
+  expect(legend.textContent).toContain('Personal best');
 });
 
 it('dots above the 98.5th percentile are not drawn', () => {

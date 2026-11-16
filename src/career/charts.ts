@@ -120,6 +120,9 @@ export function trendChart(host: HTMLElement, runs: readonly CareerRun[], opts: 
   const { measure } = opts;
   const sub = slot(host, 'sub');
   if (sub) sub.textContent = '';
+  // The legend lists the PB line only once it is drawn.
+  const legend = slot(host, 'legend');
+  if (legend) legend.innerHTML = LEGEND_EXTRA;
   const since = opts.range === 'all' ? -Infinity : opts.now.getTime() - opts.range * DAY_MS;
   const val = (r: CareerRun): number => (measure === 'time' ? r.ms / 1000 : r.extra!);
   const idx: number[] = [];
@@ -171,6 +174,7 @@ export function trendChart(host: HTMLElement, runs: readonly CareerRun[], opts: 
       d += `${d ? 'L' : 'M'}${x(i)},${lastY ?? yy}${d ? ` L${x(i)},${yy}` : ''}`;
       lastY = yy;
     });
+    if (d && legend) legend.innerHTML = LEGEND_TIME;
     if (d) el(f.svg, 'path', { d: `${d} L${W - m.r},${lastY}`, fill: 'none', stroke: 'rgba(244,230,207,0.5)', 'stroke-width': 1.2, 'stroke-dasharray': '3 3', class: 'pb-line' });
   }
 
@@ -384,8 +388,6 @@ export function mountCharts(root: HTMLElement, runs: readonly CareerRun[], stats
   let range: Range = 'all';
 
   const drawTrend = (): void => {
-    const legend = root.querySelector<HTMLElement>('[data-card="trend"] [data-slot="legend"]');
-    if (legend) legend.innerHTML = measure === 'time' ? LEGEND_TIME : LEGEND_EXTRA;
     trendChart(trend, runs, { measure, range, now });
   };
   const drawAll = (): void => {
