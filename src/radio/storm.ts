@@ -1,5 +1,5 @@
 import type { Rng } from '../core/rng';
-import { AmbientSynth, between, type Ctx, filter, gainNode, logBetween, loop, smoothRandomLoop, Stream } from './ambient-kit';
+import { AmbientSynth, between, type Ctx, filter, gainNode, logBetween, loop, type Recipe, smoothRandomLoop, Stream } from './ambient-kit';
 import { HEAVY, RainBed, rainBeds } from './rain';
 
 /**
@@ -26,8 +26,8 @@ export class Storm extends AmbientSynth {
   }
 
   /** The heavy rain's buffers; the wind and thunder play the rain's noise beds, so they need none of their own. */
-  protected buffers(ctx: Ctx): ReadonlyArray<() => void> {
-    return this.bed.buffers(ctx);
+  protected recipes(): ReadonlyArray<Recipe> {
+    return this.bed.recipes();
   }
 
   protected build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[] {

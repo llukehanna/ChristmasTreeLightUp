@@ -3,7 +3,7 @@ import type { SceneId } from '../render/scenes';
 import { loadRadioSettings, saveRadioSettings, type RadioSettings } from '../store/radio-settings';
 import { whenIdle } from '../ui/idle';
 import { AMBIENT_ID, type AmbientKind, ambientKind, CELESTA_ID, isAmbient, isSynthSource, MUSIC_BOX_ID, SCENE_STATION } from './builtin';
-import type { AmbientSynth } from './ambient-kit';
+import { type AmbientSynth, offThread } from './ambient-kit';
 import { CAROLS } from './carols';
 import { loadCatalog } from './catalog';
 import { parseEmbed, type Embed } from './embed';
@@ -145,20 +145,27 @@ export class Radio {
   }
 
   /**
-   * Makes the ambiences' noise at idle, a buffer at a time, so starting one never stalls (100 to 190 ms in Chrome otherwise):
-   * the remembered ambience first, then the others. Once only, and nothing before the context exists. A buffer can
-   * take over 100 ms to make, so a slice runs only while `canWork` says so (the app: never during a run); otherwise
-   * it waits for the next idle moment and asks again.
+   * Renders the ambiences' noise ahead of the first start, so starting one never stalls (100 to 190 ms in Chrome
+   * otherwise): the remembered ambience first, then the others. Once only, from boot, and with no audio context (that
+   * is made inside the first gesture, whose tap would otherwise pay for it). In a worker it costs this thread nothing,
+   * so it needs no gate; it is asked for once the tab is visible and idle. Where there is no worker the noise is made
+   * here, a buffer at a time (one can take over 100 ms) only while `canWork` says so (the app: never during a run);
+   * otherwise a slice waits for the next idle moment and asks again.
    */
   prewarm(canWork: () => boolean = () => true): void {
-    const ctx = audio.ctx;
-    if (this.warmed || !ctx) return;
+    if (this.warmed) return;
     this.warmed = true;
     const first = ambientKind(this.remembered());
     const order = [...(first ? [first] : []), ...WARM_ORDER.filter((k) => k !== first)];
+    if (offThread()) {
+      idleWhileVisible(() => {
+        for (const kind of order) this.ambience(kind).warm();
+      });
+      return;
+    }
     const slice = (fn: () => void): void => idleWhileVisible(() => (canWork() ? fn() : slice(fn)));
     void (async () => {
-      for (const kind of order) await this.ambience(kind).prewarm(ctx, slice);
+      for (const kind of order) await this.ambience(kind).prewarm(slice);
     })().catch(() => {
       /* nothing is lost: a start makes whatever is missing (and reports a real failure itself) */
     });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { blurredLayer, clipBox } from '../../../src/render/blur';
+import { blurredLayer, clipBox, drawBlurred } from '../../../src/render/blur';
 
 interface Call {
   name: string;
@@ -41,6 +41,33 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 const lastDraw = (): unknown[] => dstLog.filter((c) => c.name === 'drawImage').at(-1)!.args;
+
+describe('a stage with no size', () => {
+  it('blurredLayer paints nothing, makes no layer and draws nothing (drawImage throws on a 0-size canvas)', () => {
+    const paint = vi.fn();
+    for (const size of [{ width: 0, height: 0 }, { width: 0, height: 600 }, { width: 800, height: 0 }]) {
+      blurredLayer(recorder(dstLog, size), 2, 3, paint);
+      blurredLayer(recorder(dstLog, size), 2, 0, paint);
+    }
+    expect(paint).not.toHaveBeenCalled();
+    expect(layers).toEqual([]);
+    expect(dstLog.filter((c) => c.name === 'drawImage')).toEqual([]);
+  });
+
+  it('drawBlurred skips an empty source or destination, and draws normally once they have a size', () => {
+    const empty = document.createElement('canvas');
+    empty.width = 0;
+    empty.height = 0;
+    drawBlurred(dst, empty, 3);
+    const full = document.createElement('canvas');
+    full.width = 10;
+    full.height = 10;
+    drawBlurred(recorder(dstLog, { width: 0, height: 0 }), full, 0);
+    expect(dstLog.filter((c) => c.name === 'drawImage')).toEqual([]);
+    drawBlurred(dst, full, 3);
+    expect(dstLog.filter((c) => c.name === 'drawImage')).toHaveLength(1);
+  });
+});
 
 describe('blurredLayer', () => {
   it('without a box it covers the whole canvas, as it always did', () => {

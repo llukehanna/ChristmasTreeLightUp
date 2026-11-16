@@ -117,7 +117,7 @@ body.intro-low .intro { top: calc(var(--garland-bottom) + 8px); font-size: 20px;
 
 /* ---------- the first-visit opening (src/ui/opening.ts): the chrome waits in the dark, then fades in ---------- */
 body > .wordmark, body > .hud, body > .intro { transition-property: opacity, transform, visibility; }
-body.m-open > :not(#stage):not(.grain):not(.vignette):not(script):not(.wordmark):not(.hud):not(.intro) {
+body.m-open:not(.m-o-hud) > :not(#stage):not(.grain):not(.vignette):not(script):not(.wordmark):not(.hud):not(.intro) {
   opacity: 0 !important; pointer-events: none !important; transition: none !important;
 }
 body.m-open .wordmark { opacity: 0 !important; letter-spacing: 0.86em !important; transform: translateY(3px); transition: none !important; }

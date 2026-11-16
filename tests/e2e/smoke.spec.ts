@@ -40,6 +40,32 @@ test('loads cleanly', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test.describe('a page opened at zero size', () => {
+  // A hidden browser pane, a minimised window or a collapsed iframe: the stage has no size when the game boots.
+  test.use({ viewport: { width: 0, height: 0 } });
+
+  test('boots without a throw and paints once it has a size', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto('/?test');
+    await page.waitForFunction(() => !!(window as Window & { __aglow?: AglowProbe }).__aglow);
+    await page.waitForTimeout(300); // a few frames at no size: none may throw
+    expect(errors).toEqual([]);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForFunction(() => {
+      const a = (window as Window & { __aglow?: AglowProbe }).__aglow;
+      return !!a && a.state().interactive;
+    });
+    // The stage took the size, and a tap on a tile (found where the layout says it is) turns it.
+    expect(await page.evaluate(() => document.querySelector('canvas')!.width)).toBeGreaterThan(0);
+    const i = await middleTile(page);
+    const before = (await state(page)).bits[i];
+    await tapTile(page, i);
+    await expect.poll(async () => (await state(page)).bits[i]).not.toBe(before);
+    expect(errors).toEqual([]);
+  });
+});
+
 test('tapping a tile turns it clockwise', async ({ page }) => {
   await ready(page);
   const tile = await middleTile(page);

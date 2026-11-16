@@ -1,9 +1,13 @@
 import type { Rng } from '../core/rng';
+import { AMBIENT_RATE, type Pcm } from './ambient-dsp';
+import { RECIPES, type RenderReply, type RenderRequest } from './ambient-recipes';
+
+export * from './ambient-dsp';
 
 /**
  * Shared parts of the procedural ambiences (Fireplace, Rain, Storm): a look-ahead scheduler on the audio clock,
- * loopable noise, buffer pools rendered once per context, and a tiny offline biquad for baking resonances into those
- * pools (so an event costs one or two nodes instead of a filter chain).
+ * buffer pools rendered once (in a worker, before there is an audio context) and wrapped per context, and the pure
+ * DSP for baking them (ambient-dsp.ts, re-exported here).
  */
 
 export type Ctx = BaseAudioContext;
@@ -26,14 +30,43 @@ export abstract class AmbientSynth {
   /** Long one-shots (thunder) still sounding: stopped with the beds. */
   private readonly long = new Set<AudioScheduledSourceNode>();
   private cursor = 0;
+  /** A start waiting for the worker's noise (the token tells a cancelled wait from the current one). */
+  private waiting: object | null = null;
+  /** Cancels the wait for the tab to be visible, once the noise has come. */
+  private unhide: (() => void) | null = null;
 
   constructor(protected readonly rng: Rng = Math.random) {}
 
+  /** Sounding, or about to: waiting for its noise. */
   get running(): boolean {
-    return this.gain !== null;
+    return this.gain !== null || this.waiting !== null;
   }
 
+  /**
+   * Starts the ambience. Where a worker renders the noise, a start that finds some missing never renders it here: it
+   * waits for the worker (a second or so at worst) and fades in when it arrives, in a visible tab. If the worker
+   * fails, it renders what is missing here, as it does where there is no worker. stop() cancels a wait.
+   */
   start(ctx: Ctx, out: AudioNode): void {
+    if (this.running) return;
+    const missing = this.recipes().filter((r) => !r.ready());
+    if (!missing.length || !offThread()) return this.begin(ctx, out);
+    const token = {};
+    this.waiting = token;
+    this.ctx = ctx;
+    void Promise.all(missing.map((r) => r.ask()))
+      .catch(() => undefined)
+      .then(() => {
+        if (this.waiting !== token) return;
+        this.unhide = whenVisible(() => {
+          this.unhide = null;
+          this.waiting = null;
+          this.begin(ctx, out);
+        });
+      });
+  }
+
+  private begin(ctx: Ctx, out: AudioNode): void {
     if (this.gain) return;
     this.ctx = ctx;
     const g = ctx.createGain();
@@ -42,7 +75,7 @@ export abstract class AmbientSynth {
     g.connect(out);
     this.gain = g;
     // Whatever prewarm hasn't made yet is made now, in the same order, so the noise is the same either way.
-    for (const fill of this.buffers(ctx)) fill();
+    for (const r of this.recipes()) r.render();
     this.beds = this.build(ctx, g);
     for (const s of this.beds) {
       const b = (s as Partial<AudioBufferSourceNode>).buffer;
@@ -56,6 +89,9 @@ export abstract class AmbientSynth {
 
   /** `ctx` is optional: the context given to `start` is remembered. */
   stop(ctx?: Ctx | null): void {
+    this.waiting = null;
+    this.unhide?.();
+    this.unhide = null;
     window.clearInterval(this.timer);
     const c = ctx ?? this.ctx;
     const g = this.gain;
@@ -83,17 +119,23 @@ export abstract class AmbientSynth {
     }, FADE_OUT_S * 1000 + 100);
   }
 
+  /** Asks the worker for every set, in order (the remembered ambience's first): nothing runs on this thread. */
+  warm(): void {
+    for (const r of this.recipes()) r.ask().catch(() => undefined);
+  }
+
   /**
-   * Makes the buffers ahead of the first start, one `buffers` thunk per idle slice (`idle` schedules a slice), so a
-   * start never stalls on noise generation. A buffer already made (by an earlier slice, a start or another ambience
-   * sharing it) is skipped. A start halfway through just makes the rest.
+   * Renders the noise on this thread (where there is no worker) ahead of the first start, one recipe per idle slice (`idle` schedules a slice), so a
+   * start never stalls on noise generation. It needs no audio context (there is none before the first gesture). A
+   * set already made (by an earlier slice, a start or another ambience sharing it) is skipped. A start halfway
+   * through just makes the rest.
    */
-  async prewarm(ctx: Ctx, idle: (fn: () => void) => void): Promise<void> {
-    for (const fill of this.buffers(ctx)) {
+  async prewarm(idle: (fn: () => void) => void): Promise<void> {
+    for (const r of this.recipes()) {
       await new Promise<void>((done, fail) =>
         idle(() => {
           try {
-            fill();
+            r.render();
             done();
           } catch (e) {
             fail(e);
@@ -103,11 +145,8 @@ export abstract class AmbientSynth {
     }
   }
 
-  /**
-   * One thunk per `cached()` key this ambience uses, in the order `build` first reads them: each makes its buffers,
-   * or does nothing if they exist. start() runs them all before `build`.
-   */
-  protected abstract buffers(ctx: Ctx): ReadonlyArray<() => void>;
+  /** One recipe per set of buffers this ambience uses, in the order `build` first reads them. */
+  protected abstract recipes(): ReadonlyArray<Recipe>;
   /** Continuous layers, connected to `out` and not yet started (start() starts them). */
   protected abstract build(ctx: Ctx, out: AudioNode): AudioScheduledSourceNode[];
   /** Lay down every event in [from, to) on the audio clock. Called with contiguous windows. */
@@ -160,164 +199,125 @@ export class Stream {
   }
 }
 
-/** Exponential gap for a Poisson process of `rate` events per second. */
-export const poisson = (rng: Rng, rate: number): number => -Math.log(1 - rng()) / Math.max(1e-6, rate);
-export const between = (rng: Rng, a: number, b: number): number => a + (b - a) * rng();
-/** Log-uniform: as many quiet events per octave as loud ones. */
-export const logBetween = (rng: Rng, a: number, b: number): number => a * (b / a) ** rng();
-export const pick = <T>(rng: Rng, xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)];
+/* ---------- buffers: rendered once (off the main thread when it can), wrapped per context ---------- */
 
-/* ---------- offline DSP for baking buffers ---------- */
+const rendered = new Map<string, Pcm>();
+const wrapped = new WeakMap<Ctx, Map<string, AudioBuffer[]>>();
 
-/** RBJ biquad, direct form I, for rendering pools and loops in JS (never per audio frame). */
-export class Biquad {
-  private x1 = 0;
-  private x2 = 0;
-  private y1 = 0;
-  private y2 = 0;
-  private constructor(
-    private readonly b0: number,
-    private readonly b1: number,
-    private readonly b2: number,
-    private readonly a1: number,
-    private readonly a2: number,
-  ) {}
+/** The key of every set rendered so far, in the order they arrived (what the tests count). */
+export const renderedKeys = (): string[] => [...rendered.keys()];
 
-  static bandpass(f: number, q: number, fs: number): Biquad {
-    const w = (2 * Math.PI * Math.min(f, fs * 0.45)) / fs;
-    const al = Math.sin(w) / (2 * q);
-    const a0 = 1 + al;
-    return new Biquad(al / a0, 0, -al / a0, (-2 * Math.cos(w)) / a0, (1 - al) / a0);
-  }
-  static lowpass(f: number, q: number, fs: number): Biquad {
-    const w = (2 * Math.PI * Math.min(f, fs * 0.45)) / fs;
-    const al = Math.sin(w) / (2 * q);
-    const c = Math.cos(w);
-    const a0 = 1 + al;
-    return new Biquad((1 - c) / 2 / a0, (1 - c) / a0, (1 - c) / 2 / a0, (-2 * c) / a0, (1 - al) / a0);
-  }
-  static highpass(f: number, q: number, fs: number): Biquad {
-    const w = (2 * Math.PI * f) / fs;
-    const al = Math.sin(w) / (2 * q);
-    const c = Math.cos(w);
-    const a0 = 1 + al;
-    return new Biquad((1 + c) / 2 / a0, -(1 + c) / a0, (1 + c) / 2 / a0, (-2 * c) / a0, (1 - al) / a0);
-  }
+/** A set waiting on the worker: settled when its samples arrive. */
+const waiters = new Map<string, { promise: Promise<void>; done: () => void; fail: (e: Error) => void }>();
+/** The renderer: undefined until first asked, null where there is none (no Worker, or it failed). */
+let worker: Worker | null | undefined;
 
-  step(x: number): number {
-    const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
-    this.x2 = this.x1;
-    this.x1 = x;
-    this.y2 = this.y1;
-    this.y1 = y;
-    return y;
-  }
-  /** Filters `d` in place. */
-  run(d: Float32Array): Float32Array {
-    for (let i = 0; i < d.length; i++) d[i] = this.step(d[i]);
-    return d;
-  }
-  /**
-   * Filters a loop in place so it stays seamless: one warm-up pass over the loop settles the filter into its periodic
-   * state, then the second pass is written. The wrap-around then joins with no step.
-   */
-  runLoop(d: Float32Array): Float32Array {
-    for (let i = 0; i < d.length; i++) this.step(d[i]);
-    return this.run(d);
-  }
+/** Forgets every rendered set and the worker (tests). */
+export function clearRendered(): void {
+  rendered.clear();
+  for (const w of waiters.values()) w.fail(new Error('cleared'));
+  waiters.clear();
+  worker?.terminate();
+  worker = undefined;
 }
 
-/** Pink (-3 dB/octave) noise, seamless as a loop (Paul Kellet's filter, run with a warm-up pass). */
-export function pinkLoop(len: number, rng: Rng): Float32Array<ArrayBuffer> {
-  const w = new Float32Array(len);
-  for (let i = 0; i < len; i++) w[i] = rng() * 2 - 1;
-  const out = new Float32Array(len);
-  let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i < len; i++) {
-      const x = w[i];
-      b0 = 0.99886 * b0 + x * 0.0555179;
-      b1 = 0.99332 * b1 + x * 0.0750759;
-      b2 = 0.969 * b2 + x * 0.153852;
-      b3 = 0.8665 * b3 + x * 0.3104856;
-      b4 = 0.55 * b4 + x * 0.5329522;
-      b5 = -0.7616 * b5 - x * 0.016898;
-      out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + x * 0.5362) * 0.11;
-      b6 = x * 0.115926;
-    }
+/** Whether sets can be rendered off the main thread: a Worker exists and has not failed. */
+export const offThread = (): boolean => typeof Worker !== 'undefined' && worker !== null;
+
+function renderWorker(): Worker | null {
+  if (worker !== undefined) return worker;
+  try {
+    const w = new Worker(new URL('./ambient-worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent<RenderReply>) => {
+      const { key, pcm } = e.data;
+      if (!rendered.has(key)) rendered.set(key, pcm);
+      waiters.get(key)?.done();
+      waiters.delete(key);
+    };
+    // A failed worker is given up on: whoever waits falls back to rendering here, and nothing asks it again.
+    w.onerror = () => {
+      worker = null;
+      w.terminate();
+      for (const x of waiters.values()) x.fail(new Error('the ambient worker failed'));
+      waiters.clear();
+    };
+    worker = w;
+  } catch {
+    worker = null;
   }
-  return out;
+  return worker;
 }
 
-/** Brown (-6 dB/octave) noise, seamless as a loop: a leaky integrator run with a warm-up pass. */
-export function brownLoop(len: number, rng: Rng): Float32Array<ArrayBuffer> {
-  const w = new Float32Array(len);
-  for (let i = 0; i < len; i++) w[i] = rng() * 2 - 1;
-  const out = new Float32Array(len);
-  let last = 0;
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i < len; i++) {
-      last = (last + 0.02 * w[i]) / 1.02;
-      out[i] = last * 3.5;
-    }
-  }
-  return out;
+/** Asks the worker for `key` (once: a second ask shares the first). Rejects where there is no worker or it fails. */
+function ask(key: string): Promise<void> {
+  if (rendered.has(key)) return Promise.resolve();
+  const pending = waiters.get(key);
+  if (pending) return pending.promise;
+  const w = renderWorker();
+  if (!w) return Promise.reject(new Error('no worker'));
+  let done!: () => void;
+  let fail!: (e: Error) => void;
+  const promise = new Promise<void>((a, b) => ((done = a), (fail = b)));
+  waiters.set(key, { promise, done, fail });
+  const request: RenderRequest = { key, seed: Math.floor(Math.random() * 2 ** 32) };
+  w.postMessage(request);
+  return promise;
 }
 
-/** A smooth random control signal in [-1, 1] (cosine-interpolated points `stepS` apart), seamless as a loop. */
-export function smoothRandomLoop(len: number, fs: number, stepS: number, rng: Rng): Float32Array<ArrayBuffer> {
-  const n = Math.max(2, Math.round(len / (stepS * fs)));
-  const pts = Array.from({ length: n }, () => rng() * 2 - 1);
-  const out = new Float32Array(len);
-  for (let i = 0; i < len; i++) {
-    const x = (i / len) * n;
-    const k = Math.floor(x);
-    const f = (1 - Math.cos((x - k) * Math.PI)) / 2;
-    out[i] = pts[k % n] * (1 - f) + pts[(k + 1) % n] * f;
-  }
-  return out;
+/**
+ * One named set of buffers (a key of RECIPES). It is rendered once and shared by every ambience and context:
+ * `ask()` has the worker do it (nothing on this thread); `render()` does it here, with `rng`, if nobody has yet (the
+ * fallback, and what start() makes of whatever the worker hasn't delivered). `on(ctx)` wraps the samples as
+ * AudioBuffers once per context, which is a copy and no more.
+ */
+export interface Recipe {
+  readonly key: string;
+  ready(): boolean;
+  ask(): Promise<void>;
+  render(): Pcm;
+  on(ctx: Ctx): AudioBuffer[];
 }
 
-/** Peak-normalise to `peak`, with a short fade at the end so a truncated tail never clicks. */
-export function finish(d: Float32Array, peak = 1, fadeSamples = 64): Float32Array<ArrayBuffer> {
-  let m = 0;
-  for (const v of d) m = Math.max(m, Math.abs(v));
-  const k = m > 0 ? peak / m : 0;
-  const n = Math.min(fadeSamples, d.length);
-  for (let i = 0; i < d.length; i++) {
-    const fade = i >= d.length - n ? (d.length - i) / n : 1;
-    d[i] *= k * fade;
-  }
-  return d as Float32Array<ArrayBuffer>;
+export function recipe(key: string, rng: Rng): Recipe {
+  const render = (): Pcm => {
+    let pcm = rendered.get(key);
+    if (!pcm) rendered.set(key, (pcm = RECIPES[key](rng)));
+    return pcm;
+  };
+  return {
+    key,
+    ready: () => rendered.has(key),
+    ask: () => ask(key),
+    render,
+    on(ctx) {
+      let m = wrapped.get(ctx);
+      if (!m) wrapped.set(ctx, (m = new Map()));
+      let b = m.get(key);
+      if (!b) m.set(key, (b = render().map((channels) => toBuffer(ctx, channels))));
+      return b;
+    },
+  };
 }
 
-/* ---------- buffers, rendered once per context ---------- */
-
-const cache = new WeakMap<Ctx, Map<string, AudioBuffer[]>>();
-
-/** Buffers made by `make` once per context and kept: a second start (or another ambience) reuses them. */
-export function cached(ctx: Ctx, key: string, make: () => AudioBuffer[]): AudioBuffer[] {
-  let m = cache.get(ctx);
-  if (!m) cache.set(ctx, (m = new Map()));
-  let b = m.get(key);
-  if (!b) m.set(key, (b = make()));
-  return b;
-}
-
-export function toBuffer(ctx: Ctx, channels: readonly Float32Array[]): AudioBuffer {
-  const b = ctx.createBuffer(channels.length, channels[0].length, ctx.sampleRate);
+function toBuffer(ctx: Ctx, channels: readonly Float32Array[]): AudioBuffer {
+  const b = ctx.createBuffer(channels.length, channels[0].length, AMBIENT_RATE);
   channels.forEach((c, i) => b.copyToChannel(c as Float32Array<ArrayBuffer>, i));
   return b;
 }
 
-/** Two partly correlated noise channels: wide, but still one source in front of you (`corr` 0 = unrelated). */
-export function stereoNoise(len: number, rng: Rng, kind: (len: number, rng: Rng) => Float32Array<ArrayBuffer>, corr: number): Float32Array[] {
-  const l = kind(len, rng);
-  const b = kind(len, rng);
-  const k = Math.sqrt(1 - corr * corr);
-  const r = new Float32Array(len);
-  for (let i = 0; i < len; i++) r[i] = corr * l[i] + k * b[i];
-  return [l, r];
+/** Runs `fn` now if the tab is visible, else when it next is. Returns a cancel. */
+export function whenVisible(fn: () => void): () => void {
+  if (document.visibilityState !== 'hidden') {
+    fn();
+    return () => undefined;
+  }
+  const back = (): void => {
+    if (document.visibilityState === 'hidden') return;
+    document.removeEventListener('visibilitychange', back);
+    fn();
+  };
+  document.addEventListener('visibilitychange', back);
+  return () => document.removeEventListener('visibilitychange', back);
 }
 
 /* ---------- live graph helpers ---------- */

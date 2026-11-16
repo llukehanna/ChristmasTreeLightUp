@@ -327,6 +327,8 @@ export class Renderer {
   }
 
   frame(f: FrameInput): void {
+    // A stage with no size (the window is minimised or collapsed): nothing to draw, and drawImage throws on its 0-size layers.
+    if (!this.canvas.width || !this.canvas.height) return;
     const workStart = performance.now();
     this.draw(f);
     // The rAF interval catches GPU-bound devices; the work time lets a steady 30 Hz cap (iOS Low Power Mode) pass.
