@@ -253,3 +253,28 @@ it('Leaderboard closes the page, then opens the leaderboard sheet', async () => 
   expect(hooks.uncover.mock.invocationCallOrder[0]).toBeLessThan(hooks.leaderboard.mock.invocationCallOrder[0]);
   back.mockRestore();
 });
+
+it('Escape while the chunk loads closes the open (and its history entry); with the page up or nothing open it does nothing', async () => {
+  const hooks = makeHooks();
+  const { kit } = fakeKit();
+  const chunk = deferred<Kit>();
+  opener = new CareerOpener(hooks, () => chunk.promise);
+  expect(opener.closeIfLoading()).toBe(false);
+  opener.open();
+  expect(opener.closeIfLoading()).toBe(true);
+  expect(opener.state).toEqual({ open: false, loading: false });
+  expect(hooks.uncover).toHaveBeenCalledTimes(1);
+  // The chunk landing late opens nothing.
+  chunk.resolve(kit);
+  await tick();
+  expect(opener.state).toEqual({ open: false, loading: false });
+  expect(document.querySelectorAll('.career')).toHaveLength(0);
+  // With the page up the page takes Escape itself.
+  const second = makeHooks();
+  opener.dispose();
+  opener = new CareerOpener(second, async () => kit);
+  opener.open();
+  await tick();
+  expect(opener.closeIfLoading()).toBe(false);
+  expect(opener.state.open).toBe(true);
+});

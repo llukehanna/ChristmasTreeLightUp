@@ -163,3 +163,18 @@ it('draws a chart in each chart card, and records, form and the log', async () =
   expect(p.el.querySelectorAll('.records .rec').length).toBeGreaterThan(0);
   expect(p.el.querySelectorAll('tbody tr')).toHaveLength(3);
 });
+
+it('an extra-turns change under half a turn shows no arrow and no colour; a whole turn still does', async () => {
+  const runs = (last: number) => [row('a', 20, 31_000, 60), row('b', 19, 31_000, 60), row('c', 18, 31_000, 60), row('d', 1, 31_000, last)];
+  const extraTile = () => [...document.querySelectorAll('#career-form .stat')].find((s) => s.textContent?.includes('Extra turns'))!;
+  // Mean of four runs 10, 10, 10, 11 = 10.25, against 10 a week ago: a quarter turn.
+  open(async () => ({ ...empty, runs: runs(61), total: 4 }));
+  await flush();
+  expect(extraTile().querySelector('.delta.up, .delta.dn')).toBeNull();
+  expect(extraTile().textContent).not.toMatch(/[▲▼]/);
+  page?.close();
+  // Mean of 10, 10, 10, 20 = 12.5: an arrow, down for worse.
+  open(async () => ({ ...empty, runs: runs(70), total: 4 }));
+  await flush();
+  expect(extraTile().querySelector('.delta.dn')).not.toBeNull();
+});

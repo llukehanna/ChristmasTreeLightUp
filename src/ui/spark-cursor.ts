@@ -43,8 +43,10 @@ const OWN_CURSOR = 'input, textarea, [contenteditable="true"]';
 export class SparkCursor {
   /** The look has the spark on. */
   private wanted = false;
-  /** Drawing: wanted, the tab seen, a fine pointer and motion allowed. */
+  /** Drawing: wanted, the tab seen, a fine pointer and motion allowed, and not standing aside. */
   private on = false;
+  /** Standing aside (a page covers the stage): no canvas, the system cursor back. */
+  private aside = false;
   private fine: MediaQueryList | null = null;
   private reduced: MediaQueryList | null = null;
   private cv: HTMLCanvasElement | null = null;
@@ -96,8 +98,15 @@ export class SparkCursor {
     this.update();
   }
 
+  /** A page covers the stage and the loop is not drawing: the ember goes (canvas and hidden cursor) until it is back. */
+  suspend(on: boolean): void {
+    if (this.aside === on) return;
+    this.aside = on;
+    this.update();
+  }
+
   private readonly update = (): void => {
-    const run = this.wanted && !document.hidden && this.fine!.matches && !this.reduced!.matches;
+    const run = this.wanted && !this.aside && !document.hidden && this.fine!.matches && !this.reduced!.matches;
     if (run === this.on) return;
     this.on = run;
     if (run) this.attach();

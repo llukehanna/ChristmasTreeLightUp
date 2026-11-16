@@ -78,14 +78,16 @@ async function changesBoard<T>(p: Promise<T>): Promise<T> {
  * forgotten, so the next asks again.
  */
 let careerRead: Promise<CareerResponse> | null = null;
-function cachedCareer(): Promise<CareerResponse> {
-  if (careerRead) return careerRead;
+function readCareer(): Promise<CareerResponse> {
   const p = request<CareerResponse>('GET', '/api/me/career');
   careerRead = p;
   p.catch(() => {
     if (careerRead === p) careerRead = null;
   });
   return p;
+}
+function cachedCareer(): Promise<CareerResponse> {
+  return careerRead ?? readCareer();
 }
 /**
  * One window of the board (spec 2026-10-14): today and this week are this browser's day and zone, as myStats sends
@@ -127,6 +129,8 @@ export const api = {
   career: () => request<CareerResponse>('GET', '/api/me/career'),
   /** The career as last read on this page, read once until a write or another account changes it. */
   cachedCareer,
+  /** The career read again now (the career page, each time it opens), and kept for the menu head to read. */
+  freshCareer: readCareer,
   /** The session changed: the next cached career is read again. */
   forgetCareer: (): void => {
     careerRead = null;

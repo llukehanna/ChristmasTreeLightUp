@@ -277,3 +277,14 @@ describe('finishWithRetry', () => {
     expect(down).toHaveBeenCalledTimes(2);
   });
 });
+
+it('freshCareer asks every time and refills the cache the menu head reads', async () => {
+  api.forgetCareer();
+  let n = 0;
+  const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ runs: [], best: null, inTop: 0, total: ++n }));
+  vi.stubGlobal('fetch', fetch);
+  expect((await api.freshCareer()).total).toBe(1);
+  expect((await api.freshCareer()).total).toBe(2); // two career opens, two requests
+  expect((await api.cachedCareer()).total).toBe(2); // the menu head reads the page's copy: no third request
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

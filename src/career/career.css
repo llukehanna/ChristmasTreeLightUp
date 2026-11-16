@@ -101,7 +101,8 @@
 /* log */
 .career table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .career thead th { position: sticky; top: 0; z-index: 1; background: #3a0d12; text-align: right; padding: 9px 12px; font: 600 10px Inter;
-  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line); user-select: none; }
+.career thead th[data-k] { cursor: pointer; }
 .career thead th.l, .career td.l { text-align: left; }
 .career thead th:first-child, .career td:first-child { padding-left: 24px; }
 .career thead th:last-child, .career td:last-child { padding-right: 24px; }

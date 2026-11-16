@@ -35,10 +35,11 @@ const stat = (v: string, k: string, d: string, gold = false): string =>
   `<div class="stat"><div class="v${gold ? ' gold' : ''}">${v}</div><div class="k">${k}</div><div class="d">${d}</div></div>`;
 
 /** "▲ 1.3 s this week" (green when faster), "▼ …" (red), or nothing without a week-old figure. */
-function delta(now: number, weekAgo: number | null, text: (diff: number) => string): string {
+function delta(now: number, weekAgo: number | null, text: (diff: number) => string, still = 0): string {
   if (weekAgo === null) return '';
   const d = now - weekAgo;
-  if (d === 0) return '<span class="delta">no change</span> this week<br>';
+  // `still`: a change under it shows as none (a count rounded to whole turns would read "▲ 0").
+  if (still > 0 ? Math.abs(d) < still : d === 0) return '<span class="delta">no change</span> this week<br>';
   return `<span class="delta ${d < 0 ? 'up' : 'dn'}">${d < 0 ? '▲' : '▼'} ${text(Math.abs(d))}</span> this week<br>`;
 }
 
@@ -87,7 +88,7 @@ function formHtml(s: CareerStats): string {
   const x = s.extra;
   tiles.push(
     x
-      ? stat(x.last50.toFixed(0), 'Extra turns', `${delta(x.last50, x.weekAgo, (d) => d.toFixed(0))}average, last 50 runs`)
+      ? stat(x.last50.toFixed(0), 'Extra turns', `${delta(x.last50, x.weekAgo, (d) => d.toFixed(0), 0.5)}average, last 50 runs`)
       : stat(DASH, 'Extra turns', ''),
   );
   return tiles.join('');

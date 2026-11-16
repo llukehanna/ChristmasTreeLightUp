@@ -91,7 +91,7 @@ body.acct-sheet-open .pause > div { visibility: hidden; }
 .acct-drop-foot .danger { color: #ffab9a; }
 .acct-drop button:focus-visible, .acct-drop a:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
 
-/* ---------- the sheet (2C): leaderboard, your games, and the small cards ---------- */
+/* ---------- the sheet (2C): leaderboard, your career, and the small cards ---------- */
 .acct-scrim {
   position: fixed; inset: 0; z-index: 40;
   background: radial-gradient(120% 90% at 50% 42%, rgba(12, 4, 2, 0.28), rgba(12, 4, 2, 0.62));

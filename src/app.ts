@@ -468,7 +468,7 @@ export class App {
     });
     this.career = new CareerOpener({
       user: () => this.session.current,
-      load: () => api.cachedCareer(),
+      load: () => api.freshCareer(),
       signIn: (from) => this.accounts.openSignIn({}, from),
       cover: () => this.coverStage(),
       uncover: (from) => this.uncoverStage(from),
@@ -1535,6 +1535,8 @@ export class App {
     this.keyCard.close();
     if (this.watching?.playing) this.replayer?.toggle();
     this.pause(false);
+    // The loop draws no frame under the page, so the ember would freeze and the pointer vanish over it.
+    this.spark.suspend(true);
   }
 
   /**
@@ -1543,6 +1545,7 @@ export class App {
    */
   private uncoverStage(from: HTMLElement | null): void {
     const now = performance.now();
+    this.spark.suspend(false);
     this.pausedDrawn = false;
     this.busy(now);
     this.startLoop();
@@ -2069,6 +2072,11 @@ export class App {
     addEventListener('blur', () => this.keyCard.hide());
     document.addEventListener('keydown', (e) => {
       this.renderer.homeAlone?.input();
+      // Escape while the career page's chunk is still loading closes it (the page isn't up to take the key).
+      if (e.key === 'Escape' && !e.defaultPrevented && this.career.closeIfLoading()) {
+        e.preventDefault();
+        return;
+      }
       // The settings and radio dialogs and the Decorate drawer handle their own Escape (and mark it handled). Keys never
       // reach the game while the menu or the drawer is open, or while focus is inside the radio panel; the desktop popover
       // stays open while you play, so with focus back on the game (or nowhere) P still pauses.

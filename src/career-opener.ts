@@ -120,6 +120,13 @@ export class CareerOpener {
     this.shut('back');
   }
 
+  /** Closes the open still waiting for its chunk (Escape: no page is up to take it); false when there is none. */
+  closeIfLoading(): boolean {
+    if (this.phase !== 'loading') return false;
+    this.close();
+    return true;
+  }
+
   /** Stops listening for Back (tests). */
   dispose(): void {
     removeEventListener('popstate', this.onPop);

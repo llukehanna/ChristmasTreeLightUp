@@ -52,6 +52,19 @@ test('a player opens Career from the menu', async ({ page }) => {
     await expect(cells.nth(3)).toHaveText(/^\d+$/);
     await expect(cells.nth(5)).toHaveText(/^\d+$/);
   }
+  // The log reacts: the Daily filter holds none of these random-tree runs, Ranked holds both, and the Time header sorts.
+  await career.locator('#career-filter').getByRole('button', { name: 'Daily' }).click();
+  await expect(career.locator('#career-log td.empty')).toHaveText('No games match');
+  await career.locator('#career-filter').getByRole('button', { name: 'Ranked', exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  const time = career.locator('#career-log thead th[data-k="ms"]');
+  await time.click();
+  await expect(time).toHaveClass(/\bon\b/);
+  await expect(time.locator('.arr')).toHaveText('▲');
+  const times = await rows.locator('td:nth-child(3)').allTextContents();
+  expect(times).toEqual([...times].sort());
+  await time.click();
+  await expect(time.locator('.arr')).toHaveText('▼');
 });
 
 test('Career mid-run pauses the clock, and Back closes it', async ({ page }) => {
