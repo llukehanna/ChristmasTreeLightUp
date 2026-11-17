@@ -134,3 +134,31 @@ it('the share image never carries turns', () => {
   expect(share).not.toMatch(/turns/i);
   expect(readFileSync('src/app.ts', 'utf8')).toMatch(/makeShareImage\(this\.renderer\.canvas, this\.renderer\.treeRect\(\), this\.lastSeconds, shareInk\(this\.renderer\.scene\), line\)/);
 });
+
+it('setNext: one row before Keep watching, with its word, meta and chevron; a tap hands back the step and the row', () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  const onGo = vi.fn();
+  const step = { kind: 'catch-up', word: 'Advent', meta: '2 to catch up' } as const;
+  r.setNext(step, onGo);
+  const rows = document.querySelectorAll<HTMLButtonElement>('#results .next-row');
+  expect(rows).toHaveLength(1);
+  const row = rows[0]!;
+  expect(row.type).toBe('button');
+  expect(row.nextElementSibling?.id).toBe('r-keep');
+  expect(row.querySelector('.next-w')?.textContent).toBe('Advent');
+  expect(row.querySelector('.next-m')?.textContent).toBe('2 to catch up');
+  expect(row.querySelector('.next-c')?.textContent).toBe('›');
+  row.click();
+  expect(onGo).toHaveBeenCalledWith(step, row);
+});
+
+it('setNext: a second call replaces the row, null takes it away, and words are text, never markup', () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  r.setNext({ kind: 'daily', word: "Today's Daily Tree", meta: 'Nov 17' }, noop);
+  r.setNext({ kind: 'daily', word: '<b>x</b>', meta: 'Nov 18' }, noop);
+  expect(document.querySelectorAll('#results .next-row')).toHaveLength(1);
+  expect(document.querySelector('#results .next-w')?.textContent).toBe('<b>x</b>');
+  expect(document.querySelector('#results .next-w b')).toBeNull();
+  r.setNext(null, noop);
+  expect(document.querySelector('#results .next-row')).toBeNull();
+});

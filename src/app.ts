@@ -57,6 +57,7 @@ import { Menu, NEW_TREE_CONFIRM_MS } from './ui/menu';
 import { markOpened, Opening, OPENING_MS, shouldOpen } from './ui/opening';
 import { RadioPanel } from './ui/radio-panel';
 import type { HectorDesk, HectorGlare } from './ui/hector';
+import { nextStep, type NextStep } from './ui/next-step';
 import { accountStatsView, deviceStatsView, ghostLine, HOME_ALONE_LINE, Results, type StatsView, type TurnsLine } from './ui/results';
 import { awaitsClaim, renderRibbon, ribbonModel } from './ui/ribbon';
 import { makeShareImage, prepareShareImage, shareInk, shareLine, shareResult, type ShareImage } from './ui/share';
@@ -1055,6 +1056,7 @@ export class App {
         seconds: won.seconds, newBest: won.newBest, stats: this.stats, view: this.statsView(), line: this.homeAlone ? HOME_ALONE_LINE : null,
         daily: this.dailyDay, turns: this.turnsLine(),
       });
+      this.showNextStep();
       // The run is over: an unlock held through it shows now, and what is new goes on the tag.
       this.news.tagShown();
       this.hector?.tagShown();
@@ -1323,6 +1325,18 @@ export class App {
   /** The result on the tag is the finish of a run played signed out, its claim not answered yet. */
   private get guestResult(): boolean {
     return !!this.online?.claim && this.won?.claimed !== true;
+  }
+
+  /** The tag's one next step (spec 2026-11-17): a new day's Daily, or in Advent the doors still to catch up. */
+  private showNextStep(): void {
+    const today = localDay(new Date());
+    const step = nextStep({
+      today, nowMs: Date.now(), dailyPlayed: !landsOnDaily(today), signedIn: this.player !== null, owns: (id) => this.unlocks.owns(id),
+    });
+    this.results.setNext(step, (s: NextStep, from: HTMLElement) => {
+      if (s.kind === 'daily') this.newGame('daily');
+      else this.advent.open(from);
+    });
   }
 
   /** The day of the Daily Tree on screen (YYYY-MM-DD), or null for a random tree. */

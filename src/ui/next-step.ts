@@ -1,4 +1,5 @@
 import { ADVENT_DOORS, doorItem, doorState } from '../core/advent';
+import type { ItemId } from '../core/catalogue';
 import { shortDay } from './format';
 
 /**
@@ -18,7 +19,7 @@ export interface NextStepInput {
   /** This device has started today's Daily (the menu's "Played"). */
   dailyPlayed: boolean;
   signedIn: boolean;
-  owns(id: string): boolean;
+  owns(id: ItemId): boolean;
 }
 
 /** Today's door (1–24) while the calendar is live, December 1–24; else null. */

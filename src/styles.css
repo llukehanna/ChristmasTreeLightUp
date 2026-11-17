@@ -315,6 +315,18 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 @media (prefers-reduced-motion: reduce) {
   .results .hector.still { transition: opacity 0.35s !important; }
 }
+/* The tag's one next step (src/ui/next-step.ts): a quiet outlined row under the buttons. */
+.results .next-row {
+  all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 10px;
+  padding: 10px 14px; border-radius: 12px; font-size: 13px; font-weight: 600; color: #7d1420; text-align: left;
+  box-shadow: inset 0 0 0 1px rgba(122, 70, 30, 0.24); transition: background-color 0.12s;
+}
+.results .next-row:hover { background: rgba(122, 70, 30, 0.07); }
+.results .next-row:active { background: rgba(122, 70, 30, 0.11); }
+.results .next-i { display: flex; flex: none; color: #a8262f; }
+.results .next-i svg { width: 16px; height: 16px; }
+.results .next-m { margin-left: auto; font-size: 12px; font-weight: 500; color: #7c521c; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.results .next-c { font-size: 17px; line-height: 1; font-weight: 400; color: #7c521c; opacity: 0.7; }
 .results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.7; }
 /* The unlock line, under the rank strip, in the tag's own ink; its buttons are links with a 24px target (as Retry). */
 .results .unlock { margin-top: 6px; font-size: 12.5px; color: #7a4a22; }
@@ -329,7 +341,7 @@ button:focus-visible, .menu button:focus-visible, .results button:focus-visible,
 /* Inside the capsule the ring sits on the segment itself, light in every scene (Frost's claret focus would vanish on the cranberry glass). */
 .hud .pill:focus-visible { outline: 2px solid #ffe2a0; outline-offset: -2px; }
 .menu button:focus-visible, .menu input:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
-.results button:focus-visible, .results .actions button:focus-visible { outline: 2px solid #8e1622; outline-offset: 3px; }
+.results button:focus-visible, .results .actions button:focus-visible, .results .next-row:focus-visible { outline: 2px solid #8e1622; outline-offset: 3px; }
 
 @media (max-width: 600px) {
   .wordmark { top: calc(22px + env(safe-area-inset-top)); left: 18px; font-size: 11.5px; }

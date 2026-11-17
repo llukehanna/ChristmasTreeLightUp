@@ -4,6 +4,7 @@ import type { TagStyle } from '../store/look';
 import { averageSeconds, type Stats } from '../store/stats';
 import { el } from './dom';
 import { count, dailyLabel } from './format';
+import type { NextStep } from './next-step';
 import type { UnlockLine } from './unlock-ribbon';
 
 /** The three numbers under the badge: this device's, or (signed in) the account's (spec 2026-10-08 §6.2). */
@@ -59,6 +60,12 @@ export function ghostLine(deltaMs: number): string {
   const s = (Math.abs(deltaMs) / 1000).toFixed(1);
   return deltaMs < 0 ? `${s} s faster than your ghost` : `${s} s behind your ghost`;
 }
+
+/** The row's icon: a calendar for the Daily, a door for Advent catch-up (fixed artwork, no input in it). */
+const NEXT_ICON: Readonly<Record<NextStep['kind'], string>> = {
+  daily: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3" y="4.5" width="14" height="12.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 8.5h14M7 2.8v3.4M13 2.8v3.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="12.6" r="1.7" fill="currentColor"/></svg>',
+  'catch-up': '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 17V7.5L10 3l6 4.5V17z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 17v-5h4v5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="11.2" cy="14.4" r=".8" fill="currentColor"/></svg>',
+};
 
 export class Results {
   private readonly root = el('results');
@@ -147,6 +154,25 @@ export class Results {
     if (anchor) anchor.after(u);
     else this.root.querySelector('.stats')?.before(u);
     if (focused) u.querySelector<HTMLElement>(`.${focused.split(' ')[0]}`)?.focus({ preventScroll: true });
+  }
+
+  /**
+   * The tag's one next step (spec 2026-11-17), between its buttons and Keep watching; null takes it away. A tap hands back
+   * the step and the row (where focus returns from a sheet it opens).
+   */
+  setNext(step: NextStep | null, onGo: (step: NextStep, from: HTMLElement) => void): void {
+    this.root.querySelector('.next-row')?.remove();
+    if (!step) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'next-row';
+    b.innerHTML = `<span class="next-i">${NEXT_ICON[step.kind]}</span><span class="next-w"></span><span class="next-m"></span><span class="next-c">\u203a</span>`;
+    b.querySelector('.next-w')!.textContent = step.word;
+    b.querySelector('.next-m')!.textContent = step.meta;
+    b.addEventListener('click', () => onGo(step, b));
+    const keep = document.getElementById('r-keep');
+    if (keep?.parentElement === this.root) keep.before(b);
+    else this.root.append(b);
   }
 
   /** The look's tag style: its paper and ribbon (tag-styles.css). The words keep their own inks on every one. */
