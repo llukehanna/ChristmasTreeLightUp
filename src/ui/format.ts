@@ -53,6 +53,12 @@ export const UNRANKED_TEXT: Readonly<Record<UnrankedReason | 'offline' | 'unveri
   unverified: "couldn't verify this run",
 };
 
+/** 'Nov 17' for '2026-11-17' (any year), with no leading zero on the day. */
+export function shortDay(day: string): string {
+  const [, m, d] = day.split('-').map(Number);
+  return `${MONTHS[m - 1]} ${d}`;
+}
+
 /** The Daily pill's two parts: the word a phone keeps ('Daily'), and the rest (' Tree · Nov 6'). */
 export function dailyLabelParts(day: string): { word: string; rest: string } {
   const [, m, d] = day.split('-').map(Number);
