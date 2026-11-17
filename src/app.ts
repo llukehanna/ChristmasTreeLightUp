@@ -289,6 +289,8 @@ export class App {
         this.news.changed();
         // A door that opened shows its item at once if the calendar is up (it is set up after this, in the constructor).
         this.advent?.refresh();
+        // A door that opened changes what the tag offers next ("2 to catch up", or nothing).
+        this.refreshNextStep();
       },
     },
     this.preview,
@@ -1246,6 +1248,8 @@ export class App {
     void this.syncStats();
     // Signed in after the Daily began (the first tree starts while /api/me is in flight): the server's ghost too.
     this.askServerGhost();
+    // A tag that is up (back from Google before /api/me answered): signed in, it may offer the doors to catch up.
+    this.refreshNextStep();
   }
 
   /** The numbers on the tag: the account's as shown once they have arrived, else this device's. */
@@ -1325,6 +1329,12 @@ export class App {
   /** The result on the tag is the finish of a run played signed out, its claim not answered yet. */
   private get guestResult(): boolean {
     return !!this.online?.claim && this.won?.claimed !== true;
+  }
+
+  /** The next step again while the tag is up (who is playing, or what they own, changed under it). */
+  private refreshNextStep(): void {
+    // Called from UnlockState's onChange too, which can fire while the App is still being built.
+    if (this.results?.isShown) this.showNextStep();
   }
 
   /** The tag's one next step (spec 2026-11-17): a new day's Daily, or in Advent the doors still to catch up. */

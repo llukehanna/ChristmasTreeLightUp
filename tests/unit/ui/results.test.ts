@@ -162,3 +162,12 @@ it('setNext: a second call replaces the row, null takes it away, and words are t
   r.setNext(null, noop);
   expect(document.querySelector('#results .next-row')).toBeNull();
 });
+
+it('setNext: a row redrawn while focused keeps the focus (the count changed under the player)', () => {
+  const r = new Results({ onNew: noop, onShare: noop, onKeep: noop });
+  r.setNext({ kind: 'catch-up', word: 'Advent', meta: '3 to catch up' }, noop);
+  document.querySelector<HTMLElement>('#results .next-row')!.focus();
+  r.setNext({ kind: 'catch-up', word: 'Advent', meta: '2 to catch up' }, noop);
+  expect(document.activeElement).toBe(document.querySelector('#results .next-row'));
+  expect(document.querySelector('#results .next-m')?.textContent).toBe('2 to catch up');
+});

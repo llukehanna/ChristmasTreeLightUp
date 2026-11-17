@@ -161,7 +161,9 @@ export class Results {
    * the step and the row (where focus returns from a sheet it opens).
    */
   setNext(step: NextStep | null, onGo: (step: NextStep, from: HTMLElement) => void): void {
-    this.root.querySelector('.next-row')?.remove();
+    const old = this.root.querySelector('.next-row');
+    const focused = !!old && old === document.activeElement;
+    old?.remove();
     if (!step) return;
     const b = document.createElement('button');
     b.type = 'button';
@@ -173,6 +175,8 @@ export class Results {
     const keep = document.getElementById('r-keep');
     if (keep?.parentElement === this.root) keep.before(b);
     else this.root.append(b);
+    // Redrawn under the player (the count changed): focus stays on the row.
+    if (focused) b.focus({ preventScroll: true });
   }
 
   /** The look's tag style: its paper and ribbon (tag-styles.css). The words keep their own inks on every one. */

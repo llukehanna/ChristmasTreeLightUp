@@ -328,6 +328,12 @@ body[data-scene='frost'] .results { filter: drop-shadow(0 20px 32px rgba(40, 60,
 .results .next-i svg { width: 16px; height: 16px; }
 .results .next-m { margin-left: auto; font-size: 12px; font-weight: 500; color: #7c521c; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .results .next-c { font-size: 17px; line-height: 1; font-weight: 400; color: #7c521c; opacity: 0.7; }
+/* A short phone with the row: the tag tightens so it stays clear of the HUD (the turns line does the same, above). */
+@media (max-height: 700px) {
+  .results:has(.next-row) { padding-top: 40px; }
+  .results:has(.next-row) .stats { margin: 12px 0 10px; padding: 10px 0; }
+  .results .next-row { margin-top: 8px; padding: 8px 14px; }
+}
 .results .keep { all: unset; cursor: pointer; display: inline-block; margin-top: 12px; font-size: 12px; opacity: 0.7; }
 /* The unlock line, under the rank strip, in the tag's own ink; its buttons are links with a 24px target (as Retry). */
 .results .unlock { margin-top: 6px; font-size: 12.5px; color: #7a4a22; }

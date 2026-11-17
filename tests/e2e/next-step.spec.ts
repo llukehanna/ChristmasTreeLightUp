@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { asPlayer, openAccount, pickName, ready, resumeIfPaused, signInFromMenu, waitInteractive, type W } from './helpers';
+import { asPlayer, onlineTree, openAccount, pickName, ready, resumeIfPaused, signInFromMenu, solveByTapping, waitInteractive, type W } from './helpers';
 
 // The tag's next step and the phone bottom-sheet menu (docs/superpowers/specs/2026-11-17-aglow-next-step-design.md).
 
@@ -46,6 +46,52 @@ for (const [width, height] of [[320, 568], [375, 812]] as const) {
     expect(keep!.y + keep!.height).toBeLessThanOrEqual(height);
   });
 }
+
+test('on a 320×568 phone, a guest tag with the row stays clear of the HUD', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await ready(page);
+  await onlineTree(page);
+  await newDay(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^Would place #/, { timeout: 15_000 });
+  await expect(results.locator('.next-row')).toHaveCount(1);
+  await page.waitForTimeout(1000); // the tag's rise
+  const gap = await page.evaluate(() => document.getElementById('results')!.getBoundingClientRect().top - document.querySelector('.hud')!.getBoundingClientRect().bottom);
+  expect(gap).toBeGreaterThanOrEqual(0);
+});
+
+test('in Advent, signing in from the tag brings the catch-up row (the tag comes back before the account does)', async ({ page }) => {
+  // December 5, noon: doors 1–3 have closed everywhere, door 4 hasn't. This device has started today's Daily.
+  await page.clock.setFixedTime(new Date(2026, 11, 5, 12));
+  await page.addInitScript(() => localStorage.setItem('aglow.daily', JSON.stringify('2026-12-05')));
+  const player = await asPlayer(page);
+  await ready(page);
+  await onlineTree(page);
+  await solveByTapping(page);
+  const results = page.locator('#results');
+  await expect(results.locator('.rib-line')).toHaveText(/^Would place #/, { timeout: 15_000 });
+  await expect(results.locator('.next-row')).toHaveCount(0); // a guest's doors can't open
+  await results.getByRole('button', { name: 'Save to leaderboard' }).click();
+  // Back from Google, /api/me answers after the tag is back up.
+  let releaseMe = (): void => {};
+  const meHeld = new Promise<void>((r) => (releaseMe = r));
+  await page.route(
+    (url) => url.pathname === '/api/me',
+    async (route) => {
+      await meHeld;
+      await route.fallback();
+    },
+  );
+  await page.getByRole('dialog', { name: 'Sign in' }).getByRole('link', { name: 'Continue with Google' }).click();
+  await page.waitForURL(/\/\?test$/);
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  releaseMe();
+  await pickName(page, player.name);
+  await expect(results).toBeVisible({ timeout: 15_000 });
+  await expect(results.locator('.next-row .next-m')).toHaveText('3 to catch up');
+});
 
 const box = (page: Page, sel: string) =>
   page.evaluate((s) => {
