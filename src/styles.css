@@ -179,6 +179,7 @@ body.m-open.m-o-fast .wordmark, body.m-open.m-o-fast .intro, body.m-open.m-o-fas
   transform-origin: top right; animation: menu-in 0.18s var(--ease-out);
 }
 @keyframes menu-in { from { opacity: 0; transform: scale(0.96); } }
+@keyframes sheet-up { from { transform: translateY(100%); } }
 .menu .bow { position: absolute; left: 50%; top: -14px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); }
 .menu-sec { display: flex; flex-direction: column; gap: 1px; }
 .menu-h {
@@ -346,7 +347,22 @@ button:focus-visible, .menu button:focus-visible, .results button:focus-visible,
 @media (max-width: 600px) {
   .wordmark { top: calc(22px + env(safe-area-inset-top)); left: 18px; font-size: 11.5px; }
   .hud { top: calc(14px + env(safe-area-inset-top)); right: 14px; }
-  .menu { right: 12px; left: 12px; width: auto; }
+  /* A bottom sheet (spec 2026-11-17): ··· stays at the top, the list comes up under the thumb, the game dimmed behind.
+     A tap on the dimmed game only closes it (App.tap checks menuOpen). */
+  .menu {
+    top: auto; bottom: 0; left: 0; right: 0; width: auto; z-index: 40;
+    max-height: min(86vh, calc(100dvh - 64px)); overflow-y: auto; overscroll-behavior: contain;
+    padding: 24px 10px calc(12px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; transform-origin: bottom center;
+    box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), inset 0 0 0 1px var(--goldline), 0 0 0 100vmax rgba(10, 3, 4, 0.42);
+    animation: sheet-up 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .menu .bow { display: none; }
+  .menu::before {
+    content: ''; position: absolute; left: 50%; top: 8px; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px;
+    background: rgba(246, 231, 200, 0.3); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+  }
+  .menu :is(.newtree, .daily-row, .decorate-btn, .menu-row, .kb-row) { padding: 13px 14px; font-size: 15px; }
+  .menu label.row { padding: 10px 14px; font-size: 15px; }
   .pill.daily .daily-rest { display: none; }
   /* No ghost pill on a phone (ruling R6): its HUD is already full. The ghost stays on, so the tag still says how you did. */
   .pill.ghost { display: none; }

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { ready, waitInteractive, type W } from './helpers';
+import { asPlayer, openAccount, pickName, ready, resumeIfPaused, signInFromMenu, waitInteractive, type W } from './helpers';
 
 // The tag's next step and the phone bottom-sheet menu (docs/superpowers/specs/2026-11-17-aglow-next-step-design.md).
 
@@ -46,3 +46,69 @@ for (const [width, height] of [[320, 568], [375, 812]] as const) {
     expect(keep!.y + keep!.height).toBeLessThanOrEqual(height);
   });
 }
+
+const box = (page: Page, sel: string) =>
+  page.evaluate((s) => {
+    const r = document.querySelector(s)!.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width };
+  }, sel);
+
+test.describe('the menu on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('opens as a bottom sheet, the bow hidden', async ({ page }) => {
+    await ready(page);
+    await page.click('#menu-btn');
+    await expect(page.locator('#menu')).toBeVisible();
+    await page.waitForTimeout(450); // the slide-up
+    const b = await box(page, '#menu');
+    expect(Math.abs(b.bottom - 812)).toBeLessThanOrEqual(1);
+    expect(b.left).toBe(0);
+    expect(b.width).toBe(375);
+    expect(b.top).toBeGreaterThan(100);
+    await expect(page.locator('#menu .bow')).toBeHidden();
+  });
+
+  test('the account page it opens is a bottom sheet too, and ‹ Menu goes back to the sheet', async ({ page }) => {
+    const player = await asPlayer(page);
+    await ready(page);
+    await signInFromMenu(page);
+    await pickName(page, player.name);
+    await resumeIfPaused(page);
+    await openAccount(page);
+    await expect(page.locator('.acct-drop')).toBeVisible();
+    await page.waitForTimeout(450);
+    const b = await box(page, '.acct-drop');
+    expect(Math.abs(b.bottom - 812)).toBeLessThanOrEqual(1);
+    expect(b.width).toBe(375);
+    await page.click('.acct-drop .acct-back');
+    await expect(page.locator('#menu')).toBeVisible();
+  });
+
+  test('a tap on the dimmed game closes the sheet and turns no tile', async ({ page }) => {
+    await ready(page);
+    await waitInteractive(page);
+    const before = await page.evaluate(() => (window as unknown as W).__aglow.state().bits);
+    await page.click('#menu-btn');
+    await page.waitForTimeout(450);
+    // The sheet is tall on a phone: the dimmed strip above it is stage, under the HUD.
+    const top = (await box(page, '#menu')).top;
+    expect(top).toBeGreaterThan(90);
+    expect(await page.evaluate((y) => document.elementFromPoint(40, y)?.id, top - 12)).toBe('stage');
+    await page.mouse.click(40, top - 12);
+    await expect(page.locator('#menu')).toBeHidden();
+    await page.waitForTimeout(400);
+    expect(await page.evaluate(() => (window as unknown as W).__aglow.state().bits)).toEqual(before);
+  });
+});
+
+test('on a desktop the menu still drops from the top right', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await ready(page);
+  await page.click('#menu-btn');
+  await page.waitForTimeout(300);
+  const b = await box(page, '#menu');
+  expect(Math.abs(b.top - 66)).toBeLessThanOrEqual(1);
+  expect(Math.abs(b.right - 1252)).toBeLessThanOrEqual(1);
+  await expect(page.locator('#menu .bow')).toBeVisible();
+});
