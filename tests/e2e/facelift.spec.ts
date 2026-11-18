@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { openAccount, openDecorate, owning, ready } from './helpers';
 
-// The 2026-11-16 facelift (docs/superpowers/specs/2026-11-16-aglow-facelift-design.md): one capsule HUD, one menu,
+// The 2026-11-16 facelift: one capsule HUD, one menu,
 // one velvet panel material, no backdrop blur over the playing stage.
 
 const css = (page: Page, sel: string, prop: string) =>

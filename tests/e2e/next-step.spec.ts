@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { asPlayer, onlineTree, openAccount, pickName, ready, resumeIfPaused, signInFromMenu, solveByTapping, waitInteractive, type W } from './helpers';
 
-// The tag's next step and the phone bottom-sheet menu (docs/superpowers/specs/2026-11-17-aglow-next-step-design.md).
+// The tag's next step and the phone bottom-sheet menu.
 
 const win = async (page: Page): Promise<void> => {
   await waitInteractive(page);

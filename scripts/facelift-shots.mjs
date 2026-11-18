@@ -1,4 +1,4 @@
-// The facelift's screenshot sweep (docs/superpowers/plans/2026-11-16-aglow-facelift.md, Task 5): the HUD in play, the open
+// The facelift's screenshot sweep: the HUD in play, the open
 // menu, the account (a guest's sign-in sheet), the radio panel and the results tag, per scene, size and pixel density.
 //   node scripts/facelift-shots.mjs [baseUrl] [outDir]
 // baseUrl defaults to a dev server on :5181 (local only: the ?test probe). Shots are written to outDir, never the repo.

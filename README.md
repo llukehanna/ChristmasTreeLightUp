@@ -13,8 +13,6 @@ npm run e2e     # browser smoke tests (Playwright)
 npm run build   # typecheck + production build
 ```
 
-Design spec: `docs/superpowers/specs/2026-09-29-aglow-design.md`
-
 ## Radio admin
 
 Luke's Christmas Jazz and Christmas Classics stations are managed at `/admin` (a Cloudflare Worker on `/api/*` plus the R2 bucket `aglow-music`; see spec section 7).
@@ -28,7 +26,7 @@ Luke's Christmas Jazz and Christmas Classics stations are managed at `/admin` (a
 
 ## Accounts
 
-Players can sign in with Google, pick a display name and post server-verified times to one all-time leaderboard. Playing never needs an account. Spec: `docs/superpowers/specs/2026-10-07-aglow-accounts-design.md`.
+Players can sign in with Google, pick a display name and post server-verified times to one all-time leaderboard. Playing never needs an account.
 
 - **Stack:** the same Worker on `/api/*` plus the D1 database `aglow` (`migrations/`). Sign-in is server-side OpenID Connect with PKCE; the browser never loads Google's scripts.
 - **Verified times:** the Worker picks each tree's seed, stamps its start and finish, replays the tap log through the game's own code (`src/core/replay.ts`, `src/core/judge.ts`) and anchors the result to its own clock.
@@ -58,8 +56,6 @@ Players can sign in with Google, pick a display name and post server-verified ti
 4. Cascade check, with a throwaway Google account: sign in, claim a run, then delete the account from the account menu. Then `npx wrangler d1 execute aglow --remote --command "SELECT (SELECT count(*) FROM users WHERE email = '<test email>') AS users, (SELECT count(*) FROM games WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM users)) AS orphan_games, (SELECT count(*) FROM sessions WHERE user_id NOT IN (SELECT id FROM users)) AS orphan_sessions"` must show 0, 0, 0.
 
 ### History import and account stats
-
-Spec: `docs/superpowers/specs/2026-10-08-aglow-history-import-design.md`.
 
 - **Account stats:** signed in, the account totals come from `GET /api/me/stats` (every finished game on the account, imported ones included; streaks in the player's time zone), so they match on every device. The results tag's Solved, Average and Day streak show the same numbers as the totals, with this device's pre-accounts history added so nothing drops on signing in: the first time a browser shows a signed-in tag for an account it saves its `{solved, totalSeconds}` (`aglow.statsBaseline`, one entry per account, never overwritten, at most 10), and Solved is the account's plus that, the average covers both, and the streak is the larger of the device's live streak and the account's (Longest likewise). An account that has imported (the admin) shows its own numbers, with no baseline; so does a browser whose storage is blocked. A few signed-out wins claimed at first sign-in can be counted in both, which is accepted. Signed out or offline, the device's own `aglow.stats` shows, and it keeps recording either way.
 - **Import (admin only):** `/admin` → "Import this device's history" reads this browser's `aglow.stats`. Check the numbers (subtract games played on this device since accounts launched, as the card suggests); every field can be edited, and the card shows what it will create (runs, best, average, streaks) before you import. The Worker fabricates that many runs for your own account (`worker/lib/history.ts`: exactly the best, exactly the total, the streaks, dated from 2026-09-29) and stores them as ordinary ranked games with `source = 'import'`. Once per device: the browser keeps `aglow.historyImport`, and resending the same import adds nothing. The card's account line shows the account's current and longest streak. **Several devices merge their days:** each import adds its own days to the account, and the account's streaks come from all of them together, so they can be longer than any one device's (two devices that both end on the same day gave 9 / 9 from a 3 / 5 and a 1 / 2 in testing).
