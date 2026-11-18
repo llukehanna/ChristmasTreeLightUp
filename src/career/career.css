@@ -162,3 +162,186 @@
   .career .extra-bar { display: none; }
   .career td.tags { white-space: normal; }
 }
+
+/* ---------- LAB (career-overlay-lab): Career as an overlay, body[data-look] = now | grow ---------- */
+.career .frame { display: contents; }
+.career .lab-x, .career .frame > .bow, .career .lab-emb { display: none; }
+
+/* --- The Career panel: the leaderboard card's glass, band, bow and close button --- */
+body[data-look='grow'] .career {
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 42%, rgba(12, 4, 2, 0.28), rgba(12, 4, 2, 0.62));
+  animation: lab-fade 0.2s ease-out;
+}
+body[data-scene='frost'][data-look='grow'] .career { background: radial-gradient(120% 90% at 50% 42%, rgba(30, 44, 54, 0.18), rgba(30, 44, 54, 0.42)); }
+body[data-look='grow'] .career.from-sheet { animation: none; }
+body[data-look='grow'] .career .frame {
+  --w: min(1120px, calc(100vw - 56px));
+  --h: calc(100vh - 92px - env(safe-area-inset-top));
+  display: block; position: absolute; overflow: hidden;
+  top: calc(68px + env(safe-area-inset-top)); right: calc(28px + env(safe-area-inset-right)); width: var(--w); height: var(--h);
+  border-radius: 20px; border: 1px solid var(--goldline);
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 220, 160, 0.022) 0 6px, transparent 6px 14px),
+    radial-gradient(60% 30% at 25% 0%, rgba(190, 40, 52, 0.34), transparent 70%),
+    linear-gradient(180deg, rgba(72, 10, 18, 0.94), rgba(28, 8, 10, 0.95));
+  backdrop-filter: blur(24px) saturate(1.2); -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 210, 160, 0.14), 0 30px 80px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+  animation: lab-widen 0.36s cubic-bezier(0.3, 0.8, 0.2, 1);
+}
+/* The bow overhangs the frame's top edge: the frame clips its content, so the bow and band ride on an outer layer. */
+body[data-look='grow'] .career .frame { overflow: visible; }
+body[data-look='grow'] .career .frame::before {
+  content: ''; position: absolute; z-index: 2; left: 0; right: 0; top: 12px; height: 10px; pointer-events: none;
+  background: linear-gradient(180deg, #f6dc98 0%, #e2b560 35%, #b98636 75%, #8f5f22 100%);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+body[data-look='grow'] .career .frame > .bow {
+  display: block; position: absolute; left: 50%; top: -9px; width: 60px; height: 38px; transform: translateX(-50%); pointer-events: none;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4)); z-index: 3;
+}
+body[data-look='grow'] .career .lab-x {
+  all: unset; position: absolute; z-index: 3; top: 32px; right: 10px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  cursor: pointer; color: #f6e7c8; opacity: 0.7; transition: background 0.15s, opacity 0.15s;
+}
+body[data-look='grow'] .career .lab-x:hover { opacity: 1; background: rgba(255, 220, 160, 0.08); }
+body[data-look='grow'] .career .lab-x:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 2px; }
+body[data-look='grow'] .career .lab-x svg { width: 18px; height: 18px; display: block; }
+body[data-look='grow'] .career .page {
+  position: absolute; inset: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; max-width: none; border-radius: 19px;
+  padding: 32px 0 36px; scrollbar-width: thin; scrollbar-color: rgba(236, 196, 116, 0.3) transparent;
+}
+body[data-look='grow'] .career .back { display: none; }
+body[data-look='grow'] .career .top { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 14px 52px 0 22px; margin: 0 0 18px; }
+body[data-look='grow'] .career .heading { grid-column: 1; grid-row: 1; }
+body[data-look='grow'] .career .eyebrow { margin: 0 0 4px; font: 600 10px/1.45 Inter, system-ui, sans-serif; letter-spacing: 0.22em; color: #f0c977; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body[data-look='grow'] .career h1 { margin: 0; font: 400 26px/1.1 'Instrument Serif', serif; color: #fff3dc; text-shadow: 0 1px 12px rgba(255, 180, 90, 0.2); }
+/* The body keeps its final width while the frame widens (no reflow, the charts draw once) and fades in after. */
+body[data-look='grow'] .career .body { width: calc(var(--w) - 2px); padding: 0 22px; animation: lab-body-in 0.24s 0.26s ease-out both; }
+
+/* Cleaner on the glass: quiet panels, no second layer of shadows and stripes. */
+body[data-look='grow'] .career .card {
+  border-radius: 14px; border-color: rgba(236, 196, 116, 0.13); background: rgba(10, 2, 3, 0.22); box-shadow: none;
+}
+body[data-look='grow'] .career .card + .card, body[data-look='grow'] .career .grid + .card,
+body[data-look='grow'] .career .card + .grid, body[data-look='grow'] .career .grid + .grid { margin-top: 14px; }
+body[data-look='grow'] .career .grid { gap: 14px; }
+
+@keyframes lab-widen { from { width: var(--from-w, 390px); height: var(--from-h, var(--h)); } }
+@keyframes lab-body-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes lab-fade { from { opacity: 0; } }
+
+/* Back to the leaderboard: the body fades, then the frame narrows to the card it came from. */
+body[data-look='grow'] .career.shrink .body { animation: lab-body-out 0.12s ease-in forwards; }
+body[data-look='grow'] .career.shrink .frame { animation: lab-narrow 0.28s 0.08s cubic-bezier(0.5, 0, 0.3, 1) forwards; }
+body[data-look='grow'] .career.shrink .heading { animation: lab-body-out 0.12s 0.24s ease-in forwards; }
+@keyframes lab-body-out { to { opacity: 0; } }
+@keyframes lab-narrow { to { width: var(--from-w, 390px); height: var(--from-h, var(--h)); } }
+body[data-look='grow'] .career.leaving { animation: lab-out 0.18s ease-in forwards; }
+@keyframes lab-out { to { opacity: 0; } }
+body[data-look='grow']:has(> .career) .pause > div { visibility: hidden; }
+
+/* Phones: a tall bottom sheet, as the leaderboard is there; the body needs no fixed width. */
+@media (max-width: 600px) {
+  body[data-look='grow'] .career .frame {
+    --w: 100vw; --h: calc(100dvh - 40px - env(safe-area-inset-top));
+    top: auto; bottom: 0; left: 0; right: 0; width: auto; border-radius: 22px 22px 0 0; border-bottom: 0;
+    animation: lab-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  body[data-look='grow'] .career.shrink .frame { animation: lab-down 0.24s ease-in forwards; }
+  body[data-look='grow'] .career .page { border-radius: 21px 21px 0 0; padding-top: 30px; }
+  body[data-look='grow'] .career .frame::before { top: 16px; height: 9px; }
+  body[data-look='grow'] .career .frame > .bow { left: auto; right: 22px; transform: none; top: -6px; width: 54px; height: 34px; }
+  body[data-look='grow'] .career .lab-x { top: 34px; }
+  body[data-look='grow'] .career .top { padding: 14px 48px 0 16px; }
+  body[data-look='grow'] .career .body { width: auto; padding: 0 12px; }
+  body[data-look='grow'] .career .tabs { width: 150px; }
+}
+@keyframes lab-up { from { transform: translateY(60px); opacity: 0.4; } }
+@keyframes lab-down { to { transform: translateY(100%); } }
+body[data-look='grow'] .career .heading { display: contents; }
+body[data-look='grow'] .career .eyebrow { grid-column: 1 / -1; grid-row: 1; }
+body[data-look='grow'] .career h1 { grid-column: 1; grid-row: 2; }
+body[data-look='grow'] .career .tabs { grid-row: 2; }
+body[data-look='grow'] .career .top { row-gap: 0; }
+body[data-look='grow'] .career .eyebrow { line-height: 12px; }
+
+/* The head stays put above the scrolling body, as on the leaderboard card (a scrollbar never shifts the switch). */
+.career .frame > .top { max-width: 1120px; margin: 0 auto 28px; padding: 32px 32px 0; }
+.career .frame > .page { padding-top: 0; }
+body[data-look='grow'] .career .frame { display: flex; flex-direction: column; }
+body[data-look='grow'] .career .frame > .top { flex: none; width: 100%; max-width: none; margin: 0; padding: 46px 52px 0 22px; }
+body[data-look='grow'] .career .frame > .page { position: relative; inset: auto; flex: 1 1 auto; min-height: 0; padding: 18px 0 36px; border-radius: 0 0 19px 19px; }
+@media (max-width: 600px) {
+  .career .frame > .top { padding: 16px 16px 0; margin-bottom: 20px; }
+  body[data-look='grow'] .career .frame > .top { padding: 44px 48px 0 16px; }
+}
+body[data-look='grow'] .career.settled .body { width: auto; }
+@media (max-width: 600px) {
+  /* The leaderboard's bottom sheet height: switching swaps the content in place, the header never moves. */
+  body[data-look='grow'] .career .frame { --h: min(86vh, calc(100dvh - 64px)); }
+  body[data-look='grow'] .career.from-sheet .frame { animation: none; }
+  body[data-look='grow'] .career.shrink .frame { animation: none; }
+}
+
+/* ---------- LAB round 3: snappier, cleaner ---------- */
+/* Motion: one quick widen, the content just fades (no drift); back is quicker still. */
+body[data-look='grow'] .career { animation-duration: 0.14s; }
+body[data-look='grow'] .career .frame { animation: lab-widen 0.22s cubic-bezier(0.2, 0.9, 0.2, 1); }
+body[data-look='grow'] .career .body { animation: lab-fade 0.14s 0.1s ease-out both; }
+body[data-look='grow'] .career.shrink .body { animation: lab-body-out 0.08s ease-in forwards; }
+body[data-look='grow'] .career.shrink .heading { animation: none; }
+body[data-look='grow'] .career.shrink .frame { animation: lab-narrow 0.18s 0.04s cubic-bezier(0.5, 0, 0.2, 1) forwards; }
+body[data-look='grow'] .career.leaving { animation-duration: 0.12s; }
+
+/* Surface: plain glass (no stripes), sections as faint borderless panels, no rules between tiles or columns. */
+body[data-look='grow'] .career .frame {
+  background: radial-gradient(60% 30% at 25% 0%, rgba(190, 40, 52, 0.3), transparent 70%), linear-gradient(180deg, rgba(70, 10, 18, 0.95), rgba(30, 8, 10, 0.96));
+}
+body[data-look='grow'] .career .card { border: 0; background: rgba(0, 0, 0, 0.17); border-radius: 14px; }
+body[data-look='grow'] .career .stat + .stat::before { display: none; }
+body[data-look='grow'] .career .stat .d { font-size: 11.5px; color: rgba(244, 230, 207, 0.42); }
+body[data-look='grow'] .career .card-h h2 { font-size: 21px; }
+body[data-look='grow'] .career .card-h .sub { color: rgba(244, 230, 207, 0.42); }
+body[data-look='grow'] .career .chips span { border: 0; background: rgba(255, 230, 180, 0.06); }
+body[data-look='grow'] .career .records > div + div { border-left: 0; }
+body[data-look='grow'] .career .rec { border-bottom-color: rgba(236, 196, 116, 0.07); }
+body[data-look='grow'] .career td { border-bottom-color: rgba(236, 196, 116, 0.07); }
+body[data-look='grow'] .career thead th { background: #2c0b0f; border-bottom-color: rgba(236, 196, 116, 0.14); }
+body[data-look='grow'] .career .tag { border: 0; }
+body[data-look='grow'] .career .watch { border-color: rgba(236, 196, 116, 0.14); background: transparent; }
+body[data-look='grow'] .career .more { border-color: rgba(236, 196, 116, 0.14); background: transparent; }
+@media (max-width: 820px) {
+  body[data-look='grow'] .career .records > div + div { border-top: 1px solid rgba(236, 196, 116, 0.07); }
+}
+
+/* ---------- LAB round 4: everything drawn at once; only the frame moves ---------- */
+body[data-look='grow'] .career .body, body[data-look='grow'] .career.shrink .body { animation: none; }
+body[data-look='grow'] .career.shrink .frame { animation: lab-narrow 0.18s cubic-bezier(0.5, 0, 0.2, 1) forwards; }
+/* Built ahead out of sight, at its final size. */
+.career.prewarm { visibility: hidden; pointer-events: none; animation: none !important; }
+.career.prewarm .frame { animation: none !important; }
+
+/* ---------- LAB round 5: shared-element swap ---------- */
+/* Career's content keeps its final place on screen while the panel's left edge sweeps open across it (it never slides
+   or squeezes), and fades in under the leaderboard's fading content. */
+body[data-look='grow'] .career:not(.settled) .body { margin-left: calc(100% - (var(--w) - 2px)); }
+body[data-look='grow'] .career .body { animation: lab-fade 0.2s 0.05s ease-out both; }
+body[data-look='grow'] .career .heading { animation: none; }
+body[data-look='grow'] .career .heading > * { animation: lab-fade 0.18s 0.07s ease-out both; }
+body[data-look='grow'] .career .frame { animation: lab-widen 0.26s cubic-bezier(0.2, 0.9, 0.2, 1); }
+/* Back: Career's content fades where it is while the panel narrows; the card's content then fades in. */
+body[data-look='grow'] .career.shrink .body, body[data-look='grow'] .career.shrink .heading > * { animation: lab-body-out 0.1s ease-in forwards; }
+body[data-look='grow'] .career.shrink .tabs::before { transition: none; animation: lab-pill-left-c 0.2s cubic-bezier(0.2, 0.9, 0.2, 1) forwards; }
+@keyframes lab-pill-left-c { to { transform: translateX(0); } }
+body[data-look='grow'] .career.shrink .tabs button.on { animation: lab-ink-off2 0.2s forwards; }
+body[data-look='grow'] .career.shrink .tabs button:not(.on) { animation: lab-ink-on2 0.2s forwards; }
+@keyframes lab-ink-off2 { to { color: #f6e7c8; opacity: 0.78; font-weight: 500; } }
+@keyframes lab-ink-on2 { to { color: #2a1206; opacity: 1; font-weight: 600; } }
+body[data-look='grow'] .career.shrink .frame { animation: lab-narrow 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+@media (max-width: 600px) {
+  body[data-look='grow'] .career:not(.settled) .body { margin-left: 0; }
+}
+body[data-look='grow'] .career .frame > .page { margin: 0; align-self: stretch; width: auto; }
+body[data-look='grow'] .career .body { animation: lab-fade 0.18s 0.07s ease-out both; }
+body[data-look='grow'] .career .heading > * { animation: lab-fade 0.16s 0.07s ease-out both; }

@@ -7,6 +7,7 @@ import './ui/decorate.css';
 import './ui/tag-styles.css';
 import { App } from './app';
 import { installDebugHook } from './debug';
+import { installLookSwitch } from './lab-look';
 
 // Film grain overlay texture
 const n = document.createElement('canvas');
@@ -23,6 +24,7 @@ if (nx) {
   document.getElementById('grain')!.style.backgroundImage = `url(${n.toDataURL()})`;
 }
 
+installLookSwitch();
 const app = new App();
 app.start();
 installDebugHook(app);

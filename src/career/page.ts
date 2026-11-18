@@ -1,4 +1,5 @@
 import { BOARD_TOP, type CareerResponse } from '../api/types';
+import { bow, I } from '../ui/icons';
 import { careerStats, parseCareer, type CareerRun, type CareerStats } from '../core/career';
 import { mountCharts } from './charts';
 import { createLog } from './log';
@@ -14,13 +15,13 @@ export function shell(user: { name: string | null }): { el: HTMLElement; title: 
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-labelledby', 'career-title');
-  el.innerHTML = `<div class="page">
+  el.innerHTML = `<div class="frame">${bow('lab-bow')}<button type="button" class="lab-x" aria-label="Close">${I.close}</button>
     <div class="top">
       <button type="button" class="back" title="Back to the tree">‹ Tree <kbd>Esc</kbd></button>
-      <div class="heading"><div class="eyebrow"></div><h1 id="career-title" tabindex="-1">Your career</h1></div>
+      <div class="heading"><div class="eyebrow"></div><h1 id="career-title" tabindex="-1">Career</h1></div>
       <div class="tabs"><button type="button" data-tab="board">Leaderboard</button><button type="button" class="on" data-tab="career" aria-current="page">Career</button></div>
     </div>
-    <div class="body"></div></div>`;
+    <div class="page"><div class="body"></div></div></div>`;
   const eyebrow = el.querySelector('.eyebrow') as HTMLElement;
   eyebrow.textContent = user.name ?? '';
   return { el, title: el.querySelector('h1')!, eyebrow, body: el.querySelector('.body')! };

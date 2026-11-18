@@ -1,4 +1,5 @@
 import { closeSync, createReadStream, existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
+import { labApi } from './scripts/lab-api.ts';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream';
@@ -211,7 +212,7 @@ function devMusic(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [devMusic()],
+  plugins: [devMusic(), ...(process.env.AGLOW_LAB ? [labApi()] : [])],
   build: {
     target: 'es2022',
     // Three pages: the game, the radio admin (served at /admin) and the privacy page (/privacy). The game's chunks never include admin code.

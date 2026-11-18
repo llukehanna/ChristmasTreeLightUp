@@ -468,7 +468,7 @@ export class App {
     });
     this.career = new CareerOpener({
       user: () => this.session.current,
-      load: () => api.freshCareer(),
+      load: () => api.cachedCareer(), // LAB: instant from the shared copy (production would refresh it quietly)
       signIn: (from) => this.accounts.openSignIn({}, from),
       cover: () => this.coverStage(),
       uncover: (from) => this.uncoverStage(from),

@@ -1,0 +1,70 @@
+/* LAB (career-overlay-lab): the leaderboard card's head as Career's. Loaded at start (career.css is lazy). */
+/* --- One head for both views: eyebrow and title at the left; the switch and the close button at the top right, where
+       the leaderboard card and the Career panel both put them (the panel grows leftwards, so they never move). --- */
+body[data-look='grow'] .acct-sheet.acct-list .acct-emb { display: none; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-head { grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 14px 52px 0 22px; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-titles { padding-right: 0; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs,
+body[data-look='grow'] .career .tabs {
+  grid-column: 2; grid-row: 1; margin: 0; width: 172px; flex: none; align-self: center; display: flex; gap: 0; padding: 3px;
+  border-radius: 10px; background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(236, 196, 116, 0.18); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs button,
+body[data-look='grow'] .career .tabs button {
+  all: unset; flex: 1; text-align: center; cursor: pointer; padding: 6px 4px; border-radius: 7px;
+  font: 500 12px Inter, system-ui, sans-serif; color: #f6e7c8; opacity: 0.78;
+}
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs button[aria-current='page'],
+body[data-look='grow'] .career .tabs button.on {
+  opacity: 1; font-weight: 600; background: linear-gradient(180deg, #f6dc98, #d6a24a 60%, #b9822f); color: #2a1206;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.7), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+body[data-look='grow'] .acct-sheet.acct-list .acct-wins { margin-top: 14px; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs button:focus-visible, body[data-look='grow'] .career .tabs button:focus-visible { outline: 2px solid #ffe2a0; outline-offset: 1px; }
+body.lab-from-career .acct-sheet, body.lab-from-career .acct-scrim { animation: none; }
+@media (max-width: 600px) {
+  body[data-look='grow'] .acct-sheet.acct-list .acct-head { padding: 14px 48px 0 16px; }
+  body[data-look='grow'] .acct-sheet.acct-list .acct-tabs { width: 150px; }
+}
+@keyframes lab-fade { from { opacity: 0; } }
+/* Eyebrow on its own row (it has the full width), then the title with the switch beside it: the same two rows on both. */
+body[data-look='grow'] .acct-sheet.acct-list .acct-titles { display: contents; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-sub { grid-column: 1 / -1; grid-row: 1; margin: 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-title { grid-column: 1; grid-row: 2; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs { grid-row: 2; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-wins { grid-row: 3; }
+/* The card stays on screen until the Career panel is up (no blank frame between them). */
+body[data-look='grow'].lab-from-sheet:not(:has(> .career)) .acct-sheet.acct-list[hidden] { display: flex !important; animation: none; }
+body[data-look='grow'].lab-from-sheet:not(:has(> .career)) .acct-scrim[hidden] { display: block !important; animation: none; }
+
+/* ---------- LAB round 5: shared-element swap ---------- */
+/* The switch's gold pill is one piece that slides between the two halves. */
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs, body[data-look='grow'] .career .tabs { position: relative; isolation: isolate; }
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs::before, body[data-look='grow'] .career .tabs::before {
+  content: ''; position: absolute; z-index: -1; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 7px;
+  background: linear-gradient(180deg, #f6dc98, #d6a24a 60%, #b9822f); box-shadow: inset 0 1px 0 rgba(255, 250, 225, 0.7), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+body[data-look='grow'] .career .tabs::before { transform: translateX(100%); }
+body[data-look='grow'] .acct-sheet.acct-list .acct-tabs button[aria-current='page'], body[data-look='grow'] .career .tabs button.on { background: none; box-shadow: none; }
+body[data-look='grow'] .career.from-sheet .tabs::before { animation: lab-pill-right 0.26s cubic-bezier(0.2, 0.9, 0.2, 1); }
+body[data-look='grow'].lab-from-career .acct-sheet .acct-tabs::before { animation: lab-pill-left 0.22s cubic-bezier(0.2, 0.9, 0.2, 1); }
+@keyframes lab-pill-right { from { transform: translateX(0); } }
+@keyframes lab-pill-left { from { transform: translateX(100%); } }
+body[data-look='grow'] .career.from-sheet .tabs button.on, body[data-look='grow'].lab-from-career .acct-sheet .acct-tabs button[aria-current='page'] { animation: lab-ink-on 0.22s ease-out; }
+body[data-look='grow'] .career.from-sheet .tabs button:not(.on), body[data-look='grow'].lab-from-career .acct-sheet .acct-tabs button:not([aria-current='page']) { animation: lab-ink-off 0.22s ease-out; }
+@keyframes lab-ink-on { from { color: #f6e7c8; opacity: 0.78; font-weight: 500; } }
+@keyframes lab-ink-off { from { color: #2a1206; opacity: 1; font-weight: 600; } }
+
+/* Back from Career: the card's own content fades in where it sits (the switch and close button never moved). */
+body.lab-from-career .acct-sheet .acct-title, body.lab-from-career .acct-sheet .acct-sub, body.lab-from-career .acct-sheet .acct-wins,
+body.lab-from-career .acct-sheet .acct-body, body.lab-from-career .acct-sheet .acct-pin { animation: lab-fade 0.16s ease-out; }
+
+/* The leaderboard card's content, copied into the widening panel where it was, fading out as Career fades in. */
+.acct-sheet.lab-ghost {
+  position: absolute; inset: 0 0 0 auto; z-index: 1; width: var(--from-w, 390px); height: auto; max-height: none; padding-top: 32px;
+  background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none;
+  animation: lab-out 0.14s ease-in forwards;
+}
+.acct-sheet.lab-ghost::before { display: none; }
+@keyframes lab-out { to { opacity: 0; } }
+.acct-sheet.lab-ghost { animation: lab-out 0.09s ease-in forwards; }
